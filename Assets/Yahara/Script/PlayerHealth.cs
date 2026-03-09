@@ -3,10 +3,18 @@ using UnityEngine.UI;
 
 public class PlayerHealth : MonoBehaviour
 {
+    public static PlayerHealth Instance { get; private set; }
+
     public int maxHP = 100;
     public int currentHP;
 
-    public Image hpFill;
+    [Header("HP ゲージ PNG")]
+    public Image hpFill; // HPバー本体 (Image Type: Filled / Horizontal)
+
+    void Awake()
+    {
+        Instance = this;
+    }
 
     void Start()
     {
@@ -17,9 +25,7 @@ public class PlayerHealth : MonoBehaviour
     public void TakeDamage(int damage)
     {
         currentHP -= damage;
-
-        if (currentHP < 0)
-            currentHP = 0;
+        if (currentHP < 0) currentHP = 0;
 
         UpdateHPBar();
 
@@ -32,15 +38,14 @@ public class PlayerHealth : MonoBehaviour
     public void Heal(int amount)
     {
         currentHP += amount;
-
-        if (currentHP > maxHP)
-            currentHP = maxHP;
+        if (currentHP > maxHP) currentHP = maxHP;
 
         UpdateHPBar();
     }
 
     void UpdateHPBar()
     {
-        hpFill.fillAmount = (float)currentHP / maxHP;
+        float ratio = (float)currentHP / maxHP;
+        hpFill.fillAmount = ratio;
     }
 }
