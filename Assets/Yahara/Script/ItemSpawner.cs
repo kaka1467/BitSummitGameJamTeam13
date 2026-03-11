@@ -21,6 +21,6 @@ public class ItemSpawner : MonoBehaviour
 
         float y = lanesY[Random.Range(0, lanesY.Length)];
 
-        item.transform.position = new Vector3(spawnX, y, 984f);
+        item.transform.position = new Vector3(spawnX, y, 980.56f);
     }
 }
