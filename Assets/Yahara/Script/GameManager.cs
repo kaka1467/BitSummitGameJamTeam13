@@ -13,6 +13,7 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI timeText;
 
     bool isGameOver = false;
+    public bool IsGameOver => isGameOver;
 
     void Awake()
     {
@@ -23,7 +24,11 @@ public class GameManager : MonoBehaviour
     {
         if (isGameOver) return;
 
-        time -= Time.deltaTime;
+        float deltaTime = (QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+            ? Time.unscaledDeltaTime
+            : Time.deltaTime;
+
+        time -= deltaTime;
 
         if (time <= 0f)
         {

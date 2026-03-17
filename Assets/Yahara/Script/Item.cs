@@ -11,4 +11,7 @@ public class Item : MonoBehaviour
     public int damageAmount = 10;
     public float timeAmount = 10f;
 
+    public float boostDuration = 0f;
+    public float boostMultiplier = 0f;
+
 }
