@@ -10,6 +10,8 @@ public class ItemEffect : MonoBehaviour
         PlayerHealth health = other.GetComponent<PlayerHealth>()
                            ?? other.GetComponentInParent<PlayerHealth>();
 
+        PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();
+
         switch (item.itemType)
         {
             case ItemType.Carrot:
@@ -26,6 +28,41 @@ public class ItemEffect : MonoBehaviour
 
             case ItemType.Clock:
                 GameManager.instance.AddTime(item.timeAmount);
+                break;
+
+            case ItemType.Boost:
+                if (boost == null)
+                {
+                    boost = other.gameObject.AddComponent<PlayerBoost>();
+                }
+
+                boost.StartBoost(item.boostDuration, item.boostMultiplier);
+                break;
+
+            case ItemType.HugeObstacle:
+                if (boost != null && boost.IsBoosting)
+                {
+                    ItemPool.Instance.ReturnToPool(gameObject);
+                    return;
+                }
+
+                if (QTEManager.Instance == null)
+                {
+                    new GameObject("QTEManager").AddComponent<QTEManager>();
+                }
+
+                bool started = QTEManager.Instance != null && QTEManager.Instance.StartHugeObstacleQte(success =>
+                {
+                    if (!success && health != null)
+                    {
+                        health.TakeDamage(item.damageAmount);
+                    }
+                });
+
+                if (!started && health != null)
+                {
+                    health.TakeDamage(item.damageAmount);
+                }
                 break;
         }
 
