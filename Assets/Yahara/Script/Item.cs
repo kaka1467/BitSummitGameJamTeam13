@@ -14,4 +14,7 @@ public class Item : MonoBehaviour
     public float boostDuration = 0f;
     public float boostMultiplier = 0f;
 
+    // このアイテムがフィーバー時の影響を受けるか
+    public bool isMagnetable = true;
+
 }

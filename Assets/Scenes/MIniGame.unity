@@ -566,6 +566,7 @@ MonoBehaviour:
   - {fileID: 8010092503364828236, guid: b8b5f74075689f848a2b9889b3ef0b97, type: 3}
   - {fileID: 8010092503364828236, guid: df5b7cc762578884daab394c04eef1c6, type: 3}
   - {fileID: 8010092503364828236, guid: 3015bb1018b73f841a8134e083d36d07, type: 3}
+  - {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
   poolSize: 30
 --- !u!4 &937483991
 Transform:
@@ -615,6 +616,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
   scrollSpeed: 0.2
+  feverSpeedMultiplier: 2
 --- !u!64 &1104259727
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -1461,6 +1463,11 @@ MonoBehaviour:
   score: 0
   time: 180
   maxTime: 180
+  feverCount: 0
+  feverNeeded: 5
+  feverScoreBonus: 30
+  feverBoostDuration: 8
+  feverBoostMultiplier: 1.5
   scoreText: {fileID: 911596689}
   timeText: {fileID: 1365839925}
 --- !u!4 &1949956397
