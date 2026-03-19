@@ -5,5 +5,6 @@ public enum ItemType
     Enemy,
     Clock,
     Boost,
-    HugeObstacle
+    HugeObstacle,
+    Fever
 }

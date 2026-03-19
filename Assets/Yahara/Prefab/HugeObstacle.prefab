@@ -76,6 +76,7 @@ MonoBehaviour:
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
+  isMagnetable: 0
 --- !u!114 &7424596365996027319
 MonoBehaviour:
   m_ObjectHideFlags: 0
