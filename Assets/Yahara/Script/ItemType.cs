@@ -6,5 +6,6 @@ public enum ItemType
     Clock,
     Boost,
     HugeObstacle,
-    Fever
+    Fever,
+    BGM
 }

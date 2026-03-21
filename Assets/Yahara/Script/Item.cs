@@ -16,6 +16,11 @@ public class Item : MonoBehaviour
     // このアイテムがフィーバー時の影響を受けるか
     public bool isMagnetable = true;
 
+    // BGM用設定
+    public AudioClip bgmClip;
+    public bool loopBgm = true;
+    public float bgmVolume = 1f;
+
     // アイテムの効果を適用するメソッド。ItemEffect はトリガー専任となり、このメソッドに処理を委譲する。
     public void ApplyEffect(Collider other)
     {
@@ -76,6 +81,19 @@ public class Item : MonoBehaviour
 
             case ItemType.Fever:
                 if (gm != null) gm.AddFeverCount();
+                break;
+
+            case ItemType.BGM:
+                // AudioManager を使って BGM を再生。存在しなければ生成する。
+                if (AudioManager.Instance == null)
+                {
+                    new GameObject("AudioManager").AddComponent<AudioManager>();
+                }
+
+                if (AudioManager.Instance != null && bgmClip != null)
+                {
+                    AudioManager.Instance.PlayBGM(bgmClip, loopBgm, Mathf.Clamp01(bgmVolume));
+                }
                 break;
         }
     }
