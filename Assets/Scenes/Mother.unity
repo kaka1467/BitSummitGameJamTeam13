@@ -653,7 +653,7 @@ GameObject:
   - component: {fileID: 1362127786}
   - component: {fileID: 1362127785}
   m_Layer: 0
-  m_Name: GameObject (2)
+  m_Name: ParentManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -701,7 +701,7 @@ GameObject:
   - component: {fileID: 1372611142}
   - component: {fileID: 1372611141}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: CaughtManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -742,6 +742,52 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 2c6273abd38064fff9c7c9b781ee8963, type: 3}
   m_PrefabInstance: {fileID: 1265464766}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &1714489879
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1714489881}
+  - component: {fileID: 1714489880}
+  m_Layer: 0
+  m_Name: ConnectManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1714489880
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1714489879}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
+  host: 127.0.0.1
+  port: 12345
+--- !u!4 &1714489881
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1714489879}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -75.47945, y: -0, z: -21.24225}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1919619508
 GameObject:
   m_ObjectHideFlags: 0
@@ -753,7 +799,7 @@ GameObject:
   - component: {fileID: 1919619510}
   - component: {fileID: 1919619509}
   m_Layer: 0
-  m_Name: GameObject (1)
+  m_Name: DoorManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -807,7 +853,7 @@ GameObject:
   - component: {fileID: 2121813539}
   - component: {fileID: 2121813538}
   m_Layer: 0
-  m_Name: GameObject (3)
+  m_Name: SleepingManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -854,3 +900,4 @@ SceneRoots:
   - {fileID: 1919619510}
   - {fileID: 1362127786}
   - {fileID: 2121813539}
+  - {fileID: 1714489881}
