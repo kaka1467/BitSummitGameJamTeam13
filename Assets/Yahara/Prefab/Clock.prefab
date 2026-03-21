@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: 4114753419937716283}
   - component: {fileID: -5900783859542613969}
   m_Layer: 0
-  m_Name: Enemy
+  m_Name: Clock
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -55,7 +55,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 4.49, y: 4.53, z: 1}
+  m_Size: {x: 6.28, y: 6.81, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &-446320907464162432
 MonoBehaviour:
@@ -69,14 +69,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 742420b194e784be698b19143daca1d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
-  itemType: 2
+  itemType: 3
   scoreAmount: 0
   healAmount: 0
-  damageAmount: 10
-  timeAmount: 0
+  damageAmount: 0
+  timeAmount: 5
   boostDuration: 0
   boostMultiplier: 0
-  isMagnetable: 0
 --- !u!114 &7424596365996027319
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -151,7 +150,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: 319977aff176464458fecd6907b4648c, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 322a229520ac9cf4d9260d7b0a70bfdc, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
