@@ -70,12 +70,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
   itemType: 1
-  scoreAmount: 0
-  healAmount: 10
+  scoreAmount: 10
+  healAmount: 0
   damageAmount: 0
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
+  isMagnetable: 1
 --- !u!114 &-1461767236452637544
 MonoBehaviour:
   m_ObjectHideFlags: 0

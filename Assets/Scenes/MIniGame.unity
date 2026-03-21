@@ -567,6 +567,7 @@ MonoBehaviour:
   - {fileID: 8010092503364828236, guid: df5b7cc762578884daab394c04eef1c6, type: 3}
   - {fileID: 8010092503364828236, guid: 3015bb1018b73f841a8134e083d36d07, type: 3}
   - {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
+  - {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
   poolSize: 30
 --- !u!4 &937483991
 Transform:
@@ -1460,6 +1461,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af5a7ea39818440e09b63965f01f653b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
+  gameOverSceneName: GameOver
+  gameOverDelay: 1
   score: 0
   time: 180
   maxTime: 180
