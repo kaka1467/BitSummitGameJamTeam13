@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Reacts when the player is caught by the parent, without using UI elements.
@@ -33,6 +34,8 @@ public class CaughtReactionController : MonoBehaviour
             // Disable sleeping input
             if (sleepingController != null)
                 sleepingController.enabled = false;
+
+            SceneManager.LoadScene("MotherGameOver");
         }
     }
 }
