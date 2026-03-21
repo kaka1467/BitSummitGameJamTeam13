@@ -67,5 +67,5 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "BitSummit.slnx"
+    "dotnet.defaultSolution": "BitSummit13.slnx"
 }

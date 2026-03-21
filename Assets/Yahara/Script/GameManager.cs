@@ -1,9 +1,14 @@
 using System.Collections;
 using UnityEngine;
 using TMPro;
+using UnityEngine.SceneManagement;
 
 public class GameManager : MonoBehaviour
 {
+    [Header("Game Over")]
+    public string gameOverSceneName = "GameOver"; // 遷移先のシーン名をインスペクタで設定
+    public float gameOverDelay = 1f; // 遷移までの待機（実時間）
+
     public static GameManager instance;
 
     public int score = 0;
@@ -103,7 +108,26 @@ public class GameManager : MonoBehaviour
 
     public void GameOver()
     {
+        if (isGameOver) return;
+
         isGameOver = true;
-        Time.timeScale = 0;
+        // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
+        Time.timeScale = 0f;
+        StartCoroutine(HandleGameOver());
+    }
+
+    private IEnumerator HandleGameOver()
+    {
+        // 遷移前の待機は実時間で行う（Time.timeScale に影響されない）
+        yield return new WaitForSecondsRealtime(gameOverDelay);
+
+        // シーン遷移の前にタイムスケールを復帰させる
+        Time.timeScale = 1f;
+
+        if (!string.IsNullOrEmpty(gameOverSceneName))
+        {
+            // シーンをロード
+            SceneManager.LoadScene(gameOverSceneName);
+        }
     }
 }
