@@ -1,9 +1,13 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class SleepingManager : MonoBehaviour
 {
     private bool isCaught = false;
     private bool isSleeping = false;
+    private bool hasLoadedGameOver = false;
+
+    public string gameOverSceneName = "GameOver";
 
     public bool IsCaught => isCaught;
     public bool IsSleeping => isSleeping;
@@ -13,6 +17,11 @@ public class SleepingManager : MonoBehaviour
         isCaught = true;
         Debug.Log("caught by parent");
         Debug.Log("IsCaught = True");
+        if (!hasLoadedGameOver)
+        {
+            SceneManager.LoadScene(gameOverSceneName);
+            hasLoadedGameOver = true;
+        }
     }
 
     void Update()
