@@ -5,36 +5,30 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MiniGame/MIniGame.unity
     guid: 71e0178f8ca66475ea7852e257149e6f
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/Title.unity
     guid: ea30e8b2763fc46b0bf39d1eadaa5b2c
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MoherGame/MotherGameOver.unity
     guid: fd2953154f67e47049118f025227c3c4
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MiniGame/MiniGameOver.unity
     guid: 77e0e86c989d242ce9ed3e892dd38707
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MiniGame/Result.unity
     guid: 273ed915b25fd43b38f767a5f22f5403
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MoherGame/EyeGuidance.unity
     guid: 9368e1ad8a89f4b2999ee444d07509f2
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MoherGame/Ranking.unity
     guid: 7644d76b136334517b3105c1034126e7
-  - enabled: 0
-    path: Assets/Scenes/MoherGame/Mother.unity
-    guid: 93c6c33e9d3004a6da09de5262d189f2
-  - enabled: 1
-    path: Assets/Scenes/MIniGame.unity
-    guid: 790c7a3080c204fa58ca0dddbe02b574
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0

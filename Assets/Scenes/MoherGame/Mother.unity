@@ -771,7 +771,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
-  host: 10.41.0.66
+  host: 
   port: 12345
 --- !u!4 &1714489881
 Transform:
