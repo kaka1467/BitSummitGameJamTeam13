@@ -72,7 +72,7 @@ public class QTEManager : MonoBehaviour
 
     private void HandleQteInput()
     {
-        if (Keyboard.current == null) return;
+        if (Keyboard.current == null && Gamepad.current == null) return;
 
         char? input = GetInputChar();
         if (!input.HasValue) return;
@@ -100,10 +100,28 @@ public class QTEManager : MonoBehaviour
 
     private char? GetInputChar()
     {
-        if (Keyboard.current.aKey.wasPressedThisFrame) return 'A';
-        if (Keyboard.current.bKey.wasPressedThisFrame) return 'B';
-        if (Keyboard.current.xKey.wasPressedThisFrame) return 'X';
-        if (Keyboard.current.yKey.wasPressedThisFrame) return 'Y';
+        var kb = Keyboard.current;
+        var gp = Gamepad.current;
+
+        // キーボード入力
+        if (kb != null)
+        {
+            if (kb.aKey.wasPressedThisFrame) return 'A';
+            if (kb.bKey.wasPressedThisFrame) return 'B';
+            if (kb.xKey.wasPressedThisFrame) return 'X';
+            if (kb.yKey.wasPressedThisFrame) return 'Y';
+        }
+
+        // ゲームパッド入力
+        if (gp != null)
+        {
+            // buttonSouth=A, buttonEast=B, buttonWest=X, buttonNorth=Y (一般的な配置)
+            if (gp.buttonSouth.wasPressedThisFrame) return 'A';
+            if (gp.buttonEast.wasPressedThisFrame) return 'B';
+            if (gp.buttonWest.wasPressedThisFrame) return 'X';
+            if (gp.buttonNorth.wasPressedThisFrame) return 'Y';
+        }
+
         return null;
     }
 
