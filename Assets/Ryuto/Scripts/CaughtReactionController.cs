@@ -33,7 +33,7 @@ public class CaughtReactionController : MonoBehaviour
             // Disable sleeping input
             if (sleepingController != null)
                 sleepingController.enabled = false;
-            SceneManager.LoadScene("GameOver");
+            SceneManager.LoadScene("MotherGameOver");
 
         }
     }

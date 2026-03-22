@@ -84,16 +84,31 @@ public class Item : MonoBehaviour
                 break;
 
             case ItemType.BGM:
+                // デバッグログを追加して呼び出し状況を確認
+                Debug.Log($"Item.ApplyEffect: BGM triggered on '{other.gameObject.name}', AudioManager.Instance is {(AudioManager.Instance == null ? "null" : "present")}, bgmClip is {(bgmClip == null ? "null" : bgmClip.name)}, loopBgm={loopBgm}, bgmVolume={bgmVolume}");
+
                 // AudioManager を使って BGM を再生。存在しなければ生成する。
                 if (AudioManager.Instance == null)
                 {
+                    Debug.Log("Item.ApplyEffect: Creating AudioManager GameObject");
                     new GameObject("AudioManager").AddComponent<AudioManager>();
                 }
 
-                if (AudioManager.Instance != null && bgmClip != null)
+                if (AudioManager.Instance == null)
                 {
-                    AudioManager.Instance.PlayBGM(bgmClip, loopBgm, Mathf.Clamp01(bgmVolume));
+                    Debug.LogError("Item.ApplyEffect: AudioManager.Instance is still null after creation attempt.");
+                    break;
                 }
+
+                if (bgmClip == null)
+                {
+                    Debug.LogWarning("Item.ApplyEffect: bgmClip is null — assign an AudioClip in the inspector.");
+                    break;
+                }
+
+                float vol = Mathf.Clamp01(bgmVolume);
+                Debug.Log($"Item.ApplyEffect: Calling PlayBGM for clip '{bgmClip.name}' (loop={loopBgm}, vol={vol})");
+                AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
                 break;
         }
     }
