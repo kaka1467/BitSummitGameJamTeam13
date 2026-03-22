@@ -77,6 +77,9 @@ MonoBehaviour:
   boostDuration: 0
   boostMultiplier: 0
   isMagnetable: 0
+  bgmClip: {fileID: 0}
+  loopBgm: 0
+  bgmVolume: 1
 --- !u!114 &7424596365996027319
 MonoBehaviour:
   m_ObjectHideFlags: 0
