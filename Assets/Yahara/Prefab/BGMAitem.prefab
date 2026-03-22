@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: 4114753419937716283}
   - component: {fileID: -5900783859542613969}
   m_Layer: 0
-  m_Name: Fever
+  m_Name: BGMAitem
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -31,7 +31,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 10.33, y: 1.21, z: 7.9}
-  m_LocalScale: {x: 1.5, y: 1.5, z: 0.6696428}
+  m_LocalScale: {x: 0.78, y: 0.78, z: 0.34821424}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -55,7 +55,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 1.33, z: 1}
+  m_Size: {x: 3.18, y: 3.23, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &-446320907464162432
 MonoBehaviour:
@@ -76,8 +76,9 @@ MonoBehaviour:
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
-  isMagnetable: 1
-  bgmClip: {fileID: 0}
+  isMagnetable: 0
+  bgmClip: {fileID: 8300000, guid: 728cbed7e141548d9976b7266e04160d, type: 3}
+  loopBgm: 0
   bgmVolume: 1
 --- !u!114 &7424596365996027319
 MonoBehaviour:
@@ -153,7 +154,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: 945e254289f222e4982bf66b3faafc07, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 3c126b74e803c4901ac70991638002a4, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
