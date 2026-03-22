@@ -76,9 +76,9 @@ MonoBehaviour:
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
-  isMagnetable: 1
+  isMagnetable: 0
   bgmClip: {fileID: 8300000, guid: 728cbed7e141548d9976b7266e04160d, type: 3}
-  loopBgm: 1
+  loopBgm: 0
   bgmVolume: 1
 --- !u!114 &7424596365996027319
 MonoBehaviour:
