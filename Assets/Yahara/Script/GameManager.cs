@@ -7,7 +7,7 @@ public class GameManager : MonoBehaviour
 {
     [Header("Game Over")]
     public string gameOverSceneName = "GameOver"; // 遷移先のシーン名をインスペクタで設定
-    public float gameOverDelay = 1f; // 遷移までの待機（実時間）
+    public float gameOverDelay = 0f; // 遷移までの待機（実時間）
 
     public static GameManager instance;
 
@@ -111,6 +111,11 @@ public class GameManager : MonoBehaviour
         if (isGameOver) return;
 
         isGameOver = true;
+
+        // リザルト用にスコアを保存
+        PlayerPrefs.SetInt("ResultScore", score);
+        PlayerPrefs.Save();
+
         // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
         Time.timeScale = 0f;
         StartCoroutine(HandleGameOver());

@@ -69,14 +69,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 742420b194e784be698b19143daca1d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
-  itemType: 2
+  itemType: 3
   scoreAmount: 0
   healAmount: 0
-  damageAmount: 10
-  timeAmount: 0
+  damageAmount: 0
+  timeAmount: -10
   boostDuration: 0
   boostMultiplier: 0
   isMagnetable: 0
+  bgmClip: {fileID: 0}
+  loopBgm: 1
+  bgmVolume: 1
 --- !u!114 &7424596365996027319
 MonoBehaviour:
   m_ObjectHideFlags: 0
