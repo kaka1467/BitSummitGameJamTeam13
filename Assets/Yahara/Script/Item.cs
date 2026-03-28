@@ -22,8 +22,9 @@ public class Item : MonoBehaviour
     public float bgmVolume = 1f;
 
     // アイテムの効果を適用するメソッド。ItemEffect はトリガー専任となり、このメソッドに処理を委譲する。
-    public void ApplyEffect(Collider other)
+    public void ApplyEffect(Collider2D other)
     {
+        Debug.Log($"[Item] ApplyEffect type={itemType} on other={other.gameObject.name}");
         var gm = GameManager.instance;
         PlayerHealth health = other.GetComponent<PlayerHealth>() ?? other.GetComponentInParent<PlayerHealth>();
         PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();

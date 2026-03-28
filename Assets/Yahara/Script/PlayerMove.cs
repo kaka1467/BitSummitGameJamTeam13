@@ -5,14 +5,21 @@ public class PlayerMove : MonoBehaviour
 {
     int lane = 1;
 
-    float[] laneY = { 4.52f, 1.06f, -2.46f };
+    float[] laneY = { 0.51f, 0f, -0.55f };
 
-    public float moveSpeed = 10f;
+    public float moveSpeed = 5f;
     public float horizontalMoveSpeed = 5f;
-    public float minX = -8f;
-    public float maxX = 8f;
+
+    [SerializeField]
+    private float horizontalPadding = 0.2f; // 画面端からの余白（ワールド単位）
 
     private PlayerBoost playerBoost;
+    private Camera mainCam;
+
+    private void Awake()
+    {
+        mainCam = Camera.main;
+    }
 
     void Update()
     {
@@ -64,7 +71,18 @@ public class PlayerMove : MonoBehaviour
 
         Vector3 pos = transform.position;
         pos.x += horizontalInput * horizontalMoveSpeed * speedMultiplier * Time.deltaTime;
-        pos.x = Mathf.Clamp(pos.x, minX, maxX);
+
+        // カメラの画角から表示可能なX範囲を計算してClamp
+        if (mainCam != null)
+        {
+            float halfHeight = mainCam.orthographicSize;
+            float halfWidth = halfHeight * mainCam.aspect;
+
+            float minX = mainCam.transform.position.x - halfWidth + horizontalPadding;
+            float maxX = mainCam.transform.position.x + halfWidth - horizontalPadding;
+            pos.x = Mathf.Clamp(pos.x, minX, maxX);
+        }
+
         pos.y = Mathf.Lerp(pos.y, laneY[lane], Time.deltaTime * moveSpeed * speedMultiplier);
         transform.position = pos;
     }
