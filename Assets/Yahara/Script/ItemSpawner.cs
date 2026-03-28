@@ -4,7 +4,9 @@ public class ItemSpawner : MonoBehaviour
 {
     public float spawnInterval = 10.1f;
 
-    public float spawnX = 12f;
+    // 画面右端からどれだけ外側に出現させるか
+    [SerializeField]
+    private float spawnOffsetFromRight = 1f;
 
     public float[] lanesY;
     [UnityEngine.SerializeField] private float hugeInitialDelay = 30f; // ゲーム開始後、この秒数まではHugeは出さない
@@ -88,6 +90,21 @@ public class ItemSpawner : MonoBehaviour
                 y = 0f;
         }
 
-        item.transform.position = new Vector3(spawnX, y, 980.56f);
+        // カメラの画面右端＋オフセットに出現させる
+        float spawnXWorld = 0f;
+        Camera cam = Camera.main;
+        if (cam != null)
+        {
+            float halfHeight = cam.orthographicSize;
+            float halfWidth = halfHeight * cam.aspect;
+            spawnXWorld = cam.transform.position.x + halfWidth + spawnOffsetFromRight;
+        }
+        else
+        {
+            // カメラが取得できない場合のフォールバック
+            spawnXWorld = 12f;
+        }
+
+        item.transform.position = new Vector3(spawnXWorld, y, 621.66f);
     }
 }

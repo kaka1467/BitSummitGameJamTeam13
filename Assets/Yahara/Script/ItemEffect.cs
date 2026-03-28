@@ -2,21 +2,35 @@ using UnityEngine;
 
 public class ItemEffect : MonoBehaviour
 {
-    private void OnTriggerEnter(Collider other)
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        if (!other.CompareTag("Player")) return;
+        // プレイヤー本体だけでなく、子オブジェクトのコライダーに当たっても反応できるようにする
+        GameObject hitObject = other.gameObject;
+
+        bool isPlayer = hitObject.CompareTag("Player");
+        if (!isPlayer)
+        {
+            Transform root = hitObject.transform.root;
+            if (root != null && root.CompareTag("Player"))
+            {
+                isPlayer = true;
+            }
+        }
+
+        if (!isPlayer) return;
+
         HandleCollect(other);
     }
 
     public void Collect(GameObject player)
     {
         if (player == null) return;
-        Collider c = player.GetComponent<Collider>() ?? player.GetComponentInChildren<Collider>();
+        Collider2D c = player.GetComponent<Collider2D>() ?? player.GetComponentInChildren<Collider2D>();
         if (c == null) return;
         HandleCollect(c);
     }
 
-    private void HandleCollect(Collider other)
+    private void HandleCollect(Collider2D other)
     {
         Item item = GetComponent<Item>();
         // キャッシュと安全確認
