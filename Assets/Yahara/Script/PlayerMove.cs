@@ -5,7 +5,7 @@ public class PlayerMove : MonoBehaviour
 {
     int lane = 1;
 
-    float[] laneY = { 0.51f, 0f, -0.55f };
+    float[] laneY = { 0.16f, -0.03f, -0.22f };
 
     public float moveSpeed = 5f;
     public float horizontalMoveSpeed = 5f;
