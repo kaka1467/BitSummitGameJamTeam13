@@ -138,6 +138,19 @@ public class QTEManager : MonoBehaviour
         return builder.ToString();
     }
 
+    // 外部（アイテムなど）から「Huge QTE を成功扱いで終了した」と登録するためのAPI
+    public static void RegisterHugeQteSuccess()
+    {
+        if (Instance != null && Instance.isQteActive)
+        {
+            Instance.FinishQte(true);
+        }
+        else
+        {
+            HugeQteFinished?.Invoke(true);
+        }
+    }
+
     private void FinishQte(bool success)
     {
         isQteActive = false;

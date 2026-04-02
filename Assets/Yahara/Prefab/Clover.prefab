@@ -71,7 +71,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e44019b4751f141748178174a90786ec, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ItemMove
-  speed: 1
+  speed: 0.5
   deleteOffsetFromLeft: 1
 --- !u!114 &-2702264541263331094
 MonoBehaviour:
