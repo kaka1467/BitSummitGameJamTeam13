@@ -58,6 +58,8 @@ public class Item : MonoBehaviour
                 // ブースト中は障害物判定を無視
                 if (boost != null && boost.IsBoosting)
                 {
+                    // QTE をスキップした場合も、成功扱いとしてクールタイムを進める
+                    QTEManager.RegisterHugeQteSuccess();
                     return;
                 }
 

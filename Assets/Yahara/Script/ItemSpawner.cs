@@ -13,11 +13,15 @@ public class ItemSpawner : MonoBehaviour
     [UnityEngine.SerializeField] private float hugeCooldownAfterQte = 20f; // QTEクリア後のHugeスポーン猶予
     [UnityEngine.SerializeField] private int maxAttemptsToAvoidHuge = 5;
 
-    private float allowedHugeSpawnTime;
+    // HugeObstacle 用の次回スポーン時刻（実時間ベース：QTE中も進む）
+    private float nextHugeSpawnTime = -1f;
+    private bool isHugeSpawnScheduled = false;
 
     void Start()
     {
-        allowedHugeSpawnTime = Time.time + hugeInitialDelay;
+        // 初回のHugeObstacleをゲーム開始から hugeInitialDelay 秒後にスポーンするよう予約（実時間）
+        nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
+        isHugeSpawnScheduled = true;
         InvokeRepeating(nameof(SpawnItem), 1f, spawnInterval);
     }
 
@@ -35,7 +39,22 @@ public class ItemSpawner : MonoBehaviour
     {
         if (success)
         {
-            allowedHugeSpawnTime = Time.time + hugeCooldownAfterQte;
+            // QTE成功時から hugeCooldownAfterQte 秒後に次のHugeObstacleをスポーンするよう予約（実時間）
+            nextHugeSpawnTime = Time.unscaledTime + hugeCooldownAfterQte;
+            isHugeSpawnScheduled = true;
+        }
+    }
+
+    private void Update()
+    {
+        // HugeObstacle 専用のスポーンタイマー処理（ゲーム時間ベース）
+        if (!isHugeSpawnScheduled)
+            return;
+
+        if (Time.unscaledTime >= nextHugeSpawnTime)
+        {
+            SpawnHugeObstacle();
+            isHugeSpawnScheduled = false;
         }
     }
 
@@ -49,9 +68,9 @@ public class ItemSpawner : MonoBehaviour
         float y = 0f;
         Item itemComp = item.GetComponent<Item>();
 
-        // Huge の出現が許可されているかを確認し、許可されていなければ別アイテムを試行する
+        // 通常スポーンでは HugeObstacle は出さず、別のアイテムを試行する
         int attempts = 0;
-        while (itemComp != null && itemComp.itemType == ItemType.HugeObstacle && Time.time < allowedHugeSpawnTime && attempts < maxAttemptsToAvoidHuge)
+        while (itemComp != null && itemComp.itemType == ItemType.HugeObstacle && attempts < maxAttemptsToAvoidHuge)
         {
             ItemPool.Instance.ReturnToPool(item);
             item = ItemPool.Instance.GetFromPool();
@@ -60,8 +79,8 @@ public class ItemSpawner : MonoBehaviour
             attempts++;
         }
 
-        // まだHugeで許可されていない場合は戻す
-        if (itemComp != null && itemComp.itemType == ItemType.HugeObstacle && Time.time < allowedHugeSpawnTime)
+        // まだHugeのままなら今回はスポーンしない
+        if (itemComp != null && itemComp.itemType == ItemType.HugeObstacle)
         {
             ItemPool.Instance.ReturnToPool(item);
             return;
@@ -102,6 +121,51 @@ public class ItemSpawner : MonoBehaviour
         else
         {
             // カメラが取得できない場合のフォールバック
+            spawnXWorld = 12f;
+        }
+
+        item.transform.position = new Vector3(spawnXWorld, y, 621.66f);
+    }
+
+    private void SpawnHugeObstacle()
+    {
+        if (ItemPool.Instance == null) return;
+
+        // HugeObstacle 専用に、対応するアイテムだけを確実に取得
+        GameObject item = ItemPool.Instance.GetFromPoolByItemType(ItemType.HugeObstacle);
+        if (item == null) return;
+
+        Item itemComp = item.GetComponent<Item>();
+        if (itemComp == null || itemComp.itemType != ItemType.HugeObstacle)
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return;
+        }
+
+        float y = 0f;
+        if (lanesY != null && lanesY.Length > 1)
+        {
+            y = lanesY[1];
+        }
+        else if (lanesY != null && lanesY.Length > 0)
+        {
+            y = lanesY[0];
+        }
+        else
+        {
+            y = 0f;
+        }
+
+        float spawnXWorld = 0f;
+        Camera cam = Camera.main;
+        if (cam != null)
+        {
+            float halfHeight = cam.orthographicSize;
+            float halfWidth = halfHeight * cam.aspect;
+            spawnXWorld = cam.transform.position.x + halfWidth + spawnOffsetFromRight;
+        }
+        else
+        {
             spawnXWorld = 12f;
         }
 

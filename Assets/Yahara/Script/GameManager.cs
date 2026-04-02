@@ -27,6 +27,7 @@ public class GameManager : MonoBehaviour
 
     public TextMeshProUGUI scoreText;
     public TextMeshProUGUI timeText;
+    public TextMeshProUGUI feverText;
 
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
@@ -57,6 +58,11 @@ public class GameManager : MonoBehaviour
         int minutes = (int)(time / 60);
         int seconds = (int)(time % 60);
         timeText.text = string.Format("{0}:{1:00}", minutes, seconds);
+
+        if (feverText != null)
+        {
+            feverText.text = string.Format("{0}/{1}", feverCount, feverNeeded);
+        }
     }
 
     public void AddScore(int amount)
