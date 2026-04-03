@@ -55,7 +55,7 @@ MonoBehaviour:
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
-  isMagnetable: 1
+  isMagnetable: 0
   bgmClip: {fileID: 0}
   loopBgm: 1
   bgmVolume: 1
