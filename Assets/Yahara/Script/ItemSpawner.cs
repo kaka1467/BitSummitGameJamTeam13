@@ -67,10 +67,21 @@ public class ItemSpawner : MonoBehaviour
 
         float y = 0f;
         Item itemComp = item.GetComponent<Item>();
+        var gm = GameManager.instance;
+        bool feverActive = gm != null && gm.IsFeverMagnetActive;
+
+        bool ShouldReject(Item comp)
+        {
+            if (comp == null) return false;
+            if (comp.itemType == ItemType.HugeObstacle) return true;
+            if (feverActive) return !comp.isMagnetable;
+
+            return false;
+        }
 
         // 通常スポーンでは HugeObstacle は出さず、別のアイテムを試行する
         int attempts = 0;
-        while (itemComp != null && itemComp.itemType == ItemType.HugeObstacle && attempts < maxAttemptsToAvoidHuge)
+        while (ShouldReject(itemComp) && attempts < maxAttemptsToAvoidHuge)
         {
             ItemPool.Instance.ReturnToPool(item);
             item = ItemPool.Instance.GetFromPool();
@@ -79,8 +90,8 @@ public class ItemSpawner : MonoBehaviour
             attempts++;
         }
 
-        // まだHugeのままなら今回はスポーンしない
-        if (itemComp != null && itemComp.itemType == ItemType.HugeObstacle)
+        // まだ条件に合わないなら今回はスポーンしない
+        if (ShouldReject(itemComp))
         {
             ItemPool.Instance.ReturnToPool(item);
             return;
