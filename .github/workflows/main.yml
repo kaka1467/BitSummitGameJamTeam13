@@ -1,0 +1,67 @@
+name: Unity WebGL Build and Deploy
+
+on:
+  workflow_dispatch: # 手動で実行できるようにする設定
+  push:
+    branches:
+      - main # mainブランチにプッシュされた時に動く設定
+
+jobs:
+  build:
+    name: Build and Notify
+    runs-on: ubuntu-latest
+    steps:
+      # --- ここからディスク容量確保の処理 ---
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+      # --- ここまで ---
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Library
+        uses: actions/cache@v3
+        with:
+          path: Library
+          key: Library-WebGL
+
+      - name: Build Unity Project
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: WebGL
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: build/WebGL/WebGL
+          branch: gh-pages
+
+      - name: Send Discord Notification
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -X POST \
+          -d '{
+            "embeds": [{
+              "title": "Success: 🎮 Unity WebGL ビルド成功！",
+              "color": 3066993,
+              "fields": [
+                {"name": "プロジェクト", "value": "${{ github.repository }}", "inline": true},
+                {"name": "ブランチ", "value": "${{ github.ref_name }}", "inline": true},
+                {"name": "コミット", "value": "${{ github.sha }}", "inline": true},
+                {"name": "🌐 プレイ可能URL", "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"}
+              ],
+              "description": "**コミットメッセージ:**\n${{ github.event.head_commit.message }}"
+            }]
+          }' ${{ secrets.DISCORD_WEBHOOK }}
