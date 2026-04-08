@@ -2132,7 +2132,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af5a7ea39818440e09b63965f01f653b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
-  gameOverSceneName: Result
+  gameOverSceneName: ResultRanking
   gameOverDelay: 0
   score: 0
   time: 180
