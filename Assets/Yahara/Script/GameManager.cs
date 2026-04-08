@@ -120,6 +120,7 @@ public class GameManager : MonoBehaviour
 
         // リザルト用にスコアを保存
         PlayerPrefs.SetInt("ResultScore", score);
+        PlayerPrefs.SetInt("ResultScorePending", 1);
         PlayerPrefs.Save();
 
         // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
