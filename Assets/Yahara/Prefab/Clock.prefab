@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 7424596365996027319}
   - component: {fileID: 4114753419937716283}
   - component: {fileID: -5900783859542613969}
-  - component: {fileID: 5306563244971644189}
+  - component: {fileID: -3307556603995569410}
   m_Layer: 0
   m_Name: Clock
   m_TagString: Untagged
@@ -48,10 +48,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 742420b194e784be698b19143daca1d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
-  itemType: 3
+  itemType: 1
   scoreAmount: 0
-  healAmount: 0
-  damageAmount: 0
   timeAmount: 5
   boostDuration: 0
   boostMultiplier: 0
@@ -144,7 +142,7 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
---- !u!60 &5306563244971644189
+--- !u!60 &-3307556603995569410
 PolygonCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}

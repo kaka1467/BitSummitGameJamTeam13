@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 7424596365996027319}
   - component: {fileID: 4114753419937716283}
   - component: {fileID: -5900783859542613969}
-  - component: {fileID: -4016958334591004085}
+  - component: {fileID: 3937666418787579484}
   m_Layer: 0
   m_Name: DecrementClock
   m_TagString: Untagged
@@ -31,7 +31,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
   m_LocalPosition: {x: 10.33, y: 1.21, z: 7.9}
-  m_LocalScale: {x: 0.03, y: 0.03, z: 0.003951991}
+  m_LocalScale: {x: 0.07, y: 0.07, z: 0.009221313}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -48,10 +48,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 742420b194e784be698b19143daca1d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
-  itemType: 3
+  itemType: 1
   scoreAmount: 0
-  healAmount: 0
-  damageAmount: 0
   timeAmount: -10
   boostDuration: 0
   boostMultiplier: 0
@@ -134,7 +132,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: 122f0ed601b5c409ebdba11f1e1ec2b8, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 10961a7e7d37bef42a086fecf995c8b7, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -144,7 +142,7 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
---- !u!60 &-4016958334591004085
+--- !u!60 &3937666418787579484
 PolygonCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -182,7 +180,7 @@ PolygonCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 2.25, y: 2.25}
+    oldSize: {x: 2.53, y: 2.04}
     newSize: {x: 2.25, y: 2.25}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -190,8 +188,38 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -1.125, y: 1.125}
-      - {x: -1.125, y: -1.125}
-      - {x: 1.125, y: -1.125}
-      - {x: 1.125, y: 1.125}
+    - - {x: 0.815, y: -0.45999998}
+      - {x: 0.97499996, y: -0.47}
+      - {x: 1.2049999, y: -0.25}
+      - {x: 1.2049999, y: -0.06}
+      - {x: 1.185, y: -0.049999997}
+      - {x: 1.055, y: -0.049999997}
+      - {x: 1.055, y: 0.90999997}
+      - {x: 1.035, y: 0.93}
+      - {x: 0.715, y: 0.93}
+      - {x: 0.685, y: 0.88}
+      - {x: 0.405, y: 0.84999996}
+      - {x: 0.065, y: 0.93}
+      - {x: -0.39499998, y: 0.93}
+      - {x: -0.415, y: 0.85999995}
+      - {x: -0.625, y: 0.85999995}
+      - {x: -0.705, y: 0.81}
+      - {x: -1.0649999, y: 0.78}
+      - {x: -1.0849999, y: 0.76}
+      - {x: -1.235, y: -0.07}
+      - {x: -1.235, y: -0.32999998}
+      - {x: -1.175, y: -0.38}
+      - {x: -0.995, y: -0.55}
+      - {x: -0.815, y: -0.65}
+      - {x: -0.625, y: -0.85999995}
+      - {x: -0.385, y: -0.90999997}
+      - {x: 0.074999996, y: -0.91999996}
+      - {x: 0.095, y: -0.84999996}
+      - {x: 0.285, y: -0.84}
+      - {x: 0.305, y: -0.82}
+      - {x: 0.515, y: -0.98999995}
+      - {x: 0.695, y: -0.98999995}
+      - {x: 0.92499995, y: -0.75}
+      - {x: 0.92499995, y: -0.58}
+      - {x: 0.775, y: -0.55}
   m_UseDelaunayMesh: 1

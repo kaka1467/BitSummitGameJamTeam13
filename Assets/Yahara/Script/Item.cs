@@ -5,9 +5,7 @@ public class Item : MonoBehaviour
     public ItemType itemType;
 
     public int scoreAmount = 10;
-    public int healAmount = 10;
-
-    public int damageAmount = 10;
+    // 正なら加算、負なら減算。Enemy/HugeObstacle では減少量として扱われる。
     public float timeAmount = 10f;
 
     public float boostDuration = 0f;
@@ -26,20 +24,17 @@ public class Item : MonoBehaviour
     {
         Debug.Log($"[Item] ApplyEffect type={itemType} on other={other.gameObject.name}");
         var gm = GameManager.instance;
-        PlayerHealth health = other.GetComponent<PlayerHealth>() ?? other.GetComponentInParent<PlayerHealth>();
         PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();
 
         switch (itemType)
         {
-            case ItemType.Carrot:
-            case ItemType.Clover:
-                if (health != null) health.Heal(healAmount);
+          case ItemType.Score:
                 if (gm != null) gm.AddScore(scoreAmount);
                 break;
 
-            case ItemType.Enemy:
-                if (health != null) health.TakeDamage(damageAmount);
-                break;
+            // case ItemType.Enemy:
+            //     if (gm != null) gm.AddTime(-Mathf.Abs(timeAmount));
+            //     break;
 
             case ItemType.Clock:
                 if (gm != null) gm.AddTime(timeAmount);
@@ -70,15 +65,15 @@ public class Item : MonoBehaviour
 
                 bool started = QTEManager.Instance != null && QTEManager.Instance.StartHugeObstacleQte(success =>
                 {
-                    if (!success && health != null)
+                    if (!success && gm != null)
                     {
-                        health.TakeDamage(damageAmount);
+                        gm.AddTime(-Mathf.Abs(timeAmount));
                     }
                 });
 
-                if (!started && health != null)
+                if (!started && gm != null)
                 {
-                    health.TakeDamage(damageAmount);
+                    gm.AddTime(-Mathf.Abs(timeAmount));
                 }
                 break;
 

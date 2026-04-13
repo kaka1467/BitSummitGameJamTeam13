@@ -48,10 +48,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 742420b194e784be698b19143daca1d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
-  itemType: 4
+  itemType: 2
   scoreAmount: 0
-  healAmount: 0
-  damageAmount: 0
   timeAmount: 0
   boostDuration: 8
   boostMultiplier: 2
