@@ -1,8 +1,8 @@
 public enum ItemType
 {
-    Carrot,
-    Clover,
-    Enemy,
+    // Carrot,
+    Score,
+    // Enemy,
     Clock,
     Boost,
     HugeObstacle,
