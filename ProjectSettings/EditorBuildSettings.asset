@@ -9,16 +9,16 @@ EditorBuildSettings:
     path: Assets/Scenes/Build.unity
     guid: e3b6a073e92dd1c4d98fdae5def572b8
   - enabled: 1
-    path: Assets/Scenes/MiniGame/MiniGame.unity
+    path: Assets/Scenes/MiniGame/MIniGame.unity
     guid: b3756190d7ed24bf2adafd6ad6ad89ed
   - enabled: 1
-    path: Assets/Scenes/Title.unity
+    path: Assets/Scenes/MotherGame/Mother Title.unity
     guid: ea30e8b2763fc46b0bf39d1eadaa5b2c
   - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
   - enabled: 1
-    path: Assets/Scenes/MoherGame/MotherGameOver.unity
+    path: Assets/Scenes/MotherGame/MotherGameOver.unity
     guid: fd2953154f67e47049118f025227c3c4
   - enabled: 1
     path: Assets/Scenes/MiniGame/ResultRanking.unity
@@ -27,10 +27,10 @@ EditorBuildSettings:
     path: Assets/Scenes/MiniGame/MiniGameOver.unity
     guid: 273ed915b25fd43b38f767a5f22f5403
   - enabled: 1
-    path: Assets/Scenes/MoherGame/EyeGuidance.unity
+    path: Assets/Scenes/MotherGame/EyeGuidance.unity
     guid: 9368e1ad8a89f4b2999ee444d07509f2
   - enabled: 1
-    path: Assets/Scenes/MoherGame/Ranking.unity
+    path: Assets/Scenes/MotherGame/Ranking.unity
     guid: 7644d76b136334517b3105c1034126e7
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
