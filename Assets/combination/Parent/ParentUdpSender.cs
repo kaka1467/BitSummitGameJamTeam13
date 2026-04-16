@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class ParentUdpSender : MonoBehaviour
@@ -27,10 +28,18 @@ public class ParentUdpSender : MonoBehaviour
     public ConnectionState currentState = ConnectionState.Disconnected;
     public Button connectButton;
     public TextMeshProUGUI statusText;
+    public GameObject startButtonObject;
+    public string gameSceneName = "GameScene";
 
     public void OnConnectButtonClicked()
     {
         currentState = ConnectionState.Connecting;
+    }
+
+    public void OnStartButtonClicked()
+    {
+        SendState("START_GAME");
+        SceneManager.LoadScene(gameSceneName);
     }
 
     private UdpClient udpClient;
@@ -105,6 +114,10 @@ public class ParentUdpSender : MonoBehaviour
         if (connectButton != null)
         {
             connectButton.interactable = (currentState == ConnectionState.Disconnected);
+        }
+        if (startButtonObject != null)
+        {
+            startButtonObject.SetActive(currentState == ConnectionState.Connected);
         }
 
         if (Input.GetKeyDown(KeyCode.Space))

@@ -202,13 +202,13 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: 
-        m_MethodName: 
+      - m_Target: {fileID: 1657176101}
+        m_TargetAssemblyTypeName: ParentUdpSender, Assembly-CSharp
+        m_MethodName: OnConnectButtonClicked
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: 
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
@@ -628,8 +628,10 @@ MonoBehaviour:
   parentReceivePort: 8002
   targetIP: 127.0.0.1
   currentState: 0
-  connectButton: {fileID: 0}
-  statusText: {fileID: 0}
+  connectButton: {fileID: 1745125928}
+  statusText: {fileID: 2063278681}
+  startButtonObject: {fileID: 579444585}
+  gameSceneName: GameScene
 --- !u!4 &1657176102
 Transform:
   m_ObjectHideFlags: 0
@@ -727,19 +729,7 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 1745125929}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 1657176101}
-        m_TargetAssemblyTypeName: ParentUdpSender, Assembly-CSharp
-        m_MethodName: OnConnectButtonClicked
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
 --- !u!114 &1745125929
 MonoBehaviour:
   m_ObjectHideFlags: 0

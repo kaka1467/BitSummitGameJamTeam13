@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class ChildUdpReceiver : MonoBehaviour
@@ -26,6 +27,7 @@ public class ChildUdpReceiver : MonoBehaviour
     public string targetIP = "127.0.0.1";
     public ConnectionState currentState = ConnectionState.Disconnected;
     public string lastMessage = "";
+    public string gameSceneName = "GameScene";
     public SleepingManager sleepingManager;
     public Button connectButton;
     public TextMeshProUGUI statusText;
@@ -67,6 +69,10 @@ public class ChildUdpReceiver : MonoBehaviour
                 if (message == "PING")
                 {
                     lastReceiveTime = Time.time;
+                }
+                else if (message == "START_GAME")
+                {
+                    SceneManager.LoadScene(gameSceneName);
                 }
                 else
                 {
