@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/MiniGame/Mini Title.unity
+    path: Assets/Scenes/MiniGameFolder/Mini Title.unity
     guid: 45f27d3867c244d40882da0f92582c42
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
