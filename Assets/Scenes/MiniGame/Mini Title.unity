@@ -119,6 +119,60 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &415572610
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 415572612}
+  - component: {fileID: 415572611}
+  m_Layer: 0
+  m_Name: ChildUDP
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &415572611
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 415572610}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 68a83da404cb6469ca82a55fa37f128f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChildUdpReceiver
+  normalPort: 8000
+  broadcastPort: 8001
+  parentReceivePort: 8002
+  targetIP: 127.0.0.1
+  currentState: 0
+  lastMessage: 
+  gameSceneName: GameScene
+  sleepingManager: {fileID: 0}
+  connectButton: {fileID: 1745125928}
+  statusText: {fileID: 2063278681}
+--- !u!4 &415572612
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 415572610}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 1042.2075, y: 0.00001, z: 12128.806}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &745163404
 GameObject:
   m_ObjectHideFlags: 0
@@ -460,57 +514,6 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
---- !u!1 &1657176100
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1657176102}
-  - component: {fileID: 1657176101}
-  m_Layer: 0
-  m_Name: Parent UDP
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1657176101
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1657176100}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
-  normalPort: 8000
-  broadcastPort: 8001
-  parentReceivePort: 8002
-  targetIP: 127.0.0.1
-  currentState: 0
-  connectButton: {fileID: 0}
-  statusText: {fileID: 0}
---- !u!4 &1657176102
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1657176100}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1042.2067, y: 0.00001, z: 12128.806}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1745125926
 GameObject:
   m_ObjectHideFlags: 0
@@ -594,8 +597,8 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1657176101}
-        m_TargetAssemblyTypeName: ParentUdpSender, Assembly-CSharp
+      - m_Target: {fileID: 415572611}
+        m_TargetAssemblyTypeName: ChildUdpReceiver, Assembly-CSharp
         m_MethodName: OnConnectButtonClicked
         m_Mode: 1
         m_Arguments:
@@ -1259,4 +1262,4 @@ SceneRoots:
   - {fileID: 1227494975}
   - {fileID: 1998481033}
   - {fileID: 2003861235}
-  - {fileID: 1657176102}
+  - {fileID: 415572612}
