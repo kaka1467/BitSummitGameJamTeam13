@@ -438,9 +438,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68a83da404cb6469ca82a55fa37f128f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChildUdpReceiver
-  port: 12345
+  normalPort: 8000
+  broadcastPort: 8001
+  parentReceivePort: 8002
+  targetIP: 127.0.0.1
+  currentState: 0
   lastMessage: 
+  gameSceneName: GameScene
   sleepingManager: {fileID: 508756885}
+  connectButton: {fileID: 0}
+  statusText: {fileID: 0}
 --- !u!4 &243933952
 Transform:
   m_ObjectHideFlags: 0
@@ -1332,7 +1339,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: 3f53867549a871849ba7c9371c3ce7f7, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 46f4d1c302ae40d4d8eb47ff08447db9, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -1351,8 +1358,8 @@ Transform:
   m_GameObject: {fileID: 1423400455}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -1.06896, y: 0.04, z: -3.9300537}
-  m_LocalScale: {x: 0.015, y: 0.008437499, z: 0}
+  m_LocalPosition: {x: 0, y: 0.15, z: -3.9300537}
+  m_LocalScale: {x: 0.13, y: 0.024377845, z: 0}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 639541099}
@@ -1491,15 +1498,38 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9441df31e70b0421bb8df3efe034b28c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ItemSpawner
-  spawnInterval: 1.5
-  spawnOffsetFromRight: 1
+  normalSpawnRules:
+  - interval:
+      minInterval: 0
+      maxInterval: 30
+    prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 1
+    - prefab: {fileID: 8010092503364828236, guid: 3015bb1018b73f841a8134e083d36d07, type: 3}
+      count: 1
+    - prefab: {fileID: 8010092503364828236, guid: df5b7cc762578884daab394c04eef1c6, type: 3}
+      count: 1
+    - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
+      count: 1
+    - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
+      count: 1
+    - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
+      count: 1
+    - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
+      count: 1
+  hugeObstacleSpawnCount: 1
+  minSpawnDistanceX: 1.2
+  minSpawnDistanceY: 0.6
+  recentSpawnWindow: 0.6
+  overlapAvoidanceXStep: 0.8
+  maxPlacementAttempts: 8
+  spawnOffsetFromRight: 0.5
   lanesY:
   - 0.16
   - -0.04
   - -0.22
   hugeInitialDelay: 30
   hugeCooldownAfterQte: 25
-  maxAttemptsToAvoidHuge: 5
 --- !u!4 &1639938499
 Transform:
   m_ObjectHideFlags: 0
