@@ -19,7 +19,15 @@ MonoBehaviour:
   m_PlatformBuildProfile:
     rid: 5791262246719717436
   m_OverrideGlobalSceneList: 1
-  m_Scenes: []
+  m_Scenes:
+  - m_enabled: 1
+    m_path: Assets/Scenes/MotherGame/Mother Title.unity
+  - m_enabled: 1
+    m_path: Assets/Scenes/MotherGame/Mother.unity
+  - m_enabled: 1
+    m_path: Assets/Scenes/MotherGame/MotherGameOver.unity
+  - m_enabled: 1
+    m_path: Assets/Scenes/MotherGame/Ranking.unity
   m_HasScriptingDefines: 0
   m_ScriptingDefines: []
   m_PlayerSettingsYaml:
