@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -30,15 +31,27 @@ public class ParentUdpSender : MonoBehaviour
     public TextMeshProUGUI statusText;
     public GameObject startButtonObject;
     public string gameSceneName = "GameScene";
+    public Button cancelButton;
 
     public void OnConnectButtonClicked()
     {
         currentState = ConnectionState.Connecting;
     }
 
+    public void OnCancelButtonClicked()
+    {
+        currentState = ConnectionState.Disconnected;
+    }
+
     public void OnStartButtonClicked()
     {
+        StartCoroutine(StartGameRoutine());
+    }
+
+    private IEnumerator StartGameRoutine()
+    {
         SendState("START_GAME");
+        yield return new WaitForSeconds(0.1f);
         SceneManager.LoadScene(gameSceneName);
     }
 
@@ -113,14 +126,18 @@ public class ParentUdpSender : MonoBehaviour
         }
         if (connectButton != null)
         {
-            connectButton.interactable = (currentState == ConnectionState.Disconnected);
+            connectButton.gameObject.SetActive(currentState == ConnectionState.Disconnected);
+        }
+        if (cancelButton != null)
+        {
+            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
         }
         if (startButtonObject != null)
         {
             startButtonObject.SetActive(currentState == ConnectionState.Connected);
         }
 
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
         {
             SendState("CAUGHT");
         }

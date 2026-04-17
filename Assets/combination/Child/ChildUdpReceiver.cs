@@ -31,10 +31,16 @@ public class ChildUdpReceiver : MonoBehaviour
     public SleepingManager sleepingManager;
     public Button connectButton;
     public TextMeshProUGUI statusText;
+    public Button cancelButton;
 
     public void OnConnectButtonClicked()
     {
         currentState = ConnectionState.Connecting;
+    }
+
+    public void OnCancelButtonClicked()
+    {
+        currentState = ConnectionState.Disconnected;
     }
 
     private UdpClient udpClient;
@@ -126,7 +132,11 @@ public class ChildUdpReceiver : MonoBehaviour
         }
         if (connectButton != null)
         {
-            connectButton.interactable = (currentState == ConnectionState.Disconnected);
+            connectButton.gameObject.SetActive(currentState == ConnectionState.Disconnected);
+        }
+        if (cancelButton != null)
+        {
+            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
         }
     }
 
