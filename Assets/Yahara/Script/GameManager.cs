@@ -142,6 +142,26 @@ public class GameManager : MonoBehaviour
     {
         time += amount;
         if (time > maxTime) time = maxTime;
+
+        // タイマー減少時にダメージアニメーションを再生
+        if (amount < 0f)
+        {
+            TriggerDamageAnimation();
+        }
+    }
+
+    /// <summary>
+    /// プレイヤーの PlayerAnimator を取得して PlayDamage() を呼び出す。
+    /// GameManager・Item どちらからでも使えるよう public にしている。
+    /// </summary>
+    public void TriggerDamageAnimation()
+    {
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player == null) return;
+
+        PlayerAnimator animator = player.GetComponent<PlayerAnimator>()
+            ?? player.GetComponentInChildren<PlayerAnimator>();
+        animator?.PlayDamage();
     }
 
     public void GameOver()
