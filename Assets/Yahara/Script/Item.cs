@@ -14,6 +14,10 @@ public class Item : MonoBehaviour
     // このアイテムがフィーバー時の影響を受けるか
     public bool isMagnetable = true;
 
+    // 効果音用設定
+    public AudioClip seClip;
+    public float seVolume = 1f;
+
     // BGM用設定
     public AudioClip bgmClip;
     public bool loopBgm = true;
@@ -26,9 +30,11 @@ public class Item : MonoBehaviour
         var gm = GameManager.instance;
         PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();
 
+        TryPlayItemSE();
+
         switch (itemType)
         {
-          case ItemType.Score:
+            case ItemType.Score:
                 if (gm != null) gm.AddScore(scoreAmount);
                 break;
 
@@ -109,5 +115,25 @@ public class Item : MonoBehaviour
                 AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
                 break;
         }
+    }
+
+    private void TryPlayItemSE()
+    {
+        if (seClip == null)
+        {
+            return;
+        }
+
+        if (AudioManager.Instance == null)
+        {
+            new GameObject("AudioManager").AddComponent<AudioManager>();
+        }
+
+        if (AudioManager.Instance == null)
+        {
+            return;
+        }
+
+        AudioManager.Instance.PlaySE(seClip, seVolume);
     }
 }

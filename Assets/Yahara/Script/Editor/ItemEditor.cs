@@ -10,6 +10,8 @@ public class ItemEditor : Editor
     private SerializedProperty boostDurationProp;
     private SerializedProperty boostMultiplierProp;
     private SerializedProperty isMagnetableProp;
+    private SerializedProperty seClipProp;
+    private SerializedProperty seVolumeProp;
     private SerializedProperty bgmClipProp;
     private SerializedProperty loopBgmProp;
     private SerializedProperty bgmVolumeProp;
@@ -22,6 +24,8 @@ public class ItemEditor : Editor
         boostDurationProp = serializedObject.FindProperty("boostDuration");
         boostMultiplierProp = serializedObject.FindProperty("boostMultiplier");
         isMagnetableProp = serializedObject.FindProperty("isMagnetable");
+        seClipProp = serializedObject.FindProperty("seClip");
+        seVolumeProp = serializedObject.FindProperty("seVolume");
         bgmClipProp = serializedObject.FindProperty("bgmClip");
         loopBgmProp = serializedObject.FindProperty("loopBgm");
         bgmVolumeProp = serializedObject.FindProperty("bgmVolume");
@@ -79,6 +83,11 @@ public class ItemEditor : Editor
                 EditorGUILayout.Slider(bgmVolumeProp, 0f, 1f, new GUIContent("Volume"));
                 break;
         }
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("SFX Settings", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(seClipProp, new GUIContent("SE Clip"));
+        EditorGUILayout.Slider(seVolumeProp, 0f, 1f, new GUIContent("SE Volume"));
 
         EditorGUILayout.Space(6f);
         EditorGUILayout.PropertyField(isMagnetableProp, new GUIContent("Magnetable"));
