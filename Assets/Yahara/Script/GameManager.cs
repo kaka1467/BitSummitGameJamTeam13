@@ -197,7 +197,7 @@ public class GameManager : MonoBehaviour
         if (feverCount >= feverNeeded)
         {
             feverCount = 0; // Reset fever count
-            StartCoroutine(ActivateFeverEffects());
+            ActivateFeverEffects();
         }
     }
 
