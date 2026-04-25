@@ -25,6 +25,9 @@ public class GameManager : MonoBehaviour
     bool isFeverMagnetActive = false;
     public bool IsFeverMagnetActive => isFeverMagnetActive;
 
+    private Coroutine feverRoutine;
+    private float feverEndTime = -1f;
+
     // --- Score: 1桁ずつ別のTextに表示 ---
     // scoreText は削除し、6桁分の配列に置き換え。
     // インスペクタで scoreDigitTexts[0] = 最上位桁、scoreDigitTexts[5] = 最下位桁 の順に設定してください。
@@ -105,6 +108,12 @@ public class GameManager : MonoBehaviour
 
     public void GameOver()
     {
+        feverCount++;
+        if (feverCount >= feverNeeded)
+        {
+            feverCount = 0;
+            ActivateFeverEffects();
+        }
         GameOver("TIME_UP");
     }
 
@@ -124,9 +133,12 @@ public class GameManager : MonoBehaviour
         StartCoroutine(HandleGameOver(udpMessage));
     }
 
-    private IEnumerator ActivateFeverEffects()
+    private void ActivateFeverEffects()
     {
         AddScore(feverScoreBonus);
+
+        float duration = Mathf.Max(0f, feverBoostDuration);
+        float multiplier = Mathf.Max(1f, feverBoostMultiplier);
 
         GameObject player = GameObject.FindWithTag("Player");
         if (player != null)
@@ -137,17 +149,28 @@ public class GameManager : MonoBehaviour
                 boost = player.AddComponent<PlayerBoost>();
             }
 
-            boost.StartBoost(feverBoostDuration, feverBoostMultiplier);
+            boost.StartBoost(duration, multiplier);
         }
 
         isFeverMagnetActive = true;
-        float endTime = Time.time + feverBoostDuration;
-        while (Time.time < endTime)
+        feverEndTime = Mathf.Max(feverEndTime, Time.time + duration);
+
+        if (feverRoutine == null)
+        {
+            feverRoutine = StartCoroutine(FeverEffectRoutine());
+        }
+    }
+
+    private IEnumerator FeverEffectRoutine()
+    {
+        while (Time.time < feverEndTime)
         {
             yield return null;
         }
 
         isFeverMagnetActive = false;
+        feverEndTime = -1f;
+        feverRoutine = null;
     }
 
     private IEnumerator HandleGameOver(string udpMessage)
