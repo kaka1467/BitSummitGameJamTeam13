@@ -978,6 +978,7 @@ MonoBehaviour:
   parentDetection: {fileID: 1362127785}
   doorController: {fileID: 1919619509}
   sleepingController: {fileID: 2121813538}
+  udpSender: {fileID: 1385247218}
 --- !u!4 &1372611142
 Transform:
   m_ObjectHideFlags: 0
@@ -988,6 +989,60 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -86.37891, y: 0, z: -33.2026}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1385247217
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1385247219}
+  - component: {fileID: 1385247218}
+  m_Layer: 0
+  m_Name: UDP
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1385247218
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1385247217}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
+  normalPort: 8000
+  broadcastPort: 8001
+  parentReceivePort: 8002
+  targetIP: 127.0.0.1
+  currentState: 0
+  connectButton: {fileID: 0}
+  statusText: {fileID: 0}
+  startButtonObject: {fileID: 0}
+  gameSceneName: GameScene
+  cancelButton: {fileID: 0}
+--- !u!4 &1385247219
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1385247217}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 789.1275, y: 215.59084, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1076,8 +1131,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
-  host: 
-  port: 12345
+  normalPort: 8000
+  broadcastPort: 8001
+  parentReceivePort: 8002
+  targetIP: 127.0.0.1
+  currentState: 0
+  connectButton: {fileID: 0}
+  statusText: {fileID: 0}
+  startButtonObject: {fileID: 0}
+  gameSceneName: GameScene
+  cancelButton: {fileID: 0}
 --- !u!4 &1714489881
 Transform:
   m_ObjectHideFlags: 0
@@ -1176,7 +1239,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0cf4a176135f44dbca781bf9f1ef5c25, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SleepingController
-  sleepKey: 32
   isSleeping: 0
 --- !u!4 &2121813539
 Transform:
@@ -1209,3 +1271,4 @@ SceneRoots:
   - {fileID: 490564928}
   - {fileID: 1418577573}
   - {fileID: 995175493}
+  - {fileID: 1385247219}

@@ -438,9 +438,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68a83da404cb6469ca82a55fa37f128f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChildUdpReceiver
-  port: 12345
+  normalPort: 8000
+  broadcastPort: 8001
+  parentReceivePort: 8002
+  targetIP: 127.0.0.1
+  currentState: 0
   lastMessage: 
+  gameSceneName: Minigame Scene
   sleepingManager: {fileID: 508756885}
+  connectButton: {fileID: 0}
+  statusText: {fileID: 0}
+  cancelButton: {fileID: 0}
 --- !u!4 &243933952
 Transform:
   m_ObjectHideFlags: 0
@@ -2144,6 +2152,7 @@ MonoBehaviour:
   scoreText: {fileID: 911596689}
   timeText: {fileID: 1365839925}
   feverText: {fileID: 890242297}
+  udpReceiver: {fileID: 243933951}
 --- !u!4 &1949956397
 Transform:
   m_ObjectHideFlags: 0
