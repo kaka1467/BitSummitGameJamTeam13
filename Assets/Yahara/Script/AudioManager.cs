@@ -8,6 +8,9 @@ public class AudioManager : MonoBehaviour
     [SerializeField]
     private AudioSource bgmSource;
 
+    [SerializeField]
+    private AudioSource seSource;
+
     void Awake()
     {
         if (Instance != null && Instance != this)
@@ -35,6 +38,21 @@ public class AudioManager : MonoBehaviour
         bgmSource.priority = 128;
         bgmSource.volume = 1f;
         bgmSource.outputAudioMixerGroup = null;   // Mixer 非使用
+
+        // SE 用 AudioSource も常駐させる（PlayOneShot 用）
+        if (seSource == null)
+        {
+            seSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        seSource.playOnAwake = false;
+        seSource.loop = false;
+        seSource.spatialBlend = 0f;
+        seSource.mute = false;
+        seSource.dopplerLevel = 0f;
+        seSource.priority = 128;
+        seSource.volume = 1f;
+        seSource.outputAudioMixerGroup = null;
 
         Debug.Log($"AudioManager.Awake: bgmSource created; spatialBlend={bgmSource.spatialBlend}, mute={bgmSource.mute}, volume={bgmSource.volume}");
     }
@@ -89,6 +107,29 @@ public class AudioManager : MonoBehaviour
     {
         if (bgmSource == null) return;
         bgmSource.Stop();
+    }
+
+    public void PlaySE(AudioClip clip, float volume = 1f)
+    {
+        if (clip == null)
+        {
+            return;
+        }
+
+        if (seSource == null)
+        {
+            seSource = gameObject.AddComponent<AudioSource>();
+            seSource.playOnAwake = false;
+            seSource.loop = false;
+            seSource.spatialBlend = 0f;
+            seSource.mute = false;
+            seSource.dopplerLevel = 0f;
+            seSource.priority = 128;
+            seSource.volume = 1f;
+            seSource.outputAudioMixerGroup = null;
+        }
+
+        seSource.PlayOneShot(clip, Mathf.Clamp01(volume));
     }
 
     public bool IsPlaying()
