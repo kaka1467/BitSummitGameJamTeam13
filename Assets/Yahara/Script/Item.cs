@@ -68,9 +68,6 @@ public class Item : MonoBehaviour
                     if (!success && gm != null)
                     {
                         gm.AddTime(-Mathf.Abs(timeAmount));
-                        // QTE失敗時もダメージアニメーションを再生（AddTime内で呼ばれるが、
-                        // QTEはTime.timeScale=0中に終わるため念のためここでも呼ぶ）
-                        gm.TriggerDamageAnimation();
                     }
                 });
 
