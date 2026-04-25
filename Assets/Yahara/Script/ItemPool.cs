@@ -224,4 +224,48 @@ public class ItemPool : MonoBehaviour
             return null;
         }
     }
+
+    // 指定したプレハブに対応するアイテムを確実に取得するためのAPI
+    public GameObject GetFromPoolByPrefab(GameObject targetPrefab)
+    {
+        if (targetPrefab == null) return null;
+
+        if (validPrefabs.Count == 0)
+        {
+            RebuildPools();
+            if (validPrefabs.Count == 0) return null;
+        }
+
+        if (!validPrefabs.Contains(targetPrefab))
+        {
+            return null;
+        }
+
+        if (!TryGetPool(targetPrefab, out List<GameObject> pool)) return null;
+
+        foreach (GameObject obj in pool)
+        {
+            if (obj != null && !obj.activeInHierarchy)
+            {
+                ConfigureMagnet(obj, targetPrefab);
+                obj.SetActive(true);
+                return obj;
+            }
+        }
+
+        try
+        {
+            GameObject newObj = Instantiate(targetPrefab);
+            ConfigureMagnet(newObj, targetPrefab);
+            pool.Add(newObj);
+            newObj.SetActive(true);
+            return newObj;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"ItemPool.GetFromPoolByPrefab: failed to instantiate '{targetPrefab.name}'. {ex.Message}");
+            RemovePrefab(targetPrefab);
+            return null;
+        }
+    }
 }

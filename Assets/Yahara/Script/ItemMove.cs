@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class ItemMove : MonoBehaviour
 {
-    public float speed = 2f;
+    public float speed = 0.5f;
     [SerializeField]
     private float deleteOffsetFromLeft = 1f; // 画面左端からどれだけ外に出たら消すか
 

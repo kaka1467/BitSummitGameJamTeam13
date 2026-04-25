@@ -25,7 +25,14 @@ public class GameManager : MonoBehaviour
     bool isFeverMagnetActive = false;
     public bool IsFeverMagnetActive => isFeverMagnetActive;
 
-    public TextMeshProUGUI scoreText;
+    // --- Score: 1桁ずつ別のTextに表示 ---
+    // scoreText は削除し、6桁分の配列に置き換え。
+    // インスペクタで scoreDigitTexts[0] = 最上位桁、scoreDigitTexts[5] = 最下位桁 の順に設定してください。
+    [Header("Score Digits (最上位桁[0] → 最下位桁[5])")]
+    public TextMeshProUGUI[] scoreDigitTexts = new TextMeshProUGUI[6];
+
+    private const int SCORE_DIGITS = 6;
+
     public TextMeshProUGUI timeText;
     public TextMeshProUGUI feverText;
     public ChildUdpReceiver udpReceiver;
@@ -54,15 +61,40 @@ public class GameManager : MonoBehaviour
             GameOver();
         }
 
-        scoreText.text = score.ToString("000000");
+        UpdateScoreDigits();
 
         int minutes = (int)(time / 60);
         int seconds = (int)(time % 60);
-        timeText.text = string.Format("{0}:{1:00}", minutes, seconds);
+        timeText.text = string.Format("{0:00}:{1:00}", minutes, seconds);
 
         if (feverText != null)
         {
             feverText.text = string.Format("{0}/{1}", feverCount, feverNeeded);
+        }
+    }
+
+    /// <summary>
+    /// score を1桁ずつ分解して scoreDigitTexts の各要素に書き込む。
+    /// 上限は 999999。それを超えた場合は 999999 として表示する。
+    /// </summary>
+    private void UpdateScoreDigits()
+    {
+        if (scoreDigitTexts == null || scoreDigitTexts.Length == 0) return;
+
+        // 表示上限クランプ（6桁 = 999999）
+        int displayScore = Mathf.Clamp(score, 0, 999999);
+
+        // 最下位桁から順に取り出し、配列の末尾から埋める
+        int remaining = displayScore;
+        for (int i = SCORE_DIGITS - 1; i >= 0; i--)
+        {
+            int digit = remaining % 10;
+            remaining /= 10;
+
+            if (i < scoreDigitTexts.Length && scoreDigitTexts[i] != null)
+            {
+                scoreDigitTexts[i].text = digit.ToString();
+            }
         }
     }
 
@@ -132,7 +164,6 @@ public class GameManager : MonoBehaviour
 
         if (!string.IsNullOrEmpty(gameOverSceneName))
         {
-            // シーンをロード
             SceneManager.LoadScene(gameOverSceneName);
         }
     }
