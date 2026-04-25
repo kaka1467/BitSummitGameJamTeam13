@@ -62,6 +62,7 @@ public class ParentUdpSender : MonoBehaviour
     private Thread normalReceiveThread;
     private bool isRunning = true;
     private ConcurrentQueue<Action> actionQueue = new ConcurrentQueue<Action>();
+    private ConcurrentQueue<string> receiveQueue = new ConcurrentQueue<string>();
     private Coroutine heartbeatCoroutine;
     private float lastReceiveTime;
     private float pingInterval = 1.0f;
@@ -99,6 +100,19 @@ public class ParentUdpSender : MonoBehaviour
         while (actionQueue.TryDequeue(out Action action))
         {
             action();
+        }
+
+        while (receiveQueue.TryDequeue(out string message))
+        {
+            if (message == MAGIC_NUMBER + "PING")
+            {
+                lastReceiveTime = Time.time;
+            }
+            else if (message == MAGIC_NUMBER + "TIME_UP" || message == MAGIC_NUMBER + "CHILD_DEAD")
+            {
+                Debug.Log("Child game ended. Transitioning to Game Over...");
+                SceneManager.LoadScene("MotherGameOver");
+            }
         }
 
         if (currentState == ConnectionState.Connected)
@@ -202,10 +216,7 @@ public class ParentUdpSender : MonoBehaviour
                 byte[] data = normalReceiveClient.Receive(ref remoteEndPoint);
                 string message = Encoding.UTF8.GetString(data);
                 Debug.Log("Received normal: " + message + " from " + remoteEndPoint.Address);
-                if (message == MAGIC_NUMBER + "PING")
-                {
-                    lastReceiveTime = Time.time;
-                }
+                receiveQueue.Enqueue(message);
             }
             catch (Exception e)
             {

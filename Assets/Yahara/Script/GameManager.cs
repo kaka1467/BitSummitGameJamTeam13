@@ -25,6 +25,9 @@ public class GameManager : MonoBehaviour
     bool isFeverMagnetActive = false;
     public bool IsFeverMagnetActive => isFeverMagnetActive;
 
+    private Coroutine feverRoutine;
+    private float feverEndTime = -1f;
+
     // --- Score: 1桁ずつ別のTextに表示 ---
     // scoreText は削除し、6桁分の配列に置き換え。
     // インスペクタで scoreDigitTexts[0] = 最上位桁、scoreDigitTexts[5] = 最下位桁 の順に設定してください。
@@ -35,6 +38,7 @@ public class GameManager : MonoBehaviour
 
     public TextMeshProUGUI timeText;
     public TextMeshProUGUI feverText;
+    public ChildUdpReceiver udpReceiver;
 
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
@@ -102,49 +106,18 @@ public class GameManager : MonoBehaviour
         score += amount;
     }
 
-    public void AddFeverCount()
+    public void GameOver()
     {
         feverCount++;
         if (feverCount >= feverNeeded)
         {
             feverCount = 0;
-            StartCoroutine(ActivateFeverEffects());
+            ActivateFeverEffects();
         }
+        GameOver("TIME_UP");
     }
 
-    private IEnumerator ActivateFeverEffects()
-    {
-        AddScore(feverScoreBonus);
-
-        GameObject player = GameObject.FindWithTag("Player");
-        if (player != null)
-        {
-            PlayerBoost boost = player.GetComponent<PlayerBoost>() ?? player.GetComponentInParent<PlayerBoost>();
-            if (boost == null)
-            {
-                boost = player.AddComponent<PlayerBoost>();
-            }
-
-            boost.StartBoost(feverBoostDuration, feverBoostMultiplier);
-        }
-
-        isFeverMagnetActive = true;
-        float endTime = Time.time + feverBoostDuration;
-        while (Time.time < endTime)
-        {
-            yield return null;
-        }
-
-        isFeverMagnetActive = false;
-    }
-
-    public void AddTime(float amount)
-    {
-        time += amount;
-        if (time > maxTime) time = maxTime;
-    }
-
-    public void GameOver()
+    public void GameOver(string udpMessage)
     {
         if (isGameOver) return;
 
@@ -157,13 +130,57 @@ public class GameManager : MonoBehaviour
 
         // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
         Time.timeScale = 0f;
-        StartCoroutine(HandleGameOver());
+        StartCoroutine(HandleGameOver(udpMessage));
     }
 
-    private IEnumerator HandleGameOver()
+    private void ActivateFeverEffects()
     {
-        // 遷移前の待機は実時間で行う（Time.timeScale に影響されない）
-        yield return new WaitForSecondsRealtime(gameOverDelay);
+        AddScore(feverScoreBonus);
+
+        float duration = Mathf.Max(0f, feverBoostDuration);
+        float multiplier = Mathf.Max(1f, feverBoostMultiplier);
+
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player != null)
+        {
+            PlayerBoost boost = player.GetComponent<PlayerBoost>() ?? player.GetComponentInParent<PlayerBoost>();
+            if (boost == null)
+            {
+                boost = player.AddComponent<PlayerBoost>();
+            }
+
+            boost.StartBoost(duration, multiplier);
+        }
+
+        isFeverMagnetActive = true;
+        feverEndTime = Mathf.Max(feverEndTime, Time.time + duration);
+
+        if (feverRoutine == null)
+        {
+            feverRoutine = StartCoroutine(FeverEffectRoutine());
+        }
+    }
+
+    private IEnumerator FeverEffectRoutine()
+    {
+        while (Time.time < feverEndTime)
+        {
+            yield return null;
+        }
+
+        isFeverMagnetActive = false;
+        feverEndTime = -1f;
+        feverRoutine = null;
+    }
+
+    private IEnumerator HandleGameOver(string udpMessage)
+    {
+        if (udpReceiver != null)
+        {
+            udpReceiver.SendState(udpMessage);
+        }
+
+        yield return new WaitForSecondsRealtime(0.1f);
 
         // シーン遷移の前にタイムスケールを復帰させる
         Time.timeScale = 1f;
@@ -172,5 +189,21 @@ public class GameManager : MonoBehaviour
         {
             SceneManager.LoadScene(gameOverSceneName);
         }
+    }
+
+    public void AddFeverCount()
+    {
+        feverCount++;
+        if (feverCount >= feverNeeded)
+        {
+            feverCount = 0; // Reset fever count
+            ActivateFeverEffects();
+        }
+    }
+
+    public void AddTime(float amount)
+    {
+        time += amount;
+        if (time > maxTime) time = maxTime;
     }
 }

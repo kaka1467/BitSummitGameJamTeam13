@@ -287,7 +287,7 @@ MonoBehaviour:
   targetIP: 127.0.0.1
   currentState: 0
   lastMessage: 
-  gameSceneName: GameScene
+  gameSceneName: MinigameScene
   sleepingManager: {fileID: 0}
   connectButton: {fileID: 1745125928}
   statusText: {fileID: 2063278681}

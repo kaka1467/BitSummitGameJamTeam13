@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 /// <summary>
@@ -9,11 +10,22 @@ public class CaughtReactionController : MonoBehaviour
     public ParentDetection parentDetection;
     public DoorController doorController;
     public SleepingController sleepingController;
+    public ParentUdpSender udpSender;
 
     private bool hasHandledCaught = false;
     private bool caughtMode = false;
 
     public bool CaughtMode => caughtMode;
+
+    private IEnumerator GameOverRoutine()
+    {
+        if (udpSender != null)
+        {
+            udpSender.SendState("CAUGHT");
+        }
+        yield return new WaitForSeconds(0.1f);
+        SceneManager.LoadScene("MotherGameOver");
+    }
 
     void Update()
     {
@@ -33,8 +45,8 @@ public class CaughtReactionController : MonoBehaviour
             // Disable sleeping input
             if (sleepingController != null)
                 sleepingController.enabled = false;
-            SceneManager.LoadScene("MotherGameOver");
-
+            
+            StartCoroutine(GameOverRoutine());
         }
     }
 }

@@ -31,7 +31,7 @@ public class PlayerHealth : MonoBehaviour
 
         if (currentHP == 0)
         {
-            GameManager.instance.GameOver();
+            GameManager.instance.GameOver("CHILD_DEAD");
         }
     }
 

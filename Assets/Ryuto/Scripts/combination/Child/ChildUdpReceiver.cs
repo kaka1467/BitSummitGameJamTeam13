@@ -43,6 +43,19 @@ public class ChildUdpReceiver : MonoBehaviour
         currentState = ConnectionState.Disconnected;
     }
 
+    public void SendState(string message)
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
+            sendClient.Send(data, data.Length, targetIP, parentReceivePort);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Error sending UDP message: " + e.Message);
+        }
+    }
+
     private UdpClient udpClient;
     private UdpClient sendClient;
     private Thread receiveThread;

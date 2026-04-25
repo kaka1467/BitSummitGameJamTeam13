@@ -11,7 +11,11 @@ public class QTEManager : MonoBehaviour
     public static event Action<bool> HugeQteFinished;
 
     [SerializeField] private TextMeshProUGUI qteText;
+    
+    [Header("QTEの文字数の設定")] 
     [SerializeField] private int sequenceLength = 7;
+    
+    [Header("QTEの時間設定")]
     [SerializeField] private float timeLimitSeconds = 5f;
     [SerializeField] private Color enteredColor = Color.green;
     [SerializeField] private Color remainingColor = Color.white;

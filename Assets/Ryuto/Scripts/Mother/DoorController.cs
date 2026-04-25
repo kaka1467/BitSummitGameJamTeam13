@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class DoorController : MonoBehaviour
 {
@@ -52,7 +53,7 @@ public class DoorController : MonoBehaviour
     void Update()
     {
         // Check for manual door toggle (E key)
-        if (Input.GetKeyDown(doorToggleKey))
+        if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
         {
             isDoorOpen = !isDoorOpen; // Toggle door state
         }
@@ -67,7 +68,7 @@ public class DoorController : MonoBehaviour
                 ScheduleNextParentVisit();
             }
         }
-        else if (Input.GetKeyDown(parentToggleKey))
+        else if (Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
         {
             ToggleParentPresence();
         }
