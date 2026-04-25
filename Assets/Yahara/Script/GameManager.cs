@@ -38,6 +38,7 @@ public class GameManager : MonoBehaviour
 
     public TextMeshProUGUI timeText;
     public TextMeshProUGUI feverText;
+    public ChildUdpReceiver udpReceiver;
 
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
@@ -105,7 +106,7 @@ public class GameManager : MonoBehaviour
         score += amount;
     }
 
-    public void AddFeverCount()
+    public void GameOver()
     {
         feverCount++;
         if (feverCount >= feverNeeded)
@@ -113,6 +114,23 @@ public class GameManager : MonoBehaviour
             feverCount = 0;
             ActivateFeverEffects();
         }
+        GameOver("TIME_UP");
+    }
+
+    public void GameOver(string udpMessage)
+    {
+        if (isGameOver) return;
+
+        isGameOver = true;
+
+        // リザルト用にスコアを保存
+        PlayerPrefs.SetInt("ResultScore", score);
+        PlayerPrefs.SetInt("ResultScorePending", 1);
+        PlayerPrefs.Save();
+
+        // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
+        Time.timeScale = 0f;
+        StartCoroutine(HandleGameOver(udpMessage));
     }
 
     private void ActivateFeverEffects()
@@ -155,52 +173,14 @@ public class GameManager : MonoBehaviour
         feverRoutine = null;
     }
 
-    public void AddTime(float amount)
+    private IEnumerator HandleGameOver(string udpMessage)
     {
-        time += amount;
-        if (time > maxTime) time = maxTime;
-
-        // タイマー減少時にダメージアニメーションを再生
-        if (amount < 0f)
+        if (udpReceiver != null)
         {
-            TriggerDamageAnimation();
+            udpReceiver.SendState(udpMessage);
         }
-    }
 
-    /// <summary>
-    /// プレイヤーの PlayerAnimator を取得して PlayDamage() を呼び出す。
-    /// GameManager・Item どちらからでも使えるよう public にしている。
-    /// </summary>
-    public void TriggerDamageAnimation()
-    {
-        GameObject player = GameObject.FindWithTag("Player");
-        if (player == null) return;
-
-        PlayerAnimator animator = player.GetComponent<PlayerAnimator>()
-            ?? player.GetComponentInChildren<PlayerAnimator>();
-        animator?.PlayDamage();
-    }
-
-    public void GameOver()
-    {
-        if (isGameOver) return;
-
-        isGameOver = true;
-
-        // リザルト用にスコアを保存
-        PlayerPrefs.SetInt("ResultScore", score);
-        PlayerPrefs.SetInt("ResultScorePending", 1);
-        PlayerPrefs.Save();
-
-        // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
-        Time.timeScale = 0f;
-        StartCoroutine(HandleGameOver());
-    }
-
-    private IEnumerator HandleGameOver()
-    {
-        // 遷移前の待機は実時間で行う（Time.timeScale に影響されない）
-        yield return new WaitForSecondsRealtime(gameOverDelay);
+        yield return new WaitForSecondsRealtime(0.1f);
 
         // シーン遷移の前にタイムスケールを復帰させる
         Time.timeScale = 1f;
@@ -209,5 +189,21 @@ public class GameManager : MonoBehaviour
         {
             SceneManager.LoadScene(gameOverSceneName);
         }
+    }
+
+    public void AddFeverCount()
+    {
+        feverCount++;
+        if (feverCount >= feverNeeded)
+        {
+            feverCount = 0; // Reset fever count
+            StartCoroutine(ActivateFeverEffects());
+        }
+    }
+
+    public void AddTime(float amount)
+    {
+        time += amount;
+        if (time > maxTime) time = maxTime;
     }
 }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 public class MotherGauge : MonoBehaviour
@@ -38,11 +39,11 @@ public class MotherGauge : MonoBehaviour
 
     private void HandleInput()
     {
-        if (Input.GetKey(KeyCode.RightArrow))
+        if (Keyboard.current != null && Keyboard.current.rightArrowKey.isPressed)
         {
             AddGauge(gaugeStep);
         }
-        if (Input.GetKey(KeyCode.LeftArrow))
+        if (Keyboard.current != null && Keyboard.current.leftArrowKey.isPressed)
         {
             AddGauge(-gaugeStep);
         }

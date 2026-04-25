@@ -444,7 +444,7 @@ MonoBehaviour:
   targetIP: 127.0.0.1
   currentState: 0
   lastMessage: 
-  gameSceneName: GameScene
+  gameSceneName: Minigame Scene
   sleepingManager: {fileID: 508756885}
   connectButton: {fileID: 0}
   statusText: {fileID: 0}
@@ -3254,6 +3254,7 @@ MonoBehaviour:
   - {fileID: 407332927}
   timeText: {fileID: 1365839925}
   feverText: {fileID: 890242297}
+  udpReceiver: {fileID: 243933951}
 --- !u!4 &1949956397
 Transform:
   m_ObjectHideFlags: 0
