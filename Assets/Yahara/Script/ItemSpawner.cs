@@ -42,7 +42,7 @@ public class ItemSpawner : MonoBehaviour
     [SerializeField, Min(0f)] private float overlapAvoidanceXStep = 0.8f;
     [SerializeField, Min(1)] private int maxPlacementAttempts = 8;
 
-    // ★ 追加: 配置失敗時のリトライ間隔と最大リトライ回数
+    //  追加: 配置失敗時のリトライ間隔と最大リトライ回数
     [SerializeField, Min(0f)] private float retryInterval = 0.15f;
     [SerializeField, Min(1)] private int maxRetryCount = 20;
 
@@ -52,7 +52,7 @@ public class ItemSpawner : MonoBehaviour
         public GameObject prefab;
         public float spawnTime;
         public float visibleByTime;
-        public int retryCount;      // ★ 追加: リトライ回数
+        public int retryCount;      // リトライ回数
     }
 
     [Serializable]
@@ -80,7 +80,7 @@ public class ItemSpawner : MonoBehaviour
     // ★ 追加: 同一Update内で仮登録した配置済み位置（フレーム終わりにクリア）
     private readonly List<RecentSpawnRecord> pendingFrameRecords = new List<RecentSpawnRecord>();
 
-    private const float SpawnZ = 621.66f;
+    private const float SpawnZ = 609.47f;
 
     void Start()
     {
