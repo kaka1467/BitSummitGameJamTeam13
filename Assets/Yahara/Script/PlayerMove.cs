@@ -5,7 +5,7 @@ public class PlayerMove : MonoBehaviour
 {
     int lane = 1;
 
-    float[] laneY = { 0.16f, -0.03f, -0.22f };
+    float[] laneY = { 0.41f, -0.08f, -0.56f };
 
     public float moveSpeed = 5f;
     public float horizontalMoveSpeed = 5f;
@@ -79,7 +79,7 @@ public class PlayerMove : MonoBehaviour
         }
 
         pos.y = Mathf.Lerp(pos.y, laneY[lane], Time.deltaTime * moveSpeed * speedMultiplier);
-        pos.z = 621.66f; // Z座標を固定（元のZ値に合わせる）
+        pos.z = 609.47f; 
         transform.position = pos;
     }
 }
