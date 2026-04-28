@@ -1,5 +1,6 @@
 // AudioManager: シーンを跨いでBGMを管理するシンプルなシングルトン
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class AudioManager : MonoBehaviour
 {
@@ -55,6 +56,21 @@ public class AudioManager : MonoBehaviour
         seSource.outputAudioMixerGroup = null;
 
         Debug.Log($"AudioManager.Awake: bgmSource created; spatialBlend={bgmSource.spatialBlend}, mute={bgmSource.mute}, volume={bgmSource.volume}");
+    }
+
+    void OnEnable()
+    {
+        SceneManager.sceneLoaded += HandleSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        SceneManager.sceneLoaded -= HandleSceneLoaded;
+    }
+
+    private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        StopBGM();
     }
 
     public void PlayBGM(AudioClip clip, bool loop = true, float volume = 1f)
