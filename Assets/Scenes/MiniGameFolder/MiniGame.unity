@@ -3170,7 +3170,7 @@ MonoBehaviour:
   gameOverSceneName: ResultRanking
   gameOverDelay: 0
   score: 0
-  time: 180
+  time: 10
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
