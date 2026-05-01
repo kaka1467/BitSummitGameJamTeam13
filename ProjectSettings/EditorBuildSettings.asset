@@ -33,9 +33,6 @@ EditorBuildSettings:
     path: Assets/Scenes/MiniGameFolder/ResultRanking.unity
     guid: 77e0e86c989d242ce9ed3e892dd38707
   - enabled: 1
-    path: Assets/Scenes/MiniGameFolder/ResultRanking 1.unity
-    guid: e651ee8580ef64c65bb6093f557ce5ee
-  - enabled: 1
     path: Assets/Scenes/MotherGame/MotherResultRanking.unity
     guid: d5f1413c460a84e3d9ad0d073dd137ca
   - enabled: 1
