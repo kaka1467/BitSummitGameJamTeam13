@@ -68,6 +68,8 @@ public class ItemSpawner : MonoBehaviour
     [SerializeField]
     private float spawnOffsetFromRight = 0.75f;
 
+    [SerializeField]
+    [Tooltip("各レーンのY座標 [上レーン, 中レーン, 下レーン]")]
     public float[] lanesY;
     [UnityEngine.SerializeField] private float hugeInitialDelay = 30f;
     [UnityEngine.SerializeField] private float hugeCooldownAfterQte = 20f;

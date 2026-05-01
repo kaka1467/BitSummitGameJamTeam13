@@ -5,7 +5,9 @@ public class PlayerMove : MonoBehaviour
 {
     int lane = 1;
 
-    float[] laneY = { 0.41f, -0.08f, -0.56f };
+    [SerializeField]
+    [Tooltip("各レーンのY座標 [上レーン, 中レーン, 下レーン]")]
+    private float[] laneY = { 0.41f, -0.08f, -0.56f };
 
     public float moveSpeed = 5f;
     public float horizontalMoveSpeed = 5f;
