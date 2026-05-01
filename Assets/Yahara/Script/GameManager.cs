@@ -21,7 +21,8 @@ public class GameManager : MonoBehaviour
     public int feverScoreBonus = 30;
     public float feverBoostDuration = 8f;
     public float feverBoostMultiplier = 1.5f;
-
+    public FeverLoopEffect feverLoopEffect;
+    public FeverLoopEffect feverLoopEffect2;
     bool isFeverMagnetActive = false;
     public bool IsFeverMagnetActive => isFeverMagnetActive;
 
@@ -46,6 +47,16 @@ public class GameManager : MonoBehaviour
     void Awake()
     {
         instance = this;
+
+        if (feverLoopEffect != null)
+        {
+            feverLoopEffect.StopEffect();
+        }
+
+        if (feverLoopEffect2 != null)
+        {
+            feverLoopEffect2.StopEffect();
+        }
     }
 
     void Update()
@@ -155,6 +166,16 @@ public class GameManager : MonoBehaviour
         isFeverMagnetActive = true;
         feverEndTime = Mathf.Max(feverEndTime, Time.time + duration);
 
+        if (feverLoopEffect != null)
+        {
+            feverLoopEffect.StartEffect();
+        }
+
+        if (feverLoopEffect2 != null)
+        {
+            feverLoopEffect2.StartEffect();
+        }
+
         if (feverRoutine == null)
         {
             feverRoutine = StartCoroutine(FeverEffectRoutine());
@@ -171,6 +192,16 @@ public class GameManager : MonoBehaviour
         isFeverMagnetActive = false;
         feverEndTime = -1f;
         feverRoutine = null;
+
+        if (feverLoopEffect != null)
+        {
+            feverLoopEffect.StopEffect();
+        }
+
+        if (feverLoopEffect2 != null)
+        {
+            feverLoopEffect2.StopEffect();
+        }
     }
 
     private IEnumerator HandleGameOver(string udpMessage)
