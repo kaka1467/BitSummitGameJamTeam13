@@ -63,11 +63,7 @@ public class GameManager : MonoBehaviour
     {
         if (isGameOver) return;
 
-        float deltaTime = (QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
-            ? Time.unscaledDeltaTime
-            : Time.deltaTime;
-
-        time -= deltaTime;
+        time -= Time.deltaTime;
 
         if (time <= 0f)
         {

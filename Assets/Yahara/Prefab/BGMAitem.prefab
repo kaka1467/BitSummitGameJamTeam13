@@ -50,7 +50,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Item
   itemType: 5
   scoreAmount: 0
-  timeAmount: 0
+  timeAmount: 10
   boostDuration: 0
   boostMultiplier: 0
   isMagnetable: 0
