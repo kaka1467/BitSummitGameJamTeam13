@@ -32,6 +32,9 @@ public class ItemSpawner : MonoBehaviour
         new NormalSpawnRule()
     };
 
+    [Header("Spawn Control")]
+    [SerializeField] private bool spawnEnabled = true;
+
     [Header("HugeObstacle")]
     [SerializeField, Min(0)] private int hugeObstacleSpawnCount = 1;
 
@@ -84,6 +87,12 @@ public class ItemSpawner : MonoBehaviour
 
     private const float SpawnZ = 609.47f;
 
+    public bool SpawnEnabled
+    {
+        get => spawnEnabled;
+        set => spawnEnabled = value;
+    }
+
     void Start()
     {
         ValidateAndNormalizeSettings();
@@ -119,6 +128,8 @@ public class ItemSpawner : MonoBehaviour
 
     private void Update()
     {
+        if (!spawnEnabled) return;
+
         // ★ フレーム先頭で仮レコードをクリア
         pendingFrameRecords.Clear();
 
@@ -132,6 +143,78 @@ public class ItemSpawner : MonoBehaviour
             SpawnHugeObstacle();
             isHugeSpawnScheduled = false;
         }
+    }
+
+    public void RestartSchedule()
+    {
+        ValidateAndNormalizeSettings();
+        BuildNormalSpawnSchedule();
+        nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
+        isHugeSpawnScheduled = true;
+    }
+
+    public bool TrySpawnByPrefab(GameObject prefab, out GameObject spawnedItem, bool preferHugeLane = false)
+    {
+        spawnedItem = null;
+
+        if (ItemPool.Instance == null || prefab == null) return false;
+
+        if (!spawnEnabled)
+        {
+            pendingFrameRecords.Clear();
+        }
+
+        GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
+        if (item == null) return false;
+
+        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane))
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        spawnedItem = item;
+        return true;
+    }
+
+    public bool TrySpawnRandomNormal(out GameObject spawnedItem)
+    {
+        spawnedItem = null;
+        List<GameObject> prefabs = GetNormalPrefabsFromItemPool();
+        if (prefabs == null || prefabs.Count == 0) return false;
+
+        GameObject prefab = prefabs[UnityEngine.Random.Range(0, prefabs.Count)];
+        return TrySpawnByPrefab(prefab, out spawnedItem, false);
+    }
+
+    public bool TrySpawnHugeObstacle(out GameObject spawnedItem)
+    {
+        spawnedItem = null;
+
+        if (ItemPool.Instance == null) return false;
+
+        if (!spawnEnabled)
+        {
+            pendingFrameRecords.Clear();
+        }
+        GameObject item = ItemPool.Instance.GetFromPoolByItemType(ItemType.HugeObstacle);
+        if (item == null) return false;
+
+        Item itemComp = item.GetComponent<Item>();
+        if (itemComp == null || itemComp.itemType != ItemType.HugeObstacle)
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane: true))
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        spawnedItem = item;
+        return true;
     }
 
     private void ValidateAndNormalizeSettings()
