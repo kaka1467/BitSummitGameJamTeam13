@@ -3387,8 +3387,6 @@ MonoBehaviour:
       count: 1
     - prefab: {fileID: 8010092503364828236, guid: 3015bb1018b73f841a8134e083d36d07, type: 3}
       count: 1
-    - prefab: {fileID: 8010092503364828236, guid: df5b7cc762578884daab394c04eef1c6, type: 3}
-      count: 1
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 1
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -3404,8 +3402,6 @@ MonoBehaviour:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
       count: 0
     - prefab: {fileID: 8010092503364828236, guid: 3015bb1018b73f841a8134e083d36d07, type: 3}
-      count: 0
-    - prefab: {fileID: 8010092503364828236, guid: df5b7cc762578884daab394c04eef1c6, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 0
@@ -3428,8 +3424,8 @@ MonoBehaviour:
   - 0.202
   - -0.19
   - -0.574
-  hugeInitialDelay: 30
-  hugeCooldownAfterQte: 25
+  hugeInitialDelay: 60
+  hugeCooldownAfterQte: 30
 --- !u!4 &1639938499
 Transform:
   m_ObjectHideFlags: 0
@@ -4210,7 +4206,7 @@ MonoBehaviour:
   gameOverSceneName: ResultRanking
   gameOverDelay: 0
   score: 0
-  time: 10
+  time: 180
   maxTime: 180
   feverCount: 0
   feverNeeded: 5

@@ -40,6 +40,19 @@ public class ItemEditor : Editor
 
         ItemType itemType = (ItemType)itemTypeProp.enumValueIndex;
 
+        EditorGUILayout.LabelField("Time Settings", EditorStyles.boldLabel);
+        if (itemType == ItemType.HugeObstacle)
+        {
+            EditorGUILayout.HelpBox("HugeObstacle は QTE 失敗時に timeAmount 分の時間が減少します。", MessageType.Info);
+            EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Penalty"));
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("timeAmount は取得時にそのまま加算されます。正で時間増加、負で時間減少です。", MessageType.Info);
+            EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Amount"));
+        }
+        EditorGUILayout.Space(4f);
+
         switch (itemType)
         {
             // case ItemType.Carrot:
@@ -49,9 +62,6 @@ public class ItemEditor : Editor
                 break;
 
             case ItemType.Clock:
-                EditorGUILayout.LabelField("Time Settings", EditorStyles.boldLabel);
-                EditorGUILayout.HelpBox("Clock は timeAmount の符号をそのまま適用します。正で時間増加、負で時間減少です。", MessageType.Info);
-                EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Amount"));
                 break;
 
             // case ItemType.Enemy:
@@ -61,9 +71,6 @@ public class ItemEditor : Editor
             //     break;
 
             case ItemType.HugeObstacle:
-                EditorGUILayout.LabelField("QTE Penalty Settings", EditorStyles.boldLabel);
-                EditorGUILayout.HelpBox("QTE 失敗時に timeAmount の分の時間が減少します。", MessageType.Info);
-                EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Penalty"));
                 break;
 
             case ItemType.Boost:

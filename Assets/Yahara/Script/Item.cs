@@ -32,6 +32,8 @@ public class Item : MonoBehaviour
 
         TryPlayItemSE();
 
+        bool applyTimeOnCollect = itemType != ItemType.HugeObstacle;
+
         switch (itemType)
         {
             case ItemType.Score:
@@ -43,7 +45,6 @@ public class Item : MonoBehaviour
             //     break;
 
             case ItemType.Clock:
-                if (gm != null) gm.AddTime(timeAmount);
                 break;
 
             case ItemType.Boost:
@@ -81,6 +82,7 @@ public class Item : MonoBehaviour
                 {
                     gm.AddTime(-Mathf.Abs(timeAmount));
                 }
+                applyTimeOnCollect = false;
                 break;
 
             case ItemType.Fever:
@@ -114,6 +116,11 @@ public class Item : MonoBehaviour
                 Debug.Log($"Item.ApplyEffect: Calling PlayBGM for clip '{bgmClip.name}' (loop={loopBgm}, vol={vol})");
                 AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
                 break;
+        }
+
+        if (applyTimeOnCollect && gm != null && !Mathf.Approximately(timeAmount, 0f))
+        {
+            gm.AddTime(timeAmount);
         }
     }
 
