@@ -26,10 +26,14 @@ public class ItemSpawner : MonoBehaviour
     }
 
     [Header("Normal Spawn Rules")]
-    [SerializeField] private List<NormalSpawnRule> normalSpawnRules = new List<NormalSpawnRule>
+    [SerializeField]
+    private List<NormalSpawnRule> normalSpawnRules = new List<NormalSpawnRule>
     {
         new NormalSpawnRule()
     };
+
+    [Header("Spawn Control")]
+    [SerializeField] private bool spawnEnabled = true;
 
     [Header("HugeObstacle")]
     [SerializeField, Min(0)] private int hugeObstacleSpawnCount = 1;
@@ -37,9 +41,13 @@ public class ItemSpawner : MonoBehaviour
     [Header("Overlap Avoidance")]
     [SerializeField, Min(0f)] private float minSpawnDistanceX = 1.2f;
     [SerializeField, Min(0f)] private float minSpawnDistanceY = 0.6f;
-    [SerializeField, Min(0f)] private float recentSpawnWindow = 0.6f;
+    [SerializeField, Min(0f)] private float recentSpawnWindow = 2.0f;   // ★ 0.6→2.0: レコード保持時間を延長
     [SerializeField, Min(0f)] private float overlapAvoidanceXStep = 0.8f;
     [SerializeField, Min(1)] private int maxPlacementAttempts = 8;
+
+    //  追加: 配置失敗時のリトライ間隔と最大リトライ回数
+    [SerializeField, Min(0f)] private float retryInterval = 0.15f;
+    [SerializeField, Min(1)] private int maxRetryCount = 20;
 
     [Serializable]
     private class ScheduledNormalSpawn
@@ -47,6 +55,7 @@ public class ItemSpawner : MonoBehaviour
         public GameObject prefab;
         public float spawnTime;
         public float visibleByTime;
+        public int retryCount;      // リトライ回数
     }
 
     [Serializable]
@@ -62,24 +71,33 @@ public class ItemSpawner : MonoBehaviour
     [SerializeField]
     private float spawnOffsetFromRight = 0.75f;
 
+    [SerializeField]
+    [Tooltip("各レーンのY座標 [上レーン, 中レーン, 下レーン]")]
     public float[] lanesY;
-    [UnityEngine.SerializeField] private float hugeInitialDelay = 30f; // ゲーム開始後、この秒数まではHugeは出さない
-    [UnityEngine.SerializeField] private float hugeCooldownAfterQte = 20f; // QTEクリア後のHugeスポーン猶予
+    [UnityEngine.SerializeField] private float hugeInitialDelay = 30f;
+    [UnityEngine.SerializeField] private float hugeCooldownAfterQte = 20f;
 
-    // HugeObstacle 用の次回スポーン時刻（実時間ベース：QTE中も進む）
     private float nextHugeSpawnTime = -1f;
     private bool isHugeSpawnScheduled = false;
     private readonly List<ScheduledNormalSpawn> scheduledNormalSpawns = new List<ScheduledNormalSpawn>();
     private readonly List<RecentSpawnRecord> recentSpawnRecords = new List<RecentSpawnRecord>();
 
-    private const float SpawnZ = 621.66f;
+    // ★ 追加: 同一Update内で仮登録した配置済み位置（フレーム終わりにクリア）
+    private readonly List<RecentSpawnRecord> pendingFrameRecords = new List<RecentSpawnRecord>();
+
+    private const float SpawnZ = 609.47f;
+
+    public bool SpawnEnabled
+    {
+        get => spawnEnabled;
+        set => spawnEnabled = value;
+    }
 
     void Start()
     {
         ValidateAndNormalizeSettings();
         BuildNormalSpawnSchedule();
 
-        // 初回のHugeObstacleをゲーム開始から hugeInitialDelay 秒後にスポーンするよう予約（実時間）
         nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
         isHugeSpawnScheduled = true;
     }
@@ -103,7 +121,6 @@ public class ItemSpawner : MonoBehaviour
     {
         if (success)
         {
-            // QTE成功時から hugeCooldownAfterQte 秒後に次のHugeObstacleをスポーンするよう予約（実時間）
             nextHugeSpawnTime = Time.unscaledTime + hugeCooldownAfterQte;
             isHugeSpawnScheduled = true;
         }
@@ -111,9 +128,13 @@ public class ItemSpawner : MonoBehaviour
 
     private void Update()
     {
+        if (!spawnEnabled) return;
+
+        // ★ フレーム先頭で仮レコードをクリア
+        pendingFrameRecords.Clear();
+
         HandleScheduledNormalSpawns();
 
-        // HugeObstacle 専用のスポーンタイマー処理（ゲーム時間ベース）
         if (!isHugeSpawnScheduled)
             return;
 
@@ -124,6 +145,78 @@ public class ItemSpawner : MonoBehaviour
         }
     }
 
+    public void RestartSchedule()
+    {
+        ValidateAndNormalizeSettings();
+        BuildNormalSpawnSchedule();
+        nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
+        isHugeSpawnScheduled = true;
+    }
+
+    public bool TrySpawnByPrefab(GameObject prefab, out GameObject spawnedItem, bool preferHugeLane = false)
+    {
+        spawnedItem = null;
+
+        if (ItemPool.Instance == null || prefab == null) return false;
+
+        if (!spawnEnabled)
+        {
+            pendingFrameRecords.Clear();
+        }
+
+        GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
+        if (item == null) return false;
+
+        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane))
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        spawnedItem = item;
+        return true;
+    }
+
+    public bool TrySpawnRandomNormal(out GameObject spawnedItem)
+    {
+        spawnedItem = null;
+        List<GameObject> prefabs = GetNormalPrefabsFromItemPool();
+        if (prefabs == null || prefabs.Count == 0) return false;
+
+        GameObject prefab = prefabs[UnityEngine.Random.Range(0, prefabs.Count)];
+        return TrySpawnByPrefab(prefab, out spawnedItem, false);
+    }
+
+    public bool TrySpawnHugeObstacle(out GameObject spawnedItem)
+    {
+        spawnedItem = null;
+
+        if (ItemPool.Instance == null) return false;
+
+        if (!spawnEnabled)
+        {
+            pendingFrameRecords.Clear();
+        }
+        GameObject item = ItemPool.Instance.GetFromPoolByItemType(ItemType.HugeObstacle);
+        if (item == null) return false;
+
+        Item itemComp = item.GetComponent<Item>();
+        if (itemComp == null || itemComp.itemType != ItemType.HugeObstacle)
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane: true))
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        spawnedItem = item;
+        return true;
+    }
+
     private void ValidateAndNormalizeSettings()
     {
         hugeObstacleSpawnCount = Mathf.Max(0, hugeObstacleSpawnCount);
@@ -132,6 +225,8 @@ public class ItemSpawner : MonoBehaviour
         recentSpawnWindow = Mathf.Max(0f, recentSpawnWindow);
         overlapAvoidanceXStep = Mathf.Max(0f, overlapAvoidanceXStep);
         maxPlacementAttempts = Mathf.Max(1, maxPlacementAttempts);
+        retryInterval = Mathf.Max(0f, retryInterval);
+        maxRetryCount = Mathf.Max(1, maxRetryCount);
 
         if (normalSpawnRules == null)
         {
@@ -198,7 +293,6 @@ public class ItemSpawner : MonoBehaviour
                     Item item = entry.prefab.GetComponent<Item>();
                     if (item != null && item.itemType == ItemType.HugeObstacle)
                     {
-                        // HugeObstacle は専用タイマーで管理するため通常ルールには含めない
                         rule.prefabSpawnCounts.RemoveAt(i);
                         continue;
                     }
@@ -214,13 +308,35 @@ public class ItemSpawner : MonoBehaviour
         if (scheduledNormalSpawns.Count == 0) return;
 
         float now = Time.unscaledTime;
+
+        // ★ 修正: リトライも含めて処理するため、逆順ループで安全に削除
         for (int i = scheduledNormalSpawns.Count - 1; i >= 0; i--)
         {
             var scheduled = scheduledNormalSpawns[i];
             if (scheduled == null || now < scheduled.spawnTime) continue;
 
-            SpawnItemByPrefab(scheduled.prefab, scheduled.visibleByTime);
-            scheduledNormalSpawns.RemoveAt(i);
+            bool placed = SpawnItemByPrefab(scheduled.prefab, scheduled.visibleByTime);
+
+            if (placed)
+            {
+                // 配置成功 → キューから削除
+                scheduledNormalSpawns.RemoveAt(i);
+            }
+            else
+            {
+                // ★ 配置失敗 → リトライ上限未満なら再スケジュール、超えたら諦めて削除
+                scheduled.retryCount++;
+                if (scheduled.retryCount >= maxRetryCount)
+                {
+                    Debug.LogWarning($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
+                    scheduledNormalSpawns.RemoveAt(i);
+                }
+                else
+                {
+                    // 少し後に再試行
+                    scheduled.spawnTime = now + retryInterval;
+                }
+            }
         }
     }
 
@@ -266,9 +382,9 @@ public class ItemSpawner : MonoBehaviour
                 scheduledNormalSpawns.Add(new ScheduledNormalSpawn
                 {
                     prefab = entry.prefab,
-                    // 指定時間帯は「画面内に入る時刻」として扱う
                     spawnTime = Mathf.Max(0f, visibleTime - leadTime),
-                    visibleByTime = visibleTime
+                    visibleByTime = visibleTime,
+                    retryCount = 0  // ★
                 });
             }
         }
@@ -307,19 +423,20 @@ public class ItemSpawner : MonoBehaviour
         return result;
     }
 
-    private void SpawnItemByPrefab(GameObject prefab, float visibleByTime)
+    // ★ 戻り値を bool に変更: 配置成功なら true
+    private bool SpawnItemByPrefab(GameObject prefab, float visibleByTime)
     {
-        if (ItemPool.Instance == null) return;
-        if (prefab == null) return;
+        if (ItemPool.Instance == null) return false;
+        if (prefab == null) return false;
 
         GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
-        if (item == null) return;
+        if (item == null) return false;
 
         Item itemComp = item.GetComponent<Item>();
         if (itemComp == null)
         {
             ItemPool.Instance.ReturnToPool(item);
-            return;
+            return false;
         }
 
         var gm = GameManager.instance;
@@ -328,16 +445,24 @@ public class ItemSpawner : MonoBehaviour
         if (feverActive && !itemComp.isMagnetable)
         {
             ItemPool.Instance.ReturnToPool(item);
-            return;
+            // フィーバー中のスキップは「失敗」ではなく正常終了 → true で除去
+            return true;
         }
 
         float maxExtraX = GetAllowedExtraXForVisibleDeadline(prefab, visibleByTime, Time.unscaledTime);
-        PlaceItemWithoutOverlap(item, preferHugeLane: false, maxExtraX);
+        if (TryPlaceItemWithoutOverlap(item, preferHugeLane: false, maxExtraX))
+        {
+            return true;
+        }
+
+        // ★ 配置失敗時はプールに戻してリトライを促す
+        ItemPool.Instance.ReturnToPool(item);
+        return false;
     }
 
-    private void PlaceItemWithoutOverlap(GameObject item, bool preferHugeLane, float maxExtraX = float.PositiveInfinity)
+    private bool TryPlaceItemWithoutOverlap(GameObject item, bool preferHugeLane, float maxExtraX = float.PositiveInfinity)
     {
-        if (item == null) return;
+        if (item == null) return false;
 
         float baseSpawnX = GetSpawnXWorld();
         float now = Time.unscaledTime;
@@ -359,21 +484,13 @@ public class ItemSpawner : MonoBehaviour
             {
                 item.transform.position = candidate;
                 RegisterRecentSpawn(item, candidate, now);
-                return;
+                // ★ 同フレーム内の他アイテムからも見えるよう仮レコードにも登録
+                RegisterPendingFrameRecord(item, candidate, now);
+                return true;
             }
         }
 
-        float fallbackExtraX = overlapAvoidanceXStep * maxPlacementAttempts;
-        if (!float.IsPositiveInfinity(clampedMaxExtraX))
-        {
-            fallbackExtraX = Mathf.Min(fallbackExtraX, clampedMaxExtraX);
-        }
-
-        float fallbackX = baseSpawnX + fallbackExtraX;
-        float fallbackY = preferHugeLane ? GetHugeLaneY() : GetRandomLaneY();
-        Vector3 fallback = new Vector3(fallbackX, fallbackY, SpawnZ);
-        item.transform.position = fallback;
-        RegisterRecentSpawn(item, fallback, now);
+        return false;
     }
 
     private float GetAllowedExtraXForVisibleDeadline(GameObject prefab, float visibleByTime, float now)
@@ -440,6 +557,7 @@ public class ItemSpawner : MonoBehaviour
         PruneRecentSpawns(now);
         Vector2 spawningHalf = GetApproxHalfSize(spawningItem);
 
+        // ① 最近スポーン記録との重なり判定
         foreach (var record in recentSpawnRecords)
         {
             if (record == null) continue;
@@ -454,6 +572,23 @@ public class ItemSpawner : MonoBehaviour
             }
         }
 
+        // ★ ② 同フレーム内の仮登録レコードとの重なり判定（FindObjectsByType を廃止）
+        foreach (var record in pendingFrameRecords)
+        {
+            if (record == null) continue;
+
+            float requiredX = Mathf.Max(minSpawnDistanceX, spawningHalf.x + record.halfSizeX);
+            float requiredY = Mathf.Max(minSpawnDistanceY, spawningHalf.y + record.halfSizeY);
+
+            if (Mathf.Abs(record.position.x - candidate.x) < requiredX &&
+                Mathf.Abs(record.position.y - candidate.y) < requiredY)
+            {
+                return true;
+            }
+        }
+
+        // ③ 実際にアクティブなアイテムとの重なり判定
+        //    ★ FindObjectsByType は重いので、ItemPool 管理外の既存アイテムだけを対象にする
         Item[] activeItems = FindObjectsByType<Item>(FindObjectsSortMode.None);
         foreach (var activeItem in activeItems)
         {
@@ -493,6 +628,19 @@ public class ItemSpawner : MonoBehaviour
     {
         Vector2 half = GetApproxHalfSize(spawnedItem);
         recentSpawnRecords.Add(new RecentSpawnRecord
+        {
+            position = position,
+            time = now,
+            halfSizeX = half.x,
+            halfSizeY = half.y
+        });
+    }
+
+    // ★ 追加: 同フレーム内の仮配置レコードを登録
+    private void RegisterPendingFrameRecord(GameObject spawnedItem, Vector3 position, float now)
+    {
+        Vector2 half = GetApproxHalfSize(spawnedItem);
+        pendingFrameRecords.Add(new RecentSpawnRecord
         {
             position = position,
             time = now,
@@ -554,7 +702,6 @@ public class ItemSpawner : MonoBehaviour
         }
         else
         {
-            // カメラが取得できない場合のフォールバック
             rightEdgeX = 11.25f;
         }
 
@@ -576,7 +723,6 @@ public class ItemSpawner : MonoBehaviour
     {
         if (ItemPool.Instance == null) return;
 
-        // HugeObstacle 専用に、対応するアイテムだけを確実に取得
         GameObject item = ItemPool.Instance.GetFromPoolByItemType(ItemType.HugeObstacle);
         if (item == null) return;
 
@@ -587,6 +733,9 @@ public class ItemSpawner : MonoBehaviour
             return;
         }
 
-        PlaceItemWithoutOverlap(item, preferHugeLane: true);
+        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane: true))
+        {
+            ItemPool.Instance.ReturnToPool(item);
+        }
     }
 }

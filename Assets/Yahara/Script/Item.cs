@@ -14,6 +14,10 @@ public class Item : MonoBehaviour
     // このアイテムがフィーバー時の影響を受けるか
     public bool isMagnetable = true;
 
+    // 効果音用設定
+    public AudioClip seClip;
+    public float seVolume = 1f;
+
     // BGM用設定
     public AudioClip bgmClip;
     public bool loopBgm = true;
@@ -26,9 +30,13 @@ public class Item : MonoBehaviour
         var gm = GameManager.instance;
         PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();
 
+        TryPlayItemSE();
+
+        bool applyTimeOnCollect = itemType != ItemType.HugeObstacle;
+
         switch (itemType)
         {
-          case ItemType.Score:
+            case ItemType.Score:
                 if (gm != null) gm.AddScore(scoreAmount);
                 break;
 
@@ -37,7 +45,6 @@ public class Item : MonoBehaviour
             //     break;
 
             case ItemType.Clock:
-                if (gm != null) gm.AddTime(timeAmount);
                 break;
 
             case ItemType.Boost:
@@ -75,6 +82,7 @@ public class Item : MonoBehaviour
                 {
                     gm.AddTime(-Mathf.Abs(timeAmount));
                 }
+                applyTimeOnCollect = false;
                 break;
 
             case ItemType.Fever:
@@ -109,5 +117,30 @@ public class Item : MonoBehaviour
                 AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
                 break;
         }
+
+        if (applyTimeOnCollect && gm != null && !Mathf.Approximately(timeAmount, 0f))
+        {
+            gm.AddTime(timeAmount);
+        }
+    }
+
+    private void TryPlayItemSE()
+    {
+        if (seClip == null)
+        {
+            return;
+        }
+
+        if (AudioManager.Instance == null)
+        {
+            new GameObject("AudioManager").AddComponent<AudioManager>();
+        }
+
+        if (AudioManager.Instance == null)
+        {
+            return;
+        }
+
+        AudioManager.Instance.PlaySE(seClip, seVolume);
     }
 }

@@ -31,7 +31,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 10.33, y: 1.21, z: 7.9}
-  m_LocalScale: {x: 0.06, y: 0.06, z: 0.026785713}
+  m_LocalScale: {x: 0.1631251, y: 0.1631251, z: 0.0728237}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -54,6 +54,8 @@ MonoBehaviour:
   boostDuration: 0
   boostMultiplier: 0
   isMagnetable: 0
+  seClip: {fileID: 8300000, guid: 85082148c2c5a644a947d62592d27e13, type: 3}
+  seVolume: 1
   bgmClip: {fileID: 0}
   loopBgm: 1
   bgmVolume: 1

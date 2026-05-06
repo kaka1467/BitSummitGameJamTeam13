@@ -1,5 +1,6 @@
 // AudioManager: シーンを跨いでBGMを管理するシンプルなシングルトン
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class AudioManager : MonoBehaviour
 {
@@ -7,6 +8,9 @@ public class AudioManager : MonoBehaviour
 
     [SerializeField]
     private AudioSource bgmSource;
+
+    [SerializeField]
+    private AudioSource seSource;
 
     void Awake()
     {
@@ -36,7 +40,37 @@ public class AudioManager : MonoBehaviour
         bgmSource.volume = 1f;
         bgmSource.outputAudioMixerGroup = null;   // Mixer 非使用
 
+        // SE 用 AudioSource も常駐させる（PlayOneShot 用）
+        if (seSource == null)
+        {
+            seSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        seSource.playOnAwake = false;
+        seSource.loop = false;
+        seSource.spatialBlend = 0f;
+        seSource.mute = false;
+        seSource.dopplerLevel = 0f;
+        seSource.priority = 128;
+        seSource.volume = 1f;
+        seSource.outputAudioMixerGroup = null;
+
         Debug.Log($"AudioManager.Awake: bgmSource created; spatialBlend={bgmSource.spatialBlend}, mute={bgmSource.mute}, volume={bgmSource.volume}");
+    }
+
+    void OnEnable()
+    {
+        SceneManager.sceneLoaded += HandleSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        SceneManager.sceneLoaded -= HandleSceneLoaded;
+    }
+
+    private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        StopBGM();
     }
 
     public void PlayBGM(AudioClip clip, bool loop = true, float volume = 1f)
@@ -89,6 +123,29 @@ public class AudioManager : MonoBehaviour
     {
         if (bgmSource == null) return;
         bgmSource.Stop();
+    }
+
+    public void PlaySE(AudioClip clip, float volume = 1f)
+    {
+        if (clip == null)
+        {
+            return;
+        }
+
+        if (seSource == null)
+        {
+            seSource = gameObject.AddComponent<AudioSource>();
+            seSource.playOnAwake = false;
+            seSource.loop = false;
+            seSource.spatialBlend = 0f;
+            seSource.mute = false;
+            seSource.dopplerLevel = 0f;
+            seSource.priority = 128;
+            seSource.volume = 1f;
+            seSource.outputAudioMixerGroup = null;
+        }
+
+        seSource.PlayOneShot(clip, Mathf.Clamp01(volume));
     }
 
     public bool IsPlaying()
