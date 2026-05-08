@@ -21,7 +21,15 @@ public class ItemSpawner : MonoBehaviour
     [Serializable]
     public class NormalSpawnRule
     {
+        [Tooltip("このルールの有効時間帯（ゲーム開始からの秒数）")]
         public SpawnIntervalRange interval = new SpawnIntervalRange();
+
+        [Tooltip("ループを有効にするか")]
+        public bool loopEnabled = false;
+
+        [Tooltip("ループの周期（秒）。0 以下の場合は interval の幅（maxInterval - minInterval）を使用する）")]
+        [Min(0f)] public float loopCycleDuration = 0f;
+
         public List<PrefabSpawnCount> prefabSpawnCounts = new List<PrefabSpawnCount>();
     }
 
@@ -56,6 +64,12 @@ public class ItemSpawner : MonoBehaviour
         public float spawnTime;
         public float visibleByTime;
         public int retryCount;      // リトライ回数
+
+        // ループ用フィールド
+        public bool loopEnabled;
+        public float loopCycleDuration;   // 次サイクルまでの周期
+        public float cycleStartTime;      // このサイクルが始まった実時刻（ゲーム開始からの経過）
+        public float localVisibleOffset;  // サイクル内でのランダムオフセット（再スケジュール時に再利用）
     }
 
     [Serializable]
@@ -319,8 +333,23 @@ public class ItemSpawner : MonoBehaviour
 
             if (placed)
             {
-                // 配置成功 → キューから削除
-                scheduledNormalSpawns.RemoveAt(i);
+                if (scheduled.loopEnabled && scheduled.loopCycleDuration > 0f)
+                {
+                    // ループ: 次サイクルの開始時刻へ再スケジュール
+                    float nextCycleStart = scheduled.cycleStartTime + scheduled.loopCycleDuration;
+                    float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
+                    float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
+
+                    scheduled.spawnTime    = Mathf.Max(0f, nextVisible - leadTime);
+                    scheduled.visibleByTime = nextVisible;
+                    scheduled.cycleStartTime = nextCycleStart;
+                    scheduled.retryCount   = 0;
+                }
+                else
+                {
+                    // 非ループ: 配置成功 → キューから削除
+                    scheduledNormalSpawns.RemoveAt(i);
+                }
             }
             else
             {
@@ -328,8 +357,25 @@ public class ItemSpawner : MonoBehaviour
                 scheduled.retryCount++;
                 if (scheduled.retryCount >= maxRetryCount)
                 {
-                    Debug.LogWarning($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
-                    scheduledNormalSpawns.RemoveAt(i);
+                    if (scheduled.loopEnabled && scheduled.loopCycleDuration > 0f)
+                    {
+                        // ループ中でも上限リトライ失敗時は次サイクルへ持ち越す
+                        float nextCycleStart = scheduled.cycleStartTime + scheduled.loopCycleDuration;
+                        float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
+                        float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
+
+                        scheduled.spawnTime    = Mathf.Max(0f, nextVisible - leadTime);
+                        scheduled.visibleByTime = nextVisible;
+                        scheduled.cycleStartTime = nextCycleStart;
+                        scheduled.retryCount   = 0;
+
+                        Debug.LogWarning($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため次サイクルへ持ち越します。");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
+                        scheduledNormalSpawns.RemoveAt(i);
+                    }
                 }
                 else
                 {
@@ -364,6 +410,11 @@ public class ItemSpawner : MonoBehaviour
         float startTime = Mathf.Max(0f, rule.interval.minInterval);
         float endTime = Mathf.Max(startTime, rule.interval.maxInterval);
 
+        // ループ周期を決定。0 以下の場合はルール幅を使う
+        float cycleDuration = (rule.loopEnabled && rule.loopCycleDuration > 0f)
+            ? rule.loopCycleDuration
+            : Mathf.Max(1f, endTime - startTime);
+
         if (rule.prefabSpawnCounts == null) return;
 
         foreach (var entry in rule.prefabSpawnCounts)
@@ -378,13 +429,19 @@ public class ItemSpawner : MonoBehaviour
             float leadTime = GetLeadTimeToScreenEnter(entry.prefab);
             for (int i = 0; i < count; i++)
             {
-                float visibleTime = UnityEngine.Random.Range(startTime, endTime);
+                // サイクル内でのランダムオフセット（0〜cycleDuration の範囲）
+                float localOffset = UnityEngine.Random.Range(0f, cycleDuration);
+                float visibleTime = startTime + localOffset;
                 scheduledNormalSpawns.Add(new ScheduledNormalSpawn
                 {
-                    prefab = entry.prefab,
-                    spawnTime = Mathf.Max(0f, visibleTime - leadTime),
-                    visibleByTime = visibleTime,
-                    retryCount = 0  // ★
+                    prefab           = entry.prefab,
+                    spawnTime        = Mathf.Max(0f, visibleTime - leadTime),
+                    visibleByTime    = visibleTime,
+                    retryCount       = 0,
+                    loopEnabled      = rule.loopEnabled,
+                    loopCycleDuration = rule.loopEnabled ? cycleDuration : 0f,
+                    cycleStartTime   = startTime,          // 第1サイクルの基準時刻
+                    localVisibleOffset = localOffset,
                 });
             }
         }

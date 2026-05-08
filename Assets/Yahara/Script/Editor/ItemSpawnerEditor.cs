@@ -5,6 +5,7 @@ using System.Collections.Generic;
 [CustomEditor(typeof(ItemSpawner))]
 public class ItemSpawnerEditor : Editor
 {
+    // ループ用プロパティはルールごとに FindPropertyRelative で取得するため、ここでは宣言しない
     private SerializedProperty normalSpawnRulesProp;
     private SerializedProperty hugeObstacleSpawnCountProp;
     private SerializedProperty minSpawnDistanceXProp;
@@ -75,6 +76,23 @@ public class ItemSpawnerEditor : Editor
             EditorGUILayout.PropertyField(maxProp, new GUIContent("Max (sec)"));
             EditorGUILayout.EndHorizontal();
 
+            // ── ループ設定 ──────────────────────────────
+            SerializedProperty loopEnabledProp = ruleProp.FindPropertyRelative("loopEnabled");
+            SerializedProperty loopCycleProp   = ruleProp.FindPropertyRelative("loopCycleDuration");
+            EditorGUILayout.PropertyField(loopEnabledProp, new GUIContent("Loop"));
+            if (loopEnabledProp.boolValue)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(loopCycleProp, new GUIContent("Cycle (sec)", "ループの周期（秒）。0 にすると Max-Min の幅がそのまま使われます。"));
+                if (loopCycleProp.floatValue <= 0f)
+                {
+                    float autoVal = Mathf.Max(1f, maxProp.floatValue - minProp.floatValue);
+                    EditorGUILayout.HelpBox($"Cycle = 0 → 自動で {autoVal:F1} 秒周期になります。", MessageType.None);
+                }
+                EditorGUI.indentLevel--;
+            }
+            // ────────────────────────────────────────────
+
             EditorGUILayout.Space(4f);
             foreach (var prefab in displayPrefabs)
             {
@@ -98,6 +116,8 @@ public class ItemSpawnerEditor : Editor
             SerializedProperty addedRule = normalSpawnRulesProp.GetArrayElementAtIndex(insertIndex);
             addedRule.FindPropertyRelative("interval").FindPropertyRelative("minInterval").floatValue = 10f;
             addedRule.FindPropertyRelative("interval").FindPropertyRelative("maxInterval").floatValue = 30f;
+            addedRule.FindPropertyRelative("loopEnabled").boolValue = false;
+            addedRule.FindPropertyRelative("loopCycleDuration").floatValue = 0f;
 
             SerializedProperty countsProp = addedRule.FindPropertyRelative("prefabSpawnCounts");
             countsProp.ClearArray();
