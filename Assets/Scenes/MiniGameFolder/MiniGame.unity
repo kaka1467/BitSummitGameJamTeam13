@@ -480,7 +480,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &192992547
 RectTransform:
   m_ObjectHideFlags: 0
@@ -522,7 +522,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FeverLoopEffect
   rawImage: {fileID: 0}
   scrollSpeed: 0.25
-  scrollDown: 0
+  scrollDown: 1
   uvRectHeight: 1
 --- !u!114 &192992551
 MonoBehaviour:
@@ -544,7 +544,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Texture: {fileID: 2800000, guid: 165eff4d1d6b6430686618654bfa3d6a, type: 3}
+  m_Texture: {fileID: 2800000, guid: dcaf7e40901f246628890b7250a6055b, type: 3}
   m_UVRect:
     serializedVersion: 2
     x: 0
@@ -2260,7 +2260,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: e3bdef4cb3dad3647a9577264824cd52, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 14b8d62254b8b4bc1aa518eeb375619f, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -2508,7 +2508,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1404703326
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2572,7 +2572,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Texture: {fileID: 2800000, guid: 165eff4d1d6b6430686618654bfa3d6a, type: 3}
+  m_Texture: {fileID: 2800000, guid: dcaf7e40901f246628890b7250a6055b, type: 3}
   m_UVRect:
     serializedVersion: 2
     x: 0
@@ -3882,7 +3882,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 8bcd4d00ff7c24016ab42eee539368fc, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 6d6ce9690d30d476ca331266a9e665d6, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
