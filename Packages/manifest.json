@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "com.demigiant.dotween": "https://github.com/Demigiant/dotween.git?path=/Assets/Demigiant/DOTween",
     "com.unity.2d.pixel-perfect": "5.1.1",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.ai.navigation": "2.0.10",
