@@ -3018,36 +3018,84 @@ MonoBehaviour:
   normalSpawnRules:
   - interval:
       minInterval: 0
-      maxInterval: 15
+      maxInterval: 30
     loopEnabled: 0
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 1
+      count: 2
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 1
+      count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 1
+      count: 3
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 10
+      count: 3
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 1
+      count: 5
   - interval:
-      minInterval: 15
-      maxInterval: 30
+      minInterval: 30
+      maxInterval: 60
+    loopEnabled: 0
+    loopCycleDuration: 0
+    prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 3
+    - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
+      count: 45
+    - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
+      count: 5
+    - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
+      count: 3
+    - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
+      count: 5
+  - interval:
+      minInterval: 60
+      maxInterval: 90
+    loopEnabled: 0
+    loopCycleDuration: 0
+    prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 4
+    - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
+      count: 45
+    - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
+      count: 8
+    - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
+      count: 4
+    - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
+      count: 10
+  - interval:
+      minInterval: 90
+      maxInterval: 120
+    loopEnabled: 0
+    loopCycleDuration: 0
+    prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 5
+    - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
+      count: 45
+    - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
+      count: 10
+    - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
+      count: 4
+    - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
+      count: 10
+  - interval:
+      minInterval: 120
+      maxInterval: 150
     loopEnabled: 1
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 1
+      count: 7
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 1
+      count: 30
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 1
+      count: 15
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 1
+      count: 4
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 1
+      count: 15
   spawnEnabled: 1
   hugeObstacleSpawnCount: 1
   minSpawnDistanceX: 1.2
@@ -3062,7 +3110,7 @@ MonoBehaviour:
   - 0.202
   - -0.19
   - -0.574
-  hugeInitialDelay: 60
+  hugeInitialDelay: 30
   hugeCooldownAfterQte: 30
 --- !u!4 &1639938499
 Transform:
@@ -3645,7 +3693,7 @@ MonoBehaviour:
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
-  feverScoreBonus: 30
+  feverScoreBonus: 100
   feverBoostDuration: 8
   feverBoostMultiplier: 1.5
   feverLoopEffect: {fileID: 192992550}
@@ -3770,7 +3818,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1999972711
 Transform:
   m_ObjectHideFlags: 0
@@ -3814,6 +3862,7 @@ MonoBehaviour:
   avoidTimeout: 5
   tutorialObstacles:
   - {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+  - {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
   qteWaitTimeout: 12
   afterQteDelay: 0.5
   countdownFrom: 3
