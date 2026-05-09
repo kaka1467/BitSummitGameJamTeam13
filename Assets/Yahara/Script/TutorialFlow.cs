@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using DG.Tweening;
 using TMPro;
 using UnityEngine;
 
@@ -10,6 +11,7 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private ItemSpawner itemSpawner;
     [SerializeField] private GameManager gameManager;
     [SerializeField] private TextMeshProUGUI countdownText;
+    [SerializeField] private TextMeshProUGUI startText;
 
     [Header("Settings")]
     [SerializeField] private bool runOnStart = true;
@@ -33,7 +35,14 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private float countdownStepSeconds = 1f;
     [SerializeField] private float goDisplaySeconds = 0.5f;
 
+    [Header("Start Text Animation")]
+    [SerializeField] private Vector3 startScaleFrom = new Vector3(0.2f, 0.2f, 1f);
+    [SerializeField] private Vector3 startScaleTo = new Vector3(1.2f, 1.2f, 1f);
+    [SerializeField] private float startTweenSeconds = 0.35f;
+    [SerializeField] private Ease startEase = Ease.OutBack;
+
     private bool tutorialRunning;
+    private Tween startTween;
 
     private void Start()
     {
@@ -77,7 +86,7 @@ public class TutorialFlow : MonoBehaviour
 
         if (disableGameManagerDuringTutorial && gameManager != null)
         {
-            gameManager.enabled = false;
+            gameManager.SetTutorialMode(true);
         }
 
         itemSpawner.SpawnEnabled = false;
@@ -91,6 +100,12 @@ public class TutorialFlow : MonoBehaviour
         {
             countdownText.gameObject.SetActive(false);
             countdownText.text = string.Empty;
+        }
+
+        if (startText != null)
+        {
+            startText.gameObject.SetActive(false);
+            startText.text = string.Empty;
         }
 
         if (initialDelay > 0f)
@@ -119,7 +134,8 @@ public class TutorialFlow : MonoBehaviour
 
         if (disableGameManagerDuringTutorial && gameManager != null)
         {
-            gameManager.enabled = true;
+            gameManager.SetTutorialMode(false);
+            gameManager.ResetScoreAndFever();
         }
 
         tutorialRunning = false;
@@ -229,8 +245,24 @@ public class TutorialFlow : MonoBehaviour
                 yield return new WaitForSecondsRealtime(countdownStepSeconds);
             }
 
-            yield return new WaitForSecondsRealtime(goDisplaySeconds);
             countdownText.gameObject.SetActive(false);
+
+            if (startText != null)
+            {
+                startText.gameObject.SetActive(true);
+                startText.text = "Start";
+                RectTransform rect = startText.rectTransform;
+                rect.localScale = startScaleFrom;
+                startTween?.Kill();
+                startTween = rect.DOScale(startScaleTo, startTweenSeconds)
+                    .SetEase(startEase)
+                    .SetUpdate(true);
+                yield return new WaitForSecondsRealtime(goDisplaySeconds);
+                startText.gameObject.SetActive(false);
+                yield break;
+            }
+
+            yield return new WaitForSecondsRealtime(goDisplaySeconds);
             yield break;
         }
 

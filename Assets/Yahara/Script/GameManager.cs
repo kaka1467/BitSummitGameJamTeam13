@@ -43,6 +43,7 @@ public class GameManager : MonoBehaviour
 
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
+    private bool isTutorialMode = false;
 
     void Awake()
     {
@@ -63,12 +64,15 @@ public class GameManager : MonoBehaviour
     {
         if (isGameOver) return;
 
-        time -= Time.deltaTime;
-
-        if (time <= 0f)
+        if (!isTutorialMode)
         {
-            time = 0f;
-            GameOver();
+            time -= Time.deltaTime;
+
+            if (time <= 0f)
+            {
+                time = 0f;
+                GameOver();
+            }
         }
 
         UpdateScoreDigits();
@@ -185,19 +189,7 @@ public class GameManager : MonoBehaviour
             yield return null;
         }
 
-        isFeverMagnetActive = false;
-        feverEndTime = -1f;
-        feverRoutine = null;
-
-        if (feverLoopEffect != null)
-        {
-            feverLoopEffect.StopEffect();
-        }
-
-        if (feverLoopEffect2 != null)
-        {
-            feverLoopEffect2.StopEffect();
-        }
+        StopFeverEffects();
     }
 
     private IEnumerator HandleGameOver(string udpMessage)
@@ -232,5 +224,45 @@ public class GameManager : MonoBehaviour
     {
         time += amount;
         if (time > maxTime) time = maxTime;
+    }
+
+    public void SetTutorialMode(bool active)
+    {
+        isTutorialMode = active;
+    }
+
+    public void ResetScoreAndFever()
+    {
+        score = 0;
+        feverCount = 0;
+        StopFeverEffects();
+        UpdateScoreDigits();
+
+        if (feverText != null)
+        {
+            feverText.text = string.Format("{0}/{1}", feverCount, feverNeeded);
+        }
+    }
+
+    private void StopFeverEffects()
+    {
+        if (feverRoutine != null)
+        {
+            StopCoroutine(feverRoutine);
+            feverRoutine = null;
+        }
+
+        isFeverMagnetActive = false;
+        feverEndTime = -1f;
+
+        if (feverLoopEffect != null)
+        {
+            feverLoopEffect.StopEffect();
+        }
+
+        if (feverLoopEffect2 != null)
+        {
+            feverLoopEffect2.StopEffect();
+        }
     }
 }
