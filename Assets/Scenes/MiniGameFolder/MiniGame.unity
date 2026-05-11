@@ -657,7 +657,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4226d210fa12246509fab8091c7a05ff, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FeverLoopEffect
-  rawImage: {fileID: 0}
+  rawImage: {fileID: 192992551}
   scrollSpeed: 0.25
   scrollDown: 1
   uvRectHeight: 1
@@ -681,7 +681,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Texture: {fileID: 2800000, guid: dcaf7e40901f246628890b7250a6055b, type: 3}
+  m_Texture: {fileID: 2800000, guid: 828f1857b0a90fa43bcbc4009da5a4b2, type: 3}
   m_UVRect:
     serializedVersion: 2
     x: 0
@@ -2823,7 +2823,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4226d210fa12246509fab8091c7a05ff, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FeverLoopEffect
-  rawImage: {fileID: 0}
+  rawImage: {fileID: 1404703330}
   scrollSpeed: 0.25
   scrollDown: 0
   uvRectHeight: 1
@@ -2847,7 +2847,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Texture: {fileID: 2800000, guid: dcaf7e40901f246628890b7250a6055b, type: 3}
+  m_Texture: {fileID: 2800000, guid: 828f1857b0a90fa43bcbc4009da5a4b2, type: 3}
   m_UVRect:
     serializedVersion: 2
     x: 0
