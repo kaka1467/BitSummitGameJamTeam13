@@ -41,6 +41,12 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI feverText;
     public ChildUdpReceiver udpReceiver;
 
+    [Header("Time Change Display")]
+    [SerializeField] private TextMeshProUGUI timeChangeText;
+    [SerializeField] private float timeChangeDisplaySeconds = 1.5f;
+
+    private Coroutine timeChangeRoutine;
+
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
     private bool isTutorialMode = false;
@@ -48,6 +54,11 @@ public class GameManager : MonoBehaviour
     void Awake()
     {
         instance = this;
+
+        if (timeChangeText != null)
+        {
+            timeChangeText.gameObject.SetActive(false);
+        }
 
         if (feverLoopEffect != null)
         {
@@ -222,8 +233,48 @@ public class GameManager : MonoBehaviour
 
     public void AddTime(float amount)
     {
+        if (amount < 0f)
+        {
+            ShowTimeDecrease(amount);
+        }
+
         time += amount;
         if (time > maxTime) time = maxTime;
+    }
+
+    private void ShowTimeDecrease(float amount)
+    {
+        if (timeChangeText == null) return;
+
+        int totalSeconds = Mathf.Abs(Mathf.RoundToInt(amount));
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+
+        timeChangeText.text = $"-{minutes:00}:{seconds:00}";
+        timeChangeText.gameObject.SetActive(true);
+
+        if (timeChangeRoutine != null)
+        {
+            StopCoroutine(timeChangeRoutine);
+        }
+
+        timeChangeRoutine = StartCoroutine(HideTimeChangeAfterDelay());
+    }
+
+    private IEnumerator HideTimeChangeAfterDelay()
+    {
+        float duration = Mathf.Max(0f, timeChangeDisplaySeconds);
+        if (duration > 0f)
+        {
+            yield return new WaitForSecondsRealtime(duration);
+        }
+
+        if (timeChangeText != null)
+        {
+            timeChangeText.gameObject.SetActive(false);
+        }
+
+        timeChangeRoutine = null;
     }
 
     public void SetTutorialMode(bool active)
