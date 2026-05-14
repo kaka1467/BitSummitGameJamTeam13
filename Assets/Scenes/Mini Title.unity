@@ -261,7 +261,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 269724753}
-  - component: {fileID: 269724752}
+  - component: {fileID: 269724754}
   m_Layer: 0
   m_Name: MenuManager
   m_TagString: Untagged
@@ -269,33 +269,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &269724752
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 269724751}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ba997424afd7cb64c96942b8ba4d98b5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::MenuNavigationController
-  selectableButtons:
-  - {fileID: 1463660737}
-  - {fileID: 1707610820}
-  - {fileID: 1550034692}
-  - {fileID: 857611890}
-  selectionArrow: {fileID: 1595065362}
-  arrowOffsetX: 250
-  arrowOffsetY: 0
-  confirmKey: 13
-  upKey: 273
-  downKey: 274
-  verticalAxisName: Vertical
-  submitButtonName: Submit
-  retroidConfirmKey: 32
-  additionalConfirmKeys: 4a0100004b0100007a00000078000000
 --- !u!4 &269724753
 Transform:
   m_ObjectHideFlags: 0
@@ -311,6 +284,34 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &269724754
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 269724751}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1887f219e5db2e4484dcfe991994cc2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MenuNavigationController
+  selectableButtons:
+  - {fileID: 1463660737}
+  - {fileID: 1707610820}
+  - {fileID: 1550034692}
+  - {fileID: 857611890}
+  - {fileID: 1419268937}
+  selectionArrow: {fileID: 1595065362}
+  arrowOffsetX: 250
+  arrowOffsetY: 0
+  confirmKey: 13
+  upKey: 273
+  downKey: 274
+  verticalAxisName: Vertical
+  submitButtonName: Submit
+  retroidConfirmKey: 32
+  additionalConfirmKeys: 4a0100004b0100007a00000078000000
 --- !u!1 &286496742
 GameObject:
   m_ObjectHideFlags: 0
@@ -486,8 +487,14 @@ MonoBehaviour:
   gameSceneName: MinigameScene
   sleepingManager: {fileID: 0}
   connectButton: {fileID: 1463660737}
+  connectButtonLabel: {fileID: 1893753028}
+  creditsButton: {fileID: 1550034692}
+  settingsButton: {fileID: 857611890}
+  startButton: {fileID: 1419268937}
   statusText: {fileID: 0}
   cancelButton: {fileID: 1707610820}
+  connectLabel: Connecting
+  connectingLabel: Connecting
 --- !u!4 &415572612
 Transform:
   m_ObjectHideFlags: 0
