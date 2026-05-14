@@ -21,10 +21,12 @@ public class PlayerMove : MonoBehaviour
     [SerializeField] private bool inputEnabled = true;
     [SerializeField] private bool autoDriveEnabled = false;
     [SerializeField] private float autoHorizontalSpeed = 5f;
+    [SerializeField, Min(0f)] private float autoLaneStepSeconds = 0.12f;
 
     private int autoLane = 1;
     private bool autoUseTargetX = false;
     private float autoTargetX = 0f;
+    private float autoLaneStepTimer = 0f;
 
     private PlayerBoost playerBoost;
     private Camera mainCam;
@@ -82,7 +84,17 @@ public class PlayerMove : MonoBehaviour
         }
         else if (autoDriveEnabled)
         {
-            lane = Mathf.Clamp(autoLane, 0, laneY.Length - 1);
+            autoLane = Mathf.Clamp(autoLane, 0, laneY.Length - 1);
+            if (autoLaneStepTimer > 0f)
+            {
+                autoLaneStepTimer -= Time.deltaTime;
+            }
+
+            if (autoLaneStepTimer <= 0f && lane != autoLane)
+            {
+                lane += lane < autoLane ? 1 : -1;
+                autoLaneStepTimer = autoLaneStepSeconds;
+            }
         }
 
         // アニメーションがPositionを書き換えた後にスクリプトで上書きする
@@ -139,5 +151,10 @@ public class PlayerMove : MonoBehaviour
         {
             autoUseTargetX = false;
         }
+    }
+
+    public void SetAutoHorizontalSpeed(float speed)
+    {
+        autoHorizontalSpeed = Mathf.Max(0f, speed);
     }
 }
