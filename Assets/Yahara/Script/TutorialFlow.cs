@@ -41,8 +41,22 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private float startTweenSeconds = 0.35f;
     [SerializeField] private Ease startEase = Ease.OutBack;
 
+    [Header("Auto Horizontal Move")]
+    [SerializeField] private bool autoHorizontalEnabled = true;
+    [SerializeField, Min(0f)] private float autoHorizontalRange = 1.5f;
+    [SerializeField, Min(0.02f)] private float autoTargetUpdateSeconds = 0.05f;
+    [SerializeField, Min(0f)] private float autoCollectCenterRange = 0.8f;
+
     private bool tutorialRunning;
     private Tween startTween;
+    private Coroutine autoTargetRoutine;
+
+    private enum AutoTargetMode
+    {
+        Collect,
+        Avoid,
+        Qte
+    }
 
     private void Start()
     {
@@ -93,6 +107,7 @@ public class TutorialFlow : MonoBehaviour
         playerMove.SetInputEnabled(false);
         playerMove.SetAutoDrive(true);
         playerMove.SetAutoTargetX(null);
+        playerMove.SetAutoHorizontalSpeed(playerMove.horizontalMoveSpeed);
 
         ClearActiveItems();
 
@@ -168,7 +183,7 @@ public class TutorialFlow : MonoBehaviour
             int laneIndex = GetNearestLaneIndex(item.transform.position.y);
             playerMove.SetAutoLane(laneIndex);
 
-            yield return WaitForItemToDeactivate(item, collectTimeout);
+            yield return TrackAutoTargetToItem(item, collectTimeout, AutoTargetMode.Collect);
         }
     }
 
@@ -199,7 +214,7 @@ public class TutorialFlow : MonoBehaviour
             int safeLane = PickSafeLane(obstacleLane);
             playerMove.SetAutoLane(safeLane);
 
-            yield return WaitForItemToDeactivate(obstacle, avoidTimeout);
+            yield return TrackAutoTargetToItem(obstacle, avoidTimeout, AutoTargetMode.Avoid);
         }
     }
 
@@ -224,13 +239,21 @@ public class TutorialFlow : MonoBehaviour
         QTEManager.HugeQteFinished += handler;
 
         float timer = 0f;
+        float nextUpdate = 0f;
+        float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
         while (!qteDone && timer < qteWaitTimeout)
         {
             timer += Time.unscaledDeltaTime;
+            if (autoHorizontalEnabled && huge != null && huge.activeInHierarchy && timer >= nextUpdate)
+            {
+                nextUpdate = timer + interval;
+                UpdateAutoTargetForItem(huge, AutoTargetMode.Qte);
+            }
             yield return null;
         }
 
         QTEManager.HugeQteFinished -= handler;
+        playerMove.SetAutoTargetX(null);
     }
 
     private IEnumerator RunCountdown()
@@ -342,6 +365,73 @@ public class TutorialFlow : MonoBehaviour
         {
             timer += Time.unscaledDeltaTime;
             yield return null;
+        }
+    }
+
+    private IEnumerator TrackAutoTargetToItem(GameObject item, float timeout, AutoTargetMode mode)
+    {
+        if (!autoHorizontalEnabled || playerMove == null || item == null)
+        {
+            yield return WaitForItemToDeactivate(item, timeout);
+            yield break;
+        }
+
+        if (autoTargetRoutine != null)
+        {
+            StopCoroutine(autoTargetRoutine);
+        }
+
+        autoTargetRoutine = StartCoroutine(UpdateAutoTargetRoutine(item, timeout, mode));
+        yield return autoTargetRoutine;
+        autoTargetRoutine = null;
+        playerMove.SetAutoTargetX(null);
+    }
+
+    private IEnumerator UpdateAutoTargetRoutine(GameObject item, float timeout, AutoTargetMode mode)
+    {
+        float timer = 0f;
+        float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
+        float nextUpdate = 0f;
+
+        while (item != null && item.activeInHierarchy && timer < timeout)
+        {
+            timer += Time.unscaledDeltaTime;
+            if (timer >= nextUpdate)
+            {
+                nextUpdate = timer + interval;
+                UpdateAutoTargetForItem(item, mode);
+            }
+
+            yield return null;
+        }
+    }
+
+    private void UpdateAutoTargetForItem(GameObject item, AutoTargetMode mode)
+    {
+        if (playerMove == null || item == null)
+        {
+            return;
+        }
+
+        float targetX = item.transform.position.x;
+        if (mode == AutoTargetMode.Avoid)
+        {
+            float playerX = playerMove.transform.position.x;
+            float dir = playerX <= targetX ? -1f : 1f;
+            targetX = playerX + dir * autoHorizontalRange;
+            playerMove.SetAutoTargetX(targetX);
+            return;
+        }
+
+        Camera cam = Camera.main;
+        float centerX = cam != null ? cam.transform.position.x : 0f;
+        if (Mathf.Abs(targetX - centerX) <= autoCollectCenterRange)
+        {
+            playerMove.SetAutoTargetX(targetX);
+        }
+        else
+        {
+            playerMove.SetAutoTargetX(null);
         }
     }
 
