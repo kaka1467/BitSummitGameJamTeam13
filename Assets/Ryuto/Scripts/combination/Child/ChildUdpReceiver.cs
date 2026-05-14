@@ -30,15 +30,8 @@ public class ChildUdpReceiver : MonoBehaviour
     public string gameSceneName = "GameScene";
     public SleepingManager sleepingManager;
     public Button connectButton;
-    public TextMeshProUGUI connectButtonLabel;
-    public Button creditsButton;
-    public Button settingsButton;
-    public Button startButton;
     public TextMeshProUGUI statusText;
     public Button cancelButton;
-    [SerializeField] private string connectLabel = "Connect";
-    [SerializeField] private string connectingLabel = "接続中";
-    private string connectLabelDefault;
 
     public void OnConnectButtonClicked()
     {
@@ -83,11 +76,6 @@ public class ChildUdpReceiver : MonoBehaviour
         receiveThread = new Thread(new ThreadStart(ReceiveData));
         receiveThread.IsBackground = true;
         receiveThread.Start();
-        if (connectButtonLabel != null)
-        {
-            connectLabelDefault = connectButtonLabel.text;
-        }
-        UpdateUi();
     }
 
     void Update()
@@ -151,67 +139,17 @@ public class ChildUdpReceiver : MonoBehaviour
             heartbeatCoroutine = null;
         }
 
-        UpdateUi();
-    }
-
-    private void UpdateUi()
-    {
-        bool isDisconnected = currentState == ConnectionState.Disconnected;
-        bool isConnecting = currentState == ConnectionState.Connecting;
-        bool isConnected = currentState == ConnectionState.Connected;
-
-        bool showConnectButton = isDisconnected || isConnecting;
-        SetActiveForButton(connectButton, showConnectButton);
-        SetActiveForButton(creditsButton, isDisconnected || isConnecting);
-        SetActiveForButton(settingsButton, isDisconnected || isConnecting);
-
-        SetActiveForButton(cancelButton, isConnecting);
-        SetActiveForButton(startButton, isConnected);
-
-        if (connectButton != null)
-        {
-            connectButton.interactable = isDisconnected;
-        }
-
-        if (connectButtonLabel != null && showConnectButton)
-        {
-            string fallbackLabel = string.IsNullOrEmpty(connectLabelDefault) ? connectLabel : connectLabelDefault;
-            connectButtonLabel.text = isConnecting ? connectingLabel : fallbackLabel;
-        }
-
         if (statusText != null)
         {
-            SetActiveForText(statusText, isConnecting);
-            if (isConnecting)
-            {
-                statusText.text = connectingLabel;
-            }
+            statusText.text = currentState == ConnectionState.Connecting ? "Connecting..." : currentState.ToString();
         }
-    }
-
-    private static void SetActiveForButton(Button button, bool active)
-    {
-        if (button != null)
+        if (connectButton != null)
         {
-            GameObject target = button.gameObject;
-            if (button.transform.parent != null)
-            {
-                target = button.transform.parent.gameObject;
-            }
-            target.SetActive(active);
+            connectButton.gameObject.SetActive(currentState == ConnectionState.Disconnected);
         }
-    }
-
-    private static void SetActiveForText(TextMeshProUGUI text, bool active)
-    {
-        if (text != null)
+        if (cancelButton != null)
         {
-            GameObject target = text.gameObject;
-            if (text.transform.parent != null)
-            {
-                target = text.transform.parent.gameObject;
-            }
-            target.SetActive(active);
+            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
         }
     }
 
