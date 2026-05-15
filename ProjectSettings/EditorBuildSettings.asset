@@ -12,6 +12,9 @@ EditorBuildSettings:
     path: Assets/Scenes/MiniGameFolder/Mini Title.unity
     guid: 04e7f8bce8bb9d74fa678bc3d3491438
   - enabled: 1
+    path: Assets/Scenes/MiniGameFolder/ChildLoad.unity
+    guid: 6a814ed6b70c246ee864ca5dbb2836ec
+  - enabled: 1
     path: Assets/Scenes/MotherGame/Mother Title.unity
     guid: ea30e8b2763fc46b0bf39d1eadaa5b2c
   - enabled: 1
