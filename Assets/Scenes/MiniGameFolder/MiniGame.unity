@@ -3772,6 +3772,7 @@ MonoBehaviour:
   inputEnabled: 1
   autoDriveEnabled: 0
   autoHorizontalSpeed: 5
+  autoLaneStepSeconds: 0.12
 --- !u!212 &1865325548
 SpriteRenderer:
   serializedVersion: 2
