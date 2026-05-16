@@ -28,6 +28,12 @@ public class ParentWarningSystem : MonoBehaviour
     [Tooltip("動物の鳴き声（AudioSource）")]
     public AudioSource animalCrySound;
 
+    [Tooltip("ライト点灯時のクリック音（ViewCamera時のみ）")]
+    public AudioSource lightClickSound;
+
+    [Tooltip("階段を上がる音（動物パターン以外で使用）")]
+    public AudioSource stairStepSound;
+
     [Header("ドア設定")]
     [Tooltip("ドアの開閉を制御するドアマネージャー（任意）")]
     public DoorController doorController;
@@ -179,6 +185,8 @@ public class ParentWarningSystem : MonoBehaviour
         // ステップ1: 一階の明かりがつく
         Debug.Log("Step 1: First floor light ON");
         bool useAnimalPattern = animalCrySound != null && Random.value < animalPatternChance;
+        bool isMainCamera = Camera.main != null && Camera.main.CompareTag("MainCamera");
+        bool isViewCamera = Camera.main != null && Camera.main.CompareTag("ViewCamera");
         if (useAnimalPattern)
         {
             if (firstAnimalCryDelay > 0f)
@@ -188,9 +196,13 @@ public class ParentWarningSystem : MonoBehaviour
 
             animalCrySound.Play();
         }
-        if (firstFloorLight != null)
+        if (!isMainCamera && firstFloorLight != null)
         {
             firstFloorLight.enabled = true;
+            if (isViewCamera && lightClickSound != null)
+            {
+                lightClickSound.Play();
+            }
         }
         yield return new WaitForSeconds(firstFloorLightDuration);
 
@@ -202,17 +214,21 @@ public class ParentWarningSystem : MonoBehaviour
 
         // ステップ2: 二階の明かりがつく（3つ）
         Debug.Log("Step 2: Second floor lights ON");
-        bool usePointLightOnly = Camera.main != null && Camera.main.CompareTag("MainCamera");
+        bool usePointLightOnly = !isMainCamera && Camera.main != null && Camera.main.CompareTag("MainCamera");
         foreach (Light light in secondFloorLights)
         {
             if (light != null)
             {
-                light.enabled = !usePointLightOnly;
+                light.enabled = !usePointLightOnly && !isMainCamera;
             }
         }
-        if (secondFloorPointLight != null)
+        if (!isMainCamera && secondFloorPointLight != null)
         {
             secondFloorPointLight.enabled = usePointLightOnly;
+        }
+        if (!isMainCamera && isViewCamera && lightClickSound != null)
+        {
+            lightClickSound.Play();
         }
         if (useAnimalPattern && animalCrySound != null)
         {
@@ -224,6 +240,15 @@ public class ParentWarningSystem : MonoBehaviour
             animalCrySound.Play();
         }
         yield return new WaitForSeconds(secondFloorLightDuration);
+
+        if (!useAnimalPattern && stairStepSound != null)
+        {
+            stairStepSound.Play();
+            if (stairStepSound.clip != null)
+            {
+                yield return new WaitForSeconds(stairStepSound.clip.length);
+            }
+        }
 
         // 二階の明かりを消す
         foreach (Light light in secondFloorLights)
