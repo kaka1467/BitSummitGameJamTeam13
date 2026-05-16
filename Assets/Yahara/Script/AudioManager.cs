@@ -148,8 +148,66 @@ public class AudioManager : MonoBehaviour
         seSource.PlayOneShot(clip, Mathf.Clamp01(volume));
     }
 
+    public void SetBgmVolume(float volume)
+    {
+        EnsureBgmSource();
+        bgmSource.volume = Mathf.Clamp01(volume);
+    }
+
+    public void SetSeVolume(float volume)
+    {
+        EnsureSeSource();
+        seSource.volume = Mathf.Clamp01(volume);
+    }
+
+    public float GetBgmVolume()
+    {
+        return bgmSource == null ? 1f : bgmSource.volume;
+    }
+
+    public float GetSeVolume()
+    {
+        return seSource == null ? 1f : seSource.volume;
+    }
+
     public bool IsPlaying()
     {
         return bgmSource != null && bgmSource.isPlaying;
+    }
+
+    private void EnsureBgmSource()
+    {
+        if (bgmSource != null)
+        {
+            return;
+        }
+
+        bgmSource = gameObject.AddComponent<AudioSource>();
+        bgmSource.playOnAwake = false;
+        bgmSource.loop = true;
+        bgmSource.spatialBlend = 0f;
+        bgmSource.mute = false;
+        bgmSource.dopplerLevel = 0f;
+        bgmSource.priority = 128;
+        bgmSource.volume = 1f;
+        bgmSource.outputAudioMixerGroup = null;
+    }
+
+    private void EnsureSeSource()
+    {
+        if (seSource != null)
+        {
+            return;
+        }
+
+        seSource = gameObject.AddComponent<AudioSource>();
+        seSource.playOnAwake = false;
+        seSource.loop = false;
+        seSource.spatialBlend = 0f;
+        seSource.mute = false;
+        seSource.dopplerLevel = 0f;
+        seSource.priority = 128;
+        seSource.volume = 1f;
+        seSource.outputAudioMixerGroup = null;
     }
 }

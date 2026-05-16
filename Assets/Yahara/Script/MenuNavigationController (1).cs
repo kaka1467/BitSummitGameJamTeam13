@@ -9,6 +9,9 @@ public class MenuNavigationController : MonoBehaviour
     [SerializeField] private GameObject selectionArrow;
     [SerializeField] private float arrowOffsetX = -50f; // 矢印のX座標オフセット
     [SerializeField] private float arrowOffsetY = 0f;   // 矢印のY座標オフセット
+
+    [Header("Modal Panel Settings")]
+    [SerializeField] private List<GameObject> exclusivePanels = new List<GameObject>();
     
     [Header("Input Settings")]
     [SerializeField] private KeyCode confirmKey = KeyCode.Return;
@@ -64,6 +67,7 @@ public class MenuNavigationController : MonoBehaviour
         if (selectableButtons.Count == 0 || selectionArrow == null)
             return;
 
+        EnsureValidSelection();
         HandleNavigation();
         HandleConfirm();
     }
@@ -174,7 +178,80 @@ public class MenuNavigationController : MonoBehaviour
             return false;
 
         Button button = selectableButtons[index];
-        return button != null && button.gameObject.activeInHierarchy && button.interactable;
+        return button != null && button.gameObject.activeInHierarchy && button.interactable && IsAllowedByExclusivePanels(button);
+    }
+
+    private bool IsAllowedByExclusivePanels(Button button)
+    {
+        GameObject activePanel = GetActiveExclusivePanel();
+        if (activePanel == null)
+        {
+            return true;
+        }
+
+        return button.transform.IsChildOf(activePanel.transform);
+    }
+
+    private GameObject GetActiveExclusivePanel()
+    {
+        if (exclusivePanels == null || exclusivePanels.Count == 0)
+        {
+            return null;
+        }
+
+        for (int i = 0; i < exclusivePanels.Count; i++)
+        {
+            GameObject panel = exclusivePanels[i];
+            if (panel != null && panel.activeInHierarchy)
+            {
+                return panel;
+            }
+        }
+
+        return null;
+    }
+
+    private void EnsureValidSelection()
+    {
+        if (IsButtonInteractable(currentIndex))
+        {
+            if (!selectionArrow.activeSelf)
+            {
+                selectionArrow.SetActive(true);
+            }
+            return;
+        }
+
+        int validIndex = FindFirstValidIndex();
+        if (validIndex >= 0)
+        {
+            currentIndex = validIndex;
+            if (!selectionArrow.activeSelf)
+            {
+                selectionArrow.SetActive(true);
+            }
+            UpdateArrowPosition();
+        }
+        else
+        {
+            if (selectionArrow.activeSelf)
+            {
+                selectionArrow.SetActive(false);
+            }
+        }
+    }
+
+    private int FindFirstValidIndex()
+    {
+        for (int i = 0; i < selectableButtons.Count; i++)
+        {
+            if (IsButtonInteractable(i))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private void UpdateArrowPosition()

@@ -36,6 +36,8 @@ public class ChildUdpReceiver : MonoBehaviour
     public Button startButton;
     public TextMeshProUGUI statusText;
     public Button cancelButton;
+    [SerializeField] private GameObject creditsPanel;
+    [SerializeField] private GameObject settingsPanel;
     [SerializeField] private string connectLabel = "Connect";
     [SerializeField] private string connectingLabel = "接続中";
     private string connectLabelDefault;
@@ -48,6 +50,46 @@ public class ChildUdpReceiver : MonoBehaviour
     public void OnCancelButtonClicked()
     {
         currentState = ConnectionState.Disconnected;
+    }
+
+    public void OnCreditsButtonClicked()
+    {
+        if (creditsPanel == null)
+        {
+            return;
+        }
+
+        creditsPanel.SetActive(!creditsPanel.activeSelf);
+    }
+
+    public void OnCloseCreditsClicked()
+    {
+        if (creditsPanel == null)
+        {
+            return;
+        }
+
+        creditsPanel.SetActive(false);
+    }
+
+    public void OnSettingsButtonClicked()
+    {
+        if (settingsPanel == null)
+        {
+            return;
+        }
+
+        settingsPanel.SetActive(!settingsPanel.activeSelf);
+    }
+
+    public void OnCloseSettingsClicked()
+    {
+        if (settingsPanel == null)
+        {
+            return;
+        }
+
+        settingsPanel.SetActive(false);
     }
 
     public void SendState(string message)
