@@ -49,12 +49,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
   itemType: 0
-  scoreAmount: 30
+  scoreAmount: 1500
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
   isMagnetable: 1
-  seClip: {fileID: 8300000, guid: 5c3ee619882a142ce9d9e0e23fde201e, type: 3}
+  seClip: {fileID: 8300000, guid: ca8e331026a7642f697471c3a7bb5f95, type: 3}
   seVolume: 1
   bgmClip: {fileID: 0}
   loopBgm: 1

@@ -807,6 +807,8 @@ MonoBehaviour:
   startButton: {fileID: 0}
   statusText: {fileID: 0}
   cancelButton: {fileID: 0}
+  creditsPanel: {fileID: 0}
+  settingsPanel: {fileID: 0}
   connectLabel: Connect
   connectingLabel: "\u63A5\u7D9A\u4E2D"
 --- !u!4 &243933952
@@ -1554,14 +1556,14 @@ RectTransform:
   m_GameObject: {fileID: 852103712}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.13, y: 0.16042814, z: 0}
+  m_LocalScale: {x: 0.36390623, y: 0.7278124, z: 0}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 1344561279}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -3.58, y: -14.39}
+  m_AnchoredPosition: {x: -10.021423, y: -65.28293}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0, y: 0}
 --- !u!114 &852103714
@@ -2509,7 +2511,7 @@ RectTransform:
   m_GameObject: {fileID: 1344561278}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 11.365072, y: 9.209476, z: 0.008762584}
+  m_LocalScale: {x: 4.06, y: 2.03, z: 0.000067635156}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 1365839924}
@@ -2541,7 +2543,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 14b8d62254b8b4bc1aa518eeb375619f, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 80fa3b53666244209b91c410eaa21250, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -2586,14 +2588,14 @@ RectTransform:
   m_GameObject: {fileID: 1365839923}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.16, y: 0.19745001, z: 0}
+  m_LocalScale: {x: 0.4, y: 0.7999999, z: 0}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 1344561279}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -10.1, y: -2}
+  m_AnchoredPosition: {x: -23.58, y: -5.4}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0, y: 0}
 --- !u!114 &1365839925
@@ -3976,7 +3978,7 @@ MonoBehaviour:
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
-  feverScoreBonus: 100
+  feverScoreBonus: 5000
   feverBoostDuration: 8
   feverBoostMultiplier: 1.5
   feverLoopEffect: {fileID: 192992550}
