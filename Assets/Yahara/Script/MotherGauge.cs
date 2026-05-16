@@ -21,10 +21,17 @@ public class MotherGauge : MonoBehaviour
     [Tooltip("1フレームごとに増減する量")]
     public int gaugeStep = 1;
 
+    [Header("自動減少設定")]
+    [Tooltip("自動減少を有効にするか")]
+    public bool enableAutoDecrease = true;
+    [Tooltip("何秒ごとに1フレーム分減少するか")]
+    public float decreaseIntervalSeconds = 20f;
+
     [Header("デバッグ")]
     public bool logOnChange = false;
 
     private int _lastLoggedGauge = int.MinValue;
+    private float _decreaseTimer = 0f;
 
     private void Start()
     {
@@ -41,6 +48,26 @@ public class MotherGauge : MonoBehaviour
     private void Update()
     {
         HandleInput();
+        HandleAutoDecrease();
+    }
+
+    private void HandleAutoDecrease()
+    {
+        if (!enableAutoDecrease || decreaseIntervalSeconds <= 0)
+        {
+            return;
+        }
+
+        _decreaseTimer += Time.deltaTime;
+
+        if (_decreaseTimer >= decreaseIntervalSeconds)
+        {
+            _decreaseTimer = 0f;
+            
+            // 1フレーム分のゲージ量を計算
+            int gaugePerFrame = Mathf.CeilToInt((float)maxGauge / suspiciousFrames.Length);
+            AddGauge(-gaugePerFrame);
+        }
     }
 
     private void HandleInput()
