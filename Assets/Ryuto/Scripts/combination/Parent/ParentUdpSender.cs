@@ -28,7 +28,7 @@ public class ParentUdpSender : MonoBehaviour
     public string targetIP = "127.0.0.1";
     public ConnectionState currentState = ConnectionState.Disconnected;
     public Button connectButton;
-    public TextMeshProUGUI statusText;
+    public TextMeshProUGUI connectButtonLabel;
     public GameObject startButtonObject;
     public string gameSceneName = "GameScene";
     public Button cancelButton;
@@ -67,6 +67,7 @@ public class ParentUdpSender : MonoBehaviour
     private float lastReceiveTime;
     private float pingInterval = 1.0f;
     private float timeoutLimit = 3.0f;
+    private volatile bool shouldStartGame = false;
 
     void Start()
     {
@@ -134,20 +135,47 @@ public class ParentUdpSender : MonoBehaviour
             heartbeatCoroutine = null;
         }
 
-        if (statusText != null)
+        // If a child requested to start the game, perform the scene transition on the main thread
+        if (shouldStartGame && currentState == ConnectionState.Connected)
         {
-            statusText.text = currentState == ConnectionState.Connecting ? "Connecting..." : currentState.ToString();
+            shouldStartGame = false;
+            Debug.Log("Child requested game start. Loading game scene on Parent.");
+            SceneManager.LoadScene(gameSceneName);
         }
+
+        // Update connect button label according to new single-button design
+        if (connectButtonLabel != null)
+        {
+            switch (currentState)
+            {
+                case ConnectionState.Disconnected:
+                    connectButtonLabel.text = "Connect";
+                    break;
+                case ConnectionState.Connecting:
+                    connectButtonLabel.text = "Connecting...";
+                    break;
+                case ConnectionState.Connected:
+                    // Use the connect button as a start indicator when connected
+                    connectButtonLabel.text = "STARTING...";
+                    break;
+            }
+        }
+
+        // Keep the connect button visible at all times (it acts as the start control when connected)
         if (connectButton != null)
         {
-            connectButton.gameObject.SetActive(currentState == ConnectionState.Disconnected);
+            connectButton.gameObject.SetActive(true);
         }
+
         if (cancelButton != null)
         {
+            // Cancel only active while connecting
             cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
         }
+
         if (startButtonObject != null)
         {
+            // Start button only active when connected
             startButtonObject.SetActive(currentState == ConnectionState.Connected);
         }
 
@@ -216,6 +244,12 @@ public class ParentUdpSender : MonoBehaviour
                 byte[] data = normalReceiveClient.Receive(ref remoteEndPoint);
                 string message = Encoding.UTF8.GetString(data);
                 Debug.Log("Received normal: " + message + " from " + remoteEndPoint.Address);
+                // If a child requests to start the game, set a flag so main thread can handle the scene change
+                if (message == MAGIC_NUMBER + "START" || message == "START")
+                {
+                    shouldStartGame = true;
+                }
+
                 receiveQueue.Enqueue(message);
             }
             catch (Exception e)
@@ -245,6 +279,15 @@ public class ParentUdpSender : MonoBehaviour
     void OnDestroy()
     {
         isRunning = false;
+        
+        // Stop the heartbeat coroutine if it's running
+        if (heartbeatCoroutine != null)
+        {
+            StopCoroutine(heartbeatCoroutine);
+            heartbeatCoroutine = null;
+        }
+        
+        // Safely abort threads
         if (receiveThread != null && receiveThread.IsAlive)
         {
             receiveThread.Abort();
@@ -253,21 +296,48 @@ public class ParentUdpSender : MonoBehaviour
         {
             normalReceiveThread.Abort();
         }
+        
+        // Safely close and dispose UDP clients
         if (udpClient != null)
         {
-            udpClient.Close();
+            try
+            {
+                udpClient.Close();
+                udpClient.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Error closing udpClient: " + e.Message);
+            }
+            udpClient = null;
         }
+        
         if (receiveClient != null)
         {
-            receiveClient.Close();
+            try
+            {
+                receiveClient.Close();
+                receiveClient.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Error closing receiveClient: " + e.Message);
+            }
+            receiveClient = null;
         }
+        
         if (normalReceiveClient != null)
         {
-            normalReceiveClient.Close();
-        }
-        if (heartbeatCoroutine != null)
-        {
-            StopCoroutine(heartbeatCoroutine);
+            try
+            {
+                normalReceiveClient.Close();
+                normalReceiveClient.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Error closing normalReceiveClient: " + e.Message);
+            }
+            normalReceiveClient = null;
         }
     }
 }

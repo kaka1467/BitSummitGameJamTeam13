@@ -1,6 +1,7 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
+using System.Collections.Generic;
 
 public class MenuNavigationController : MonoBehaviour
 {
@@ -17,26 +18,9 @@ public class MenuNavigationController : MonoBehaviour
     [SerializeField] private List<GameObject> exclusivePanels = new List<GameObject>();
     
     [Header("Input Settings")]
-    [SerializeField] private KeyCode confirmKey = KeyCode.Return;
-    [SerializeField] private KeyCode upKey = KeyCode.UpArrow;
-    [SerializeField] private KeyCode downKey = KeyCode.DownArrow;
-    [SerializeField] private string verticalAxisName = "Vertical"; // ゲームパッド対応
-    [SerializeField] private string submitButtonName = "Submit";   // ゲームパッド決定ボタン
-    
-    [Header("Retroid Pocket Flip 2 Settings")]
-    // Retroid Pocket Flip 2のキー設定
-    [SerializeField] private KeyCode retroidConfirmKey = KeyCode.Space; // Retroidの決定ボタン
-    [SerializeField] private KeyCode[] additionalConfirmKeys = new KeyCode[] 
-    { 
-        KeyCode.JoystickButton0,  // Aボタン
-        KeyCode.JoystickButton1,  // Bボタン
-        KeyCode.Z,                // 追加の確認キー
-        KeyCode.X                 // 追加の確認キー
-    };
+    [SerializeField] private float inputDelay = 0.2f; // 入力間隔
     
     private int currentIndex = 0;
-    private float lastVerticalInput = 0f;
-    private float inputDelay = 0.2f; // 入力間隔
     private float lastInputTime = 0f;
 
     void Start()
@@ -77,11 +61,39 @@ public class MenuNavigationController : MonoBehaviour
 
     private void HandleNavigation()
     {
-        float verticalInput = Input.GetAxisRaw(verticalAxisName);
-        bool upPressed = Input.GetKeyDown(upKey);
-        bool downPressed = Input.GetKeyDown(downKey);
+        bool upPressed = false;
+        bool downPressed = false;
+        float gamepadVertical = 0f;
 
-        // キーボードでの十字キー入力
+        // Keyboard input - Up Arrow
+        if (Keyboard.current != null && Keyboard.current[Key.UpArrow].wasPressedThisFrame)
+        {
+            upPressed = true;
+        }
+
+        // Keyboard input - Down Arrow
+        if (Keyboard.current != null && Keyboard.current[Key.DownArrow].wasPressedThisFrame)
+        {
+            downPressed = true;
+        }
+
+        // Gamepad input - D-Pad
+        if (Gamepad.current != null)
+        {
+            if (Gamepad.current.dpad.up.wasPressedThisFrame)
+            {
+                upPressed = true;
+            }
+            if (Gamepad.current.dpad.down.wasPressedThisFrame)
+            {
+                downPressed = true;
+            }
+
+            // Gamepad Left Stick (vertical axis)
+            gamepadVertical = Gamepad.current.leftStick.y.ReadValue();
+        }
+
+        // Handle keyboard/gamepad d-pad input
         if (upPressed || downPressed)
         {
             if (upPressed)
@@ -94,37 +106,47 @@ public class MenuNavigationController : MonoBehaviour
             }
             lastInputTime = Time.time;
         }
-        // ゲームパッド/アナログスティックでの入力
-        else if (Mathf.Abs(verticalInput) > 0.5f && Time.time - lastInputTime > inputDelay)
+        // Handle analog stick input with cooldown
+        else if (Mathf.Abs(gamepadVertical) > 0.5f && Time.time - lastInputTime > inputDelay)
         {
-            if (verticalInput > 0.5f)
+            if (gamepadVertical > 0.5f)
             {
                 NavigateUp();
             }
-            else if (verticalInput < -0.5f)
+            else if (gamepadVertical < -0.5f)
             {
                 NavigateDown();
             }
             lastInputTime = Time.time;
         }
-
-        lastVerticalInput = verticalInput;
     }
 
     private void HandleConfirm()
     {
-        bool confirmPressed = Input.GetKeyDown(confirmKey) || 
-                            Input.GetKeyDown(retroidConfirmKey) ||
-                            Input.GetButtonDown(submitButtonName);
+        bool confirmPressed = false;
 
-        // 追加の確認キーをチェック
-        foreach (KeyCode key in additionalConfirmKeys)
+        // Keyboard input - Enter
+        if (Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame)
         {
-            if (Input.GetKeyDown(key))
-            {
-                confirmPressed = true;
-                break;
-            }
+            confirmPressed = true;
+        }
+
+        // Keyboard input - Space
+        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+        {
+            confirmPressed = true;
+        }
+
+        // Gamepad input - Button South (A button on Xbox, Cross on PlayStation)
+        if (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame)
+        {
+            confirmPressed = true;
+        }
+
+        // Gamepad input - Button East (B button on Xbox, Circle on PlayStation) as alternative
+        if (Gamepad.current != null && Gamepad.current.buttonEast.wasPressedThisFrame)
+        {
+            confirmPressed = true;
         }
 
         if (confirmPressed)

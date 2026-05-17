@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// 親の出現予兆システムを管理します。
@@ -109,10 +110,75 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
-        if (Input.GetKeyDown(manualTriggerKey))
+        if (IsManualTriggerPressed())
         {
             StartWarningSequence();
         }
+    }
+
+    // Maps the legacy KeyCode to the Input System Key enum when possible
+    private bool TryMapKeyCode(KeyCode kc, out Key mappedKey)
+    {
+        mappedKey = default;
+
+        // Quick direct mappings
+        switch (kc)
+        {
+            case KeyCode.Space:
+                mappedKey = Key.Space; return true;
+            case KeyCode.Return:
+            case KeyCode.KeypadEnter:
+                mappedKey = Key.Enter; return true;
+            case KeyCode.UpArrow:
+                mappedKey = Key.UpArrow; return true;
+            case KeyCode.DownArrow:
+                mappedKey = Key.DownArrow; return true;
+            case KeyCode.LeftArrow:
+                mappedKey = Key.LeftArrow; return true;
+            case KeyCode.RightArrow:
+                mappedKey = Key.RightArrow; return true;
+        }
+
+        // Alphanumeric keys: try to parse KeyCode name to Key
+        string name = kc.ToString();
+
+        // Alpha keys (A-Z)
+        if (name.Length == 1 && char.IsLetter(name[0]))
+        {
+            return System.Enum.TryParse<Key>(name, true, out mappedKey);
+        }
+
+        // Numeric keys like Alpha0..Alpha9 -> Digit0..Digit9
+        if (name.StartsWith("Alpha", System.StringComparison.Ordinal))
+        {
+            string digitName = "Digit" + name.Substring(5);
+            return System.Enum.TryParse<Key>(digitName, true, out mappedKey);
+        }
+
+        // Fallback: attempt direct parse of the KeyCode name
+        return System.Enum.TryParse<Key>(name, true, out mappedKey);
+    }
+
+    // Check the new Input System for the configured manual trigger key
+    private bool IsManualTriggerPressed()
+    {
+        if (!enableManualKeyTrigger)
+            return false;
+
+        var kb = Keyboard.current;
+        if (kb == null)
+            return false;
+
+        if (TryMapKeyCode(manualTriggerKey, out Key mapped))
+        {
+            var ctrl = kb[mapped];
+            if (ctrl != null)
+            {
+                return ctrl.wasPressedThisFrame;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
