@@ -27,7 +27,7 @@ EditorBuildSettings:
     path: Assets/Scenes/MotherGame/Ranking.unity
     guid: 7644d76b136334517b3105c1034126e7
   - enabled: 1
-    path: Assets/Scenes/MotherGame/MotherResultRanking 2.unity
+    path: Assets/Scenes/MotherGame/ClearResulr.unity
     guid: 344c80713a59040f39ffee24086ba922
   - enabled: 1
     path: Assets/Scenes/MiniGameFolder/MiniGameOver.unity
