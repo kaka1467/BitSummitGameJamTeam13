@@ -45,6 +45,8 @@ public class Item : MonoBehaviour
             //     break;
 
             case ItemType.Clock:
+                // タイマー取得時にダメージアニメーション再生
+                TriggerPlayerDamage(other);
                 break;
 
             case ItemType.Boost:
@@ -72,14 +74,23 @@ public class Item : MonoBehaviour
 
                 bool started = QTEManager.Instance != null && QTEManager.Instance.StartHugeObstacleQte(success =>
                 {
-                    if (!success && gm != null)
+                    if (!success)
                     {
-                        gm.AddTime(-Mathf.Abs(timeAmount));
+                        // QTE失敗時にダメージアニメーション再生
+                        TriggerPlayerDamage(other);
+                        
+                        // 時間を減らす
+                        if (gm != null)
+                        {
+                            gm.AddTime(-Mathf.Abs(timeAmount));
+                        }
                     }
                 });
 
                 if (!started && gm != null)
                 {
+                    // QTEが開始できなかった場合もダメージアニメーション再生
+                    TriggerPlayerDamage(other);
                     gm.AddTime(-Mathf.Abs(timeAmount));
                 }
                 applyTimeOnCollect = false;
@@ -90,6 +101,9 @@ public class Item : MonoBehaviour
                 break;
 
             case ItemType.BGM:
+                // メガホン取得時にダメージアニメーション再生
+                TriggerPlayerDamage(other);
+                
                 // デバッグログを追加して呼び出し状況を確認
                 Debug.Log($"Item.ApplyEffect: BGM triggered on '{other.gameObject.name}', AudioManager.Instance is {(AudioManager.Instance == null ? "null" : "present")}, bgmClip is {(bgmClip == null ? "null" : bgmClip.name)}, loopBgm={loopBgm}, bgmVolume={bgmVolume}");
 
@@ -142,5 +156,16 @@ public class Item : MonoBehaviour
         }
 
         AudioManager.Instance.PlaySE(seClip, seVolume);
+    }
+
+    private void TriggerPlayerDamage(Component target)
+    {
+        if (target == null) return;
+
+        PlayerAnimator playerAnimator = target.GetComponent<PlayerAnimator>() ?? target.GetComponentInParent<PlayerAnimator>();
+        if (playerAnimator != null)
+        {
+            playerAnimator.PlayDamage();
+        }
     }
 }

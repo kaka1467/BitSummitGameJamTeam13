@@ -11,6 +11,7 @@ public class QTEManager : MonoBehaviour
     public static event Action<bool> HugeQteFinished;
 
     [SerializeField] private TextMeshProUGUI qteText;
+    [SerializeField] private PlayerAnimator playerAnimator;
     
     [Header("QTEの文字数の設定")] 
     [SerializeField] private int sequenceLength = 7;
@@ -37,6 +38,7 @@ public class QTEManager : MonoBehaviour
         }
 
         Instance = this;
+        ResolvePlayerAnimator();
         EnsureQteText();
         SetQteVisible(false);
     }
@@ -50,6 +52,7 @@ public class QTEManager : MonoBehaviour
             remainingTime -= Time.unscaledDeltaTime;
             if (remainingTime <= 0f)
             {
+                TriggerPlayerDamage();
                 RegenerateSequence();
                 return;
             }
@@ -67,6 +70,10 @@ public class QTEManager : MonoBehaviour
         RegenerateSequence();
         onFinished = finishedCallback;
         isQteActive = true;
+
+        // QTE中はダメージポーズを維持し、自動でRunに戻らないようロックする
+        ResolvePlayerAnimator();
+        if (playerAnimator != null) playerAnimator.SetDamageLock(true);
 
         Time.timeScale = 0f;
         SetQteVisible(true);
@@ -100,6 +107,29 @@ public class QTEManager : MonoBehaviour
         currentIndex = 0;
         remainingTime = timeLimitSeconds;
         UpdateQteText();
+    }
+
+    private void TriggerPlayerDamage()
+    {
+        if (playerAnimator == null)
+        {
+            ResolvePlayerAnimator();
+        }
+
+        if (playerAnimator != null)
+        {
+            playerAnimator.PlayDamage();
+        }
+    }
+
+    private void ResolvePlayerAnimator()
+    {
+        if (playerAnimator != null) return;
+
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player == null) return;
+
+        playerAnimator = player.GetComponent<PlayerAnimator>() ?? player.GetComponentInParent<PlayerAnimator>();
     }
 
     private char? GetInputChar()
@@ -160,6 +190,9 @@ public class QTEManager : MonoBehaviour
         isQteActive = false;
         Time.timeScale = 1f;
         SetQteVisible(false);
+
+        // QTE終了時にダメージポーズのロックを解除する
+        if (playerAnimator != null) playerAnimator.SetDamageLock(false);
 
         Action<bool> callback = onFinished;
         onFinished = null;
