@@ -9,6 +9,9 @@ public class MenuNavigationController : MonoBehaviour
     [SerializeField] private GameObject selectionArrow;
     [SerializeField] private float arrowOffsetX = -50f; // 矢印のX座標オフセット
     [SerializeField] private float arrowOffsetY = 0f;   // 矢印のY座標オフセット
+    [SerializeField] private List<Button> cancelButtons = new List<Button>();
+    [SerializeField] private float cancelArrowOffsetX = -50f;
+    [SerializeField] private float cancelArrowOffsetY = 0f;
 
     [Header("Modal Panel Settings")]
     [SerializeField] private List<GameObject> exclusivePanels = new List<GameObject>();
@@ -269,11 +272,15 @@ public class MenuNavigationController : MonoBehaviour
 
         if (buttonRect != null && arrowRect != null)
         {
+            bool isCancelButton = cancelButtons != null && cancelButtons.Contains(selectedButton);
+            float offsetX = isCancelButton ? cancelArrowOffsetX : arrowOffsetX;
+            float offsetY = isCancelButton ? cancelArrowOffsetY : arrowOffsetY;
+
             // ボタンの位置を取得して矢印を配置
             Vector3 buttonPos = buttonRect.position;
             arrowRect.position = new Vector3(
-                buttonPos.x + arrowOffsetX,
-                buttonPos.y + arrowOffsetY,
+                buttonPos.x + offsetX,
+                buttonPos.y + offsetY,
                 buttonPos.z
             );
         }
