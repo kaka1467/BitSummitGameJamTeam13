@@ -1,8 +1,10 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem; // 新Input Systemに対応
 
 /// <summary>
-/// ParentWarningSystemを自動的にランダムな間隔で発動させます
+/// ParentWarningSystemを自動的にランダムな間隔で発動させます。
+/// キーボードの『Oキー』でいつでもお母さんを強制召喚できるデバッグ機能付き。
 /// </summary>
 public class ParentWarningScheduler : MonoBehaviour
 {
@@ -13,20 +15,13 @@ public class ParentWarningScheduler : MonoBehaviour
     [Header("スケジュール設定")]
     [Tooltip("予兆を自動的に発動させるかどうか")]
     public bool autoTrigger = true;
-    
-    [Tooltip("最初の予兆が発動するまでの最小時間（秒）")]
+
     public float initialDelayMin = 5.0f;
-    
-    [Tooltip("最初の予兆が発動するまでの最大時間（秒）")]
     public float initialDelayMax = 10.0f;
-    
-    [Tooltip("予兆と予兆の間の最小時間（秒）")]
     public float intervalMin = 20.0f;
-    
-    [Tooltip("予兆と予兆の間の最大時間（秒）")]
     public float intervalMax = 40.0f;
 
-    [Header("デバッグ")]
+    [Header("デバッグ確認")]
     [Tooltip("次の予兆までの残り時間")]
     public float timeUntilNextWarning = 0f;
 
@@ -45,22 +40,25 @@ public class ParentWarningScheduler : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// スケジューラーを開始します
-    /// </summary>
+    void Update()
+    {
+        // ★【無敵のデバッグ機能】キーボードの『O（オー）』キーを押すと、
+        // タイマーを無視して今すぐその場でお母さんを強制的に出現させられます！
+        if (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame)
+        {
+            TriggerNow();
+        }
+    }
+
     public void StartScheduler()
     {
         if (schedulerCoroutine != null)
         {
             StopCoroutine(schedulerCoroutine);
         }
-
         schedulerCoroutine = StartCoroutine(SchedulerCoroutine());
     }
 
-    /// <summary>
-    /// スケジューラーを停止します
-    /// </summary>
     public void StopScheduler()
     {
         if (schedulerCoroutine != null)
@@ -70,49 +68,39 @@ public class ParentWarningScheduler : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 今すぐ予兆を発動させます（手動トリガー）
-    /// </summary>
     public void TriggerNow()
     {
         if (warningSystem != null && !warningSystem.isWarningActive)
         {
+            Debug.Log("【デバッグ】お母さん襲撃シーケンスを手動で即座に開始します！");
             warningSystem.StartWarningSequence();
         }
     }
 
     private IEnumerator SchedulerCoroutine()
     {
-        // 最初の待機時間
         float initialDelay = Random.Range(initialDelayMin, initialDelayMax);
         timeUntilNextWarning = initialDelay;
-        
-        Debug.Log($"First warning will trigger in {initialDelay:F1} seconds");
-        
+
         while (timeUntilNextWarning > 0)
         {
             timeUntilNextWarning -= Time.deltaTime;
             yield return null;
         }
 
-        // メインループ
         while (true)
         {
-            // 予兆システムが実行中でない場合のみ発動
             if (warningSystem != null && !warningSystem.isWarningActive)
             {
-                Debug.Log("Triggering warning sequence...");
+                Debug.Log("【タイマー】お母さんが出現しました！");
                 warningSystem.StartWarningSequence();
 
-                // 予兆シーケンスが完了するまで待つ
+                // 予兆シーケンスが完了して廊下に帰るまで待つ
                 yield return new WaitWhile(() => warningSystem.isWarningActive);
             }
 
-            // 次の予兆までの待機時間を計算
             float nextInterval = Random.Range(intervalMin, intervalMax);
             timeUntilNextWarning = nextInterval;
-            
-            Debug.Log($"Next warning will trigger in {nextInterval:F1} seconds");
 
             while (timeUntilNextWarning > 0)
             {
@@ -127,37 +115,3 @@ public class ParentWarningScheduler : MonoBehaviour
         StopScheduler();
     }
 }
-
-/*
-=== Inspector Setup ===
-
-1) このスクリプトをParentWarningSystemと同じGameObjectにアタッチします
-
-2) システム参照:
-   - "Warning System": ParentWarningSystemコンポーネント（自動検出されますが、手動で設定も可能）
-
-3) スケジュール設定:
-   - "Auto Trigger": 自動的に予兆を発動させるかどうか（デフォルト: ON）
-   - "Initial Delay Min": ゲーム開始から最初の予兆までの最小時間（デフォルト: 5秒）
-   - "Initial Delay Max": ゲーム開始から最初の予兆までの最大時間（デフォルト: 10秒）
-   - "Interval Min": 予兆と予兆の間の最小時間（デフォルト: 20秒）
-   - "Interval Max": 予兆と予兆の間の最大時間（デフォルト: 40秒）
-
-=== 使用方法 ===
-
-自動モード:
-- "Auto Trigger"をONにしておくだけで、自動的にランダムな間隔で予兆が発動します
-
-手動トリガー:
-```csharp
-ParentWarningScheduler scheduler = GetComponent<ParentWarningScheduler>();
-scheduler.TriggerNow(); // 今すぐ予兆を発動
-```
-
-スケジューラーの制御:
-```csharp
-ParentWarningScheduler scheduler = GetComponent<ParentWarningScheduler>();
-scheduler.StopScheduler();  // 自動発動を停止
-scheduler.StartScheduler(); // 自動発動を再開
-```
-*/

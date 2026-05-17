@@ -1,68 +1,204 @@
-using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// DoorController: Manages door rotation with smooth Lerp animation.
+/// Supports both manual toggle (E key) via New Input System and external commands from ParentDetectionV2.
+/// Synchronizes with parent model visibility based on door state.
+/// </summary>
 public class DoorController : MonoBehaviour
 {
-    // Public fields for Inspector assignment
-    public Transform door; // The door transform that rotates
-    public Transform parentModel; // The parent model transform to show/hide
-    public KeyCode doorToggleKey = KeyCode.E; // Key to manually toggle door open/closed
-    public KeyCode parentToggleKey = KeyCode.P; // Key to toggle parent visit mode
-    public float closedAngle = 0f; // Door angle when closed (degrees)
-    public float openAngle = 90f; // Door angle when open (degrees)
-    public float openSpeed = 5f; // Speed of door opening/closing
+    /// <summary>
+    /// Door state enumeration
+    /// </summary>
+    public enum DoorState
+    {
+        Closed,  // Door fully closed (0 degrees)
+        Peek,    // Door slightly open for peeking (-15 to -30 degrees)
+        Full     // Door fully open (-180 degrees)
+    }
 
-    // Internal state variables
-    private bool isDoorOpen = false; // Current door state
-    private bool isParentHere = false; // Whether parent is at the door
+    [Header("Door Setup")]
+    [SerializeField] private Transform door;           // The door transform that rotates
+    [SerializeField] private Transform parentModel;    // The parent model to show/hide
 
-    // Public read-only property so other scripts can know if the parent is here
+    [Header("Rotation Settings")]
+    [SerializeField] private float closedAngle = 0f;   // Closed position (0 degrees)
+    [SerializeField] private float peekAngle = -15f;   // Peek position (-15 degrees for testing)
+    [SerializeField] private float openAngle = -180f;  // Fully open position (-180 degrees)
+    [SerializeField] private float openSpeed = 5f;     // Rotation speed multiplier
+
+    [Header("Debug")]
+    public bool showDebugLogs = false;
+
+    // Current door state
+    private DoorState currentDoorState = DoorState.Closed;
+    private DoorState targetDoorState = DoorState.Closed;
+
+    // Track parent visibility
+    private bool isParentHere = false;
+
+    /// <summary>
+    /// Read-only property: Check if parent is currently at the door
+    /// </summary>
     public bool IsParentHere => isParentHere;
 
-    public void SetDoorOpen(bool isOpen)
-    {
-        isDoorOpen = isOpen;
-    }
-
-    public void SetParentVisible(bool isVisible)
-    {
-        isParentHere = isVisible;
-        if (parentModel != null)
-        {
-            parentModel.gameObject.SetActive(isVisible);
-        }
-    }
+    /// <summary>
+    /// Read-only property: Get current door state
+    /// </summary>
+    public DoorState CurrentDoorState => currentDoorState;
 
     void Start()
     {
-        // Initialize parent model visibility
+        // Ensure door is at closed angle initially
+        if (door != null)
+        {
+            door.localRotation = Quaternion.Euler(0f, closedAngle, 0f);
+        }
+
+        // Ensure parent model is hidden initially
         if (parentModel != null)
-            parentModel.gameObject.SetActive(isParentHere);
+        {
+            parentModel.gameObject.SetActive(false);
+        }
+
+        isParentHere = false;
+        currentDoorState = DoorState.Closed;
+        targetDoorState = DoorState.Closed;
     }
 
     void Update()
     {
-        // Check for manual door toggle (E key)
+        // Manual toggle via E key (New Input System)
         if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
         {
-            isDoorOpen = !isDoorOpen; // Toggle door state
+            if (showDebugLogs)
+                Debug.Log("?? E Key pressed: Toggling door");
+
+            // Toggle between Closed and Full
+            if (targetDoorState == DoorState.Closed)
+            {
+                SetDoorState(DoorState.Full);
+            }
+            else
+            {
+                SetDoorState(DoorState.Closed);
+            }
         }
 
-        // Smoothly rotate the door towards the target angle
-        if (door != null)
+        // Smoothly rotate door towards target angle
+        UpdateDoorRotation();
+    }
+
+    /// <summary>
+    /// Updates door rotation towards target angle using Lerp
+    /// </summary>
+    private void UpdateDoorRotation()
+    {
+        if (door == null) return;
+
+        float targetAngleY = GetTargetAngle(targetDoorState);
+        Quaternion targetRotation = Quaternion.Euler(0f, targetAngleY, 0f);
+
+        // Lerp towards target rotation
+        door.localRotation = Quaternion.Lerp(door.localRotation, targetRotation, Time.deltaTime * openSpeed);
+
+        // Update current state if rotation is close enough to target
+        if (Quaternion.Angle(door.localRotation, targetRotation) < 1f)
         {
-            Quaternion targetRotation = Quaternion.Euler(0f, isDoorOpen ? openAngle : closedAngle, 0f);
-            door.localRotation = Quaternion.Lerp(door.localRotation, targetRotation, Time.deltaTime * openSpeed);
+            currentDoorState = targetDoorState;
         }
     }
-}
 
-/*
-Setup Instructions:
-1. Attach this script to an empty GameObject in your scene (e.g., name it "DoorManager").
-2. In the Inspector, drag the door GameObject (the one that rotates) into the "Door" field.
-3. Drag the parent model GameObject into the "Parent Model" field.
-4. Adjust the angles and speed as needed (closedAngle=0, openAngle=90 for a 90-degree swing).
-5. Test: Press E to manually open/close the door. When useAutoParent is enabled, the parent will automatically appear/disappear over time; otherwise, press P to toggle parent presence.
-*/
+    /// <summary>
+    /// Gets the target Y rotation angle for the given door state
+    /// </summary>
+    private float GetTargetAngle(DoorState state)
+    {
+        return state switch
+        {
+            DoorState.Closed => closedAngle,
+            DoorState.Peek => peekAngle,
+            DoorState.Full => openAngle,
+            _ => closedAngle
+        };
+    }
+
+    /// <summary>
+    /// Sets door to a specific state (called by ParentDetectionV2 and manual input)
+    /// </summary>
+    public void SetDoorState(DoorState newState)
+    {
+        if (targetDoorState == newState) return;
+
+        targetDoorState = newState;
+
+        if (showDebugLogs)
+            Debug.Log($"?? Door state changed to: {newState}");
+
+        // Update parent model visibility based on door state
+        UpdateParentVisibility();
+    }
+
+    /// <summary>
+    /// Backward compatibility method: Maps boolean to DoorState
+    /// true = Full open, false = Closed
+    /// </summary>
+    public void SetDoorOpen(bool isOpen)
+    {
+        DoorState newState = isOpen ? DoorState.Full : DoorState.Closed;
+        SetDoorState(newState);
+
+        if (showDebugLogs)
+            Debug.Log($"?? SetDoorOpen({isOpen}) -> {newState}");
+    }
+
+    /// <summary>
+    /// Updates parent model visibility based on door state
+    /// </summary>
+    private void UpdateParentVisibility()
+    {
+        // Parent is visible when door is Peek or Full
+        bool shouldShowParent = (targetDoorState == DoorState.Peek || targetDoorState == DoorState.Full);
+
+        if (shouldShowParent != isParentHere)
+        {
+            isParentHere = shouldShowParent;
+
+            if (parentModel != null)
+            {
+                parentModel.gameObject.SetActive(isParentHere);
+
+                if (showDebugLogs)
+                    Debug.Log($"?? Parent Model: {(isParentHere ? "VISIBLE" : "HIDDEN")}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Alternative method to set parent visibility directly (if needed)
+    /// </summary>
+    public void SetParentVisible(bool isVisible)
+    {
+        if (isParentHere == isVisible) return;
+
+        isParentHere = isVisible;
+
+        if (parentModel != null)
+        {
+            parentModel.gameObject.SetActive(isVisible);
+
+            if (showDebugLogs)
+                Debug.Log($"?? Parent visibility set to: {isVisible}");
+        }
+    }
+
+    /// <summary>
+    /// Get the current rotation angle of the door (in degrees on Y-axis)
+    /// </summary>
+    public float GetCurrentDoorAngle()
+    {
+        if (door == null) return 0f;
+        return door.localEulerAngles.y;
+    }
+}
