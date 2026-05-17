@@ -807,6 +807,7 @@ MonoBehaviour:
   startButton: {fileID: 0}
   statusText: {fileID: 0}
   cancelButton: {fileID: 0}
+  cancelUiObject: {fileID: 0}
   creditsPanel: {fileID: 0}
   settingsPanel: {fileID: 0}
   connectLabel: Connect
@@ -3441,6 +3442,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::QTEManager
   qteText: {fileID: 861082791}
+  playerAnimator: {fileID: 0}
   sequenceLength: 7
   timeLimitSeconds: 5
   enteredColor: {r: 1, g: 0, b: 0, a: 1}
@@ -3846,7 +3848,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dbb0fd0bf2d999e4eb0af9f8fec0c91b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
-  damageDuration: 6.16
+  damageDuration: 1
 --- !u!95 &1865325552
 Animator:
   serializedVersion: 7

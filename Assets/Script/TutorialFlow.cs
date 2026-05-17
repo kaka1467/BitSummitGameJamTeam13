@@ -133,6 +133,8 @@ public class TutorialFlow : MonoBehaviour
         ClearActiveItems();
         yield return RunQteStep();
 
+        yield return WaitForQteToFinishIfActive();
+
         if (afterQteDelay > 0f)
         {
             yield return new WaitForSecondsRealtime(afterQteDelay);
@@ -294,6 +296,26 @@ public class TutorialFlow : MonoBehaviour
         {
             yield return new WaitForSecondsRealtime(total);
         }
+    }
+
+    private IEnumerator WaitForQteToFinishIfActive()
+    {
+        QTEManager manager = QTEManager.Instance;
+        if (manager == null || !manager.IsQteActive)
+        {
+            yield break;
+        }
+
+        bool finished = false;
+        System.Action<bool> handler = _ => finished = true;
+        QTEManager.HugeQteFinished += handler;
+
+        while (!finished)
+        {
+            yield return null;
+        }
+
+        QTEManager.HugeQteFinished -= handler;
     }
 
     private int GetNearestLaneIndex(float y)

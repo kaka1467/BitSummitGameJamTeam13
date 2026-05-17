@@ -14,33 +14,127 @@ public class PlayerAnimator : MonoBehaviour
     public float damageDuration = 0.8f;
 
     // Animator パラメータ名（Unityエディタ側のパラメータ名と一致させること）
-    private static readonly int ParamIsDamaged = Animator.StringToHash("isDamaged");
+    private static readonly int ParamIsDamage = Animator.StringToHash("isDamage");
 
     private Animator anim;
     private Coroutine damageRoutine;
+    private AnimatorUpdateMode defaultUpdateMode;
+    private bool pendingUpdateModeRestore;
+
+    /// <summary>ダメージアニメーション再生中かどうか</summary>
+    public bool IsDamaging => damageRoutine != null;
+
+    // QTE中はダメージポーズを維持し、Run に戻らないようにするフラグ
+    private bool _lockDamage;
 
     private void Awake()
     {
         anim = GetComponent<Animator>();
+        defaultUpdateMode = anim.updateMode;
+        anim.SetBool(ParamIsDamage, false);
     }
 
-   public void PlayDamage()
+    private void OnEnable()
+    {
+        if (anim == null) return;
+        anim.updateMode = defaultUpdateMode;
+        pendingUpdateModeRestore = false;
+
+        // ダメージ再生中であれば isDamage を維持する。
+        // レーン変更などで Animator が再有効化されても Run へ戻らないようにする。
+        anim.SetBool(ParamIsDamage, IsDamaging);
+    }
+
+    private void Update()
+    {
+        if (pendingUpdateModeRestore && Time.timeScale > 0f)
+        {
+            anim.updateMode = defaultUpdateMode;
+            pendingUpdateModeRestore = false;
+        }
+    }
+
+    /// <summary>
+    /// QTE中にダメージポーズをロックする。
+    /// lock=true の間は DamageRoutine が終わっても isDamage が false に戻らない。
+    /// QTEクリア時に lock=false を渡してポーズを解除する。
+    /// </summary>
+    public void SetDamageLock(bool lockDamage)
+    {
+        _lockDamage = lockDamage;
+
+        // ロック解除時、かつダメージコルーチンが終了済みであれば Run へ戻す
+        if (!_lockDamage && !IsDamaging)
+        {
+            anim.SetBool(ParamIsDamage, false);
+        }
+    }
+
+    private void OnDisable()
+    {
+        _lockDamage = false;
+
+        if (damageRoutine != null)
+        {
+            StopCoroutine(damageRoutine);
+            damageRoutine = null;
+        }
+
+        if (anim != null)
+        {
+            anim.updateMode = defaultUpdateMode;
+            anim.SetBool(ParamIsDamage, false);
+        }
+    }
+
+    public void PlayDamage()
     {
         // 既にダメージ演出中であればキャンセルして再開するなどの制御も可能です
-        StopAllCoroutines();
-        StartCoroutine(DamageRoutine());
+        if (damageRoutine != null)
+        {
+            StopCoroutine(damageRoutine);
+            damageRoutine = null;
+        }
+
+        damageRoutine = StartCoroutine(DamageRoutine());
     }
 
     private IEnumerator DamageRoutine()
     {
+        bool useUnscaled = Mathf.Approximately(Time.timeScale, 0f);
+        if (useUnscaled)
+        {
+            anim.updateMode = AnimatorUpdateMode.UnscaledTime;
+        }
+
         // アニメーション開始
-        anim.SetBool("isDamage", true);
+        anim.SetBool(ParamIsDamage, true);
 
         // ダメージアニメーションの長さに合わせて待機
         // アニメーションクリップの長さに応じて調整してください
-        yield return new WaitForSeconds(0.5f);
+        if (useUnscaled)
+        {
+            yield return new WaitForSecondsRealtime(damageDuration);
+        }
+        else
+        {
+            yield return new WaitForSeconds(damageDuration);
+        }
 
         // アニメーション終了
-        anim.SetBool("isDamage", false);
+        // QTE中ロックが掛かっている場合はダメージポーズを維持する
+        if (!_lockDamage)
+        {
+            anim.SetBool(ParamIsDamage, false);
+        }
+        if (useUnscaled && Mathf.Approximately(Time.timeScale, 0f))
+        {
+            pendingUpdateModeRestore = true;
+        }
+        else
+        {
+            anim.updateMode = defaultUpdateMode;
+        }
+        damageRoutine = null;
     }
 }
