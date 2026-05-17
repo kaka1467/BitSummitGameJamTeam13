@@ -252,6 +252,14 @@ public class TutorialFlow : MonoBehaviour
             yield return null;
         }
 
+        if (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+        {
+            while (!qteDone)
+            {
+                yield return null;
+            }
+        }
+
         QTEManager.HugeQteFinished -= handler;
         playerMove.SetAutoTargetX(null);
     }
