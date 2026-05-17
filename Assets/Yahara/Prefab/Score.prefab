@@ -49,7 +49,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Item
   itemType: 0
-  scoreAmount: 10
+  scoreAmount: 500
   timeAmount: 0
   boostDuration: 0
   boostMultiplier: 0
