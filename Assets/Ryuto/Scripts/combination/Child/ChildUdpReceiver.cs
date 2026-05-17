@@ -36,6 +36,11 @@ public class ChildUdpReceiver : MonoBehaviour
     public Button startButton;
     public TextMeshProUGUI statusText;
     public Button cancelButton;
+
+    [Header("New Cancel UI Object Support")]
+    [Tooltip("Cancelの背景画像や枠など、消したい装飾がすべて含まれている一番外側の親オブジェクトをアサインしてください")]
+    public GameObject cancelUiObject; // ★文字だけでなく、UI全体を完全に消すために新しく追加しました
+
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private string connectLabel = "Connect";
@@ -44,7 +49,15 @@ public class ChildUdpReceiver : MonoBehaviour
 
     public void OnConnectButtonClicked()
     {
-        currentState = ConnectionState.Connecting;
+        // If already connected, use the connect button as the Start button
+        if (currentState == ConnectionState.Connected)
+        {
+            OnStartButtonClicked();
+        }
+        else
+        {
+            currentState = ConnectionState.Connecting;
+        }
     }
 
     public void OnCancelButtonClicked()
@@ -129,7 +142,32 @@ public class ChildUdpReceiver : MonoBehaviour
         {
             connectLabelDefault = connectButtonLabel.text;
         }
+        // Wire up connect button to handle both connect and start actions
+        if (connectButton != null)
+        {
+            connectButton.onClick.RemoveAllListeners();
+            connectButton.onClick.AddListener(OnConnectButtonClicked);
+        }
+
         UpdateUi();
+    }
+
+    public void OnStartButtonClicked()
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes("START");
+            // send to parent using configured targetIP and parentReceivePort
+            sendClient.Send(data, data.Length, targetIP, parentReceivePort);
+            Debug.Log("Sent START to parent at " + targetIP + ":" + parentReceivePort);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Error sending START UDP message: " + e.Message);
+        }
+
+        // Immediately transition to the gameplay scene
+        SceneManager.LoadScene(gameSceneName);
     }
 
     void Update()
@@ -143,7 +181,8 @@ public class ChildUdpReceiver : MonoBehaviour
                 {
                     lastReceiveTime = Time.time;
                 }
-                else if (message == "START_GAME")
+                // 親機側からの開始パケットも安全に待機
+                else if (message == "START" || message == "START_GAME")
                 {
                     SceneManager.LoadScene(gameSceneName);
                 }
@@ -198,36 +237,56 @@ public class ChildUdpReceiver : MonoBehaviour
 
     private void UpdateUi()
     {
-        bool isDisconnected = currentState == ConnectionState.Disconnected;
-        bool isConnecting = currentState == ConnectionState.Connecting;
-        bool isConnected = currentState == ConnectionState.Connected;
+        // 1. 接続状態に応じて、一本化したメインボタンのラベルテキストを切り替える
+        if (connectButtonLabel != null)
+        {
+            switch (currentState)
+            {
+                case ConnectionState.Disconnected:
+                    connectButtonLabel.text = connectLabel;
+                    break;
+                case ConnectionState.Connecting:
+                    connectButtonLabel.text = connectingLabel;
+                    break;
+                case ConnectionState.Connected:
+                    connectButtonLabel.text = "START!";
+                    break;
+            }
+        }
 
-        bool showConnectButton = isDisconnected || isConnecting;
-        SetActiveForButton(connectButton, showConnectButton);
-        SetActiveForButton(creditsButton, isDisconnected || isConnecting);
-        SetActiveForButton(settingsButton, isDisconnected || isConnecting);
-
-        SetActiveForButton(cancelButton, isConnecting);
-        SetActiveForButton(startButton, isConnected);
-
+        // 2. メインのボタン本体は常に表示（Connected時はSTARTボタンになるため）
         if (connectButton != null)
         {
-            connectButton.interactable = isDisconnected;
+            connectButton.gameObject.SetActive(true);
         }
 
-        if (connectButtonLabel != null && showConnectButton)
+        // 3. ★今回の修正の核心部分
+        // 新しく追加した全体のゲームオブジェクト枠（cancelUiObject）が設定されていれば、それを丸ごと制御する
+        if (cancelUiObject != null)
         {
-            string fallbackLabel = string.IsNullOrEmpty(connectLabelDefault) ? connectLabel : connectLabelDefault;
-            connectButtonLabel.text = isConnecting ? connectingLabel : fallbackLabel;
+            cancelUiObject.SetActive(currentState == ConnectionState.Connecting);
+        }
+        else if (cancelButton != null)
+        {
+            // 設定されていない場合は、従来のボタンコンポーネントのみを制御（安全弁）
+            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
         }
 
-        if (statusText != null)
+        // 4. クレジットや設定ボタンは、接続成功（ゲーム開始可能状態）になったら邪魔なので隠す
+        if (creditsButton != null)
         {
-            SetActiveForText(statusText, isConnecting);
-            if (isConnecting)
-            {
-                statusText.text = connectingLabel;
-            }
+            creditsButton.gameObject.SetActive(currentState != ConnectionState.Connected);
+        }
+
+        if (settingsButton != null)
+        {
+            settingsButton.gameObject.SetActive(currentState != ConnectionState.Connected);
+        }
+
+        // 5. 接続中（Connecting）のときだけボタンを一時的に連打できなくする
+        if (connectButton != null)
+        {
+            connectButton.interactable = currentState != ConnectionState.Connecting;
         }
     }
 
@@ -348,9 +407,3 @@ public class ChildUdpReceiver : MonoBehaviour
         }
     }
 }
-
-// Inspector Setup Notes:
-// - Attach this script to a GameObject in the child Unity app.
-// - Set the 'Normal Port' field to match the port used by the ParentUdpSender (default: 8000).
-// - The 'Last Message' field will display the most recently received message.
-// - Received messages are logged to the Unity console.

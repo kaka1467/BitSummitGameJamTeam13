@@ -6,75 +6,76 @@ using UnityEngine.SceneManagement;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢ã§ä¸€å®šæ™‚é–“æ”¾ç½®ã™ã‚‹ã¨å‹•ç”»ã‚’å†ç”Ÿã™ã‚‹ã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆ
-/// å‹•ç”»é–‹å§‹æ™‚ã«ã‚·ãƒ¼ãƒ ãƒ¬ã‚¹ãªãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³/ã‚¢ã‚¦ãƒˆã‚’è¡Œã†
+/// ƒ^ƒCƒgƒ‹‰æ–Ê‚Åˆê’èŠÔ•ú’u‚·‚é‚Æ“®‰æ‚ğÄ¶‚·‚éƒRƒ“ƒ|[ƒlƒ“ƒg
+/// “®‰æŠJn‚ÉƒV[ƒ€ƒŒƒX‚ÈƒtƒF[ƒhƒCƒ“/ƒAƒEƒg‚ğs‚¤
+/// - ƒŒƒKƒV[‚Ì UnityEngine.Input ‚ğŠ®‘S‚É”p~‚µAV‚µ‚¢ Input System ‚ğ—˜—p
 /// </summary>
 public class TitleScreenVideoPlayer : MonoBehaviour
 {
-    [Header("å¾…æ©Ÿæ™‚é–“è¨­å®š")]
-    [Tooltip("å‹•ç”»å†ç”Ÿã¾ã§ã®å¾…æ©Ÿæ™‚é–“(ç§’)")]
+    [Header("‘Ò‹@ŠÔİ’è")]
+    [Tooltip("“®‰æÄ¶‚Ü‚Å‚Ì‘Ò‹@ŠÔ(•b)")]
     [SerializeField] private float idleTime = 30f;
 
-    [Header("å‹•ç”»è¨­å®š")]
-    [Tooltip("VideoPlayerã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆ")]
+    [Header("“®‰æİ’è")]
+    [Tooltip("VideoPlayerƒRƒ“ƒ|[ƒlƒ“ƒg")]
     [SerializeField] private VideoPlayer videoPlayer;
-    
-    [Tooltip("å‹•ç”»å†ç”Ÿä¸­ã«éè¡¨ç¤ºã«ã™ã‚‹UI(ã‚¿ã‚¤ãƒˆãƒ«ãƒ­ã‚´ãªã©)")]
+
+    [Tooltip("“®‰æÄ¶’†‚É”ñ•\¦‚É‚·‚éUI(ƒ^ƒCƒgƒ‹ƒƒS‚È‚Ç)")]
     [SerializeField] private GameObject[] uiToHide;
 
-    [Header("å‹•ç”»çµ‚äº†å¾Œã®è¨­å®š")]
-    [Tooltip("å‹•ç”»çµ‚äº†å¾Œã«ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢ã«æˆ»ã‚‹ã‹")]
+    [Header("“®‰æI—¹Œã‚Ìİ’è")]
+    [Tooltip("“®‰æI—¹Œã‚Éƒ^ƒCƒgƒ‹‰æ–Ê‚É–ß‚é‚©")]
     [SerializeField] private bool returnToTitleAfterVideo = true;
 
-    [Tooltip("å‹•ç”»ã‚’ãƒ«ãƒ¼ãƒ—å†ç”Ÿã™ã‚‹ã‹")]
+    [Tooltip("“®‰æ‚ğƒ‹[ƒvÄ¶‚·‚é‚©")]
     [SerializeField] private bool loopVideo = false;
 
-    [Header("ãƒ•ã‚§ãƒ¼ãƒ‰è¨­å®š")]
-    [Tooltip("ãƒ•ã‚§ãƒ¼ãƒ‰ã«ä½¿ç”¨ã™ã‚‹å…¨ç”»é¢é»’UIã®Imageã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆ\n(Canvasé…ä¸‹ã®é»’ã„RawImageã¾ãŸã¯Imageã‚’ã‚¢ã‚µã‚¤ãƒ³)")]
+    [Header("ƒtƒF[ƒhİ’è")]
+    [Tooltip("ƒtƒF[ƒh‚Ég—p‚·‚é‘S‰æ–Ê•UI‚ÌImageƒRƒ“ƒ|[ƒlƒ“ƒg\n(Canvas”z‰º‚Ì•‚¢RawImage‚Ü‚½‚ÍImage‚ğƒAƒTƒCƒ“)")]
     [SerializeField] private Image fadeImage;
 
-    [Tooltip("ãƒ•ã‚§ãƒ¼ãƒ‰ã®æ™‚é–“(ç§’)")]
+    [Tooltip("ƒtƒF[ƒh‚ÌŠÔ(•b)")]
     [SerializeField] private float fadeDuration = 0.4f;
 
     private float idleTimer = 0f;
     private bool isVideoPlaying = false;
-    private Vector3 lastMousePosition;
+    private Vector2 lastMousePosition;
     private bool hasStartedOnce = false;
     private bool isPrepared = false;
 
     void Start()
     {
-        // VideoPlayerã®åˆæœŸè¨­å®š
+        // VideoPlayer‚Ì‰Šúİ’è
         if (videoPlayer != null)
         {
             videoPlayer.isLooping = loopVideo;
             videoPlayer.Stop();
             videoPlayer.gameObject.SetActive(false);
-            
-            // å‹•ç”»çµ‚äº†æ™‚ã®ã‚¤ãƒ™ãƒ³ãƒˆç™»éŒ²
+
+            // “®‰æI—¹‚ÌƒCƒxƒ“ƒg“o˜^
             videoPlayer.loopPointReached += OnVideoFinished;
-            // æº–å‚™å®Œäº†ã‚¤ãƒ™ãƒ³ãƒˆç™»éŒ²
+            // €”õŠ®—¹ƒCƒxƒ“ƒg“o˜^
             videoPlayer.prepareCompleted += OnVideoPrepared;
         }
         else
         {
-            Debug.LogError("VideoPlayerãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“!");
+            Debug.LogError("VideoPlayer‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñ!");
         }
 
-        // ãƒ•ã‚§ãƒ¼ãƒ‰ç”»åƒã®åˆæœŸåŒ–(å®Œå…¨é€æ˜)
+        // ƒtƒF[ƒh‰æ‘œ‚Ì‰Šú‰»(Š®‘S“§–¾)
         if (fadeImage != null)
         {
             fadeImage.color = new Color(0f, 0f, 0f, 0f);
             fadeImage.gameObject.SetActive(true);
-            // æç”»é †ã‚’æœ€å‰é¢ã«
+            // •`‰æ‡‚ğÅ‘O–Ê‚É
             fadeImage.transform.SetAsLastSibling();
         }
         else
         {
-            Debug.LogWarning("fadeImageãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚ãƒ•ã‚§ãƒ¼ãƒ‰ãªã—ã§å†ç”Ÿã—ã¾ã™ã€‚");
+            Debug.LogWarning("fadeImage‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñBƒtƒF[ƒh‚È‚µ‚ÅÄ¶‚µ‚Ü‚·B");
         }
 
-        // initialize lastMousePosition using new Input System
+        // VInput System ‚ğg‚Á‚Ä‰Šúƒ}ƒEƒXˆÊ’u‚ğæ“¾
         lastMousePosition = GetMousePosition();
     }
 
@@ -82,7 +83,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     {
         if (isVideoPlaying)
         {
-            // å‹•ç”»å†ç”Ÿä¸­ã«ä½•ã‹å…¥åŠ›ãŒã‚ã‚Œã°å‹•ç”»ã‚’ã‚¹ã‚­ãƒƒãƒ—
+            // “®‰æÄ¶’†‚É‰½‚©“ü—Í‚ª‚ ‚ê‚Î“®‰æ‚ğƒXƒLƒbƒv
             if (AnyInputDown())
             {
                 StartCoroutine(StopVideoWithFade());
@@ -90,20 +91,18 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             return;
         }
 
-        // å…¥åŠ›æ¤œçŸ¥(ã‚­ãƒ¼å…¥åŠ›ã€ãƒã‚¦ã‚¹ã‚¯ãƒªãƒƒã‚¯ã€ãƒã‚¦ã‚¹ç§»å‹•)
-        bool hasInput = AnyInputPressed() ||
-                       IsMouseMoved() ||
-                       AnyTouchPressed();
+        // “ü—ÍŒŸ’m(ƒL[“ü—ÍAƒ}ƒEƒXƒNƒŠƒbƒNAƒ}ƒEƒXˆÚ“®Aƒ^ƒbƒ`)
+        bool hasInput = AnyInputPressed() || IsMouseMoved() || AnyTouchPressed();
 
-        // update last mouse position for comparison
+        // ƒ}ƒEƒXˆÊ’uXViˆÚ“®ŒŸ’m—pj
         lastMousePosition = GetMousePosition();
 
         if (hasInput)
         {
-            // å…¥åŠ›ãŒã‚ã£ãŸã‚‰ã‚¿ã‚¤ãƒãƒ¼ã‚’ãƒªã‚»ãƒƒãƒˆ
+            // “ü—Í‚ª‚ ‚Á‚½‚çƒ^ƒCƒ}[‚ğƒŠƒZƒbƒg
             idleTimer = 0f;
 
-            // Prepareã—ã¦ã„ãŸã‚‰ã‚­ãƒ£ãƒ³ã‚»ãƒ«
+            // Prepare‚µ‚Ä‚¢‚½‚çƒLƒƒƒ“ƒZƒ‹
             if (isPrepared)
             {
                 videoPlayer.Stop();
@@ -113,17 +112,17 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         }
         else
         {
-            // æ”¾ç½®æ™‚é–“ã‚’ã‚«ã‚¦ãƒ³ãƒˆ
+            // •ú’uŠÔ‚ğƒJƒEƒ“ƒg
             idleTimer += Time.deltaTime;
 
-            // æŒ‡å®šæ™‚é–“ã®å°‘ã—å‰(ãƒ•ã‚§ãƒ¼ãƒ‰æ™‚é–“åˆ†)ã«Prepareé–‹å§‹
+            // w’èŠÔ‚Ì­‚µ‘O(ƒtƒF[ƒhŠÔ•ª)‚ÉPrepareŠJn
             float prepareStartTime = idleTime - fadeDuration - 0.5f;
             if (idleTimer >= prepareStartTime && !isPrepared && !hasStartedOnce)
             {
                 PrepareVideo();
             }
 
-            // æŒ‡å®šæ™‚é–“çµŒéã—ãŸã‚‰å‹•ç”»å†ç”Ÿ
+            // w’èŠÔŒo‰ß‚µ‚½‚ç“®‰æÄ¶
             if (idleTimer >= idleTime && !hasStartedOnce)
             {
                 hasStartedOnce = true;
@@ -133,35 +132,35 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// å‹•ç”»ã‚’äº‹å‰ã«Prepare(ãƒ‡ã‚³ãƒ¼ãƒ‰æº–å‚™)ã™ã‚‹
+    /// “®‰æ‚ğ–‘O‚ÉPrepare(ƒfƒR[ƒh€”õ)‚·‚é
     /// </summary>
     private void PrepareVideo()
     {
         if (videoPlayer == null || isPrepared) return;
         isPrepared = true;
 
-        // SetActive(true)ã—ã¦Prepareã ã‘å®Ÿè¡Œ(ã¾ã å†ç”Ÿã—ãªã„)
+        // SetActive(true)‚µ‚ÄPrepare‚¾‚¯Às(‚Ü‚¾Ä¶‚µ‚È‚¢)
         videoPlayer.gameObject.SetActive(true);
         videoPlayer.Prepare();
     }
 
     /// <summary>
-    /// Prepareå®Œäº†ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯
+    /// PrepareŠ®—¹ƒR[ƒ‹ƒoƒbƒN
     /// </summary>
     private void OnVideoPrepared(VideoPlayer vp)
     {
-        // Prepareå®Œäº†ã€‚PlayVideoWithFadeã®Play()å‘¼ã³å‡ºã—ã‚’å¾…ã¤ã ã‘ã€‚
-        Debug.Log("VideoPlayer: æº–å‚™å®Œäº†");
+        // PrepareŠ®—¹BPlayVideoWithFade‚ÌPlay()ŒÄ‚Ño‚µ‚ğ‘Ò‚Â‚¾‚¯B
+        Debug.Log("VideoPlayer: €”õŠ®—¹");
     }
 
     /// <summary>
-    /// ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ â†’ å‹•ç”»å†ç”Ÿ â†’ ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³ ã®ã‚·ãƒ¼ã‚±ãƒ³ã‚¹
+    /// ƒtƒF[ƒhƒAƒEƒg ¨ “®‰æÄ¶ ¨ ƒtƒF[ƒhƒCƒ“ ‚ÌƒV[ƒPƒ“ƒX
     /// </summary>
     private IEnumerator PlayVideoWithFade()
     {
         if (videoPlayer == null) yield break;
 
-        // ã¾ã PrepareãŒå®Œäº†ã—ã¦ã„ãªã‘ã‚Œã°å®Œäº†ã‚’å¾…ã¤
+        // ‚Ü‚¾Prepare‚ªŠ®—¹‚µ‚Ä‚¢‚È‚¯‚ê‚ÎŠ®—¹‚ğ‘Ò‚Â
         if (!videoPlayer.isPrepared)
         {
             videoPlayer.gameObject.SetActive(true);
@@ -169,58 +168,58 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             yield return new WaitUntil(() => videoPlayer.isPrepared);
         }
 
-        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ(ç”»é¢ã‚’é»’ã)
+        // ƒtƒF[ƒhƒAƒEƒg(‰æ–Ê‚ğ•‚­)
         yield return StartCoroutine(Fade(0f, 1f));
 
-        // UIã‚’éè¡¨ç¤º
+        // UI‚ğ”ñ•\¦
         foreach (var ui in uiToHide)
         {
             if (ui != null) ui.SetActive(false);
         }
 
-        // å‹•ç”»å†ç”Ÿé–‹å§‹
+        // “®‰æÄ¶ŠJn
         isVideoPlaying = true;
         videoPlayer.gameObject.SetActive(true);
         videoPlayer.Play();
 
-        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³(é»’ã‚’æ¶ˆã™)
+        // ƒtƒF[ƒhƒCƒ“(•‚ğÁ‚·)
         yield return StartCoroutine(Fade(1f, 0f));
     }
 
     /// <summary>
-    /// ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ â†’ UIå¾©å…ƒ â†’ å‹•ç”»åœæ­¢ â†’ ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³ ã®ã‚·ãƒ¼ã‚±ãƒ³ã‚¹
+    /// ƒtƒF[ƒhƒAƒEƒg ¨ UI•œŒ³ ¨ “®‰æ’â~ ¨ ƒtƒF[ƒhƒCƒ“ ‚ÌƒV[ƒPƒ“ƒX
     /// </summary>
     private IEnumerator StopVideoWithFade()
     {
         if (videoPlayer == null) yield break;
 
-        // äºŒé‡å®Ÿè¡Œé˜²æ­¢
+        // “ñdÀs–h~
         isVideoPlaying = false;
 
-        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ(ç”»é¢ã‚’é»’ã)
+        // ƒtƒF[ƒhƒAƒEƒg(‰æ–Ê‚ğ•‚­)
         yield return StartCoroutine(Fade(0f, 1f));
 
-        // å‹•ç”»åœæ­¢
+        // “®‰æ’â~
         videoPlayer.Stop();
         videoPlayer.gameObject.SetActive(false);
         isPrepared = false;
 
-        // UIã‚’å†è¡¨ç¤º
+        // UI‚ğÄ•\¦
         foreach (var ui in uiToHide)
         {
             if (ui != null) ui.SetActive(true);
         }
 
-        // ã‚¿ã‚¤ãƒãƒ¼ãƒªã‚»ãƒƒãƒˆ
+        // ƒ^ƒCƒ}[ƒŠƒZƒbƒg
         idleTimer = 0f;
         hasStartedOnce = false;
 
-        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³(é»’ã‚’æ¶ˆã™)
+        // ƒtƒF[ƒhƒCƒ“(•‚ğÁ‚·)
         yield return StartCoroutine(Fade(1f, 0f));
     }
 
     /// <summary>
-    /// ãƒ•ã‚§ãƒ¼ãƒ‰å‡¦ç†(alphaFrom â†’ alphaTo)
+    /// ƒtƒF[ƒhˆ—(alphaFrom ¨ alphaTo)
     /// </summary>
     private IEnumerator Fade(float alphaFrom, float alphaTo)
     {
@@ -238,7 +237,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// å‹•ç”»çµ‚äº†æ™‚ã®ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯
+    /// “®‰æI—¹‚ÌƒR[ƒ‹ƒoƒbƒN
     /// </summary>
     private void OnVideoFinished(VideoPlayer vp)
     {
@@ -250,7 +249,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
 
     void OnDestroy()
     {
-        // ã‚¤ãƒ™ãƒ³ãƒˆç™»éŒ²è§£é™¤
+        // ƒCƒxƒ“ƒg“o˜^‰ğœ
         if (videoPlayer != null)
         {
             videoPlayer.loopPointReached -= OnVideoFinished;
@@ -258,54 +257,106 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         }
     }
 
-    // Helper: get current mouse position using new Input System
-    private Vector3 GetMousePosition()
+    // ---------- New Input System Helpers ----------
+
+    /// <summary>
+    /// Œ»İ‚Ìƒ}ƒEƒXˆÊ’u‚ğ•Ô‚·iMouse.current ‚ª null ‚Ìê‡‚Í Vector2.zeroj
+    /// </summary>
+    private Vector2 GetMousePosition()
     {
         if (Mouse.current != null)
         {
-            Vector2 pos = Mouse.current.position.ReadValue();
-            return new Vector3(pos.x, pos.y, 0f);
+            return Mouse.current.position.ReadValue();
         }
-        return Vector3.zero;
+        return Vector2.zero;
     }
 
-    // Helper: check if mouse moved since last frame
+    /// <summary>
+    /// ƒ}ƒEƒX‚ªˆÚ“®‚µ‚½‚©i‘OƒtƒŒ[ƒ€‚Æ‚Ì·•ªj
+    /// </summary>
     private bool IsMouseMoved()
     {
-        Vector3 current = GetMousePosition();
+        Vector2 current = GetMousePosition();
         return current != lastMousePosition;
     }
 
-    // Helper: check any input pressed (continuous)
+    /// <summary>
+    /// Œp‘±“I‚É‰Ÿ‚³‚ê‚Ä‚¢‚é“ü—Íiƒ^ƒCƒ}[ƒŠƒZƒbƒg”»’è—pj
+    /// </summary>
     private bool AnyInputPressed()
     {
+        // ƒL[ƒ{[ƒh“ü—Íƒ`ƒFƒbƒN
         bool keyPressed = Keyboard.current != null && Keyboard.current.anyKey != null && Keyboard.current.anyKey.isPressed;
-        bool mousePressed = Mouse.current != null && (Mouse.current.leftButton.isPressed || Mouse.current.rightButton.isPressed);
-        bool gamepadPressed = Gamepad.current != null && (
-            Gamepad.current.buttonSouth.isPressed ||
-            Gamepad.current.buttonNorth.isPressed ||
-            Gamepad.current.buttonEast.isPressed ||
-            Gamepad.current.buttonWest.isPressed);
+
+        // ƒ}ƒEƒX“ü—Íƒ`ƒFƒbƒN
+        bool mousePressed = false;
+        if (Mouse.current != null)
+        {
+            mousePressed = Mouse.current.leftButton.isPressed || 
+                          Mouse.current.rightButton.isPressed || 
+                          Mouse.current.middleButton.isPressed;
+        }
+
+        // ƒQ[ƒ€ƒpƒbƒh“ü—Íƒ`ƒFƒbƒN
+        bool gamepadPressed = false;
+        if (Gamepad.current != null)
+        {
+            gamepadPressed = Gamepad.current.buttonSouth.isPressed ||
+                            Gamepad.current.buttonEast.isPressed ||
+                            Gamepad.current.buttonWest.isPressed ||
+                            Gamepad.current.buttonNorth.isPressed ||
+                            Gamepad.current.startButton.isPressed;
+        }
+
         return keyPressed || mousePressed || gamepadPressed;
     }
 
-    // Helper: check any input down (triggered this frame)
+    /// <summary>
+    /// ‚»‚ÌƒtƒŒ[ƒ€‚Å‰Ÿ‚³‚ê‚½“ü—Íi“®‰æƒXƒLƒbƒv”»’è—pj
+    /// </summary>
     private bool AnyInputDown()
     {
+        // ƒL[ƒ{[ƒh“ü—Íƒ`ƒFƒbƒN
         bool keyDown = Keyboard.current != null && Keyboard.current.anyKey != null && Keyboard.current.anyKey.wasPressedThisFrame;
-        bool mouseDown = Mouse.current != null && (Mouse.current.leftButton.wasPressedThisFrame || Mouse.current.rightButton.wasPressedThisFrame);
-        bool gamepadDown = Gamepad.current != null && (
-            Gamepad.current.buttonSouth.wasPressedThisFrame ||
-            Gamepad.current.buttonNorth.wasPressedThisFrame ||
-            Gamepad.current.buttonEast.wasPressedThisFrame ||
-            Gamepad.current.buttonWest.wasPressedThisFrame);
-        bool touchDown = Touchscreen.current != null && Touchscreen.current.primaryTouch != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame;
+
+        // ƒ}ƒEƒX“ü—Íƒ`ƒFƒbƒN
+        bool mouseDown = false;
+        if (Mouse.current != null)
+        {
+            mouseDown = Mouse.current.leftButton.wasPressedThisFrame || 
+                       Mouse.current.rightButton.wasPressedThisFrame || 
+                       Mouse.current.middleButton.wasPressedThisFrame;
+        }
+
+        // ƒQ[ƒ€ƒpƒbƒh“ü—Íƒ`ƒFƒbƒN
+        bool gamepadDown = false;
+        if (Gamepad.current != null)
+        {
+            gamepadDown = Gamepad.current.buttonSouth.wasPressedThisFrame ||
+                         Gamepad.current.buttonEast.wasPressedThisFrame ||
+                         Gamepad.current.buttonWest.wasPressedThisFrame ||
+                         Gamepad.current.buttonNorth.wasPressedThisFrame ||
+                         Gamepad.current.startButton.wasPressedThisFrame;
+        }
+
+        // ƒ^ƒbƒ`“ü—Íƒ`ƒFƒbƒN
+        bool touchDown = false;
+        if (Touchscreen.current != null && Touchscreen.current.primaryTouch != null)
+        {
+            touchDown = Touchscreen.current.primaryTouch.press.wasPressedThisFrame;
+        }
+
         return keyDown || mouseDown || gamepadDown || touchDown;
     }
 
-    // Helper: check any touch currently pressed
+    /// <summary>
+    /// ƒ^ƒbƒ`“ü—Í‚ªŒp‘±“I‚É‰Ÿ‚³‚ê‚Ä‚¢‚é‚©
+    /// </summary>
     private bool AnyTouchPressed()
     {
-        return Touchscreen.current != null && Touchscreen.current.primaryTouch != null && Touchscreen.current.primaryTouch.press.isPressed;
+        if (Touchscreen.current == null) return false;
+        var primary = Touchscreen.current.primaryTouch;
+        if (primary == null) return false;
+        return primary.press.isPressed;
     }
 }
