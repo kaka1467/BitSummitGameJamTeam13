@@ -1,137 +1,407 @@
+using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
-/// 親が部屋に入ってきた時にプレイヤーが寝ているかどうかを検出します。
-/// 新しい予兆システム（ParentWarningSystem）と連携して動作します。
+/// ParentDetectionV2: Manages mother's approach progression, staged events, and door control.
+/// Synchronizes with motherGauge/timer progression and triggers staged effects (lights, sounds, door).
+/// Branches into Primary (Real) or Dummy events at final stage based on dummyProbability.
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
-    [Header("システム参照")]
-    [Tooltip("予兆システム")]
-    public ParentWarningSystem warningSystem;
-    
-    [Tooltip("プレイヤーの睡眠状態を管理するコンポーネント")]
-    public SleepingManager sleepingManager;
-
-    [Header("検出設定")]
-    [Tooltip("検出のチェック間隔（秒）")]
-    public float checkInterval = 0.1f;
-
-    [Header("ネットワーク連携")]
-    [Tooltip("UDP送信コンポーネント（子側の場合）")]
-    public ChildUdpReceiver udpReceiver;
-    
-    [Tooltip("UDP送信を使用するかどうか")]
-    public bool useNetworkSync = false;
-
-    [Header("デバッグ")]
-    [Tooltip("プレイヤーが捕まったかどうか")]
-    public bool isCaught = false;
-
-    private float detectionTimer = 0f;
-
-    void Update()
+    /// <summary>
+    /// Door open state enumeration
+    /// </summary>
+    private enum DoorOpenType
     {
-        // すでに捕まっている場合は何もしない
-        if (isCaught)
-            return;
+        None,   // Door closed
+        Peek,   // Half-open (peek) - 15 degrees
+        Full    // Full open - 90 degrees
+    }
 
-        // 予兆システムが実行中でない場合は検出しない
-        if (warningSystem == null || !warningSystem.isWarningActive)
-            return;
+    [Header("System & UI References")]
+    public ParentWarningSystem warningSystem;
+    public SleepingController sleepingController;
+    public MotherGauge motherGauge;
 
-        // タイマーを更新
-        detectionTimer += Time.deltaTime;
+    [Header("Stage Effects Objects")]
+    [SerializeField] private GameObject firstFloorLight;
+    [SerializeField] private GameObject secondFloorLight1;
+    [SerializeField] private GameObject secondFloorLight2;
+    [SerializeField] private GameObject secondFloorLight3;
+    [SerializeField] private AudioSource stairsAudioSource;
+    [SerializeField] private AudioSource dummyDoorAudioSource;
+    [SerializeField] private GameObject realMotherObject;      // Primary (Real) mother/door effect
+    [SerializeField] private GameObject dummyMotherObject;     // Dummy mother/door effect
 
-        // 一定間隔で検出チェック
-        if (detectionTimer >= checkInterval)
+    [Header("Audio Sources (SE)")]
+    [SerializeField] private AudioSource lightSwitchAudioSource;     // Light switch sound
+    [SerializeField] private AudioSource mainDoorOpenAudioSource;    // Door open sound
+    [SerializeField] private AudioSource mainDoorCloseAudioSource;   // Door close sound
+    [SerializeField] private AudioSource rushInAudioSource;          // Rush-in footstep sound
+
+    [Header("Door Control")]
+    [SerializeField] private DoorController targetDoorController;    // Target door controller to command
+
+    [Header("Event Branching")]
+    [SerializeField, Range(0f, 1f)] private float dummyProbability = 0.3f;
+
+    [Header("Gauge Speed Settings")]
+    [Tooltip("Gauge increase per second when mother is looking")]
+    public float riseSpeed = 45f;
+    [Tooltip("Gauge decrease per second when safe")]
+    public float dropSpeed = 15f;
+
+    [Header("Door Angle Settings")]
+    [SerializeField] private float peekOpenAngle = 15f;   // Peek (half-open) door angle
+    [SerializeField] private float fullOpenAngle = 90f;   // Full open door angle
+
+    [Header("Loud Item Feature")]
+    [SerializeField] private bool enableLoudItemFeature = true;  // Toggle for loud item feature
+
+    [Header("Debug")]
+    public bool isCaught = false;
+    public bool isMotherLookingNow = false;  // Flag: mother is staring at player
+
+    // Stage progression flags
+    private bool stage1Triggered = false;
+    private bool stage2Triggered = false;
+    private bool stage3Triggered = false;
+    private bool stage4Triggered = false;
+
+    // Current door state
+    private DoorOpenType currentDoorState = DoorOpenType.None;
+
+    // Coroutine reference
+    private Coroutine dummyResetCoroutine = null;
+
+    // Internal decimal gauge for smooth progression
+    private float decimalGauge = 0f;
+
+    void Start()
+    {
+        isCaught = false;
+        isMotherLookingNow = false;
+
+        // Auto-find references if not assigned
+        if (motherGauge == null)
         {
-            detectionTimer = 0f;
-            CheckDetection();
+            motherGauge = Object.FindFirstObjectByType<MotherGauge>();
+        }
+
+        if (motherGauge != null)
+        {
+            decimalGauge = motherGauge.currentGauge;
+            motherGauge.enableAutoDecrease = false;
+        }
+
+        if (sleepingController == null)
+        {
+            sleepingController = Object.FindFirstObjectByType<SleepingController>();
+        }
+
+        if (targetDoorController == null)
+        {
+            targetDoorController = Object.FindFirstObjectByType<DoorController>();
         }
     }
 
-    void CheckDetection()
+    void Update()
     {
-        // SleepingManagerが設定されているか確認
-        if (sleepingManager == null)
+        // Debug key input (New Input System)
+        if (Keyboard.current != null)
         {
-            Debug.LogWarning("SleepingManager is not assigned!");
-            return;
+            if (Keyboard.current.pKey.wasPressedThisFrame)
+            {
+                TriggerFinalEvent(primary: true);
+            }
+            if (Keyboard.current.oKey.wasPressedThisFrame)
+            {
+                TriggerFinalEvent(primary: false);
+            }
+            if (Keyboard.current.lKey.wasPressedThisFrame)
+            {
+                OnLoudItemTriggered();
+            }
         }
 
-        // 親が部屋に入ってきて、プレイヤーが寝ていない場合は捕まる
-        bool parentIsPresent = warningSystem != null && warningSystem.isWarningActive;
-        bool playerIsSleeping = sleepingManager.IsSleeping;
+        // If caught, stop progression
+        if (isCaught) return;
 
-        if (parentIsPresent && !playerIsSleeping)
+        // Check required systems
+        if (warningSystem == null || sleepingController == null || motherGauge == null) return;
+
+        // Gauge progression logic
+        bool parentIsLooking = warningSystem.isWarningActive;
+        bool playerIsSleeping = sleepingController.IsSleeping;
+
+        if (parentIsLooking && !playerIsSleeping)
+        {
+            // Mother is looking and player is not sleeping: gauge rises quickly
+            decimalGauge += riseSpeed * Time.deltaTime;
+        }
+        else
+        {
+            // Safe or player is sleeping: gauge decreases naturally
+            decimalGauge -= dropSpeed * Time.deltaTime;
+        }
+
+        // Clamp gauge between 0 and max
+        decimalGauge = Mathf.Clamp(decimalGauge, 0f, motherGauge.maxGauge);
+
+        // Update UI
+        motherGauge.currentGauge = Mathf.RoundToInt(decimalGauge);
+        motherGauge.AddGauge(0);  // Force UI refresh
+
+        // Check for game over
+        if (motherGauge.currentGauge >= motherGauge.maxGauge)
+        {
+            OnPlayerCaught();
+        }
+
+        // Update staged progression
+        UpdateStages();
+    }
+
+    /// <summary>
+    /// Updates stage progression based on gauge progress percentage
+    /// </summary>
+    private void UpdateStages()
+    {
+        if (motherGauge == null) return;
+
+        float progress = motherGauge.maxGauge <= 0 ? 0f : (decimalGauge / motherGauge.maxGauge);
+
+        // Stage 1: 25% - First floor light
+        if (!stage1Triggered && progress >= 0.25f)
+        {
+            stage1Triggered = true;
+            Debug.Log("?? Stage 1: First Floor Light On");
+            if (firstFloorLight != null) firstFloorLight.SetActive(true);
+            if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        }
+
+        // Stage 2: 50% - Second floor lights
+        if (!stage2Triggered && progress >= 0.5f)
+        {
+            stage2Triggered = true;
+            Debug.Log("?? Stage 2: Second Floor Lights On");
+            if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
+            if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
+            if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+            if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        }
+
+        // Stage 3: 75% - Stairs sound
+        if (!stage3Triggered && progress >= 0.75f)
+        {
+            stage3Triggered = true;
+            Debug.Log("?? Stage 3: Stairs Audio Playing");
+            if (stairsAudioSource != null) stairsAudioSource.Play();
+        }
+
+        // Stage 4: ~95% - Final branching event
+        if (!stage4Triggered && progress >= 0.95f)
+        {
+            stage4Triggered = true;
+            Debug.Log("?? Stage 4: Final Event Trigger");
+
+            // Branch based on dummy probability
+            bool isDummy = Random.value < dummyProbability;
+            TriggerFinalEvent(primary: !isDummy);
+        }
+    }
+
+    /// <summary>
+    /// Triggers the final event: Primary (Real) or Dummy
+    /// </summary>
+    private void TriggerFinalEvent(bool primary)
+    {
+        if (primary)
+        {
+            TriggerPrimaryEvent();
+        }
+        else
+        {
+            TriggerDummyEvent();
+        }
+    }
+
+    /// <summary>
+    /// Primary (Real) Event: Mother bursts in, full door open
+    /// </summary>
+    private void TriggerPrimaryEvent()
+    {
+        Debug.Log("?? Final Event: PRIMARY (Real) - Mother Bursts In!");
+        currentDoorState = DoorOpenType.Full;
+        isMotherLookingNow = true;
+
+        // Activate real mother object
+        if (realMotherObject != null)
+        {
+            realMotherObject.SetActive(true);
+        }
+
+        // Command door controller to open fully
+        if (targetDoorController != null)
+        {
+            targetDoorController.SetDoorOpen(true);
+            Debug.Log("?? Door commanded to FULL OPEN");
+        }
+
+        // Play door open sound
+        if (mainDoorOpenAudioSource != null)
+        {
+            mainDoorOpenAudioSource.Play();
+        }
+
+        // If gauge is full, trigger immediate game over
+        if (motherGauge != null && motherGauge.currentGauge >= motherGauge.maxGauge)
         {
             OnPlayerCaught();
         }
     }
 
-    void OnPlayerCaught()
+    /// <summary>
+    /// Dummy Event: Fake mother, peek open, resets after delay
+    /// </summary>
+    private void TriggerDummyEvent()
     {
-        isCaught = true;
-        Debug.Log("Player caught by parent!");
+        Debug.Log("?? Final Event: DUMMY - Fake Mother");
+        currentDoorState = DoorOpenType.Peek;
+        isMotherLookingNow = false;
 
-        // SleepingManagerに通知
-        if (sleepingManager != null)
+        // Activate dummy mother object
+        if (dummyMotherObject != null)
         {
-            sleepingManager.SetCaughtState();
+            dummyMotherObject.SetActive(true);
         }
 
-        // ネットワーク同期が有効な場合、UDP経由で通知
-        if (useNetworkSync && udpReceiver != null)
+        // Command door controller to peek open
+        if (targetDoorController != null)
         {
-            udpReceiver.SendState("CHILD_CAUGHT");
+            targetDoorController.SetDoorOpen(false);  // false = peek/partially open
+            Debug.Log("?? Door commanded to PEEK OPEN");
         }
 
-        // 予兆システムを停止
-        if (warningSystem != null)
+        // Play dummy door sound
+        if (dummyDoorAudioSource != null)
         {
-            warningSystem.StopWarningSequence();
+            dummyDoorAudioSource.Play();
         }
+
+        // Start reset sequence
+        if (dummyResetCoroutine != null)
+        {
+            StopCoroutine(dummyResetCoroutine);
+        }
+        dummyResetCoroutine = StartCoroutine(HandleDummySequence());
     }
 
     /// <summary>
-    /// 捕まった状態をリセット（デバッグ用）
+    /// Coroutine: Dummy event cleanup and reset
     /// </summary>
-    public void ResetCaughtState()
+    private IEnumerator HandleDummySequence()
     {
-        isCaught = false;
-        Debug.Log("Caught state reset");
+        // Display dummy for 2.5 seconds
+        yield return new WaitForSeconds(2.5f);
+
+        Debug.Log("?? Dummy Event: Cleanup and Reset");
+
+        // Deactivate dummy mother
+        if (dummyMotherObject != null)
+        {
+            dummyMotherObject.SetActive(false);
+        }
+
+        // Play door close sound
+        if (mainDoorCloseAudioSource != null)
+        {
+            mainDoorCloseAudioSource.Play();
+        }
+
+        // Command door to close
+        if (targetDoorController != null)
+        {
+            targetDoorController.SetDoorOpen(false);
+            Debug.Log("?? Door commanded to CLOSE");
+        }
+
+        // Turn off all lights
+        if (firstFloorLight != null) firstFloorLight.SetActive(false);
+        if (secondFloorLight1 != null) secondFloorLight1.SetActive(false);
+        if (secondFloorLight2 != null) secondFloorLight2.SetActive(false);
+        if (secondFloorLight3 != null) secondFloorLight3.SetActive(false);
+
+        // Reset door state
+        currentDoorState = DoorOpenType.None;
+
+        // Reset gauge
+        decimalGauge = 0f;
+        if (motherGauge != null)
+        {
+            motherGauge.currentGauge = 0;
+            motherGauge.AddGauge(0);
+        }
+
+        // Reset warning system
+        if (warningSystem != null)
+        {
+            try
+            {
+                warningSystem.isWarningActive = false;
+            }
+            catch { }
+        }
+
+        // Reset all stage flags for next cycle
+        stage1Triggered = false;
+        stage2Triggered = false;
+        stage3Triggered = false;
+        stage4Triggered = false;
+
+        isMotherLookingNow = false;
+
+        dummyResetCoroutine = null;
+    }
+
+    /// <summary>
+    /// Called when player is caught (gauge full)
+    /// </summary>
+    void OnPlayerCaught()
+    {
+        isCaught = true;
+        isMotherLookingNow = true;
+        Debug.LogError("?? GAME OVER: Caught by Mother!");
+
+        // Game over is now handled by CaughtReactionController which monitors isMotherLookingNow
+        // No need to manually trigger scene load here
+    }
+
+    /// <summary>
+    /// Called when loud item is obtained
+    /// Forces immediate primary event if enabled
+    /// </summary>
+    public void OnLoudItemTriggered()
+    {
+        if (!enableLoudItemFeature)
+        {
+            Debug.Log("?? Loud Item Feature is DISABLED");
+            return;
+        }
+
+        Debug.Log("?? LOUD ITEM TRIGGERED: Forcing Mother Rush-In!");
+
+        // Set stage4 as triggered to prevent normal progression
+        stage4Triggered = true;
+
+        // Play rush-in sound
+        if (rushInAudioSource != null)
+        {
+            rushInAudioSource.Play();
+        }
+
+        // Force primary event
+        TriggerPrimaryEvent();
     }
 }
-
-/*
-=== Inspector Setup ===
-
-1) このスクリプトをシーン内のGameObjectにアタッチします（例：GameManager）
-
-2) システム参照:
-   - "Warning System": ParentWarningSystemコンポーネントをドラッグ
-   - "Sleeping Manager": SleepingManagerコンポーネントをドラッグ
-
-3) 検出設定:
-   - "Check Interval": 検出チェックの間隔（デフォルト: 0.1秒）
-
-4) ネットワーク連携（オプション）:
-   - "Udp Receiver": ChildUdpReceiverコンポーネント（ネットワーク対戦の場合のみ）
-   - "Use Network Sync": ネットワーク同期を使用する場合はON
-
-=== 動作の流れ ===
-
-1. ParentWarningSystemが予兆シーケンスを開始
-2. 一階の明かり → 二階の明かり → ドアノック音 → 親が出現
-3. 親が部屋にいる間、このスクリプトがプレイヤーの状態をチェック
-4. プレイヤーが寝ていない場合 → 捕まる（SleepingManager.SetCaughtState()が呼ばれる）
-5. プレイヤーが寝ている場合 → 見逃される
-
-=== 旧ParentDetectionとの違い ===
-
-旧版: DoorControllerを使って親がドアにいるかを判定
-新版: ParentWarningSystemの予兆シーケンス実行中かどうかで判定
-
-これにより、予兆システムの流れと検出システムが完全に連携します。
-*/

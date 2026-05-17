@@ -1,124 +1,145 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 
+/// <summary>
+/// SleepingController: Monitors player's sleeping state with PC debug override.
+/// PC debug input (Space key) has ABSOLUTE HIGHEST PRIORITY and overrides hardware sensor.
+/// Supports hardware pillow sensor (PillowSensor via serial/ESP32) as secondary input.
+/// Integrates New Input System for seamless PC testing.
+/// </summary>
 public class SleepingController : MonoBehaviour
 {
+    [Header("Hardware Sensor")]
     [SerializeField] private PillowSensor pillowSensor;
-    [SerializeField] private ParentUdpSender parentUdpSender;
-    [SerializeField] private string motherGameOverSceneName = "MotherGameOver";
 
-    private bool isSleeping;
-    private bool hasCalledGameOver = false;
+    [Header("Debug")]
+    [SerializeField] private bool showDebugLogs = false;
 
+    // Player sleeping state
+    private bool isSleeping = false;
+
+    /// <summary>
+    /// Public read-only property: Player is sleeping (used by ParentDetectionV2 and CaughtReactionController)
+    /// </summary>
     public bool IsSleeping => isSleeping;
 
     void Start()
     {
-        // Calibrate pillow sensor baseline when the mother is ready
+        isSleeping = false;
+
+        // Initialize pillow sensor if assigned
         if (pillowSensor != null)
         {
             pillowSensor.ResetBaseline();
-            Debug.Log("SleepingController: Pillow sensor baseline calibrated.");
+            Debug.Log("? SleepingController: Pillow sensor baseline calibrated.");
         }
         else
         {
-            Debug.LogWarning("SleepingController: PillowSensor reference not assigned!");
+            Debug.LogWarning("?? SleepingController: PillowSensor reference not assigned!");
+            Debug.Log("?? Will use PC debug input (Space key or Gamepad Button South) instead.");
         }
     }
 
     void Update()
     {
-        DetectSleepState();
+        // Determine sleeping state with Space key having ABSOLUTE HIGHEST PRIORITY
+        DetermineSleepingState();
+
+        if (showDebugLogs)
+        {
+            Debug.Log($"?? Player Sleeping: {isSleeping}");
+        }
     }
 
     /// <summary>
-    /// Detection logic: checks if the player is pretending to sleep via the pillow sensor.
-    /// If isSleeping is TRUE, player is safely sleeping (proceed normally).
-    /// If isSleeping is FALSE, player is CAUGHT (trigger game over).
+    /// Determines the current sleeping state with priority hierarchy:
+    /// 1. ABSOLUTE HIGHEST: PC debug input (Space key or Gamepad Button South) Å® OVERRIDE everything
+    /// 2. SECONDARY: Hardware pillow sensor (if assigned)
+    /// 3. DEFAULT: false (not sleeping)
     /// </summary>
-    private void DetectSleepState()
+    private void DetermineSleepingState()
     {
-        // Fallback: if no pillow sensor, use keyboard/gamepad input
-        if (pillowSensor == null)
+        // PRIORITY 1: Check PC debug input first (ABSOLUTE OVERRIDE)
+        if (CheckPCDebugInput())
         {
-            isSleeping = CheckInputDevice();
-            return;
+            isSleeping = true;
+            return;  // Exit immediately - Space key has absolute priority
         }
 
-        // Check pillow sensor state
-        if (pillowSensor.isSleeping)
+        // PRIORITY 2: Fall back to hardware sensor if debug input not active
+        if (pillowSensor != null)
         {
-            // Player is properly pretending to sleep
-            isSleeping = true;
+            isSleeping = pillowSensor.isSleeping;
         }
         else
         {
-            // Player is NOT on the pillow or has moved - CAUGHT!
+            // PRIORITY 3: Default to not sleeping if no sensor and no debug input
             isSleeping = false;
-            
-            if (!hasCalledGameOver)
-            {
-                OnPlayerCaught();
-            }
         }
     }
 
     /// <summary>
-    /// Fallback input detection for testing without hardware sensor.
+    /// Checks PC debug input for sleeping state.
+    /// Space key or Gamepad Button South (A on Xbox controller) = sleeping.
+    /// Returns true if ANY debug input is detected.
     /// </summary>
-    private bool CheckInputDevice()
+    private bool CheckPCDebugInput()
     {
-        bool sleeping = false;
-
-        // Check Keyboard
+        // Check Space key (New Input System) - HIGHEST PRIORITY
         if (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
         {
-            sleeping = true;
+            if (showDebugLogs)
+                Debug.Log("?? Space key pressed: OVERRIDING to sleeping (debug mode)");
+            return true;
         }
 
-        // Check Gamepad (Android Handheld)
+        // Check Gamepad button (A / Button South) - ALSO HIGH PRIORITY
         if (Gamepad.current != null && Gamepad.current.buttonSouth.isPressed)
         {
-            sleeping = true;
+            if (showDebugLogs)
+                Debug.Log("?? Gamepad South button pressed: OVERRIDING to sleeping (debug mode)");
+            return true;
         }
 
-        return sleeping;
+        // No debug input detected
+        return false;
     }
 
     /// <summary>
-    /// Called when the player is caught not pretending to sleep.
-    /// Sends "CAUGHT" message to child device and triggers game over scene.
+    /// Force sleeping state for testing purposes.
+    /// Note: This sets the internal state, but will be overridden by Space key in the next frame.
     /// </summary>
-    private void OnPlayerCaught()
+    public void ForceSleep(bool shouldSleep)
     {
-        hasCalledGameOver = true;
-        Debug.Log("SleepingController: Player CAUGHT! Notifying child device...");
+        isSleeping = shouldSleep;
 
-        // Send CAUGHT message to child device
-        if (parentUdpSender != null)
-        {
-            parentUdpSender.SendState("CAUGHT");
-        }
-        else
-        {
-            Debug.LogWarning("SleepingController: ParentUdpSender reference not assigned!");
-        }
-
-        // Load mother game over scene
-        SceneManager.LoadScene(motherGameOverSceneName);
+        if (showDebugLogs)
+            Debug.Log($"?? Force sleep set to: {shouldSleep} (will be overridden by Space key if pressed)");
     }
 
     /// <summary>
-    /// Public method to reset the caught state (for restarting levels).
+    /// Get current pillow sensor instance (if available).
+    /// Returns null if no sensor is assigned.
     /// </summary>
-    public void ResetCaughtState()
+    public PillowSensor GetPillowSensor()
     {
-        hasCalledGameOver = false;
-        isSleeping = false;
+        return pillowSensor;
+    }
+
+    /// <summary>
+    /// Reset pillow sensor baseline calibration if available.
+    /// Used for re-calibrating the sensor in-game if needed.
+    /// </summary>
+    public void ResetPillowSensorBaseline()
+    {
         if (pillowSensor != null)
         {
             pillowSensor.ResetBaseline();
+            Debug.Log("?? Pillow sensor baseline reset.");
+        }
+        else
+        {
+            Debug.LogWarning("?? No pillow sensor assigned. Cannot reset baseline.");
         }
     }
 }
