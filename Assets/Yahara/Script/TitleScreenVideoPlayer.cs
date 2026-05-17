@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
 using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// タイトル画面で一定時間放置すると動画を再生するコンポーネント
@@ -73,7 +74,8 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             Debug.LogWarning("fadeImageが設定されていません。フェードなしで再生します。");
         }
 
-        lastMousePosition = Input.mousePosition;
+        // initialize lastMousePosition using new Input System
+        lastMousePosition = GetMousePosition();
     }
 
     void Update()
@@ -81,7 +83,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         if (isVideoPlaying)
         {
             // 動画再生中に何か入力があれば動画をスキップ
-            if (Input.anyKeyDown || Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
+            if (AnyInputDown())
             {
                 StartCoroutine(StopVideoWithFade());
             }
@@ -89,13 +91,12 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         }
 
         // 入力検知(キー入力、マウスクリック、マウス移動)
-        bool hasInput = Input.anyKey || 
-                       Input.GetMouseButton(0) || 
-                       Input.GetMouseButton(1) || 
-                       Input.mousePosition != lastMousePosition ||
-                       Input.touchCount > 0;
+        bool hasInput = AnyInputPressed() ||
+                       IsMouseMoved() ||
+                       AnyTouchPressed();
 
-        lastMousePosition = Input.mousePosition;
+        // update last mouse position for comparison
+        lastMousePosition = GetMousePosition();
 
         if (hasInput)
         {
@@ -255,5 +256,56 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             videoPlayer.loopPointReached -= OnVideoFinished;
             videoPlayer.prepareCompleted -= OnVideoPrepared;
         }
+    }
+
+    // Helper: get current mouse position using new Input System
+    private Vector3 GetMousePosition()
+    {
+        if (Mouse.current != null)
+        {
+            Vector2 pos = Mouse.current.position.ReadValue();
+            return new Vector3(pos.x, pos.y, 0f);
+        }
+        return Vector3.zero;
+    }
+
+    // Helper: check if mouse moved since last frame
+    private bool IsMouseMoved()
+    {
+        Vector3 current = GetMousePosition();
+        return current != lastMousePosition;
+    }
+
+    // Helper: check any input pressed (continuous)
+    private bool AnyInputPressed()
+    {
+        bool keyPressed = Keyboard.current != null && Keyboard.current.anyKey != null && Keyboard.current.anyKey.isPressed;
+        bool mousePressed = Mouse.current != null && (Mouse.current.leftButton.isPressed || Mouse.current.rightButton.isPressed);
+        bool gamepadPressed = Gamepad.current != null && (
+            Gamepad.current.buttonSouth.isPressed ||
+            Gamepad.current.buttonNorth.isPressed ||
+            Gamepad.current.buttonEast.isPressed ||
+            Gamepad.current.buttonWest.isPressed);
+        return keyPressed || mousePressed || gamepadPressed;
+    }
+
+    // Helper: check any input down (triggered this frame)
+    private bool AnyInputDown()
+    {
+        bool keyDown = Keyboard.current != null && Keyboard.current.anyKey != null && Keyboard.current.anyKey.wasPressedThisFrame;
+        bool mouseDown = Mouse.current != null && (Mouse.current.leftButton.wasPressedThisFrame || Mouse.current.rightButton.wasPressedThisFrame);
+        bool gamepadDown = Gamepad.current != null && (
+            Gamepad.current.buttonSouth.wasPressedThisFrame ||
+            Gamepad.current.buttonNorth.wasPressedThisFrame ||
+            Gamepad.current.buttonEast.wasPressedThisFrame ||
+            Gamepad.current.buttonWest.wasPressedThisFrame);
+        bool touchDown = Touchscreen.current != null && Touchscreen.current.primaryTouch != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame;
+        return keyDown || mouseDown || gamepadDown || touchDown;
+    }
+
+    // Helper: check any touch currently pressed
+    private bool AnyTouchPressed()
+    {
+        return Touchscreen.current != null && Touchscreen.current.primaryTouch != null && Touchscreen.current.primaryTouch.press.isPressed;
     }
 }
