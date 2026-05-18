@@ -6,35 +6,35 @@ using UnityEngine.SceneManagement;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// ƒ^ƒCƒgƒ‹‰æ–Ê‚Åˆê’èŠÔ•ú’u‚·‚é‚Æ“®‰æ‚ğÄ¶‚·‚éƒRƒ“ƒ|[ƒlƒ“ƒg
-/// “®‰æŠJn‚ÉƒV[ƒ€ƒŒƒX‚ÈƒtƒF[ƒhƒCƒ“/ƒAƒEƒg‚ğs‚¤
-/// - ƒŒƒKƒV[‚Ì UnityEngine.Input ‚ğŠ®‘S‚É”p~‚µAV‚µ‚¢ Input System ‚ğ—˜—p
+/// ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢ã§ä¸€å®šæ™‚é–“æ”¾ç½®ã™ã‚‹ã¨å‹•ç”»ã‚’å†ç”Ÿã™ã‚‹ã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆ
+/// å‹•ç”»é–‹å§‹ãƒ»çµ‚äº†æ™‚ã«ã‚·ãƒ¼ãƒ ãƒ¬ã‚¹ãªãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³/ã‚¢ã‚¦ãƒˆã‚’è¡Œã„ã¾ã™ã€‚
+/// - æ—§ãƒ¬ã‚¬ã‚·ãƒ¼ UnityEngine.Input ã‹ã‚‰å®Œå…¨ã«ç§»è¡Œã—ã€æ–°ã—ã„ Input System ã‚’åˆ©ç”¨
 /// </summary>
 public class TitleScreenVideoPlayer : MonoBehaviour
 {
-    [Header("‘Ò‹@ŠÔİ’è")]
-    [Tooltip("“®‰æÄ¶‚Ü‚Å‚Ì‘Ò‹@ŠÔ(•b)")]
+    [Header("å¾…æ©Ÿæ™‚é–“è¨­å®š")]
+    [Tooltip("å‹•ç”»å†ç”Ÿã¾ã§ã®å¾…æ©Ÿæ™‚é–“(ç§’)")]
     [SerializeField] private float idleTime = 30f;
 
-    [Header("“®‰æİ’è")]
-    [Tooltip("VideoPlayerƒRƒ“ƒ|[ƒlƒ“ƒg")]
+    [Header("å‹•ç”»è¨­å®š")]
+    [Tooltip("VideoPlayerã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆ")]
     [SerializeField] private VideoPlayer videoPlayer;
 
-    [Tooltip("“®‰æÄ¶’†‚É”ñ•\¦‚É‚·‚éUI(ƒ^ƒCƒgƒ‹ƒƒS‚È‚Ç)")]
+    [Tooltip("å‹•ç”»å†ç”Ÿæ™‚ã«éè¡¨ç¤ºã«ã™ã‚‹UI(ã‚¿ã‚¤ãƒˆãƒ«ãƒ­ã‚´ãªã©)")]
     [SerializeField] private GameObject[] uiToHide;
 
-    [Header("“®‰æI—¹Œã‚Ìİ’è")]
-    [Tooltip("“®‰æI—¹Œã‚Éƒ^ƒCƒgƒ‹‰æ–Ê‚É–ß‚é‚©")]
+    [Header("å‹•ç”»çµ‚äº†æ™‚ã®è¨­å®š")]
+    [Tooltip("å‹•ç”»çµ‚äº†æ™‚ã«ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢ã«æˆ»ã‚‹ã‹")]
     [SerializeField] private bool returnToTitleAfterVideo = true;
 
-    [Tooltip("“®‰æ‚ğƒ‹[ƒvÄ¶‚·‚é‚©")]
+    [Tooltip("å‹•ç”»ã‚’ãƒ«ãƒ¼ãƒ—å†ç”Ÿã™ã‚‹ã‹")]
     [SerializeField] private bool loopVideo = false;
 
-    [Header("ƒtƒF[ƒhİ’è")]
-    [Tooltip("ƒtƒF[ƒh‚Ég—p‚·‚é‘S‰æ–Ê•UI‚ÌImageƒRƒ“ƒ|[ƒlƒ“ƒg\n(Canvas”z‰º‚Ì•‚¢RawImage‚Ü‚½‚ÍImage‚ğƒAƒTƒCƒ“)")]
+    [Header("ãƒ•ã‚§ãƒ¼ãƒ‰è¨­å®š")]
+    [Tooltip("ãƒ•ã‚§ãƒ¼ãƒ‰ã«ä½¿ç”¨ã™ã‚‹å…¨é¢é»’UIã®Imageã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆ\n(Canvasé…ä¸‹ã®æœ€å‰é¢RawImageã¾ãŸã¯Imageã‚’ã‚¢ã‚µã‚¤ãƒ³)")]
     [SerializeField] private Image fadeImage;
 
-    [Tooltip("ƒtƒF[ƒh‚ÌŠÔ(•b)")]
+    [Tooltip("ãƒ•ã‚§ãƒ¼ãƒ‰ã®æ™‚é–“(ç§’)")]
     [SerializeField] private float fadeDuration = 0.4f;
 
     private float idleTimer = 0f;
@@ -45,37 +45,37 @@ public class TitleScreenVideoPlayer : MonoBehaviour
 
     void Start()
     {
-        // VideoPlayer‚Ì‰Šúİ’è
+        // VideoPlayerã®åˆæœŸè¨­å®š
         if (videoPlayer != null)
         {
             videoPlayer.isLooping = loopVideo;
             videoPlayer.Stop();
             videoPlayer.gameObject.SetActive(false);
 
-            // “®‰æI—¹‚ÌƒCƒxƒ“ƒg“o˜^
+            // å‹•ç”»çµ‚äº†æ™‚ã®ã‚¤ãƒ™ãƒ³ãƒˆç™»éŒ²
             videoPlayer.loopPointReached += OnVideoFinished;
-            // €”õŠ®—¹ƒCƒxƒ“ƒg“o˜^
+            // æº–å‚™å®Œäº†ã‚¤ãƒ™ãƒ³ãƒˆç™»éŒ²
             videoPlayer.prepareCompleted += OnVideoPrepared;
         }
         else
         {
-            Debug.LogError("VideoPlayer‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñ!");
+            Debug.LogError("VideoPlayerãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“!");
         }
 
-        // ƒtƒF[ƒh‰æ‘œ‚Ì‰Šú‰»(Š®‘S“§–¾)
+        // ãƒ•ã‚§ãƒ¼ãƒ‰ç”»åƒåˆæœŸåŒ–ï¼ˆå®Œå…¨ã«é€æ˜ï¼‰
         if (fadeImage != null)
         {
             fadeImage.color = new Color(0f, 0f, 0f, 0f);
             fadeImage.gameObject.SetActive(true);
-            // •`‰æ‡‚ğÅ‘O–Ê‚É
+            // æç”»é †ã‚’æœ€å‰é¢ã«
             fadeImage.transform.SetAsLastSibling();
         }
         else
         {
-            Debug.LogWarning("fadeImage‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñBƒtƒF[ƒh‚È‚µ‚ÅÄ¶‚µ‚Ü‚·B");
+            Debug.LogWarning("fadeImageãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚ãƒ•ã‚§ãƒ¼ãƒ‰ãªã—ã§å†ç”Ÿã—ã¾ã™ã€‚");
         }
 
-        // VInput System ‚ğg‚Á‚Ä‰Šúƒ}ƒEƒXˆÊ’u‚ğæ“¾
+        // æ–°Input Systemã‚’ä½¿ã£ã¦ç¾åœ¨ã®ãƒã‚¦ã‚¹ä½ç½®ã‚’å–å¾—
         lastMousePosition = GetMousePosition();
     }
 
@@ -83,7 +83,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     {
         if (isVideoPlaying)
         {
-            // “®‰æÄ¶’†‚É‰½‚©“ü—Í‚ª‚ ‚ê‚Î“®‰æ‚ğƒXƒLƒbƒv
+            // å‹•ç”»å†ç”Ÿä¸­ã«ä½•ã‹å…¥åŠ›ãŒã‚ã£ãŸã‚‰å‹•ç”»ã‚’ã‚¹ã‚­ãƒƒãƒ—
             if (AnyInputDown())
             {
                 StartCoroutine(StopVideoWithFade());
@@ -91,18 +91,18 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             return;
         }
 
-        // “ü—ÍŒŸ’m(ƒL[“ü—ÍAƒ}ƒEƒXƒNƒŠƒbƒNAƒ}ƒEƒXˆÚ“®Aƒ^ƒbƒ`)
+        // å…¥åŠ›æ¤œçŸ¥(ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ã€ãƒã‚¹ã‚¯ãƒªãƒƒã‚¯ã€ãƒã‚¦ã‚¹ç§»å‹•ã€ã‚¿ãƒƒãƒ)
         bool hasInput = AnyInputPressed() || IsMouseMoved() || AnyTouchPressed();
 
-        // ƒ}ƒEƒXˆÊ’uXViˆÚ“®ŒŸ’m—pj
+        // ãƒã‚¦ã‚¹ä½ç½®æ›´æ–°ï¼ˆç§»å‹•æ¤œçŸ¥ç”¨ï¼‰
         lastMousePosition = GetMousePosition();
 
         if (hasInput)
         {
-            // “ü—Í‚ª‚ ‚Á‚½‚çƒ^ƒCƒ}[‚ğƒŠƒZƒbƒg
+            // å…¥åŠ›ãŒã‚ã£ãŸã‚‰ã‚¿ã‚¤ãƒãƒ¼ã‚’ãƒªã‚»ãƒƒãƒˆ
             idleTimer = 0f;
 
-            // Prepare‚µ‚Ä‚¢‚½‚çƒLƒƒƒ“ƒZƒ‹
+            // Prepareã—ã¦ã„ãŸå ´åˆã¯ã‚­ãƒ£ãƒ³ã‚»ãƒ«
             if (isPrepared)
             {
                 videoPlayer.Stop();
@@ -112,17 +112,17 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         }
         else
         {
-            // •ú’uŠÔ‚ğƒJƒEƒ“ƒg
+            // æ”¾ç½®æ™‚é–“ã‚’ã‚«ã‚¦ãƒ³ãƒˆ
             idleTimer += Time.deltaTime;
 
-            // w’èŠÔ‚Ì­‚µ‘O(ƒtƒF[ƒhŠÔ•ª)‚ÉPrepareŠJn
+            // æŒ‡å®šæ™‚é–“ã®å°‘ã—å‰ï¼ˆãƒ•ã‚§ãƒ¼ãƒ‰æ™‚é–“åˆ†ï¼‹Î±ï¼‰ã«Prepareï¼ˆãƒ‡ã‚³ãƒ¼ãƒ‰ï¼‰ã‚’é–‹å§‹
             float prepareStartTime = idleTime - fadeDuration - 0.5f;
             if (idleTimer >= prepareStartTime && !isPrepared && !hasStartedOnce)
             {
                 PrepareVideo();
             }
 
-            // w’èŠÔŒo‰ß‚µ‚½‚ç“®‰æÄ¶
+            // æŒ‡å®šæ™‚é–“çµŒéã—ãŸã‚‰å‹•ç”»å†ç”Ÿ
             if (idleTimer >= idleTime && !hasStartedOnce)
             {
                 hasStartedOnce = true;
@@ -132,35 +132,35 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// “®‰æ‚ğ–‘O‚ÉPrepare(ƒfƒR[ƒh€”õ)‚·‚é
+    /// å‹•ç”»å†ç”Ÿå‰ã«Prepareï¼ˆãƒ‡ã‚³ãƒ¼ãƒ‰æº–å‚™ï¼‰ã‚’è¡Œã†
     /// </summary>
     private void PrepareVideo()
     {
         if (videoPlayer == null || isPrepared) return;
         isPrepared = true;
 
-        // SetActive(true)‚µ‚ÄPrepare‚¾‚¯Às(‚Ü‚¾Ä¶‚µ‚È‚¢)
+        // SetActive(true)ã«ã—ã¦Prepareã‚’å®Ÿè¡Œï¼ˆã¾ã å†ç”Ÿã¯ã—ãªã„ï¼‰
         videoPlayer.gameObject.SetActive(true);
         videoPlayer.Prepare();
     }
 
     /// <summary>
-    /// PrepareŠ®—¹ƒR[ƒ‹ƒoƒbƒN
+    /// Prepareå®Œäº†ã®ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯
     /// </summary>
     private void OnVideoPrepared(VideoPlayer vp)
     {
-        // PrepareŠ®—¹BPlayVideoWithFade‚ÌPlay()ŒÄ‚Ño‚µ‚ğ‘Ò‚Â‚¾‚¯B
-        Debug.Log("VideoPlayer: €”õŠ®—¹");
+        // æº–å‚™å®Œäº†ã€‚PlayVideoWithFadeãŒPlay()ã‚’å‘¼ã³å‡ºã™ã®ã‚’å¾…ã¤
+        Debug.Log("VideoPlayer: æº–å‚™å®Œäº†");
     }
 
     /// <summary>
-    /// ƒtƒF[ƒhƒAƒEƒg ¨ “®‰æÄ¶ ¨ ƒtƒF[ƒhƒCƒ“ ‚ÌƒV[ƒPƒ“ƒX
+    /// ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ â¡ å‹•ç”»å†ç”Ÿ â¡ ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³ ã®ã‚·ãƒ¼ã‚±ãƒ³ã‚¹
     /// </summary>
     private IEnumerator PlayVideoWithFade()
     {
         if (videoPlayer == null) yield break;
 
-        // ‚Ü‚¾Prepare‚ªŠ®—¹‚µ‚Ä‚¢‚È‚¯‚ê‚ÎŠ®—¹‚ğ‘Ò‚Â
+        // ã¾ã PrepareãŒå®Œäº†ã—ã¦ã„ãªã‘ã‚Œã°å®Œäº†ã‚’å¾…ã¤
         if (!videoPlayer.isPrepared)
         {
             videoPlayer.gameObject.SetActive(true);
@@ -168,58 +168,58 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             yield return new WaitUntil(() => videoPlayer.isPrepared);
         }
 
-        // ƒtƒF[ƒhƒAƒEƒg(‰æ–Ê‚ğ•‚­)
+        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆï¼ˆç”»é¢ã‚’é»’ã«ï¼‰
         yield return StartCoroutine(Fade(0f, 1f));
 
-        // UI‚ğ”ñ•\¦
+        // UIã‚’éè¡¨ç¤º
         foreach (var ui in uiToHide)
         {
             if (ui != null) ui.SetActive(false);
         }
 
-        // “®‰æÄ¶ŠJn
+        // å‹•ç”»å†ç”Ÿé–‹å§‹
         isVideoPlaying = true;
         videoPlayer.gameObject.SetActive(true);
         videoPlayer.Play();
 
-        // ƒtƒF[ƒhƒCƒ“(•‚ğÁ‚·)
+        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³ï¼ˆç”»é¢ã‚’é€æ˜ã«ï¼‰
         yield return StartCoroutine(Fade(1f, 0f));
     }
 
     /// <summary>
-    /// ƒtƒF[ƒhƒAƒEƒg ¨ UI•œŒ³ ¨ “®‰æ’â~ ¨ ƒtƒF[ƒhƒCƒ“ ‚ÌƒV[ƒPƒ“ƒX
+    /// ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ â¡ UIå¾©å¸° â¡ å‹•ç”»åœæ­¢ â¡ ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³ ã®ã‚·ãƒ¼ã‚±ãƒ³ã‚¹
     /// </summary>
     private IEnumerator StopVideoWithFade()
     {
         if (videoPlayer == null) yield break;
 
-        // “ñdÀs–h~
+        // äºŒé‡å®Ÿè¡Œé˜²æ­¢
         isVideoPlaying = false;
 
-        // ƒtƒF[ƒhƒAƒEƒg(‰æ–Ê‚ğ•‚­)
+        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆï¼ˆç”»é¢ã‚’é»’ã«ï¼‰
         yield return StartCoroutine(Fade(0f, 1f));
 
-        // “®‰æ’â~
+        // å‹•ç”»åœæ­¢
         videoPlayer.Stop();
         videoPlayer.gameObject.SetActive(false);
         isPrepared = false;
 
-        // UI‚ğÄ•\¦
+        // UIã‚’å†è¡¨ç¤º
         foreach (var ui in uiToHide)
         {
             if (ui != null) ui.SetActive(true);
         }
 
-        // ƒ^ƒCƒ}[ƒŠƒZƒbƒg
+        // ã‚¿ã‚¤ãƒãƒ¼ãƒªã‚»ãƒƒãƒˆ
         idleTimer = 0f;
         hasStartedOnce = false;
 
-        // ƒtƒF[ƒhƒCƒ“(•‚ğÁ‚·)
+        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¤ãƒ³ï¼ˆç”»é¢ã‚’é€æ˜ã«ï¼‰
         yield return StartCoroutine(Fade(1f, 0f));
     }
 
     /// <summary>
-    /// ƒtƒF[ƒhˆ—(alphaFrom ¨ alphaTo)
+    /// ãƒ•ã‚§ãƒ¼ãƒ‰å‡¦ç†ï¼ˆalphaFrom ã‹ã‚‰ alphaTo ã¸å¤‰å½¢ï¼‰
     /// </summary>
     private IEnumerator Fade(float alphaFrom, float alphaTo)
     {
@@ -237,7 +237,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// “®‰æI—¹‚ÌƒR[ƒ‹ƒoƒbƒN
+    /// å‹•ç”»çµ‚äº†æ™‚ã®ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯
     /// </summary>
     private void OnVideoFinished(VideoPlayer vp)
     {
@@ -249,7 +249,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
 
     void OnDestroy()
     {
-        // ƒCƒxƒ“ƒg“o˜^‰ğœ
+        // ã‚¤ãƒ™ãƒ³ãƒˆç™»éŒ²è§£é™¤
         if (videoPlayer != null)
         {
             videoPlayer.loopPointReached -= OnVideoFinished;
@@ -260,7 +260,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     // ---------- New Input System Helpers ----------
 
     /// <summary>
-    /// Œ»İ‚Ìƒ}ƒEƒXˆÊ’u‚ğ•Ô‚·iMouse.current ‚ª null ‚Ìê‡‚Í Vector2.zeroj
+    /// ç¾åœ¨ã®ãƒã‚¦ã‚¹ä½ç½®ã‚’è¿”ã™ï¼ˆMouse.current ãŒ null ã®å ´åˆã¯ Vector2.zeroï¼‰
     /// </summary>
     private Vector2 GetMousePosition()
     {
@@ -272,7 +272,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// ƒ}ƒEƒX‚ªˆÚ“®‚µ‚½‚©i‘OƒtƒŒ[ƒ€‚Æ‚Ì·•ªj
+    /// ãƒã‚¦ã‚¹ãŒç§»å‹•ã—ãŸã‹ï¼ˆå‰ãƒ•ãƒ¬ãƒ¼ãƒ ã¨ã®å·®åˆ†ï¼‰
     /// </summary>
     private bool IsMouseMoved()
     {
@@ -281,23 +281,23 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// Œp‘±“I‚É‰Ÿ‚³‚ê‚Ä‚¢‚é“ü—Íiƒ^ƒCƒ}[ƒŠƒZƒbƒg”»’è—pj
+    /// ç¶™ç¶šçš„ã«æŠ¼ã•ã‚Œã¦ã„ã‚‹ã‹ï¼ˆã‚¿ã‚¤ãƒãƒ¼ãƒªã‚»ãƒƒãƒˆç”¨ï¼‰
     /// </summary>
     private bool AnyInputPressed()
     {
-        // ƒL[ƒ{[ƒh“ü—Íƒ`ƒFƒbƒN
+        // ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ã®ãƒã‚§ãƒƒã‚¯
         bool keyPressed = Keyboard.current != null && Keyboard.current.anyKey != null && Keyboard.current.anyKey.isPressed;
 
-        // ƒ}ƒEƒX“ü—Íƒ`ƒFƒbƒN
+        // ãƒã‚¦ã‚¹ã®ãƒã‚§ãƒƒã‚¯
         bool mousePressed = false;
         if (Mouse.current != null)
         {
-            mousePressed = Mouse.current.leftButton.isPressed || 
-                          Mouse.current.rightButton.isPressed || 
+            mousePressed = Mouse.current.leftButton.isPressed ||
+                          Mouse.current.rightButton.isPressed ||
                           Mouse.current.middleButton.isPressed;
         }
 
-        // ƒQ[ƒ€ƒpƒbƒh“ü—Íƒ`ƒFƒbƒN
+        // ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰ã®ãƒã‚§ãƒƒã‚¯
         bool gamepadPressed = false;
         if (Gamepad.current != null)
         {
@@ -312,23 +312,23 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// ‚»‚ÌƒtƒŒ[ƒ€‚Å‰Ÿ‚³‚ê‚½“ü—Íi“®‰æƒXƒLƒbƒv”»’è—pj
+    /// ã“ã®ãƒ•ãƒ¬ãƒ¼ãƒ ã§æŠ¼ã•ã‚ŒãŸã‹ï¼ˆå‹•ç”»ã‚¹ã‚­ãƒƒãƒ—ç”¨ï¼‰
     /// </summary>
     private bool AnyInputDown()
     {
-        // ƒL[ƒ{[ƒh“ü—Íƒ`ƒFƒbƒN
+        // ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ã®ãƒã‚§ãƒƒã‚¯
         bool keyDown = Keyboard.current != null && Keyboard.current.anyKey != null && Keyboard.current.anyKey.wasPressedThisFrame;
 
-        // ƒ}ƒEƒX“ü—Íƒ`ƒFƒbƒN
+        // ãƒã‚¦ã‚¹ã®ãƒã‚§ãƒƒã‚¯
         bool mouseDown = false;
         if (Mouse.current != null)
         {
-            mouseDown = Mouse.current.leftButton.wasPressedThisFrame || 
-                       Mouse.current.rightButton.wasPressedThisFrame || 
+            mouseDown = Mouse.current.leftButton.wasPressedThisFrame ||
+                       Mouse.current.rightButton.wasPressedThisFrame ||
                        Mouse.current.middleButton.wasPressedThisFrame;
         }
 
-        // ƒQ[ƒ€ƒpƒbƒh“ü—Íƒ`ƒFƒbƒN
+        // ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰ã®ãƒã‚§ãƒƒã‚¯
         bool gamepadDown = false;
         if (Gamepad.current != null)
         {
@@ -339,7 +339,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
                          Gamepad.current.startButton.wasPressedThisFrame;
         }
 
-        // ƒ^ƒbƒ`“ü—Íƒ`ƒFƒbƒN
+        // ã‚¿ãƒƒãƒã®ãƒã‚§ãƒƒã‚¯
         bool touchDown = false;
         if (Touchscreen.current != null && Touchscreen.current.primaryTouch != null)
         {
@@ -350,7 +350,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// ƒ^ƒbƒ`“ü—Í‚ªŒp‘±“I‚É‰Ÿ‚³‚ê‚Ä‚¢‚é‚©
+    /// ã‚¿ãƒƒãƒå…¥åŠ›ãŒç¶™ç¶šã—ã¦ã•ã‚Œã¦ã„ã‚‹ã‹
     /// </summary>
     private bool AnyTouchPressed()
     {
