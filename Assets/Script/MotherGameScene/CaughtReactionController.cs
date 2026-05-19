@@ -51,6 +51,7 @@ public class CaughtReactionController : MonoBehaviour
             fadeCanvasGroup.alpha = 0f;
             fadeCanvasGroup.interactable = false;
             fadeCanvasGroup.blocksRaycasts = false;
+            fadeCanvasGroup.gameObject.SetActive(false);
         }
 
         if (showDebugLogs)
