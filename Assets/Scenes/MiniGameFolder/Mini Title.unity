@@ -880,6 +880,10 @@ MonoBehaviour:
   connectingCancelButton: {fileID: 1707610820}
   connectingCancelArrowOffsetX: 215
   connectingCancelArrowOffsetY: -1
+  startStateButton: {fileID: 1463660737}
+  startStateArrowOffsetX: -50
+  startStateArrowOffsetY: 0
+  udpReceiver: {fileID: 415572611}
   exclusivePanels:
   - {fileID: 1036910372}
   - {fileID: 1503059194}
@@ -1202,6 +1206,8 @@ MonoBehaviour:
   startButton: {fileID: 0}
   statusText: {fileID: 0}
   cancelButton: {fileID: 1707610820}
+  connectButtonDefaultPosition: {x: 314, y: -158}
+  connectButtonStartPosition: {x: 489.3, y: -281.7}
   cancelUiObject: {fileID: 716815019}
   creditsPanel: {fileID: 1036910372}
   settingsPanel: {fileID: 1503059194}
