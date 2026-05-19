@@ -23,6 +23,7 @@ public class ParentDetectionV2 : MonoBehaviour
     public ParentWarningSystem warningSystem;
     public SleepingController sleepingController;
     public MotherGauge motherGauge;
+    [SerializeField] private CaughtReactionController caughtReactionController;
 
     [Header("Stage Effects Objects")]
     [SerializeField] private GameObject firstFloorLight;
@@ -103,6 +104,11 @@ public class ParentDetectionV2 : MonoBehaviour
         if (targetDoorController == null)
         {
             targetDoorController = Object.FindFirstObjectByType<DoorController>();
+        }
+
+        if (caughtReactionController == null)
+        {
+            caughtReactionController = Object.FindFirstObjectByType<CaughtReactionController>();
         }
     }
 
@@ -374,8 +380,11 @@ public class ParentDetectionV2 : MonoBehaviour
         isMotherLookingNow = true;
         Debug.LogError("?? GAME OVER: Caught by Mother!");
 
-        // Game over is now handled by CaughtReactionController which monitors isMotherLookingNow
-        // No need to manually trigger scene load here
+        // Trigger immediate fade + scene change when the mother gauge hits max.
+        if (caughtReactionController != null)
+        {
+            caughtReactionController.ForceGameOver();
+        }
     }
 
     /// <summary>
