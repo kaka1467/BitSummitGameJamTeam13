@@ -3,17 +3,17 @@ using UnityEngine;
 using UnityEngine.InputSystem; // 新Input Systemに対応
 
 /// <summary>
-/// ParentWarningScheduler: automatically triggers ParentWarningSystem at intervals.
-/// Higher suspicion shortens the interval; loud items can force an imminent check.
+/// ParentWarningSystemを自動的にランダムな間隔で発動させます。
+/// キーボードの『Oキー』でいつでもお母さんを強制召喚できるデバッグ機能付き。
 /// </summary>
 public class ParentWarningScheduler : MonoBehaviour
 {
-    [Header("System References")]
-    [Tooltip("The ParentWarningSystem to control")]
+    [Header("システム参照")]
+    [Tooltip("制御する予兆システム")]
     public ParentWarningSystem warningSystem;
 
-    [Header("Scheduler Settings")]
-    [Tooltip("Automatically trigger warnings")]
+    [Header("スケジュール設定")]
+    [Tooltip("予兆を自動的に発動させるかどうか")]
     public bool autoTrigger = true;
 
     public float initialDelayMin = 5.0f;
@@ -21,13 +21,8 @@ public class ParentWarningScheduler : MonoBehaviour
     public float intervalMin = 20.0f;
     public float intervalMax = 40.0f;
 
-    [Header("Scaling by Suspicion")]
-    [Tooltip("Minimum scale applied to intervals at max suspicion (0..1). Lower makes checks more frequent.)")]
-    [Range(0.1f, 1f)]
-    public float minIntervalScale = 0.4f;
-
-    [Header("Debug")]
-    [Tooltip("Time remaining until next warning (for debugging)")]
+    [Header("デバッグ確認")]
+    [Tooltip("次の予兆までの残り時間")]
     public float timeUntilNextWarning = 0f;
 
     private Coroutine schedulerCoroutine;
@@ -47,19 +42,11 @@ public class ParentWarningScheduler : MonoBehaviour
 
     void Update()
     {
-        if (Keyboard.current != null)
+        // ★【無敵のデバッグ機能】キーボードの『O（オー）』キーを押すと、
+        // タイマーを無視して今すぐその場でお母さんを強制的に出現させられます！
+        if (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame)
         {
-            if (Keyboard.current.nKey.wasPressedThisFrame)
-            {
-                Debug.Log("[ParentWarningScheduler] N key pressed - manual PASS-BY trigger");
-                TriggerPassByNow();
-            }
-
-            if (Keyboard.current.mKey.wasPressedThisFrame)
-            {
-                Debug.Log("[ParentWarningScheduler] M key pressed - manual DOOR-OPEN trigger");
-                TriggerDoorNow();
-            }
+            TriggerNow();
         }
     }
 
@@ -81,97 +68,13 @@ public class ParentWarningScheduler : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Manual debug trigger (N key) — forces pass-by route.
-    /// Mother walks the full path but never stops at the door.
-    /// </summary>
-    public void TriggerPassByNow()
-    {
-        if (warningSystem == null)
-        {
-            Debug.LogWarning("[ParentWarningScheduler] TriggerPassByNow: warningSystem is NULL - cannot trigger");
-            return;
-        }
-
-        if (warningSystem.isWarningActive)
-        {
-            Debug.Log("[ParentWarningScheduler] TriggerPassByNow: BLOCKED - warning sequence is already active");
-            return;
-        }
-
-        Debug.Log("[ParentWarningScheduler] TriggerPassByNow: MANUAL PASS-BY TRIGGER - starting pass-by warning sequence");
-        warningSystem.StartManualPassByWarningSequence();
-    }
-
-    /// <summary>
-    /// Manual debug trigger (M key) — forces door-open/peek route.
-    /// Mother walks the full path and always stops at the door.
-    /// </summary>
-    public void TriggerDoorNow()
-    {
-        if (warningSystem == null)
-        {
-            Debug.LogWarning("[ParentWarningScheduler] TriggerDoorNow: warningSystem is NULL - cannot trigger");
-            return;
-        }
-
-        if (warningSystem.isWarningActive)
-        {
-            Debug.Log("[ParentWarningScheduler] TriggerDoorNow: BLOCKED - warning sequence is already active");
-            return;
-        }
-
-        Debug.Log("[ParentWarningScheduler] TriggerDoorNow: MANUAL DOOR TRIGGER - starting door-open warning sequence");
-        warningSystem.StartManualDoorWarningSequence();
-    }
-
     public void TriggerNow()
     {
-        if (warningSystem == null)
-        {
-            Debug.LogWarning("[ParentWarningScheduler] TriggerNow: warningSystem is NULL - cannot trigger");
-            return;
-        }
-
-        if (warningSystem.isWarningActive)
-        {
-            Debug.Log("[ParentWarningScheduler] TriggerNow: BLOCKED - warning sequence is already active");
-            return;
-        }
-
-        Debug.Log("[ParentWarningScheduler] TriggerNow: MANUAL TRIGGER - starting warning sequence");
-        warningSystem.StartWarningSequence();
-    }
-
-    /// <summary>
-    /// Trigger a warning after a short delay (used for loud items)
-    /// </summary>
-    public void TriggerSoon(float delaySeconds = 1f)
-    {
-        if (schedulerCoroutine != null)
-        {
-            StopCoroutine(schedulerCoroutine);
-            schedulerCoroutine = null;
-        }
-        StartCoroutine(TriggerSoonCoroutine(delaySeconds));
-    }
-
-    private IEnumerator TriggerSoonCoroutine(float delay)
-    {
-        float t = delay;
-        while (t > 0f)
-        {
-            t -= Time.deltaTime;
-            yield return null;
-        }
-
         if (warningSystem != null && !warningSystem.isWarningActive)
         {
+            Debug.Log("【デバッグ】お母さん襲撃シーケンスを手動で即座に開始します！");
             warningSystem.StartWarningSequence();
         }
-
-        // Resume normal scheduling
-        StartScheduler();
     }
 
     private IEnumerator SchedulerCoroutine()
@@ -189,27 +92,14 @@ public class ParentWarningScheduler : MonoBehaviour
         {
             if (warningSystem != null && !warningSystem.isWarningActive)
             {
-                Debug.Log("[ParentWarningScheduler] Warning triggered by scheduler");
+                Debug.Log("【タイマー】お母さんが出現しました！");
                 warningSystem.StartWarningSequence();
 
-                // Wait while the warning sequence is active
+                // 予兆シーケンスが完了して廊下に帰るまで待つ
                 yield return new WaitWhile(() => warningSystem.isWarningActive);
             }
 
-            // Determine next interval scaled by current suspicion level (if available)
             float nextInterval = Random.Range(intervalMin, intervalMax);
-
-            // Try to get suspicion fraction (0..1)
-            float suspicionFraction = 0f;
-            var gauge = Object.FindFirstObjectByType<MotherGauge>();
-            if (gauge != null && gauge.maxGauge > 0)
-            {
-                suspicionFraction = (float)gauge.currentGauge / gauge.maxGauge;
-            }
-
-            float scale = Mathf.Lerp(1f, minIntervalScale, suspicionFraction);
-            nextInterval *= scale;
-
             timeUntilNextWarning = nextInterval;
 
             while (timeUntilNextWarning > 0)

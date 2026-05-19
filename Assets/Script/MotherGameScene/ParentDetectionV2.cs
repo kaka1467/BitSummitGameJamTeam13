@@ -3,26 +3,27 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// ParentDetectionV2:
-/// Controls mother-related danger progression, final branching,
-/// door behavior, and reset flow.
+/// ParentDetectionV2: Manages mother's approach progression, staged events, and door control.
+/// Synchronizes with motherGauge/timer progression and triggers staged effects (lights, sounds, door).
+/// Branches into Primary (Real) or Dummy events at final stage based on dummyProbability.
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
+    /// <summary>
+    /// Door open state enumeration
+    /// </summary>
     private enum DoorOpenType
     {
-        None,
-        Peek,
-        Full
+        None,   // Door closed
+        Peek,   // Half-open (peek) - 15 degrees
+        Full    // Full open - 90 degrees
     }
 
     [Header("System & UI References")]
     public ParentWarningSystem warningSystem;
     public SleepingController sleepingController;
     public MotherGauge motherGauge;
-
-    [Header("Approach Presentation")]
-    [SerializeField] private ParentApproachController approachController;
+    [SerializeField] private CaughtReactionController caughtReactionController;
 
     [Header("Stage Effects Objects")]
     [SerializeField] private GameObject firstFloorLight;
@@ -31,17 +32,17 @@ public class ParentDetectionV2 : MonoBehaviour
     [SerializeField] private GameObject secondFloorLight3;
     [SerializeField] private AudioSource stairsAudioSource;
     [SerializeField] private AudioSource dummyDoorAudioSource;
-    [SerializeField] private GameObject realMotherObject;
-    [SerializeField] private GameObject dummyMotherObject;
+    [SerializeField] private GameObject realMotherObject;      // Primary (Real) mother/door effect
+    [SerializeField] private GameObject dummyMotherObject;     // Dummy mother/door effect
 
     [Header("Audio Sources (SE)")]
-    [SerializeField] private AudioSource lightSwitchAudioSource;
-    [SerializeField] private AudioSource mainDoorOpenAudioSource;
-    [SerializeField] private AudioSource mainDoorCloseAudioSource;
-    [SerializeField] private AudioSource rushInAudioSource;
+    [SerializeField] private AudioSource lightSwitchAudioSource;     // Light switch sound
+    [SerializeField] private AudioSource mainDoorOpenAudioSource;    // Door open sound
+    [SerializeField] private AudioSource mainDoorCloseAudioSource;   // Door close sound
+    [SerializeField] private AudioSource rushInAudioSource;          // Rush-in footstep sound
 
     [Header("Door Control")]
-    [SerializeField] private DoorController targetDoorController;
+    [SerializeField] private DoorController targetDoorController;    // Target door controller to command
 
     [Header("Event Branching")]
     [SerializeField, Range(0f, 1f)] private float dummyProbability = 0.3f;
@@ -52,42 +53,38 @@ public class ParentDetectionV2 : MonoBehaviour
     [Tooltip("Gauge decrease per second when safe")]
     public float dropSpeed = 15f;
 
-    [Header("Random Rise Speed Ranges")]
-    [SerializeField] private float minRiseSpeed = 20f;
-    [SerializeField] private float maxRiseSpeed = 40f;
-    [SerializeField] private float minDebugAutoRiseSpeed = 8f;
-    [SerializeField] private float maxDebugAutoRiseSpeed = 15f;
+    [Header("Door Angle Settings")]
+    [SerializeField] private float peekOpenAngle = 15f;   // Peek (half-open) door angle
+    [SerializeField] private float fullOpenAngle = 90f;   // Full open door angle
 
     [Header("Loud Item Feature")]
-    [SerializeField] private bool enableLoudItemFeature = true;
+    [SerializeField] private bool enableLoudItemFeature = true;  // Toggle for loud item feature
 
     [Header("Debug")]
-    [SerializeField] private bool autoProgressInDebug = false;
-
     public bool isCaught = false;
-    public bool isMotherLookingNow = false;
+    public bool isMotherLookingNow = false;  // Flag: mother is staring at player
 
+    // Stage progression flags
     private bool stage1Triggered = false;
     private bool stage2Triggered = false;
     private bool stage3Triggered = false;
     private bool stage4Triggered = false;
 
+    // Current door state
     private DoorOpenType currentDoorState = DoorOpenType.None;
 
+    // Coroutine reference
     private Coroutine dummyResetCoroutine = null;
-    private Coroutine primaryResetCoroutine = null;
 
+    // Internal decimal gauge for smooth progression
     private float decimalGauge = 0f;
-    private bool hasPermanentGameOver = false;
 
-    private float currentRandomRiseSpeed;
-    private float currentRandomDebugRiseSpeed;
-
-    private void Start()
+    void Start()
     {
         isCaught = false;
         isMotherLookingNow = false;
 
+        // Auto-find references if not assigned
         if (motherGauge == null)
         {
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
@@ -109,195 +106,121 @@ public class ParentDetectionV2 : MonoBehaviour
             targetDoorController = Object.FindFirstObjectByType<DoorController>();
         }
 
-        if (warningSystem == null)
+        if (caughtReactionController == null)
         {
-            warningSystem = Object.FindFirstObjectByType<ParentWarningSystem>();
+            caughtReactionController = Object.FindFirstObjectByType<CaughtReactionController>();
         }
-
-        if (approachController == null)
-        {
-            approachController = Object.FindFirstObjectByType<ParentApproachController>();
-        }
-
-        RandomizeMotherSpeeds();
-        riseSpeed = Random.Range(minRiseSpeed, maxRiseSpeed);
     }
 
-    private void Update()
+    void Update()
     {
+        // Debug key input (New Input System)
         if (Keyboard.current != null)
         {
             if (Keyboard.current.pKey.wasPressedThisFrame)
             {
                 TriggerFinalEvent(primary: true);
             }
-
             if (Keyboard.current.oKey.wasPressedThisFrame)
             {
                 TriggerFinalEvent(primary: false);
             }
-
             if (Keyboard.current.lKey.wasPressedThisFrame)
             {
                 OnLoudItemTriggered();
             }
         }
 
+        // If caught, stop progression
         if (isCaught) return;
-        if (hasPermanentGameOver) return;
-        if (motherGauge == null) return;
 
-        // Suspicion rises if:
-        //   a) The full-open event set isMotherLookingNow=true, OR
-        //   b) The mother is actively peeking (IsPeekingNow) AND she already reached
-        //      the hallway phase (IsInHallwayPhase). This covers the dummy/peek branch
-        //      where isMotherLookingNow stays false but the door is still open.
-        bool isPeeking = (warningSystem != null) && warningSystem.IsPeekingNow
-                         && (approachController != null) && approachController.IsInHallwayPhase;
-        bool parentIsLooking = isMotherLookingNow || isPeeking;
-        bool playerIsSleeping = false;
+        // Check required systems
+        if (warningSystem == null || sleepingController == null || motherGauge == null) return;
 
-        if (sleepingController != null)
+        // Gauge progression logic
+        bool parentIsLooking = warningSystem.isWarningActive;
+        bool playerIsSleeping = sleepingController.IsSleeping;
+
+        if (parentIsLooking && !playerIsSleeping)
         {
-            try
-            {
-                playerIsSleeping = sleepingController.IsSleeping;
-            }
-            catch
-            {
-                playerIsSleeping = false;
-            }
+            // Mother is looking and player is not sleeping: gauge rises quickly
+            decimalGauge += riseSpeed * Time.deltaTime;
         }
         else
         {
-            if (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
-            {
-                playerIsSleeping = true;
-            }
+            // Safe or player is sleeping: gauge decreases naturally
+            decimalGauge -= dropSpeed * Time.deltaTime;
         }
 
-        bool useDebugAutoProgress = false;
-
-        if (useDebugAutoProgress)
-        {
-            if (!playerIsSleeping)
-            {
-                decimalGauge += currentRandomDebugRiseSpeed * Time.deltaTime;
-            }
-            else
-            {
-                decimalGauge -= dropSpeed * Time.deltaTime;
-            }
-        }
-        else
-        {
-            Debug.Log($"[F:{Time.frameCount}][PDV2] parentIsLooking={parentIsLooking}, playerIsSleeping={playerIsSleeping}, isMotherLookingNow={isMotherLookingNow}, hasPermanentGameOver={hasPermanentGameOver}, isCaught={isCaught}, gauge={decimalGauge}");
-            if (parentIsLooking && !playerIsSleeping)
-            {
-                float riseAmount = riseSpeed * Time.deltaTime;
-                Debug.Log($"[F:{Time.frameCount}][PDV2-Gauge] PATH=RISE | decimalGauge BEFORE={decimalGauge:F4} | amount=+{riseAmount:F4} | riseSpeed={riseSpeed}");
-                decimalGauge += riseAmount;
-            }
-            else
-            {
-                float dropAmount = dropSpeed * Time.deltaTime;
-                Debug.Log($"[F:{Time.frameCount}][PDV2-Gauge] PATH=DROP | decimalGauge BEFORE={decimalGauge:F4} | amount=-{dropAmount:F4} | dropSpeed={dropSpeed}");
-                decimalGauge -= dropAmount;
-            }
-        }
-
+        // Clamp gauge between 0 and max
         decimalGauge = Mathf.Clamp(decimalGauge, 0f, motherGauge.maxGauge);
 
-        motherGauge.SetGaugeDirect(Mathf.RoundToInt(decimalGauge));
-        Debug.Log($"[F:{Time.frameCount}][PDV2-Gauge] AFTER ASSIGN | decimalGauge={decimalGauge:F4} | motherGauge.currentGauge={motherGauge.currentGauge}");
+        // Update UI
+        motherGauge.currentGauge = Mathf.RoundToInt(decimalGauge);
+        motherGauge.AddGauge(0);  // Force UI refresh
 
+        // Check for game over
         if (motherGauge.currentGauge >= motherGauge.maxGauge)
         {
             OnPlayerCaught();
         }
 
+        // Update staged progression
         UpdateStages();
     }
 
-    private void RandomizeMotherSpeeds()
-    {
-        float minRise = Mathf.Min(minRiseSpeed, maxRiseSpeed);
-        float maxRise = Mathf.Max(minRiseSpeed, maxRiseSpeed);
-        float minDebug = Mathf.Min(minDebugAutoRiseSpeed, maxDebugAutoRiseSpeed);
-        float maxDebug = Mathf.Max(minDebugAutoRiseSpeed, maxDebugAutoRiseSpeed);
-
-        currentRandomRiseSpeed = Random.Range(minRise, maxRise);
-        currentRandomDebugRiseSpeed = Random.Range(minDebug, maxDebug);
-    }
-
+    /// <summary>
+    /// Updates stage progression based on gauge progress percentage
+    /// </summary>
     private void UpdateStages()
     {
         if (motherGauge == null) return;
 
-        float progress = motherGauge.maxGauge <= 0f ? 0f : decimalGauge / motherGauge.maxGauge;
+        float progress = motherGauge.maxGauge <= 0 ? 0f : (decimalGauge / motherGauge.maxGauge);
 
+        // Stage 1: 25% - First floor light
         if (!stage1Triggered && progress >= 0.25f)
         {
             stage1Triggered = true;
-
+            Debug.Log("?? Stage 1: First Floor Light On");
             if (firstFloorLight != null) firstFloorLight.SetActive(true);
             if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         }
 
+        // Stage 2: 50% - Second floor lights
         if (!stage2Triggered && progress >= 0.5f)
         {
             stage2Triggered = true;
-
+            Debug.Log("?? Stage 2: Second Floor Lights On");
             if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
             if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
             if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
             if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         }
 
+        // Stage 3: 75% - Stairs sound
         if (!stage3Triggered && progress >= 0.75f)
         {
             stage3Triggered = true;
-
+            Debug.Log("?? Stage 3: Stairs Audio Playing");
             if (stairsAudioSource != null) stairsAudioSource.Play();
         }
 
-        if (!stage4Triggered && progress >= 0.90f)
+        // Stage 4: ~95% - Final branching event
+        if (!stage4Triggered && progress >= 0.95f)
         {
             stage4Triggered = true;
+            Debug.Log("?? Stage 4: Final Event Trigger");
+
+            // Branch based on dummy probability
+            bool isDummy = Random.value < dummyProbability;
+            TriggerFinalEvent(primary: !isDummy);
         }
     }
 
     /// <summary>
-    /// Called by ParentWarningSystem when the mother actually stops at the door.
-    /// Final branch happens here.
+    /// Triggers the final event: Primary (Real) or Dummy
     /// </summary>
-    public void OnApproachReachedDoor()
-    {
-        Debug.Log($"[PDV2] OnApproachReachedDoor called. isCaught={isCaught}, hasPermanentGameOver={hasPermanentGameOver}");
-        if (isCaught || hasPermanentGameOver) return;
-
-        stage4Triggered = true;
-
-        bool isDummy = Random.value < dummyProbability;
-        TriggerFinalEvent(primary: !isDummy);
-    }
-
-    /// <summary>
-    /// Called by ParentWarningSystem when the mother passes by the door.
-    /// </summary>
-    public void OnApproachPassedBy()
-    {
-        Debug.Log($"[PDV2] OnApproachPassedBy called. isCaught={isCaught}, hasPermanentGameOver={hasPermanentGameOver}");
-        if (isCaught || hasPermanentGameOver) return;
-
-        ResetCycle();
-
-        if (warningSystem != null)
-        {
-            warningSystem.EndWarningSequence();
-        }
-    }
-
     private void TriggerFinalEvent(bool primary)
     {
         if (primary)
@@ -310,221 +233,184 @@ public class ParentDetectionV2 : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Primary (Real) Event: Mother bursts in, full door open
+    /// </summary>
     private void TriggerPrimaryEvent()
     {
-        Debug.Log("[PDV2] TriggerPrimaryEvent called. isMotherLookingNow will be set to true.");
+        Debug.Log("?? Final Event: PRIMARY (Real) - Mother Bursts In!");
         currentDoorState = DoorOpenType.Full;
         isMotherLookingNow = true;
 
+        // Activate real mother object
         if (realMotherObject != null)
         {
             realMotherObject.SetActive(true);
         }
 
+        // Command door controller to open fully
         if (targetDoorController != null)
         {
-            targetDoorController.SetDoorState(DoorController.DoorState.Full);
+            targetDoorController.SetDoorOpen(true);
+            Debug.Log("?? Door commanded to FULL OPEN");
         }
 
+        // Play door open sound
         if (mainDoorOpenAudioSource != null)
         {
             mainDoorOpenAudioSource.Play();
         }
 
+        // If gauge is full, trigger immediate game over
         if (motherGauge != null && motherGauge.currentGauge >= motherGauge.maxGauge)
         {
             OnPlayerCaught();
         }
-        else if (!hasPermanentGameOver)
-        {
-            if (primaryResetCoroutine != null)
-            {
-                StopCoroutine(primaryResetCoroutine);
-            }
-
-            primaryResetCoroutine = StartCoroutine(HandlePrimaryResetSequence());
-        }
     }
 
-    private IEnumerator HandlePrimaryResetSequence()
-    {
-        float peekDuration = (warningSystem != null) ? warningSystem.GetScaledPeekDuration() : 2.5f;
-        Debug.Log($"[PDV2] HandlePrimaryResetSequence: peek duration={peekDuration:F1}s");
-        yield return new WaitForSeconds(peekDuration);
-
-        if (hasPermanentGameOver || isCaught)
-        {
-            yield break;
-        }
-
-        if (mainDoorCloseAudioSource != null)
-        {
-            mainDoorCloseAudioSource.Play();
-        }
-
-        if (targetDoorController != null)
-        {
-            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-            targetDoorController.SetParentVisible(false);
-        }
-
-        ResetCycle();
-
-        if (warningSystem != null)
-        {
-            warningSystem.EndWarningSequence();
-        }
-
-        primaryResetCoroutine = null;
-    }
-
+    /// <summary>
+    /// Dummy Event: Fake mother, peek open, resets after delay
+    /// </summary>
     private void TriggerDummyEvent()
     {
-        Debug.Log("[PDV2] TriggerDummyEvent called. isMotherLookingNow will be set to false.");
+        Debug.Log("?? Final Event: DUMMY - Fake Mother");
         currentDoorState = DoorOpenType.Peek;
         isMotherLookingNow = false;
 
+        // Activate dummy mother object
         if (dummyMotherObject != null)
         {
             dummyMotherObject.SetActive(true);
         }
 
+        // Command door controller to peek open
         if (targetDoorController != null)
         {
-            targetDoorController.SetDoorState(DoorController.DoorState.Peek);
+            targetDoorController.SetDoorOpen(false);  // false = peek/partially open
+            Debug.Log("?? Door commanded to PEEK OPEN");
         }
 
+        // Play dummy door sound
         if (dummyDoorAudioSource != null)
         {
             dummyDoorAudioSource.Play();
         }
 
+        // Start reset sequence
         if (dummyResetCoroutine != null)
         {
             StopCoroutine(dummyResetCoroutine);
         }
-
         dummyResetCoroutine = StartCoroutine(HandleDummySequence());
     }
 
+    /// <summary>
+    /// Coroutine: Dummy event cleanup and reset
+    /// </summary>
     private IEnumerator HandleDummySequence()
     {
-        float peekDuration = (warningSystem != null) ? warningSystem.GetScaledPeekDuration() : 2.5f;
-        Debug.Log($"[PDV2] HandleDummySequence: peek duration={peekDuration:F1}s");
-        yield return new WaitForSeconds(peekDuration);
+        // Display dummy for 2.5 seconds
+        yield return new WaitForSeconds(2.5f);
 
+        Debug.Log("?? Dummy Event: Cleanup and Reset");
+
+        // Deactivate dummy mother
         if (dummyMotherObject != null)
         {
             dummyMotherObject.SetActive(false);
         }
 
+        // Play door close sound
         if (mainDoorCloseAudioSource != null)
         {
             mainDoorCloseAudioSource.Play();
         }
 
+        // Command door to close
         if (targetDoorController != null)
         {
-            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-            targetDoorController.SetParentVisible(false);
+            targetDoorController.SetDoorOpen(false);
+            Debug.Log("?? Door commanded to CLOSE");
         }
 
-        ResetCycle();
-
-        if (warningSystem != null)
-        {
-            warningSystem.EndWarningSequence();
-        }
-
-        dummyResetCoroutine = null;
-    }
-
-    private void ResetCycle()
-    {
-        Debug.Log("[PDV2] ResetCycle called. Resetting gauge and state.");
-        if (dummyResetCoroutine != null)
-        {
-            StopCoroutine(dummyResetCoroutine);
-            dummyResetCoroutine = null;
-        }
-
-        if (primaryResetCoroutine != null)
-        {
-            StopCoroutine(primaryResetCoroutine);
-            primaryResetCoroutine = null;
-        }
-
-        decimalGauge = 0f;
-
-        if (motherGauge != null)
-        {
-            motherGauge.SetGaugeDirect(0);
-        }
-
+        // Turn off all lights
         if (firstFloorLight != null) firstFloorLight.SetActive(false);
         if (secondFloorLight1 != null) secondFloorLight1.SetActive(false);
         if (secondFloorLight2 != null) secondFloorLight2.SetActive(false);
         if (secondFloorLight3 != null) secondFloorLight3.SetActive(false);
 
-        if (stairsAudioSource != null)
+        // Reset door state
+        currentDoorState = DoorOpenType.None;
+
+        // Reset gauge
+        decimalGauge = 0f;
+        if (motherGauge != null)
         {
-            stairsAudioSource.Stop();
+            motherGauge.currentGauge = 0;
+            motherGauge.AddGauge(0);
         }
 
-        if (realMotherObject != null) realMotherObject.SetActive(false);
-        if (dummyMotherObject != null) dummyMotherObject.SetActive(false);
+        // Reset warning system
+        if (warningSystem != null)
+        {
+            try
+            {
+                warningSystem.isWarningActive = false;
+            }
+            catch { }
+        }
 
+        // Reset all stage flags for next cycle
         stage1Triggered = false;
         stage2Triggered = false;
         stage3Triggered = false;
         stage4Triggered = false;
 
         isMotherLookingNow = false;
-        currentDoorState = DoorOpenType.None;
 
-        if (targetDoorController != null)
-        {
-            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-            targetDoorController.SetParentVisible(false);
-        }
-
-        if (approachController != null)
-        {
-            approachController.ResetApproach();
-        }
-
-        riseSpeed = Random.Range(minRiseSpeed, maxRiseSpeed);
-        RandomizeMotherSpeeds();
+        dummyResetCoroutine = null;
     }
 
-    private void OnPlayerCaught()
+    /// <summary>
+    /// Called when player is caught (gauge full)
+    /// </summary>
+    void OnPlayerCaught()
     {
-        Debug.Log($"[PDV2] OnPlayerCaught called. gauge={decimalGauge}, parentIsLooking={isMotherLookingNow}");
         isCaught = true;
         isMotherLookingNow = true;
-        Debug.LogError("GAME OVER: Caught by Mother!");
+        Debug.LogError("?? GAME OVER: Caught by Mother!");
+
+        // Trigger immediate fade + scene change when the mother gauge hits max.
+        if (caughtReactionController != null)
+        {
+            caughtReactionController.ForceGameOver();
+        }
     }
 
-    public void NotifyGameOver()
-    {
-        hasPermanentGameOver = true;
-    }
-
+    /// <summary>
+    /// Called when loud item is obtained
+    /// Forces immediate primary event if enabled
+    /// </summary>
     public void OnLoudItemTriggered()
     {
         if (!enableLoudItemFeature)
         {
-            Debug.Log("Loud Item Feature is DISABLED");
+            Debug.Log("?? Loud Item Feature is DISABLED");
             return;
         }
 
+        Debug.Log("?? LOUD ITEM TRIGGERED: Forcing Mother Rush-In!");
+
+        // Set stage4 as triggered to prevent normal progression
         stage4Triggered = true;
 
+        // Play rush-in sound
         if (rushInAudioSource != null)
         {
             rushInAudioSource.Play();
         }
 
+        // Force primary event
         TriggerPrimaryEvent();
     }
 }
