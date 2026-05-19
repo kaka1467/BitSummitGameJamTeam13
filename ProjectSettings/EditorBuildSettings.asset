@@ -42,8 +42,17 @@ EditorBuildSettings:
     path: Assets/Scenes/MotherGame/EyeGuidance.unity
     guid: 9368e1ad8a89f4b2999ee444d07509f2
   - enabled: 1
+    path: Assets/Scenes/MiniGameFolder/TimeUpResult.unity
+    guid: b2ffb2a5eadf3304e963781851ac00e1
+  - enabled: 1
+    path: Assets/Scenes/MotherGame/MotherLoad.unity
+    guid: 92f40eb34b00c0f46bd0ffec049ac43b
+  - enabled: 1
     path: Assets/Scenes/MiniGameFolder/MiniGame.unity
     guid: b3756190d7ed24bf2adafd6ad6ad89ed
+  - enabled: 1
+    path: Assets/Scenes/MotherGame/TimeUpResult.unity
+    guid: d6cdea1310c3aab4ba5d963e21c47009
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
