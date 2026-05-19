@@ -37,6 +37,12 @@ public class ChildUdpReceiver : MonoBehaviour
     public TextMeshProUGUI statusText;
     public Button cancelButton;
 
+    [Header("Connect Button Position Settings")]
+    [Tooltip("Disconnected/Connecting状態のときのconnectButtonの位置")]
+    public Vector2 connectButtonDefaultPosition = new Vector2(0f, 0f);
+    [Tooltip("Connected（START!）状態のときのconnectButtonの位置")]
+    public Vector2 connectButtonStartPosition = new Vector2(0f, 0f);
+
     [Header("New Cancel UI Object Support")]
     [Tooltip("Cancelの背景画像や枠など、消したい装飾がすべて含まれている一番外側の親オブジェクトをアサインしてください")]
     public GameObject cancelUiObject; // ★文字だけでなく、UI全体を完全に消すために新しく追加しました
@@ -258,6 +264,18 @@ public class ChildUdpReceiver : MonoBehaviour
         if (connectButton != null)
         {
             connectButton.gameObject.SetActive(true);
+
+            // 親オブジェクト（Connect）ごと移動することで画像装飾も一緒に動く
+            Transform moveTarget = connectButton.transform.parent != null
+                ? connectButton.transform.parent
+                : connectButton.transform;
+            RectTransform rt = moveTarget.GetComponent<RectTransform>();
+            if (rt != null)
+            {
+                rt.anchoredPosition = currentState == ConnectionState.Connected
+                    ? connectButtonStartPosition
+                    : connectButtonDefaultPosition;
+            }
         }
 
         // 3. ★今回の修正の核心部分

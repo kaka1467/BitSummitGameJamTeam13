@@ -60,6 +60,7 @@ public class MenuNavigationController : MonoBehaviour
         EnsureValidSelection();
         HandleNavigation();
         HandleConfirm();
+        UpdateArrowPosition(); // ボタンが移動した場合も毎フレーム追従する
     }
 
     private void HandleNavigation()
