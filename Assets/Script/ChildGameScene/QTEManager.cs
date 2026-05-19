@@ -212,7 +212,7 @@ public class QTEManager : MonoBehaviour
 
         if (timeLimitSeconds > 0f)
         {
-            qteText.text = $"QTE {remainingTime:0.0}s\n{displaySequence}";
+            qteText.text = $"Push Button! {remainingTime:0.0}s\n{displaySequence}";
         }
         else
         {
