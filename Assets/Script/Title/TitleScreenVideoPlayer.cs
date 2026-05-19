@@ -42,6 +42,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     private Vector2 lastMousePosition;
     private bool hasStartedOnce = false;
     private bool isPrepared = false;
+    private bool isStopping = false;
 
     void Start()
     {
@@ -84,9 +85,24 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         if (isVideoPlaying)
         {
             // 動画再生中に何か入力があったら動画をスキップ
-            if (AnyInputDown())
+            if (AnyInputDown() && !isStopping)
             {
                 StartCoroutine(StopVideoWithFade());
+            }
+
+            // 動画の終端直前で先にフェードアウトを開始して空背景が見えるのを防ぐ
+            if (!loopVideo && !isStopping && videoPlayer != null && videoPlayer.isPrepared)
+            {
+                double length = videoPlayer.length;
+                if (length > 0.0)
+                {
+                    double remaining = length - videoPlayer.time;
+                    double leadTime = fadeDuration + 0.05f;
+                    if (remaining <= leadTime)
+                    {
+                        StartCoroutine(StopVideoWithFade());
+                    }
+                }
             }
             return;
         }
@@ -194,6 +210,8 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         if (videoPlayer == null) yield break;
 
         // 二重実行防止
+        if (isStopping) yield break;
+        isStopping = true;
         isVideoPlaying = false;
 
         // フェードアウト（画面を黒に）
@@ -213,6 +231,10 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         // タイマーリセット
         idleTimer = 0f;
         hasStartedOnce = false;
+        isStopping = false;
+
+        // UIが描画されるまで1フレーム待つ（背景のチラ見え防止）
+        yield return null;
 
         // フェードイン（画面を透明に）
         yield return StartCoroutine(Fade(1f, 0f));
@@ -241,7 +263,7 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     /// </summary>
     private void OnVideoFinished(VideoPlayer vp)
     {
-        if (returnToTitleAfterVideo && isVideoPlaying)
+        if (returnToTitleAfterVideo && isVideoPlaying && !isStopping)
         {
             StartCoroutine(StopVideoWithFade());
         }
