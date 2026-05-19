@@ -875,8 +875,11 @@ MonoBehaviour:
   cancelButtons:
   - {fileID: 228826732}
   - {fileID: 862824614}
-  cancelArrowOffsetX: 70
+  cancelArrowOffsetX: 0
   cancelArrowOffsetY: 0
+  connectingCancelButton: {fileID: 1707610820}
+  connectingCancelArrowOffsetX: 215
+  connectingCancelArrowOffsetY: -1
   exclusivePanels:
   - {fileID: 1036910372}
   - {fileID: 1503059194}

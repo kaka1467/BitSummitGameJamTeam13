@@ -273,15 +273,8 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         // 4. クレジットや設定ボタンは、接続成功（ゲーム開始可能状態）になったら邪魔なので隠す
-        if (creditsButton != null)
-        {
-            creditsButton.gameObject.SetActive(currentState != ConnectionState.Connected);
-        }
-
-        if (settingsButton != null)
-        {
-            settingsButton.gameObject.SetActive(currentState != ConnectionState.Connected);
-        }
+        SetActiveForButton(creditsButton, currentState != ConnectionState.Connected);
+        SetActiveForButton(settingsButton, currentState != ConnectionState.Connected);
 
         // 5. 接続中（Connecting）のときだけボタンを一時的に連打できなくする
         if (connectButton != null)
