@@ -4071,10 +4071,9 @@ MonoBehaviour:
   gameOverSceneName: TimeUpResult
   gameOverDelay: 0
   fadeCanvasGroup: {fileID: 721788015}
-  fadeImage: {fileID: 0}
   fadeSeconds: 3
   score: 0
-  time: 1
+  time: 180
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
@@ -4205,7 +4204,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1999972711
 Transform:
   m_ObjectHideFlags: 0

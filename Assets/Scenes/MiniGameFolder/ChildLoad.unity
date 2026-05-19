@@ -570,7 +570,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GaugeSceneChanger
   gaugeImage: {fileID: 200993035}
-  duration: 5
+  duration: 15
   nextSceneName: MiniGame
 --- !u!1 &564310545
 GameObject:
