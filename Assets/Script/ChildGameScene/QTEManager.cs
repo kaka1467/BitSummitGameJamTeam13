@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Text;
 using TMPro;
 using UnityEngine;
@@ -12,6 +13,10 @@ public class QTEManager : MonoBehaviour
 
     [SerializeField] private TextMeshProUGUI qteText;
     [SerializeField] private PlayerAnimator playerAnimator;
+    [SerializeField] private Animator playerAnimatorComponent;
+    [SerializeField] private SpriteRenderer qteMissTargetRenderer;
+    [SerializeField] private Sprite qteMissSprite;
+    [SerializeField] private bool disableAnimatorOnMiss = true;
     
     [Header("QTEの文字数の設定")] 
     [SerializeField] private int sequenceLength = 7;
@@ -26,6 +31,7 @@ public class QTEManager : MonoBehaviour
     private int currentIndex;
     private float remainingTime;
     private Action<bool> onFinished;
+    private Coroutine missSpriteRoutine;
 
     public bool IsQteActive => isQteActive;
 
@@ -39,6 +45,7 @@ public class QTEManager : MonoBehaviour
 
         Instance = this;
         ResolvePlayerAnimator();
+        ResolveAnimatorComponent();
         EnsureQteText();
         SetQteVisible(false);
     }
@@ -52,7 +59,7 @@ public class QTEManager : MonoBehaviour
             remainingTime -= Time.unscaledDeltaTime;
             if (remainingTime <= 0f)
             {
-                TriggerPlayerDamage();
+                HandleQteMiss();
                 RegenerateSequence();
                 return;
             }
@@ -98,7 +105,52 @@ public class QTEManager : MonoBehaviour
             return;
         }
 
+        HandleQteMiss();
         RegenerateSequence();
+    }
+
+    private void HandleQteMiss()
+    {
+        if (playerAnimator != null)
+        {
+            playerAnimator.SetDamageLock(false);
+        }
+
+        if (disableAnimatorOnMiss && playerAnimatorComponent != null)
+        {
+            playerAnimatorComponent.enabled = true;
+        }
+
+        TriggerPlayerDamage();
+
+        if (missSpriteRoutine != null)
+        {
+            StopCoroutine(missSpriteRoutine);
+        }
+
+        missSpriteRoutine = StartCoroutine(ApplyMissSpriteAfterDamage());
+    }
+
+    private IEnumerator ApplyMissSpriteAfterDamage()
+    {
+        if (qteMissTargetRenderer == null || qteMissSprite == null)
+        {
+            missSpriteRoutine = null;
+            yield break;
+        }
+
+        float waitSeconds = playerAnimator != null ? playerAnimator.damageDuration : 0f;
+        if (waitSeconds > 0f)
+        {
+            yield return new WaitForSecondsRealtime(waitSeconds);
+        }
+
+        qteMissTargetRenderer.sprite = qteMissSprite;
+        if (disableAnimatorOnMiss && playerAnimatorComponent != null)
+        {
+            playerAnimatorComponent.enabled = false;
+        }
+        missSpriteRoutine = null;
     }
 
     private void RegenerateSequence()
@@ -130,6 +182,16 @@ public class QTEManager : MonoBehaviour
         if (player == null) return;
 
         playerAnimator = player.GetComponent<PlayerAnimator>() ?? player.GetComponentInParent<PlayerAnimator>();
+    }
+
+    private void ResolveAnimatorComponent()
+    {
+        if (playerAnimatorComponent != null) return;
+
+        if (playerAnimator != null)
+        {
+            playerAnimatorComponent = playerAnimator.GetComponent<Animator>();
+        }
     }
 
     private char? GetInputChar()
@@ -191,6 +253,11 @@ public class QTEManager : MonoBehaviour
         Time.timeScale = 1f;
         SetQteVisible(false);
 
+        if (disableAnimatorOnMiss && playerAnimatorComponent != null)
+        {
+            playerAnimatorComponent.enabled = true;
+        }
+
         // QTE終了時にダメージポーズのロックを解除する
         if (playerAnimator != null) playerAnimator.SetDamageLock(false);
 
@@ -212,7 +279,7 @@ public class QTEManager : MonoBehaviour
 
         if (timeLimitSeconds > 0f)
         {
-            qteText.text = $"QTE {remainingTime:0.0}s\n{displaySequence}";
+            qteText.text = $"Push Button! {remainingTime:0.0}s\n{displaySequence}";
         }
         else
         {

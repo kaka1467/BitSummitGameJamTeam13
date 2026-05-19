@@ -13,6 +13,9 @@ public class MenuNavigationController : MonoBehaviour
     [SerializeField] private List<Button> cancelButtons = new List<Button>();
     [SerializeField] private float cancelArrowOffsetX = -50f;
     [SerializeField] private float cancelArrowOffsetY = 0f;
+    [SerializeField] private Button connectingCancelButton;
+    [SerializeField] private float connectingCancelArrowOffsetX = -50f;
+    [SerializeField] private float connectingCancelArrowOffsetY = 0f;
 
     [Header("Modal Panel Settings")]
     [SerializeField] private List<GameObject> exclusivePanels = new List<GameObject>();
@@ -57,6 +60,7 @@ public class MenuNavigationController : MonoBehaviour
         EnsureValidSelection();
         HandleNavigation();
         HandleConfirm();
+        UpdateArrowPosition(); // ボタンが移動した場合も毎フレーム追従する
     }
 
     private void HandleNavigation()
@@ -294,9 +298,10 @@ public class MenuNavigationController : MonoBehaviour
 
         if (buttonRect != null && arrowRect != null)
         {
+            bool isConnectingCancel = connectingCancelButton != null && selectedButton == connectingCancelButton;
             bool isCancelButton = cancelButtons != null && cancelButtons.Contains(selectedButton);
-            float offsetX = isCancelButton ? cancelArrowOffsetX : arrowOffsetX;
-            float offsetY = isCancelButton ? cancelArrowOffsetY : arrowOffsetY;
+            float offsetX = isConnectingCancel ? connectingCancelArrowOffsetX : (isCancelButton ? cancelArrowOffsetX : arrowOffsetX);
+            float offsetY = isConnectingCancel ? connectingCancelArrowOffsetY : (isCancelButton ? cancelArrowOffsetY : arrowOffsetY);
 
             // ボタンの位置を取得して矢印を配置
             Vector3 buttonPos = buttonRect.position;

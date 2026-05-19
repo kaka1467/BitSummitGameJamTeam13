@@ -7,11 +7,13 @@ public class ResultScoreUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI rank1Text;
     [SerializeField] private TextMeshProUGUI rank2Text;
     [SerializeField] private TextMeshProUGUI rank3Text;
+    [SerializeField] private TextMeshProUGUI rank4Text;
+    [SerializeField] private TextMeshProUGUI rank5Text;
 
     private const string ResultScoreKey = "ResultScore";
     private const string ResultScorePendingKey = "ResultScorePending";
     private const string RankingScoreKeyPrefix = "RankingScore_";
-    private const int RankingSize = 3;
+    private const int RankingSize = 5;
 
     private void Start()
     {
@@ -34,6 +36,8 @@ public class ResultScoreUI : MonoBehaviour
         ApplyRankingText(rank1Text, ranking, 0);
         ApplyRankingText(rank2Text, ranking, 1);
         ApplyRankingText(rank3Text, ranking, 2);
+        ApplyRankingText(rank4Text, ranking, 3);
+        ApplyRankingText(rank5Text, ranking, 4);
 
     }
 

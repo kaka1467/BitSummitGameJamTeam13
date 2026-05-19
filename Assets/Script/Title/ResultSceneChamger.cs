@@ -14,35 +14,66 @@ public class ResultSceneChamger : MonoBehaviour
     [Header("設定時間")]
     public float fadeDuration = 2.0f; // 暗くなる時間（秒）
     public float textDuration = 1.5f; // テキストが見えている時間（秒）
+
+    [Header("入力と自動遷移")]
+    public float inputIgnoreDuration = 5.0f; // 最初の入力無視時間（秒）
+    public float autoChangeDelay = 30.0f; // 自動遷移までの時間（秒）
     
     [Header("遷移先シーン名")]
     public string titleSceneName = "TitleScene"; 
 
     private bool isFading = false;
+    private float elapsed = 0f;
 
     void Update()
-{
-    // どちらのシステムで検知したかを判定するフラグ
-    bool isButtonPressed = false;
-
-    // 1. 旧 Input Manager での検知 (ジョイスティックのボタン0、またはPCテスト用のスペースキー)
-    if (Input.GetKeyDown(KeyCode.JoystickButton0) || Input.GetKeyDown(KeyCode.Space))
     {
-        isButtonPressed = true;
-    }
+        if (isFading)
+        {
+            return;
+        }
 
-    // 2. 新 Input System での検知 (ゲームパッドが接続されていて、南ボタン(A/Bボタン等)が押されたか)
-    if (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame)
-    {
-        isButtonPressed = true;
-    }
+        elapsed += Time.deltaTime;
 
-    // どっちかでボタンが押されていたら、フェード処理を開始
-    if (isButtonPressed)
-    {
-        StartFadeToTitle();
+        if (elapsed >= autoChangeDelay)
+        {
+            StartFadeToTitle();
+            return;
+        }
+
+        if (elapsed < inputIgnoreDuration)
+        {
+            return;
+        }
+
+        bool isButtonPressed = false;
+        var kb = Keyboard.current;
+        var gp = Gamepad.current;
+
+        // キーボード入力
+        if (kb != null)
+        {
+            if (kb.aKey.wasPressedThisFrame) isButtonPressed = true;
+            if (kb.bKey.wasPressedThisFrame) isButtonPressed = true;
+            if (kb.xKey.wasPressedThisFrame) isButtonPressed = true;
+            if (kb.yKey.wasPressedThisFrame) isButtonPressed = true;
+        }
+
+        // ゲームパッド入力
+        if (gp != null)
+        {
+            // buttonSouth=A, buttonEast=B, buttonWest=X, buttonNorth=Y (一般的な配置)
+            if (gp.buttonSouth.wasPressedThisFrame) isButtonPressed = true;
+            if (gp.buttonEast.wasPressedThisFrame) isButtonPressed = true;
+            if (gp.buttonWest.wasPressedThisFrame) isButtonPressed = true;
+            if (gp.buttonNorth.wasPressedThisFrame) isButtonPressed = true;
+        }
+
+        // どっちかでボタンが押されていたら、フェード処理を開始
+        if (isButtonPressed)
+        {
+            StartFadeToTitle();
+        }
     }
-}
 
     // 外部（ボタン入力など）からこの関数を呼び出す
     public void StartFadeToTitle()
