@@ -20,27 +20,12 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/MotherGame/GameScene.unity
     guid: 93c6c33e9d3004a6da09de5262d189f2
-  - enabled: 0
-    path: Assets/Scenes/MotherGame/MotherGameOver.unity
-    guid: fd2953154f67e47049118f025227c3c4
-  - enabled: 0
-    path: Assets/Scenes/MotherGame/Ranking.unity
-    guid: 7644d76b136334517b3105c1034126e7
   - enabled: 1
     path: Assets/Scenes/MotherGame/GameOverResult.unity
     guid: 344c80713a59040f39ffee24086ba922
-  - enabled: 0
-    path: Assets/Scenes/MiniGameFolder/MiniGameOver.unity
-    guid: 273ed915b25fd43b38f767a5f22f5403
   - enabled: 1
     path: Assets/Scenes/MiniGameFolder/GameOverResult.unity
     guid: 77e0e86c989d242ce9ed3e892dd38707
-  - enabled: 0
-    path: Assets/Scenes/MotherGame/MotherResultRanking.unity
-    guid: d5f1413c460a84e3d9ad0d073dd137ca
-  - enabled: 0
-    path: Assets/Scenes/MotherGame/EyeGuidance.unity
-    guid: 9368e1ad8a89f4b2999ee444d07509f2
   - enabled: 1
     path: Assets/Scenes/MiniGameFolder/MiniGame.unity
     guid: b3756190d7ed24bf2adafd6ad6ad89ed
