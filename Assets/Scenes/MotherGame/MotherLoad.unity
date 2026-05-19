@@ -477,7 +477,7 @@ MonoBehaviour:
   slides:
   - {fileID: 135706950}
   - {fileID: 593497276}
-  displayDuration: 3
+  displayDuration: 2.5
   slideDuration: 0.5
   slideCurve:
     serializedVersion: 2
