@@ -13,6 +13,9 @@ using UnityEngine.UI;
 /// </summary>
 public class MotherGauge : MonoBehaviour
 {
+    [Header("Scene References")]
+    [SerializeField] private CaughtReactionController caughtReactionController;
+
     // Number of suspicion stages (default 10)
     public int maxGauge = 10;
 

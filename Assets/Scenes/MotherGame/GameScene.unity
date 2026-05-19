@@ -227,7 +227,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &29658247
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3470,13 +3470,11 @@ MonoBehaviour:
   sleepingController: {fileID: 2121813538}
   doorController: {fileID: 1919619509}
   udpSender: {fileID: 1385247218}
-  gameOverSceneName: GameOverResult
+  motherGauge: {fileID: 1418577572}
   fadeCanvasGroup: {fileID: 29658248}
-  fadeSeconds: 0.5
+  gameOverSceneName: GameOverResult
+  fadeSeconds: 3
   sceneChangeDelay: 0
-  suspicionGauge: 0
-  gaugeRiseSpeed: 50
-  gaugeDropSpeed: 15
   showDebugLogs: 0
 --- !u!4 &1372611142
 Transform:
@@ -3576,9 +3574,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 08ab3734bd5f64e759e2432f9bca15a0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MotherGauge
+  caughtReactionController: {fileID: 1372611141}
   maxGauge: 10
   currentGauge: 0
-  caughtReactionController: {fileID: 1372611141}
   suspiciousFrames:
   - {fileID: 2140751002}
   - {fileID: 591925717}
@@ -5422,7 +5420,7 @@ MonoBehaviour:
   warningSystem: {fileID: 0}
   sleepingController: {fileID: 2121813538}
   motherGauge: {fileID: 1418577572}
-  caughtReactionController: {fileID: 1372611141}
+  approachController: {fileID: 0}
   firstFloorLight: {fileID: 2118777199}
   secondFloorLight1: {fileID: 1913263790}
   secondFloorLight2: {fileID: 888717860}
@@ -5439,9 +5437,12 @@ MonoBehaviour:
   dummyProbability: 0.3
   riseSpeed: 45
   dropSpeed: 15
-  peekOpenAngle: 15
-  fullOpenAngle: -180
+  minRiseSpeed: 20
+  maxRiseSpeed: 40
+  minDebugAutoRiseSpeed: 8
+  maxDebugAutoRiseSpeed: 15
   enableLoudItemFeature: 0
+  autoProgressInDebug: 0
   isCaught: 0
   isMotherLookingNow: 0
 --- !u!1 &1990856874
