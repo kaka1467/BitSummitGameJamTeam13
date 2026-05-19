@@ -32,9 +32,15 @@ public class MotherGauge : MonoBehaviour
 
     private int _lastLoggedGauge = int.MinValue;
     private float _decreaseTimer = 0f;
+    private bool _hasTriggeredMax = false;
 
     private void Start()
     {
+        if (caughtReactionController == null)
+        {
+            caughtReactionController = Object.FindFirstObjectByType<CaughtReactionController>();
+        }
+
         UpdateGaugeUI();
     }
 

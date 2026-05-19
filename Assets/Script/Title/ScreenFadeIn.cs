@@ -35,6 +35,16 @@ public class ScreenFadeIn : MonoBehaviour
             return;
         }
 
+        if (!canvasGroup.gameObject.activeInHierarchy)
+        {
+            canvasGroup.gameObject.SetActive(true);
+        }
+
+        if (!enabled)
+        {
+            enabled = true;
+        }
+
         if (running != null)
         {
             StopCoroutine(running);

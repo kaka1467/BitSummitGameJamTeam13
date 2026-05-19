@@ -63,6 +63,13 @@ public class CaughtReactionController : MonoBehaviour
         suspicionGauge = 0f;
         hasTriggeredGameOver = false;
 
+        if (fadeCanvasGroup != null)
+        {
+            fadeCanvasGroup.alpha = 0f;
+            fadeCanvasGroup.interactable = false;
+            fadeCanvasGroup.blocksRaycasts = false;
+        }
+
         if (showDebugLogs)
             Debug.Log("?? CaughtReactionController initialized");
     }
