@@ -8,6 +8,8 @@ public class GameManager : MonoBehaviour
     [Header("Game Over")]
     public string gameOverSceneName = "GameOver"; // 遷移先のシーン名をインスペクタで設定
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
+    [SerializeField] private CanvasGroup fadeCanvasGroup;
+    [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
 
     public static GameManager instance;
 
@@ -54,6 +56,13 @@ public class GameManager : MonoBehaviour
     void Awake()
     {
         instance = this;
+
+        if (fadeCanvasGroup != null)
+        {
+            fadeCanvasGroup.alpha = 0f;
+            fadeCanvasGroup.interactable = false;
+            fadeCanvasGroup.blocksRaycasts = false;
+        }
 
         if (timeChangeText != null)
         {
@@ -212,6 +221,24 @@ public class GameManager : MonoBehaviour
 
         yield return new WaitForSecondsRealtime(0.1f);
 
+        if (fadeCanvasGroup != null)
+        {
+            if (!fadeCanvasGroup.gameObject.activeSelf)
+            {
+                fadeCanvasGroup.gameObject.SetActive(true);
+            }
+
+            fadeCanvasGroup.interactable = false;
+            fadeCanvasGroup.blocksRaycasts = true;
+            yield return StartCoroutine(FadeOutRoutine());
+        }
+
+        float delay = Mathf.Max(0f, gameOverDelay);
+        if (delay > 0f)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+        }
+
         // シーン遷移の前にタイムスケールを復帰させる
         Time.timeScale = 1f;
 
@@ -219,6 +246,33 @@ public class GameManager : MonoBehaviour
         {
             SceneManager.LoadScene(gameOverSceneName);
         }
+    }
+
+    private IEnumerator FadeOutRoutine()
+    {
+        if (fadeCanvasGroup == null)
+        {
+            yield break;
+        }
+
+        float duration = Mathf.Max(0f, fadeSeconds);
+        if (duration <= 0f)
+        {
+            fadeCanvasGroup.alpha = 1f;
+            yield break;
+        }
+
+        float startAlpha = fadeCanvasGroup.alpha;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            fadeCanvasGroup.alpha = Mathf.Lerp(startAlpha, 1f, t);
+            yield return null;
+        }
+
+        fadeCanvasGroup.alpha = 1f;
     }
 
     public void AddFeverCount()

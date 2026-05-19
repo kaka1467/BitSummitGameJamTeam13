@@ -15,6 +15,14 @@ public class CaughtReactionController : MonoBehaviour
     [SerializeField] private DoorController doorController;
     [SerializeField] private ParentUdpSender udpSender;
 
+    [Header("Scene Settings")]
+    [SerializeField] private string gameOverSceneName = "MotherGameOver";
+
+    [Header("Fade Settings")]
+    [SerializeField] private CanvasGroup fadeCanvasGroup;
+    [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
+    [SerializeField, Min(0f)] private float sceneChangeDelay = 0f;
+
     [Header("Suspicion Gauge Settings")]
     [SerializeField, Range(0f, 100f)] private float suspicionGauge = 0f;
     [SerializeField] private float gaugeRiseSpeed = 50f;    // Increase when caught looking
@@ -62,6 +70,13 @@ public class CaughtReactionController : MonoBehaviour
 
         suspicionGauge = 0f;
         hasTriggeredGameOver = false;
+
+        if (fadeCanvasGroup != null)
+        {
+            fadeCanvasGroup.alpha = 0f;
+            fadeCanvasGroup.interactable = false;
+            fadeCanvasGroup.blocksRaycasts = false;
+        }
 
         if (showDebugLogs)
             Debug.Log("?? CaughtReactionController initialized");
@@ -172,15 +187,67 @@ public class CaughtReactionController : MonoBehaviour
         }
 
         // Wait for realtime delay (0.1 seconds)
-        yield return new WaitForSeconds(0.1f);
+        yield return new WaitForSecondsRealtime(0.1f);
+
+        if (fadeCanvasGroup != null)
+        {
+            if (!fadeCanvasGroup.gameObject.activeSelf)
+            {
+                fadeCanvasGroup.gameObject.SetActive(true);
+            }
+
+            fadeCanvasGroup.interactable = false;
+            fadeCanvasGroup.blocksRaycasts = true;
+            yield return StartCoroutine(FadeOutRoutine());
+        }
+
+        float delay = Mathf.Max(0f, sceneChangeDelay);
+        if (delay > 0f)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+        }
 
         if (showDebugLogs)
-            Debug.Log("?? Loading MotherGameOver scene...");
+            Debug.Log($"?? Loading {gameOverSceneName} scene...");
 
         // Load game over scene
-        SceneManager.LoadScene("MotherGameOver");
+        if (!string.IsNullOrEmpty(gameOverSceneName))
+        {
+            SceneManager.LoadScene(gameOverSceneName);
+        }
+        else
+        {
+            Debug.LogError("?? gameOverSceneName is empty. Please set it in the Inspector.");
+        }
 
         gameOverRoutine = null;
+    }
+
+    private IEnumerator FadeOutRoutine()
+    {
+        if (fadeCanvasGroup == null)
+        {
+            yield break;
+        }
+
+        float duration = Mathf.Max(0f, fadeSeconds);
+        if (duration <= 0f)
+        {
+            fadeCanvasGroup.alpha = 1f;
+            yield break;
+        }
+
+        float startAlpha = fadeCanvasGroup.alpha;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            fadeCanvasGroup.alpha = Mathf.Lerp(startAlpha, 1f, t);
+            yield return null;
+        }
+
+        fadeCanvasGroup.alpha = 1f;
     }
 
     /// <summary>

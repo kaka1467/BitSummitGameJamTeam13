@@ -7,6 +7,9 @@ public class MotherGauge : MonoBehaviour
     public int maxGauge = 100;
     public int currentGauge = 0;
 
+    [Header("Scene Change")]
+    [SerializeField] private CaughtReactionController caughtReactionController;
+
     [Header("怪しさゲージ 枠(10個)")]
     [Tooltip("左から順に並べた枠 Image を10個登録")]
     public Image[] suspiciousFrames;
@@ -32,9 +35,15 @@ public class MotherGauge : MonoBehaviour
 
     private int _lastLoggedGauge = int.MinValue;
     private float _decreaseTimer = 0f;
+    private bool _hasTriggeredMax = false;
 
     private void Start()
     {
+        if (caughtReactionController == null)
+        {
+            caughtReactionController = Object.FindFirstObjectByType<CaughtReactionController>();
+        }
+
         UpdateGaugeUI();
     }
 
@@ -107,6 +116,19 @@ public class MotherGauge : MonoBehaviour
         float ratio = Mathf.Clamp01((float)currentGauge / maxGauge);
         int filledCount = Mathf.RoundToInt(ratio * suspiciousFrames.Length);
         SetFrames(filledCount);
+
+        if (!_hasTriggeredMax && currentGauge >= maxGauge)
+        {
+            _hasTriggeredMax = true;
+            if (caughtReactionController != null)
+            {
+                caughtReactionController.ForceGameOver();
+            }
+            else
+            {
+                Debug.LogWarning($"[{nameof(MotherGauge)}] CaughtReactionController が未設定です。", this);
+            }
+        }
 
         if (logOnChange && _lastLoggedGauge != currentGauge)
         {
