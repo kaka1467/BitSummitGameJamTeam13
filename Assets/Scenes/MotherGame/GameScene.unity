@@ -3437,7 +3437,7 @@ MonoBehaviour:
   connectButton: {fileID: 0}
   connectButtonLabel: {fileID: 0}
   startButtonObject: {fileID: 0}
-  gameSceneName: GameOverResult
+  gameSceneName: MotherGameOver
   cancelButton: {fileID: 0}
 --- !u!4 &1385247219
 Transform:
@@ -5335,7 +5335,7 @@ MonoBehaviour:
   stairsAudioSource: {fileID: 1615664220}
   dummyDoorAudioSource: {fileID: 1017118909}
   realMotherObject: {fileID: 1300055334}
-  dummyMotherObject: {fileID: 1300055334}
+  dummyMotherObject: {fileID: 0}
   lightSwitchAudioSource: {fileID: 1856311165}
   mainDoorOpenAudioSource: {fileID: 1017118909}
   mainDoorCloseAudioSource: {fileID: 1079912679}
