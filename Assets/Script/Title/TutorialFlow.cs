@@ -12,6 +12,7 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private GameManager gameManager;
     [SerializeField] private TextMeshProUGUI countdownText;
     [SerializeField] private TextMeshProUGUI startText;
+    [SerializeField] private BGMController bgmController;
 
     [Header("Settings")]
     [SerializeField] private bool runOnStart = true;
@@ -89,6 +90,11 @@ public class TutorialFlow : MonoBehaviour
         if (gameManager == null)
         {
             gameManager = GameManager.instance;
+        }
+
+        if (bgmController == null)
+        {
+            bgmController = FindFirstObjectByType<BGMController>();
         }
 
         if (playerMove == null || itemSpawner == null)
@@ -280,6 +286,7 @@ public class TutorialFlow : MonoBehaviour
 
             if (startText != null)
             {
+                PlayTutorialBgmIfNeeded();
                 startText.gameObject.SetActive(true);
                 startText.text = "Start";
                 RectTransform rect = startText.rectTransform;
@@ -302,6 +309,13 @@ public class TutorialFlow : MonoBehaviour
         {
             yield return new WaitForSecondsRealtime(total);
         }
+    }
+
+    private void PlayTutorialBgmIfNeeded()
+    {
+        if (bgmController == null) return;
+
+        bgmController.PlayBGM();
     }
 
     private int GetNearestLaneIndex(float y)
