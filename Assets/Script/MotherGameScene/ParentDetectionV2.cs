@@ -4,39 +4,24 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// ParentDetectionV2:
-/// Consequence and branch controller — reacts to approach events and owns all gauge-write logic.
+/// Door-event / branch controller only.
 ///
 /// Responsibility boundaries:
-///   ParentApproachController  — movement and orientation
-///   ParentWarningSystem       — foreshadowing sequence, light cues, route selection, rush-in entry point
-///   ParentWarningScheduler    — automatic timing windows and N/M debug keys
-///   ParentDetectionV2 (this)  — door branching, suspicion ticks, room-check reset, caught trigger,
-///                               and loud-item rush-in initiation (via warningSystem.StartLoudItemRushInSequence)
+///   ParentApproachController  — movement and route presentation
+///   ParentWarningSystem       — sequence coordinator
+///   ParentWarningScheduler    — timing and N/M debug keys
+///   ParentDetectionV2 (this)  — reacts when the mother reaches the door or passes by,
+///                               handles branching, door state, cycle reset, and loud items
 ///
-/// Gauge is written in four places:
-///   OnLoudItemTriggered              — discrete burst when a loud child-device item fires
-///   TriggerPrimaryEvent              — 3-tick burst on room entry if player is NOT sleeping
-///   ContinuousRoomSuspicionCoroutine — timed +1 per tick while mother is in the room
-///   HallwayPeekSuspicionCoroutine    — timed +1 per tick only when mother is in hallway phase
+/// Gauge is written in four cases:
+///   OnLoudItemTriggered              — discrete AddGauge() proportional to loudItemGaugeAmount
+///   TriggerPrimaryEvent              — discrete AddGauge() initial burst when mother enters room (if not sleeping)
+///   ContinuousRoomSuspicionCoroutine — timed AddGauge() while door is open and player is NOT sleeping
+///   HallwayPeekSuspicionCoroutine    — mild timed AddGauge() only when BOTH mother is in hallway phase
 ///                                      AND player is actively peeking (CameraSwitcher.IsPeeking)
-///
+/// Peek duration for the current run is: peekDurationBase + motherGauge.currentGauge
 /// Route branching (primary vs dummy) is driven by warningSystem.ActiveRoute.
-/// dummyProbability is a fallback only when ActiveRoute is None (e.g. P-key debug).
-/// Peek duration for the current run is: peekDurationBase + motherGauge.currentGauge.
-///
-/// ── Expected behavior quick-reference ────────────────────────────────────────
-/// Normal warning run:
-///   lightSwitch audio      — plays only if player is peeking at the moment each light fires
-///   movementLoopAudio      — plays only while player is peeking AND approach is active
-///   door pause             — pauseAtDoorSeconds
-///   immediate game-over    — YES if player peeks after ReachedDoor on DoorPeek route
-///
-/// Loud-item rush-in:
-///   rushInAudioSource      — plays immediately (here, before StartLoudItemRushInSequence)
-///   lightSwitch audio      — plays unconditionally (second-floor only)
-///   movementLoopAudio      — never plays (IsRushIn suppresses it)
-///   door pause             — rushInPauseAtDoorSeconds
-///   immediate game-over    — YES, same rule as normal DoorPeek
+/// dummyProbability is only a fallback when ActiveRoute is None (e.g. P key debug).
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
@@ -57,7 +42,7 @@ public class ParentDetectionV2 : MonoBehaviour
     [SerializeField] private AudioSource mainDoorOpenAudioSource;
     [Tooltip("Played when the door closes at the end of any event.")]
     [SerializeField] private AudioSource mainDoorCloseAudioSource;
-    [Tooltip("Played immediately when a loud-item rush-in is triggered (before speed/route setup).")]
+    [Tooltip("Played immediately when a loud-item rush-in is triggered.")]
     [SerializeField] private AudioSource rushInAudioSource;
 
     // ── Door ──────────────────────────────────────────────────────────────────
@@ -93,23 +78,21 @@ public class ParentDetectionV2 : MonoBehaviour
     [Tooltip("Gauge stages added to MotherGauge when a loud item fires. If this pushes gauge to max, game over triggers immediately instead of a rush-in.")]
     [SerializeField] private int loudItemGaugeAmount = 3;
 
-    // ── Continuous room suspicion ────────────────────────────────────────────────
-    [Header("In-Room Continuous Suspicion")]
-    [Tooltip("Enable continuous suspicion rise while the mother is inside the room during a full door-check event. Active regardless of peeking.")]
+    // ── Continuous room suspicion ──────────────────────────────────────────────
+    [Header("Continuous Room Suspicion")]
+    [Tooltip("Enable continuous suspicion rise while the mother's full-check door event is active.")]
     [SerializeField] private bool enableContinuousRoomSuspicion = true;
-    [Tooltip("Gauge stages added per tick while the mother is in the room.")]
+    [Tooltip("Gauge stages added per tick during the continuous room-check phase.")]
     [SerializeField] private int continuousRoomSuspicionAmount = 1;
-    [Tooltip("Seconds between each +1 suspicion tick while the mother is in the room during a full door-check. Lower = faster passive suspicion rise in room.")]
+    [Tooltip("Seconds between each continuous-room suspicion tick.")]
     [SerializeField] private float continuousRoomSuspicionTickInterval = 2f;
-    // Tune this to control how fast suspicion rises PASSIVELY while the mother is in the room.
 
-    // ── Hallway peek suspicion ───────────────────────────────────────────────────────
-    [Header("Hallway / Door-Front Peek Suspicion")]
-    [Tooltip("Enable suspicion rise while the mother is in the hallway phase AND the player is peeking (IsPeeking=true). Applies during both approach and door-front standing.")]
+    // ── Hallway peek suspicion ───────────────────────────────────────────────────
+    [Header("Hallway Peek Suspicion")]
+    [Tooltip("Enable mild suspicion increase while the mother is peeking from the hallway phase.")]
     [SerializeField] private bool enableHallwayPeekSuspicion = true;
-    [Tooltip("Seconds between each +1 suspicion tick while the player is peeking at the mother in the hallway or at the door. Lower = faster suspicion rise when peeking.")]
+    [Tooltip("Seconds between each +1 hallway-peek suspicion tick.")]
     [SerializeField] private float hallwayPeekSuspicionTickInterval = 0.5f;
-    // Tune this to control how fast suspicion rises when the player ACTIVELY PEEKS at the mother.
 
     // ── Public state ──────────────────────────────────────────────────────────
     public bool isCaught          = false;
@@ -159,9 +142,6 @@ public class ParentDetectionV2 : MonoBehaviour
 
     private void Update()
     {
-        // Immediate game-over rule:
-        //   Condition: DoorPeek route active + mother has ReachedDoor/StoppedAtDoor + player is peeking.
-        //   Result: OnPlayerCaught() fires in the same frame the peek starts — no grace period.
         if (!hasPermanentGameOver && !isCaught)
         {
             if (cameraSwitcher   != null && cameraSwitcher.IsPeeking   &&
@@ -174,22 +154,21 @@ public class ParentDetectionV2 : MonoBehaviour
             }
         }
 
-        // ── Debug keys (editor / playtesting only) ────────────────────────────
         if (Keyboard.current == null) return;
 
-        if (Keyboard.current.pKey.wasPressedThisFrame)  // P — force primary (full room-check) event
+        if (Keyboard.current.pKey.wasPressedThisFrame)
         {
             Debug.Log("[PDV2] P key — forcing primary (full) check");
             TriggerFinalEvent(primary: true);
         }
 
-        if (Keyboard.current.oKey.wasPressedThisFrame)  // O — force dummy (peek-only) event
+        if (Keyboard.current.oKey.wasPressedThisFrame)
         {
             Debug.Log("[PDV2] O key — forcing dummy (peek) check");
             TriggerFinalEvent(primary: false);
         }
 
-        if (Keyboard.current.lKey.wasPressedThisFrame)  // L — simulate loud child-device item
+        if (Keyboard.current.lKey.wasPressedThisFrame)
         {
             Debug.Log("[PDV2] L key — triggering loud item");
             OnLoudItemTriggered();
@@ -274,7 +253,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (warningSystem != null && warningSystem.isWarningActive)
         {
-            Debug.Log("[PDV2] Loud item ignored because warning is already active");
+            Debug.Log("[PDV2] Loud item ignored — warning sequence already active");
             return;
         }
 

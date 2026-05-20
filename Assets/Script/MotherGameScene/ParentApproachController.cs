@@ -63,16 +63,16 @@ public class ParentApproachController : MonoBehaviour
 
     // ── Visibility ────────────────────────────────────────────────────────────
     [Header("Mother Model Visibility")]
-    [Tooltip("Root GameObject of the walking mother model. Shown on approach start via ShowMotherModel(). Hiding is managed externally (e.g. by a scene controller after the cycle ends).")]
+    [Tooltip("The root GameObject of the walking mother model. Will be SetActive(true) on approach start and SetActive(false) is NOT called here — PDV2 manages hide via realMotherObject.")]
     public GameObject motherModelRoot;
     [Tooltip("Optional: child Renderers to enable/disable if motherModelRoot alone is not enough (e.g. LOD children).")]
     public Renderer[] motherModelRenderers;
 
     // ── Audio ──────────────────────────────────────────────────────────────────
     [Header("Audio")]
-    [Tooltip("AudioSource looped during stair climb and hallway walk. Follows peeking state on normal runs; always suppressed on rush-in runs.")]
+    [Tooltip("AudioSource looped while approaching. Gated by peeking state each frame via UpdateMovementLoopAudio(). Never plays on rush-in runs.")]
     public AudioSource movementLoopAudioSource;
-    [Tooltip("CameraSwitcher used to determine if the player is peeking. Auto-found at Start if not assigned.")]
+    [Tooltip("CameraSwitcher used to gate the movement loop audio. Auto-found at Start if not assigned.")]
     public CameraSwitcher cameraSwitcher;
 
     // ── Timing ────────────────────────────────────────────────────────────────
@@ -101,13 +101,22 @@ public class ParentApproachController : MonoBehaviour
     public bool IsInHallwayPhase { get; private set; }
 
     // ── Run mode ──────────────────────────────────────────────────────────────
-    /// <summary>Set by ParentWarningSystem before starting a loud-item rush-in. Suppresses the normal movement loop audio.</summary>
-    public bool IsRushIn         { get; set; }
+    /// <summary>Set by ParentWarningSystem before starting a loud-item rush-in. Suppresses movement loop audio and uses rushInPauseAtDoorSeconds.</summary>
+    public bool IsRushIn { get; set; }
 
     // ── Private ───────────────────────────────────────────────────────────────
     private Coroutine _approachCoroutine;
     private float _fixedPitch;
     private float _fixedRoll;
+
+    // Fixed yaw angles — not exposed; adjusted via requirements only
+    private const float StairYaw   = -90f;
+    private const float HallwayYaw =   0f;
+    private const float DoorYaw    =  90f;
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Unity lifecycle
+    // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()
     {
@@ -138,19 +147,11 @@ public class ParentApproachController : MonoBehaviour
         }
     }
 
-    // Fixed yaw angles — not exposed; adjusted via requirements only
-    private const float StairYaw   = -90f;
-    private const float HallwayYaw =   0f;
-    private const float DoorYaw    =  90f;
-
     // ──────────────────────────────────────────────────────────────────────────
     //  Public API
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Default entry point — currently delegates to StartApproachDoorOnly().
-    /// Kept for backward-compatible scene wiring.
-    /// </summary>
+    /// <summary>Default entry point — delegates to StartApproachDoorOnly(). Kept for backward-compatible scene wiring.</summary>
     public void StartApproach()
     {
         StartApproachDoorOnly();
@@ -182,7 +183,6 @@ public class ParentApproachController : MonoBehaviour
         BeginApproach(passByRoute: false);
     }
 
-    /// <summary>Cancels any in-progress approach coroutine, resets all state flags, and teleports the mother back to startPoint.</summary>
     public void ResetApproach()
     {
         Debug.Log($"[ParentApproachController] ResetApproach | IsApproaching={IsApproaching}");
@@ -286,7 +286,7 @@ public class ParentApproachController : MonoBehaviour
         StopMovementAudio();
         PassedByDoor  = true;
         IsApproaching = false;
-        // IsInHallwayPhase cleared by ResetStateFlags() only — consistent with DoorRoutine behaviour.
+        // IsInHallwayPhase cleared by ResetStateFlags() only — consistent with DoorRoutine.
 
         Debug.Log("[ParentApproachController] PASSED BY DOOR — firing OnPassedByDoor");
         OnPassedByDoor?.Invoke();
@@ -300,6 +300,7 @@ public class ParentApproachController : MonoBehaviour
     {
         SetYaw(StairYaw);
         Debug.Log($"[ParentApproachController] Phase: STAIR CLIMB | yaw=-90 | IsRushIn={IsRushIn}");
+        // Movement loop audio is managed by UpdateMovementLoopAudio() in Update() — no Play() call here.
 
         if (stairClimbPoints != null)
         {
@@ -316,7 +317,7 @@ public class ParentApproachController : MonoBehaviour
             Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0");
             yield return MoveToPoint(stairTurnPoint);
             yield return RotateToYaw(HallwayYaw, stairTurnRotationSpeed);
-            Debug.Log("[ParentApproachController]   STAIR TURN complete — movement audio continues into hallway");
+            Debug.Log("[ParentApproachController]   STAIR TURN complete");
         }
     }
 
@@ -337,7 +338,7 @@ public class ParentApproachController : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Movement, rotation, and audio helpers
+    //  Movement / rotation helpers
     // ──────────────────────────────────────────────────────────────────────────
 
     private IEnumerator MoveToPoint(Transform target)

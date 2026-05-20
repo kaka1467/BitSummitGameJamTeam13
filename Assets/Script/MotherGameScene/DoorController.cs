@@ -41,12 +41,10 @@ public class DoorController : MonoBehaviour
     void Start()
     {
         if (door != null)
-        {
             door.localRotation = Quaternion.Euler(0f, closedAngle, 0f);
-        }
 
         currentDoorState = DoorState.Closed;
-        targetDoorState = DoorState.Closed;
+        targetDoorState  = DoorState.Closed;
     }
 
     void Update()
