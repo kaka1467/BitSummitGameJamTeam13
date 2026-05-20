@@ -8,6 +8,7 @@ public class ItemSpawnerEditor : Editor
     // ループ用プロパティはルールごとに FindPropertyRelative で取得するため、ここでは宣言しない
     private SerializedProperty normalSpawnRulesProp;
     private SerializedProperty hugeObstacleSpawnCountProp;
+    private SerializedProperty hugeObstacleSpawnYProp;
     private SerializedProperty minSpawnDistanceXProp;
     private SerializedProperty minSpawnDistanceYProp;
     private SerializedProperty recentSpawnWindowProp;
@@ -22,6 +23,7 @@ public class ItemSpawnerEditor : Editor
     {
         normalSpawnRulesProp = serializedObject.FindProperty("normalSpawnRules");
         hugeObstacleSpawnCountProp = serializedObject.FindProperty("hugeObstacleSpawnCount");
+        hugeObstacleSpawnYProp = serializedObject.FindProperty("hugeObstacleSpawnY");
         minSpawnDistanceXProp = serializedObject.FindProperty("minSpawnDistanceX");
         minSpawnDistanceYProp = serializedObject.FindProperty("minSpawnDistanceY");
         recentSpawnWindowProp = serializedObject.FindProperty("recentSpawnWindow");
@@ -125,8 +127,10 @@ public class ItemSpawnerEditor : Editor
         }
 
         EditorGUILayout.Space(6f);
-        EditorGUILayout.PropertyField(hugeObstacleSpawnCountProp, new GUIContent("HugeObstacle Count (per huge event)"));
-        EditorGUILayout.HelpBox("QTEのオブジェクトはItemSpawnerで管理されます。", MessageType.Info);
+        EditorGUILayout.LabelField("HugeObstacle Settings", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(hugeObstacleSpawnCountProp, new GUIContent("Count (per huge event)"));
+        EditorGUILayout.PropertyField(hugeObstacleSpawnYProp, new GUIContent("Spawn Y Position"));
+        EditorGUILayout.HelpBox("QTEのオブジェクトはItemSpawnerで管理されます。Spawn Y PositionでHugeObstacleのY座標を設定できます。", MessageType.Info);
 
         EditorGUILayout.Space(6f);
         EditorGUILayout.LabelField("Overlap Avoidance", EditorStyles.boldLabel);

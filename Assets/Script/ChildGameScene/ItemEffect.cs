@@ -2,6 +2,11 @@ using UnityEngine;
 
 public class ItemEffect : MonoBehaviour
 {
+    /// <summary>
+    /// QTE 処理中は true。この間は ItemMove による移動・削除を止める。
+    /// </summary>
+    public bool IsQteLocked { get; private set; } = false;
+
     private void OnTriggerEnter2D(Collider2D other)
     {
         // プレイヤー本体だけでなく、子オブジェクトのコライダーに当たっても反応できるようにする
@@ -53,6 +58,18 @@ public class ItemEffect : MonoBehaviour
                 if (pool != null) pool.ReturnToPool(gameObject);
                 return;
             }
+        }
+
+        // HugeObstacle は QTE 完了コールバック後にプールへ戻す
+        if (item.itemType == ItemType.HugeObstacle)
+        {
+            IsQteLocked = true;
+            item.ApplyEffect(other, onFinished: () =>
+            {
+                IsQteLocked = false;
+                if (pool != null) pool.ReturnToPool(gameObject);
+            });
+            return;
         }
 
         // 効果ロジックは Item 側に委譲
