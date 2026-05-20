@@ -44,6 +44,10 @@ public class MotherGauge : MonoBehaviour
     [Tooltip("How many seconds between each automatic stage decrease (only used when enableAutoDecrease is true)")]
     public float decreaseIntervalSeconds = 20f;
 
+    [Header("Audio")]
+    [Tooltip("AudioSource that plays a one-shot sound each time the gauge increases by one or more steps. Assign in the Inspector.")]
+    [SerializeField] private AudioSource gaugeStepAudioSource;
+
     [Header("Debug")]
     [Tooltip("Log approach/suspicion gauge changes to the console")]
     public bool logOnChange = false;
@@ -141,6 +145,12 @@ public class MotherGauge : MonoBehaviour
         currentGauge = Mathf.Clamp(currentGauge, 0, maxGauge);
         UpdateGaugeUI();
         Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] DONE   | currentGauge AFTER={currentGauge}/{maxGauge}");
+
+        if (currentGauge > previous)
+        {
+            if (gaugeStepAudioSource != null)
+                gaugeStepAudioSource.Play();
+        }
 
         if (logOnChange && previous != currentGauge)
         {

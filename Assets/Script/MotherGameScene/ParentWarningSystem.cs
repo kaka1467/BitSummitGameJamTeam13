@@ -3,12 +3,23 @@ using UnityEngine;
 
 /// <summary>
 /// ParentWarningSystem:
-/// Owns the staged foreshadowing sequence and route selection.
+/// Owns all pre-approach presentation: foreshadowing lights, delays, speed scaling, and route selection.
+/// Also owns the loud-item rush-in entry point (bypasses lights/delays, forces DoorPeek at high speed).
+///
+/// Public entry points:
+///   StartWarningSequence()             — normal automatic flow (called by scheduler)
+///   StartManualPassByWarningSequence() — N-key debug: full foreshadow, forced PassBy
+///   StartManualDoorWarningSequence()   — M-key debug: full foreshadow, forced DoorPeek
+///   TriggerInstantPassBy()             — instant debug PassBy, no lights or delays
+///   TriggerInstantDoor()               — instant debug DoorPeek, no lights or delays
+///   StartLoudItemRushInSequence()      — loud-item rush-in: second-floor lights only, speed=loudItemRushInMoveSpeed
+///   StopWarningSequence()              — force-stop and reset (e.g. game over, scene unload)
+///   EndWarningSequence()               — clean end called by ParentDetectionV2 after a cycle completes
 ///
 /// Responsibility boundaries:
-/// ParentWarningSystem — lights, delay timing, automatic speed scaling, route probability
-/// ParentApproachController — path movement
-/// ParentDetectionV2 — door events, door state, room-check consequences
+///   ParentWarningSystem     — lights, delays, speed, route probability, rush-in setup
+///   ParentApproachController— path movement and orientation
+///   ParentDetectionV2       — door branching, suspicion, room-check consequences, caught
 /// </summary>
 public class ParentWarningSystem : MonoBehaviour
 {
@@ -63,6 +74,11 @@ public class ParentWarningSystem : MonoBehaviour
     public float highSuspicionApproachMoveSpeedMin = 25f;
     [Tooltip("Maximum moveSpeed assigned when gauge is above the threshold.")]
     public float highSuspicionApproachMoveSpeedMax = 30f;
+
+    // ── Rush-in speed ─────────────────────────────────────────────────────────
+    [Header("Loud-Item Rush-In")]
+    [Tooltip("moveSpeed assigned to the approach controller for a loud-item rush-in. Should be noticeably faster than normal high-suspicion speeds.")]
+    public float loudItemRushInMoveSpeed = 40f;
 
     // ── Debug speed override ──────────────────────────────────────────────────
     [Header("Debug Speed Override (N / M manual routes)")]
@@ -210,6 +226,42 @@ public class ParentWarningSystem : MonoBehaviour
         approachController.StartApproachDoorOnly();
     }
 
+    /// <summary>
+    /// Loud-item rush-in: skips first-floor light and foreshadow delays.
+    /// Turns on second-floor lights only, sets speed to loudItemRushInMoveSpeed, forces DoorPeek route.
+    /// Called by ParentDetectionV2.OnLoudItemTriggered() after audio and gauge are already applied.
+    /// No-op if a warning sequence is already active.
+    /// </summary>
+    public void StartLoudItemRushInSequence()
+    {
+        if (isWarningActive)
+        {
+            Debug.Log("[ParentWarningSystem] StartLoudItemRushInSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (!ValidateController()) return;
+
+        isWarningActive = true;
+        ActiveRoute     = RouteState.DoorPeek;
+
+        if (approachController != null)
+            approachController.IsRushIn = true;
+
+        // Second-floor lights only — first-floor light is skipped for rush-in.
+        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
+        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
+        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+
+        if (approachController != null)
+            approachController.moveSpeed = loudItemRushInMoveSpeed;
+
+        Debug.Log($"[ParentWarningSystem] LOUD-ITEM RUSH-IN | speed={loudItemRushInMoveSpeed} | route=DoorPeek");
+        approachController.StartApproachDoorOnly();
+    }
+
+    /// <summary>Force-stops any active foreshadow or pass-by-sound coroutines, then calls EndWarningSequence().</summary>
     public void StopWarningSequence()
     {
         if (_foreshadowCoroutine != null)

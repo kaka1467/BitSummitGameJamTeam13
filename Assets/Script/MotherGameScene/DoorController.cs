@@ -4,7 +4,6 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// DoorController: Manages door rotation with smooth Lerp animation.
 /// Supports both manual toggle (E key) via New Input System and external commands from ParentDetectionV2.
-/// Synchronizes with parent model visibility based on door state.
 /// </summary>
 public class DoorController : MonoBehaviour
 {
@@ -20,7 +19,6 @@ public class DoorController : MonoBehaviour
 
     [Header("Door Setup")]
     [SerializeField] private Transform door;           // The door transform that rotates
-    [SerializeField] private Transform parentModel;    // The parent model to show/hide
 
     [Header("Rotation Settings")]
     [SerializeField] private float closedAngle = 0f;   // Closed position (0 degrees)
@@ -35,14 +33,6 @@ public class DoorController : MonoBehaviour
     private DoorState currentDoorState = DoorState.Closed;
     private DoorState targetDoorState = DoorState.Closed;
 
-    // Track parent visibility
-    private bool isParentHere = false;
-
-    /// <summary>
-    /// Read-only property: Check if parent is currently at the door
-    /// </summary>
-    public bool IsParentHere => isParentHere;
-
     /// <summary>
     /// Read-only property: Get current door state
     /// </summary>
@@ -50,21 +40,11 @@ public class DoorController : MonoBehaviour
 
     void Start()
     {
-        // Ensure door is at closed angle initially
         if (door != null)
-        {
             door.localRotation = Quaternion.Euler(0f, closedAngle, 0f);
-        }
 
-        // Ensure parent model is hidden initially
-        if (parentModel != null)
-        {
-            parentModel.gameObject.SetActive(false);
-        }
-
-        isParentHere = false;
         currentDoorState = DoorState.Closed;
-        targetDoorState = DoorState.Closed;
+        targetDoorState  = DoorState.Closed;
     }
 
     void Update()
@@ -135,9 +115,6 @@ public class DoorController : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log($"?? Door state changed to: {newState}");
-
-        // Update parent model visibility based on door state
-        UpdateParentVisibility();
     }
 
     /// <summary>
@@ -151,46 +128,6 @@ public class DoorController : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log($"?? SetDoorOpen({isOpen}) -> {newState}");
-    }
-
-    /// <summary>
-    /// Updates parent model visibility based on door state
-    /// </summary>
-    private void UpdateParentVisibility()
-    {
-        // Parent is visible when door is Peek or Full
-        bool shouldShowParent = (targetDoorState == DoorState.Peek || targetDoorState == DoorState.Full);
-
-        if (shouldShowParent != isParentHere)
-        {
-            isParentHere = shouldShowParent;
-
-            if (parentModel != null)
-            {
-                parentModel.gameObject.SetActive(isParentHere);
-
-                if (showDebugLogs)
-                    Debug.Log($"?? Parent Model: {(isParentHere ? "VISIBLE" : "HIDDEN")}");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Alternative method to set parent visibility directly (if needed)
-    /// </summary>
-    public void SetParentVisible(bool isVisible)
-    {
-        if (isParentHere == isVisible) return;
-
-        isParentHere = isVisible;
-
-        if (parentModel != null)
-        {
-            parentModel.gameObject.SetActive(isVisible);
-
-            if (showDebugLogs)
-                Debug.Log($"?? Parent visibility set to: {isVisible}");
-        }
     }
 
     /// <summary>

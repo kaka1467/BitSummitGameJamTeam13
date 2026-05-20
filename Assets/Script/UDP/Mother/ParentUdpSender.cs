@@ -84,7 +84,7 @@ public class ParentUdpSender : MonoBehaviour
 
     public void SendState(string message)
     {
-        Debug.Log("SendState caught");
+        Debug.Log($"[ParentUdpSender] SendState: '{message}' -> {targetIP}:{normalPort} (payload: {MAGIC_NUMBER + message})");
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
@@ -179,7 +179,9 @@ public class ParentUdpSender : MonoBehaviour
             startButtonObject.SetActive(currentState == ConnectionState.Connected);
         }
 
-        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+        bool spacePressed   = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
+        bool gamepadAPressed = Gamepad.current  != null && Gamepad.current.buttonSouth.wasPressedThisFrame;
+        if (spacePressed || gamepadAPressed)
         {
             SendState("CAUGHT");
         }

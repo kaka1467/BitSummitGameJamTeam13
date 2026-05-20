@@ -12,6 +12,16 @@ using UnityEngine.Events;
 ///   Stair climb  : Y = -90  (set instantly at phase start)
 ///   Stair turn   : Y =   0  (smooth rotation at stairTurnPoint)
 ///   Door arrival : Y =  90  (smooth rotation at doorPoint)
+///
+/// Movement loop audio:
+///   Managed every frame in UpdateMovementLoopAudio().
+///   Plays only when IsApproaching=true, IsRushIn=false, and CameraSwitcher.IsPeeking=true.
+///   Stopped immediately when any condition is no longer met, and on ResetStateFlags().
+///
+/// Rush-in mode (IsRushIn=true):
+///   Set by ParentWarningSystem before calling StartApproachDoorOnly() for a loud-item rush.
+///   Suppresses movement loop audio and uses rushInPauseAtDoorSeconds instead of pauseAtDoorSeconds.
+///   Cleared automatically in ResetStateFlags().
 /// </summary>
 public class ParentApproachController : MonoBehaviour
 {
@@ -60,13 +70,18 @@ public class ParentApproachController : MonoBehaviour
 
     // ── Audio ──────────────────────────────────────────────────────────────────
     [Header("Audio")]
-    [Tooltip("AudioSource looped during stair climb and hallway walk. Stopped automatically when the mother stops at the door, completes a pass-by, resets, or is cancelled.")]
+    [Tooltip("AudioSource looped while approaching. Gated by peeking state each frame via UpdateMovementLoopAudio(). Never plays on rush-in runs.")]
     public AudioSource movementLoopAudioSource;
+    [Tooltip("CameraSwitcher used to gate the movement loop audio. Auto-found at Start if not assigned.")]
+    public CameraSwitcher cameraSwitcher;
 
     // ── Timing ────────────────────────────────────────────────────────────────
     [Header("Timing")]
-    [Tooltip("Seconds the mother pauses at the door before the OnStoppedAtDoor event.")]
+    [Tooltip("Seconds the mother pauses at the door before the OnStoppedAtDoor event (normal run).")]
     public float pauseAtDoorSeconds = 2f;
+
+    [Tooltip("Seconds the mother pauses at the door before the OnStoppedAtDoor event (loud-item rush-in run).")]
+    public float rushInPauseAtDoorSeconds = 0.2f;
 
     [Tooltip("Seconds the mother pauses at the door before continuing to passByPoint.")]
     public float pauseBeforePassBySeconds = 0.5f;
@@ -85,6 +100,10 @@ public class ParentApproachController : MonoBehaviour
     public bool PassedByDoor     { get; private set; }
     public bool IsInHallwayPhase { get; private set; }
 
+    // ── Run mode ──────────────────────────────────────────────────────────────
+    /// <summary>Set by ParentWarningSystem before starting a loud-item rush-in. Suppresses movement loop audio and uses rushInPauseAtDoorSeconds.</summary>
+    public bool IsRushIn { get; set; }
+
     // ── Private ───────────────────────────────────────────────────────────────
     private Coroutine _approachCoroutine;
     private float _fixedPitch;
@@ -96,16 +115,49 @@ public class ParentApproachController : MonoBehaviour
     private const float DoorYaw    =  90f;
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  Unity lifecycle
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private void Start()
+    {
+        if (cameraSwitcher == null)
+            cameraSwitcher = Object.FindFirstObjectByType<CameraSwitcher>();
+    }
+
+    private void Update()
+    {
+        UpdateMovementLoopAudio();
+    }
+
+    private void UpdateMovementLoopAudio()
+    {
+        if (movementLoopAudioSource == null) return;
+        // Rule: play only on a normal (non-rush-in) run while the approach is active AND player is peeking.
+        bool shouldPlay = !IsRushIn && IsApproaching && cameraSwitcher != null && cameraSwitcher.IsPeeking;
+        if (shouldPlay && !movementLoopAudioSource.isPlaying)
+        {
+            movementLoopAudioSource.loop = true;
+            movementLoopAudioSource.Play();
+            Debug.Log("[ParentApproachController] Movement loop started (peeking)");
+        }
+        else if (!shouldPlay && movementLoopAudioSource.isPlaying)
+        {
+            movementLoopAudioSource.Stop();
+            Debug.Log("[ParentApproachController] Movement loop stopped (not peeking or rush-in)");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  Public API
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Starts the approach and randomly picks pass-by or door (default entry point).</summary>
+    /// <summary>Default entry point — delegates to StartApproachDoorOnly(). Kept for backward-compatible scene wiring.</summary>
     public void StartApproach()
     {
         StartApproachDoorOnly();
     }
 
-    /// <summary>Pass-by route: mother walks all the way past the door without stopping.</summary>
+    /// <summary>Starts a pass-by run: mother walks through the hallway, past the door, to passByPoint.</summary>
     public void StartApproachPassByOnly()
     {
         if (IsApproaching)
@@ -118,7 +170,7 @@ public class ParentApproachController : MonoBehaviour
         BeginApproach(passByRoute: true);
     }
 
-    /// <summary>Door route: mother walks to the door and stops there.</summary>
+    /// <summary>Starts a door-stop run: mother walks to doorPoint, rotates to face the room, and stops. Also used for rush-in runs.</summary>
     public void StartApproachDoorOnly()
     {
         if (IsApproaching)
@@ -200,15 +252,17 @@ public class ParentApproachController : MonoBehaviour
         Debug.Log("[ParentApproachController] REACHED DOOR — firing OnReachedDoor");
         OnReachedDoor?.Invoke();
 
-        yield return new WaitForSeconds(pauseAtDoorSeconds);
+        float doorPause = IsRushIn ? rushInPauseAtDoorSeconds : pauseAtDoorSeconds;
+        Debug.Log($"[ParentApproachController] Door pause: {doorPause:F2}s (IsRushIn={IsRushIn})");
+        yield return new WaitForSeconds(doorPause);
 
         StopMovementAudio();
         StoppedAtDoor = true;
         IsApproaching = false;
-        // IsInHallwayPhase intentionally NOT cleared here.
-        // It must remain true while the mother is at the door so that
-        // ParentDetectionV2.TryStartHallwayPeekSuspicion() can fire correctly.
-        // ResetStateFlags() (called from ResetApproach) clears it after the cycle ends.
+        // IsInHallwayPhase is intentionally NOT cleared here.
+        // PDV2.HallwayPeekSuspicionCoroutine checks it to decide whether peek-ticks should fire
+        // while the mother stands at the door. ResetStateFlags() (via ResetApproach) clears it
+        // after the full cycle ends.
 
         Debug.Log("[ParentApproachController] STOPPED AT DOOR — firing OnStoppedAtDoor");
         OnStoppedAtDoor?.Invoke();
@@ -245,13 +299,8 @@ public class ParentApproachController : MonoBehaviour
     private IEnumerator RunStairPhase()
     {
         SetYaw(StairYaw);
-        Debug.Log("[ParentApproachController] Phase: STAIR CLIMB | yaw=-90");
-
-        if (movementLoopAudioSource != null)
-        {
-            movementLoopAudioSource.loop = true;
-            movementLoopAudioSource.Play();
-        }
+        Debug.Log($"[ParentApproachController] Phase: STAIR CLIMB | yaw=-90 | IsRushIn={IsRushIn}");
+        // Movement loop audio is managed by UpdateMovementLoopAudio() in Update() — no Play() call here.
 
         if (stairClimbPoints != null)
         {
@@ -268,7 +317,7 @@ public class ParentApproachController : MonoBehaviour
             Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0");
             yield return MoveToPoint(stairTurnPoint);
             yield return RotateToYaw(HallwayYaw, stairTurnRotationSpeed);
-            Debug.Log("[ParentApproachController]   STAIR TURN complete — movement audio continues into hallway");
+            Debug.Log("[ParentApproachController]   STAIR TURN complete");
         }
     }
 
@@ -366,6 +415,7 @@ public class ParentApproachController : MonoBehaviour
         StoppedAtDoor    = false;
         PassedByDoor     = false;
         IsInHallwayPhase = false;
+        IsRushIn         = false;
         StopMovementAudio();
     }
 

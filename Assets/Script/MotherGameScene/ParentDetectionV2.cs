@@ -25,36 +25,24 @@ using UnityEngine.InputSystem;
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
-    private enum DoorOpenType { None, Peek, Full }
-
     // ── System references ─────────────────────────────────────────────────────
     [Header("System References")]
     public ParentWarningSystem       warningSystem;
-    public ParentWarningScheduler    warningScheduler;
     public CaughtReactionController  caughtReactionController;
     public MotherGauge               motherGauge;
     public ParentApproachController  approachController;
     public SleepingController        sleepingController;
     public CameraSwitcher            cameraSwitcher;
 
-    // ── Scene effect objects ───────────────────────────────────────────────────
-    // Visibility ownership summary:
-    //   Walking mother (3D body)   — ParentApproachController.motherModelRoot (shown on BeginApproach)
-    //   Door-side reveal object    — DoorController.parentModel (shown via SetDoorState Peek/Full)
-    //   realMotherObject below     — optional secondary reveal at door (e.g. a different mesh/pose);
-    //                               set active in TriggerPrimaryEvent, hidden in ResetCycle
-    //   dummyMotherObject below    — dummy reveal object for peek-only events
-    // If your scene uses DoorController.parentModel for all door-side visibility,
-    // leave realMotherObject and dummyMotherObject unassigned — all null-checks are safe.
-    [Header("Scene Effect Objects")]
-    [SerializeField] private AudioSource dummyDoorAudioSource;
-    [SerializeField] private GameObject realMotherObject;
-    [SerializeField] private GameObject dummyMotherObject;
-
     // ── Audio ─────────────────────────────────────────────────────────────────
-    [Header("Audio Sources (SE)")]
+    [Header("Audio Sources")]
+    [Tooltip("Played when the dummy (peek) door event fires.")]
+    [SerializeField] private AudioSource dummyDoorAudioSource;
+    [Tooltip("Played when the primary (full) door opens.")]
     [SerializeField] private AudioSource mainDoorOpenAudioSource;
+    [Tooltip("Played when the door closes at the end of any event.")]
     [SerializeField] private AudioSource mainDoorCloseAudioSource;
+    [Tooltip("Played immediately when a loud-item rush-in is triggered.")]
     [SerializeField] private AudioSource rushInAudioSource;
 
     // ── Door ──────────────────────────────────────────────────────────────────
@@ -85,11 +73,10 @@ public class ParentDetectionV2 : MonoBehaviour
 
     // ── Loud item ─────────────────────────────────────────────────────────────
     [Header("Loud Item Feature")]
+    [Tooltip("Disable to make the L-key and any in-game loud-item triggers completely inert.")]
     [SerializeField] private bool enableLoudItemFeature = true;
-    [Tooltip("Discrete gauge stages added to MotherGauge when a loud item fires.")]
+    [Tooltip("Gauge stages added to MotherGauge when a loud item fires. If this pushes gauge to max, game over triggers immediately instead of a rush-in.")]
     [SerializeField] private int loudItemGaugeAmount = 3;
-    [Tooltip("Seconds before the scheduler fires a warning after a loud item (passed to TriggerSoon).")]
-    [SerializeField] private float loudItemTriggerDelay = 1.5f;
 
     // ── Continuous room suspicion ──────────────────────────────────────────────
     [Header("Continuous Room Suspicion")]
@@ -112,7 +99,6 @@ public class ParentDetectionV2 : MonoBehaviour
     public bool isMotherLookingNow = false;
 
     // ── Private state ─────────────────────────────────────────────────────────
-    private DoorOpenType currentDoorState           = DoorOpenType.None;
     private Coroutine    dummyResetCoroutine        = null;
     private Coroutine    primaryResetCoroutine      = null;
     private Coroutine    hallwayPeekCoroutine       = null;
@@ -140,9 +126,6 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (warningSystem == null)
             warningSystem = Object.FindFirstObjectByType<ParentWarningSystem>();
-
-        if (warningScheduler == null)
-            warningScheduler = Object.FindFirstObjectByType<ParentWarningScheduler>();
 
         if (caughtReactionController == null)
             caughtReactionController = Object.FindFirstObjectByType<CaughtReactionController>();
@@ -254,8 +237,9 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     /// <summary>
-    /// Adds a discrete gauge amount and requests an earlier warning via the scheduler.
-    /// Does NOT force an immediate door event — the scheduler handles timing.
+    /// Called when a loud child-device item is triggered (or by L-key debug).
+    /// Plays rush-in audio, adds gauge, then hands off to ParentWarningSystem.StartLoudItemRushInSequence().
+    /// Fully suppressed if a warning sequence is already active.
     /// </summary>
     public void OnLoudItemTriggered()
     {
@@ -267,7 +251,13 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (isCaught || hasPermanentGameOver) return;
 
-        Debug.Log($"[PDV2] OnLoudItemTriggered — adding {loudItemGaugeAmount} gauge stages, requesting early warning in {loudItemTriggerDelay}s");
+        if (warningSystem != null && warningSystem.isWarningActive)
+        {
+            Debug.Log("[PDV2] Loud item ignored — warning sequence already active");
+            return;
+        }
+
+        Debug.Log($"[PDV2] Loud item triggered rush-in request — adding {loudItemGaugeAmount} gauge stages");
 
         if (rushInAudioSource != null)
             rushInAudioSource.Play();
@@ -283,8 +273,8 @@ public class ParentDetectionV2 : MonoBehaviour
             }
         }
 
-        if (warningScheduler != null)
-            warningScheduler.TriggerSoon(loudItemTriggerDelay);
+        if (warningSystem != null)
+            warningSystem.StartLoudItemRushInSequence();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -300,10 +290,7 @@ public class ParentDetectionV2 : MonoBehaviour
     private void TriggerPrimaryEvent()
     {
         Debug.Log("[PDV2] TriggerPrimaryEvent — door FULL open, isMotherLookingNow=true");
-        currentDoorState   = DoorOpenType.Full;
         isMotherLookingNow = true;
-
-        if (realMotherObject != null) realMotherObject.SetActive(true);
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Full);
@@ -391,10 +378,7 @@ public class ParentDetectionV2 : MonoBehaviour
             mainDoorCloseAudioSource.Play();
 
         if (targetDoorController != null)
-        {
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-            targetDoorController.SetParentVisible(false);
-        }
 
         ResetCycle();
 
@@ -407,10 +391,7 @@ public class ParentDetectionV2 : MonoBehaviour
     private void TriggerDummyEvent()
     {
         Debug.Log("[PDV2] TriggerDummyEvent — door PEEK open, isMotherLookingNow=false");
-        currentDoorState   = DoorOpenType.Peek;
         isMotherLookingNow = false;
-
-        if (dummyMotherObject != null) dummyMotherObject.SetActive(true);
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Peek);
@@ -429,15 +410,10 @@ public class ParentDetectionV2 : MonoBehaviour
         Debug.Log($"[PDV2] HandleDummySequence: activePeekDuration={_activePeekDuration:F1}s");
         yield return new WaitForSeconds(_activePeekDuration);
 
-        if (dummyMotherObject != null) dummyMotherObject.SetActive(false);
-
         if (mainDoorCloseAudioSource != null) mainDoorCloseAudioSource.Play();
 
         if (targetDoorController != null)
-        {
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-            targetDoorController.SetParentVisible(false);
-        }
 
         ResetCycle();
 
@@ -615,18 +591,11 @@ public class ParentDetectionV2 : MonoBehaviour
         if (continuousRoomCoroutine != null)  { StopCoroutine(continuousRoomCoroutine);  continuousRoomCoroutine  = null; Debug.Log("[PDV2] Continuous room suspicion stopped — ResetCycle"); }
         if (hallwayPeekCoroutine != null)     { StopCoroutine(hallwayPeekCoroutine);     hallwayPeekCoroutine     = null; Debug.Log("[PDV2] HallwayPeekSuspicion stopped — ResetCycle"); }
 
-        if (realMotherObject  != null) realMotherObject.SetActive(false);
-        if (dummyMotherObject != null) dummyMotherObject.SetActive(false);
-
         isMotherLookingNow    = false;
-        currentDoorState      = DoorOpenType.None;
         _activePeekDuration   = peekDurationBase;
 
         if (targetDoorController != null)
-        {
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-            targetDoorController.SetParentVisible(false);
-        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
