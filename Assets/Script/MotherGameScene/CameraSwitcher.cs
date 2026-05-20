@@ -15,6 +15,9 @@ public class CameraSwitcher : MonoBehaviour
     private bool isDoorOpen;
     private Quaternion targetDoorRotation;
 
+    /// <summary>True while the player is in the K-key peek view (door open state).</summary>
+    public bool IsPeeking => isDoorOpen;
+
     private void Start()
     {
         if (cameras == null || cameras.Length == 0)
@@ -41,6 +44,7 @@ public class CameraSwitcher : MonoBehaviour
 
         if (keyboard[switchKey].wasPressedThisFrame)
         {
+            Debug.Log($"[CameraSwitcher] K detected | cameras={(cameras != null ? cameras.Length : 0)} | isDoorOpen before={isDoorOpen}");
             SwitchToNextCamera();
         }
 
@@ -49,14 +53,17 @@ public class CameraSwitcher : MonoBehaviour
 
     private void SwitchToNextCamera()
     {
+        // Always toggle the door/peek state regardless of camera assignment.
+        ToggleDoor();
+
         if (cameras == null || cameras.Length == 0)
         {
+            Debug.Log("[CameraSwitcher] No cameras assigned — door toggled only");
             return;
         }
 
         activeCameraIndex = (activeCameraIndex + 1) % cameras.Length;
         ApplyCameraState(activeCameraIndex);
-        ToggleDoor();
     }
 
     private void ApplyCameraState(int activeIndex)
@@ -85,6 +92,7 @@ public class CameraSwitcher : MonoBehaviour
         isDoorOpen = !isDoorOpen;
         float targetY = isDoorOpen ? openYAngle : closedYAngle;
         targetDoorRotation = Quaternion.Euler(0f, targetY, 0f);
+        Debug.Log($"[CameraSwitcher] IsPeeking changed to {isDoorOpen}");
     }
 
     private void ApplyDoorStateImmediate()

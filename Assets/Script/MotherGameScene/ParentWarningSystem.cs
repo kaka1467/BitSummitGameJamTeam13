@@ -3,76 +3,143 @@ using UnityEngine;
 
 /// <summary>
 /// ParentWarningSystem:
-/// Warning sequence coordinator only.
-/// Triggers ParentApproachController to move the mother object through the approach path,
-/// then forwards the resulting events to ParentDetectionV2 for gameplay branching.
+/// Owns all pre-approach presentation: foreshadowing lights, delays, speed scaling, and route selection.
+/// Also owns the loud-item rush-in entry point (bypasses lights/delays, forces DoorPeek at high speed).
 ///
-/// This script does NOT directly open the door, show the mother model, or
-/// fake the arrival. All of that is handled by ParentDetectionV2 and
-/// ParentApproachController based on the events fired here.
+/// Public entry points:
+///   StartWarningSequence()            — normal automatic flow (called by scheduler)
+///   StartManualPassByWarningSequence()— N-key debug: full foreshadow, forced PassBy
+///   StartManualDoorWarningSequence()  — M-key debug: full foreshadow, forced DoorPeek
+///   TriggerInstantPassBy()            — instant debug PassBy, no lights or delays
+///   TriggerInstantDoor()              — instant debug DoorPeek, no lights or delays
+///   StartLoudItemRushInSequence()     — loud-item rush-in: second-floor lights only, speed=loudItemRushInMoveSpeed
+///   StopWarningSequence()             — force-stop and reset (e.g. game over, scene unload)
+///   EndWarningSequence()              — clean end called by ParentDetectionV2 after a cycle completes
 ///
-/// Peek duration scales with current gauge: base + floor(gauge / gaugePerExtraSecond) seconds.
+/// Responsibility boundaries:
+///   ParentWarningSystem     — lights, delays, speed, route probability, rush-in setup
+///   ParentApproachController— path movement and orientation
+///   ParentDetectionV2       — door branching, suspicion, room-check consequences, caught
 /// </summary>
 public class ParentWarningSystem : MonoBehaviour
 {
+    // ── Core references ───────────────────────────────────────────────────────
     [Header("References")]
-    [SerializeField] private ParentApproachController approachController;
-    [SerializeField] private ParentDetectionV2 parentDetection;
-    [SerializeField] private MotherGauge motherGauge;
+    [SerializeField] public ParentApproachController approachController;
+    [SerializeField] public ParentDetectionV2        parentDetection;
+    [SerializeField] public MotherGauge              motherGauge;
+    [SerializeField] private CameraSwitcher          cameraSwitcher;
 
-    [Header("Peek Duration Scaling")]
-    [Tooltip("Base peek duration in seconds (gauge 0-9).")]
-    [SerializeField] private float peekBaseDuration = 3f;
-    [Tooltip("Every this many gauge points adds +1 second to peek duration.")]
-    [SerializeField] private float gaugePerExtraSecond = 10f;
+    // ── Foreshadowing lights ──────────────────────────────────────────────────
+    [Header("Foreshadowing Lights")]
+    [SerializeField] private GameObject firstFloorLight;
+    [SerializeField] private GameObject secondFloorLight1;
+    [SerializeField] private GameObject secondFloorLight2;
+    [SerializeField] private GameObject secondFloorLight3;
+    [SerializeField] private AudioSource lightSwitchAudioSource;
 
-    [Header("Manual Door Sequence Lighting")]
-    [Tooltip("First floor light turned on first before the mother starts moving (manual door route).")]
-    [SerializeField] private GameObject manualFirstFloorLight;
-    [Tooltip("Second floor lights turned on after the first floor light delay.")]
-    [SerializeField] private GameObject manualSecondFloorLight1;
-    [SerializeField] private GameObject manualSecondFloorLight2;
-    [SerializeField] private GameObject manualSecondFloorLight3;
-    [Tooltip("Audio source for the light switch sound effect.")]
-    [SerializeField] private AudioSource manualLightSwitchAudio;
-    [Tooltip("Seconds to wait after first-floor light before turning on second-floor lights.")]
-    [SerializeField] private float lightStageDelay1 = 1.5f;
-    [Tooltip("Seconds to wait after second-floor lights before starting the approach.")]
-    [SerializeField] private float lightStageDelay2 = 1.0f;
+    // ── Foreshadowing delay scaling ───────────────────────────────────────────
+    [Header("Foreshadowing Delays (Low Suspicion)")]
+    [Tooltip("Min seconds between first-floor light and second-floor lights at low suspicion.")]
+    public float secondFloorDelayMin = 1f;
+    [Tooltip("Max seconds between first-floor light and second-floor lights at low suspicion.")]
+    public float secondFloorDelayMax = 10f;
+    [Tooltip("Min seconds between second-floor lights and approach start at low suspicion.")]
+    public float approachDelayMin = 1f;
+    [Tooltip("Max seconds between second-floor lights and approach start at low suspicion.")]
+    public float approachDelayMax = 3f;
 
+    [Header("Foreshadowing Delays (High Suspicion)")]
+    [Tooltip("If current gauge is above this threshold, use the high-suspicion delay ranges below.")]
+    public int highSuspicionDelayGaugeThreshold = 5;
+    [Tooltip("Min seconds between first-floor light and second-floor lights when gauge is above threshold.")]
+    public float highSuspicionSecondFloorDelayMin = 1f;
+    [Tooltip("Max seconds between first-floor light and second-floor lights when gauge is above threshold.")]
+    public float highSuspicionSecondFloorDelayMax = 3f;
+    [Tooltip("Min seconds between second-floor lights and approach start when gauge is above threshold.")]
+    public float highSuspicionApproachDelayMin = 0f;
+    [Tooltip("Max seconds between second-floor lights and approach start when gauge is above threshold.")]
+    public float highSuspicionApproachDelayMax = 1f;
+
+    // ── Movement speed ────────────────────────────────────────────────────────
+    [Header("Approach Speed")]
+    [Tooltip("Minimum moveSpeed assigned for automatic runs.")]
+    public float approachMoveSpeedMin = 5f;
+    [Tooltip("Maximum moveSpeed assigned for automatic runs.")]
+    public float approachMoveSpeedMax = 15f;
+    [Tooltip("Extra moveSpeed added linearly at max suspicion on automatic runs.")]
+    public float approachSpeedSuspicionBonus = 0f;
+    [Tooltip("If current gauge is above this threshold, use the high suspicion speed range below.")]
+    public int highSuspicionSpeedGaugeThreshold = 5;
+    [Tooltip("Minimum moveSpeed assigned when gauge is above the threshold.")]
+    public float highSuspicionApproachMoveSpeedMin = 25f;
+    [Tooltip("Maximum moveSpeed assigned when gauge is above the threshold.")]
+    public float highSuspicionApproachMoveSpeedMax = 30f;
+
+    // ── Debug speed override ──────────────────────────────────────────────────
+    [Header("Debug Speed Override (N / M manual routes)")]
+    [Tooltip("When true, manual N/M routes use fixedDebugApproachSpeed instead of the random range.")]
+    public bool useFixedDebugApproachSpeed = false;
+    [Tooltip("Fixed moveSpeed used for manual N/M routes when useFixedDebugApproachSpeed is true.")]
+    public float fixedDebugApproachSpeed = 4f;
+
+    // ── Loud-item rush-in speed ──────────────────────────────────────────────────
+    [Header("Loud-Item Rush-In")]
+    [Tooltip("moveSpeed assigned to ParentApproachController for loud-item rush-in runs.")]
+    [SerializeField] private float loudItemRushInMoveSpeed = 60f;
+
+    // ── Route probability ─────────────────────────────────────────────────────
+    [Header("Route Probability")]
+    [Tooltip("DoorPeek probability at zero suspicion (gauge=0).")]
+    [Range(0f, 1f)]
+    public float doorChanceAtMinSuspicion = 0.2f;
+    [Tooltip("DoorPeek probability at maximum suspicion (gauge=maxGauge). Should be close to 1 for high danger feel.")]
+    [Range(0f, 1f)]
+    public float doorChanceAtMaxSuspicion = 0.95f;
+    [Tooltip("Among non-door outcomes, this fraction selects PassByThenDoorSound instead of PassBy.")]
+    [Range(0f, 1f)]
+    public float basePassByThenDoorSoundChance = 0.33f;
+
+    // ── Third route audio ─────────────────────────────────────────────────────
+    [Header("Pass-By-Then-Door-Sound Route")]
+    [Tooltip("AudioSource played after the pass-by completes on the PassByThenDoorSound route.")]
+    [SerializeField] private AudioSource passByThenDoorSoundAudioSource;
+    [Tooltip("Seconds after pass-by finishes before the remote door sound plays.")]
+    [SerializeField] private float passByThenDoorSoundDelay = 1f;
+
+    // ── State ─────────────────────────────────────────────────────────────────
     [Header("State")]
     [Tooltip("True while the warning / approach sequence is active.")]
     public bool isWarningActive = false;
 
-    /// <summary>
-    /// True only while the mother is actively peeking at the door.
-    /// Set true when OnStoppedAtDoor fires, cleared when EndWarningSequence runs.
-    /// ParentDetectionV2 uses this (combined with IsInHallwayPhase) to drive
-    /// suspicion rise during the peek window.
-    /// </summary>
-    public bool IsPeekingNow { get; private set; } = false;
+    // ── Active route state ────────────────────────────────────────────────────
+    /// <summary>Route chosen for the current run. Set before movement starts; cleared when the sequence ends.</summary>
+    public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound }
+    public RouteState ActiveRoute { get; private set; } = RouteState.None;
 
-    private bool eventsSubscribed = false;
-    private Coroutine manualDoorCoroutine = null;
+    // ── Private ───────────────────────────────────────────────────────────────
+    private bool      _eventsSubscribed    = false;
+    private Coroutine _foreshadowCoroutine = null;
+    private Coroutine _passByThenDoorSoundCoroutine = null;
 
     private void Start()
     {
         if (approachController == null)
-        {
             approachController = Object.FindFirstObjectByType<ParentApproachController>();
-        }
 
         if (parentDetection == null)
-        {
             parentDetection = Object.FindFirstObjectByType<ParentDetectionV2>();
-        }
 
         if (motherGauge == null)
-        {
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
-        }
 
-        Debug.Log($"[ParentWarningSystem] Start | approachController={(approachController != null ? approachController.name : "NULL")} | parentDetection={(parentDetection != null ? parentDetection.name : "NULL")} | motherGauge={(motherGauge != null ? motherGauge.name : "NULL")}");
+        if (cameraSwitcher == null)
+            cameraSwitcher = Object.FindFirstObjectByType<CameraSwitcher>();
+
+        Debug.Log(
+            $"[ParentWarningSystem] Start | approachController={(approachController != null ? approachController.name : "NULL")} | parentDetection={(parentDetection != null ? parentDetection.name : "NULL")} | motherGauge={(motherGauge != null ? motherGauge.name : "NULL")}"
+        );
+
         SubscribeApproachEvents();
     }
 
@@ -86,236 +153,419 @@ public class ParentWarningSystem : MonoBehaviour
         UnsubscribeApproachEvents();
     }
 
-    /// <summary>
-    /// Starts the mother approach sequence through ParentApproachController.
-    /// Do NOT call this if isWarningActive is already true.
-    /// </summary>
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Public API
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Normal automatic flow: full foreshadow sequence then probabilistic route. Called by ParentWarningScheduler.</summary>
     public void StartWarningSequence()
     {
         if (isWarningActive)
         {
-            Debug.Log("[ParentWarningSystem] StartWarningSequence: BLOCKED - sequence already active");
+            Debug.Log("[ParentWarningSystem] StartWarningSequence: BLOCKED — sequence already active");
             return;
         }
 
-        if (approachController == null)
-        {
-            Debug.LogWarning("[ParentWarningSystem] StartWarningSequence: FAILED - approachController is NULL. Assign it in the Inspector.");
-            return;
-        }
+        if (!ValidateController()) return;
 
         isWarningActive = true;
-        Debug.Log("[ParentWarningSystem] WARNING STARTED - handing off to ParentApproachController");
-        Debug.Log($"[ParentWarningSystem] Calling approachController.StartApproach() on object='{approachController.name}'");
-        approachController.StartApproach();
+        Debug.Log("[ParentWarningSystem] WARNING START — beginning foreshadowing sequence");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.None));
     }
 
-    /// <summary>
-    /// Starts the warning sequence but forces the pass-by outcome.
-    /// The mother walks the full path but never stops at the door.
-    /// Use this for the manual N-key debug trigger.
-    /// </summary>
+    /// <summary>N-key debug: full foreshadow sequence with route forced to PassBy.</summary>
     public void StartManualPassByWarningSequence()
     {
         if (isWarningActive)
         {
-            Debug.Log("[ParentWarningSystem] StartManualPassByWarningSequence: BLOCKED - sequence already active");
+            Debug.Log("[ParentWarningSystem] StartManualPassByWarningSequence: BLOCKED — sequence already active");
             return;
         }
 
-        if (approachController == null)
-        {
-            Debug.LogWarning("[ParentWarningSystem] StartManualPassByWarningSequence: FAILED - approachController is NULL.");
-            return;
-        }
+        if (!ValidateController()) return;
 
         isWarningActive = true;
-        Debug.Log("[ParentWarningSystem] MANUAL PASS-BY WARNING STARTED - mother will pass by without stopping at door");
-        approachController.StartApproachPassByOnly();
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: N — PASS-BY");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.PassBy, true));
     }
 
-    /// <summary>
-    /// Starts the warning sequence and forces the door-stop/peek outcome.
-    /// Runs lights in order (first floor, then second floor) before the mother starts moving.
-    /// The mother always arrives at the door regardless of passByProbability.
-    /// Use this for the manual M-key debug trigger.
-    /// </summary>
+    /// <summary>M-key debug: full foreshadow sequence with route forced to DoorPeek.</summary>
     public void StartManualDoorWarningSequence()
     {
         if (isWarningActive)
         {
-            Debug.Log("[ParentWarningSystem] StartManualDoorWarningSequence: BLOCKED - sequence already active");
+            Debug.Log("[ParentWarningSystem] StartManualDoorWarningSequence: BLOCKED — sequence already active");
             return;
         }
 
-        if (approachController == null)
-        {
-            Debug.LogWarning("[ParentWarningSystem] StartManualDoorWarningSequence: FAILED - approachController is NULL.");
-            return;
-        }
+        if (!ValidateController()) return;
 
         isWarningActive = true;
-        IsPeekingNow = false;
-        Debug.Log("[ParentWarningSystem] MANUAL DOOR WARNING STARTED - light sequence then approach");
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: M — DOOR/PEEK");
 
-        if (manualDoorCoroutine != null) StopCoroutine(manualDoorCoroutine);
-        manualDoorCoroutine = StartCoroutine(ManualDoorSequenceRoutine());
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.Door, true));
     }
 
-    private IEnumerator ManualDoorSequenceRoutine()
+    /// <summary>Instant debug PassBy with no lights or delays. Bypasses foreshadow coroutine entirely.</summary>
+    public void TriggerInstantPassBy()
     {
-        // Step 1: First-floor light
-        if (manualFirstFloorLight != null) manualFirstFloorLight.SetActive(true);
-        if (manualLightSwitchAudio != null) manualLightSwitchAudio.Play();
-        Debug.Log("[ParentWarningSystem] ManualDoorSequence: first-floor light ON");
+        if (isWarningActive) return;
+        if (!ValidateController()) return;
 
-        yield return new WaitForSeconds(lightStageDelay1);
+        isWarningActive = true;
+        ActiveRoute = RouteState.PassBy;
+        Debug.Log("[ParentWarningSystem] INSTANT DEBUG: PASS-BY");
 
-        // Step 2: Second-floor lights
-        if (manualSecondFloorLight1 != null) manualSecondFloorLight1.SetActive(true);
-        if (manualSecondFloorLight2 != null) manualSecondFloorLight2.SetActive(true);
-        if (manualSecondFloorLight3 != null) manualSecondFloorLight3.SetActive(true);
-        if (manualLightSwitchAudio != null) manualLightSwitchAudio.Play();
-        Debug.Log("[ParentWarningSystem] ManualDoorSequence: second-floor lights ON");
+        ApplyApproachSpeed(true, 0f);
+        approachController.StartApproachPassByOnly();
+    }
 
-        yield return new WaitForSeconds(lightStageDelay2);
+    /// <summary>Instant debug DoorPeek with no lights or delays. Bypasses foreshadow coroutine entirely.</summary>
+    public void TriggerInstantDoor()
+    {
+        if (isWarningActive) return;
+        if (!ValidateController()) return;
 
-        // Step 3: Start the approach (door-only forced route)
-        if (!isWarningActive)
+        isWarningActive = true;
+        ActiveRoute = RouteState.DoorPeek;
+        Debug.Log("[ParentWarningSystem] INSTANT DEBUG: DOOR/PEEK");
+
+        ApplyApproachSpeed(true, 0f);
+        approachController.StartApproachDoorOnly();
+    }
+
+    /// <summary>
+    /// Loud-item rush-in: skips first-floor light and foreshadow delays.
+    /// Turns on second-floor lights only, sets speed to loudItemRushInMoveSpeed, forces DoorPeek.
+    /// Called by ParentDetectionV2.OnLoudItemTriggered() after audio and gauge are already applied.
+    /// </summary>
+    public void StartLoudItemRushInSequence()
+    {
+        if (isWarningActive)
         {
-            Debug.Log("[ParentWarningSystem] ManualDoorSequence: aborted - warning no longer active");
-            manualDoorCoroutine = null;
-            yield break;
+            Debug.Log("[PWS] LOUD ITEM RUSH-IN: BLOCKED — sequence already active");
+            return;
         }
 
-        Debug.Log("[ParentWarningSystem] ManualDoorSequence: handing off to approachController.StartApproachDoorOnly()");
+        if (!ValidateController()) return;
+
+        Debug.Log("[PWS] LOUD ITEM RUSH-IN start");
+
+        isWarningActive = true;
+        ActiveRoute = RouteState.DoorPeek;
+        Debug.Log("[PWS] LOUD ITEM RUSH-IN route forced to DoorPeek");
+
+        if (firstFloorLight != null) firstFloorLight.SetActive(false);
+        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
+        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
+        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[PWS] LOUD ITEM RUSH-IN second-floor lights ON only");
+
+        approachController.moveSpeed = loudItemRushInMoveSpeed;
+        Debug.Log($"[PWS] LOUD ITEM RUSH-IN speed set to {loudItemRushInMoveSpeed}");
+
+        approachController.IsRushIn = true;
         approachController.StartApproachDoorOnly();
-        manualDoorCoroutine = null;
     }
 
-    /// <summary>
-    /// Returns the current gauge-scaled peek duration.
-    /// base + floor(currentGauge / gaugePerExtraSecond) seconds.
-    /// </summary>
-    public float GetScaledPeekDuration()
-    {
-        float gauge = (motherGauge != null) ? motherGauge.currentGauge : 0f;
-        float extra = (gaugePerExtraSecond > 0f) ? Mathf.Floor(gauge / gaugePerExtraSecond) : 0f;
-        float duration = peekBaseDuration + extra;
-        Debug.Log($"[ParentWarningSystem] GetScaledPeekDuration: gauge={gauge} | extra={extra} | duration={duration}");
-        return duration;
-    }
-
-    /// <summary>
-    /// Public stop entry point. Ends and resets the sequence.
-    /// </summary>
+    /// <summary>Force-stops any active foreshadow or pass-by-sound coroutines, then calls EndWarningSequence().</summary>
     public void StopWarningSequence()
     {
+        if (_foreshadowCoroutine != null)
+        {
+            StopCoroutine(_foreshadowCoroutine);
+            _foreshadowCoroutine = null;
+        }
+
+        if (_passByThenDoorSoundCoroutine != null)
+        {
+            StopCoroutine(_passByThenDoorSoundCoroutine);
+            _passByThenDoorSoundCoroutine = null;
+        }
+
+        Debug.Log("[ParentWarningSystem] WARNING STOPPED");
+        TurnOffAllLights();
         EndWarningSequence();
     }
 
-    /// <summary>
-    /// Ends the warning sequence and resets the approach controller.
-    /// Does NOT touch the door or mother model directly —
-    /// ParentDetectionV2 owns that responsibility.
-    /// </summary>
+    /// <summary>Marks the sequence as ended, clears ActiveRoute and IsRushIn, turns off all lights, resets the approach controller.</summary>
     public void EndWarningSequence()
     {
         if (!isWarningActive) return;
 
         isWarningActive = false;
-        IsPeekingNow = false;
-        Debug.Log("[ParentWarningSystem] WARNING ENDED - resetting approach controller");
+        ActiveRoute = RouteState.None;
+        if (approachController != null) approachController.IsRushIn = false;
+        Debug.Log("[ParentWarningSystem] WARNING ENDED — resetting approach controller");
 
-        if (manualDoorCoroutine != null)
-        {
-            StopCoroutine(manualDoorCoroutine);
-            manualDoorCoroutine = null;
-        }
+        TurnOffAllLights();
 
         if (approachController != null)
-        {
             approachController.ResetApproach();
+    }
+
+    private enum RouteOverride { None, PassBy, Door }
+
+    private IEnumerator ForeshadowAndApproachCoroutine(RouteOverride routeOverride, bool isManual = false)
+    {
+        float suspicionFraction = GetSuspicionFraction();
+        int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+        bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
+
+        if (firstFloorLight != null) firstFloorLight.SetActive(true);
+        bool _peekingAtFirstFloor = (cameraSwitcher != null) && cameraSwitcher.IsPeeking;
+        if (lightSwitchAudioSource != null && _peekingAtFirstFloor) lightSwitchAudioSource.Play();
+        Debug.Log($"[ParentWarningSystem] FIRST FLOOR LIGHT ON | lightAudio={(_peekingAtFirstFloor ? "played" : "muted (not peeking)")}" );
+
+        float secondFloorDelay;
+        if (highSuspicionDelays)
+        {
+            secondFloorDelay = Random.Range(highSuspicionSecondFloorDelayMin, highSuspicionSecondFloorDelayMax);
+            Debug.Log($"[ParentWarningSystem] Second-floor delay: {secondFloorDelay:F1}s (HIGH SUSPICION range {highSuspicionSecondFloorDelayMin}-{highSuspicionSecondFloorDelayMax}s | gauge={gauge})");
         }
+        else
+        {
+            secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
+            Debug.Log($"[ParentWarningSystem] Second-floor delay: {secondFloorDelay:F1}s (LOW SUSPICION range {secondFloorDelayMin}-{secondFloorDelayMax}s | gauge={gauge})");
+        }
+        yield return new WaitForSeconds(secondFloorDelay);
+
+        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
+        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
+        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        bool _peekingAtSecondFloor = (cameraSwitcher != null) && cameraSwitcher.IsPeeking;
+        if (lightSwitchAudioSource != null && _peekingAtSecondFloor) lightSwitchAudioSource.Play();
+        Debug.Log($"[ParentWarningSystem] SECOND FLOOR LIGHTS ON | lightAudio={(_peekingAtSecondFloor ? "played" : "muted (not peeking)")}" );
+
+        float approachDelay;
+        if (highSuspicionDelays)
+        {
+            approachDelay = Random.Range(highSuspicionApproachDelayMin, highSuspicionApproachDelayMax);
+            Debug.Log($"[ParentWarningSystem] Approach-start delay: {approachDelay:F1}s (HIGH SUSPICION range {highSuspicionApproachDelayMin}-{highSuspicionApproachDelayMax}s | gauge={gauge})");
+        }
+        else
+        {
+            approachDelay = Random.Range(approachDelayMin, approachDelayMax);
+            Debug.Log($"[ParentWarningSystem] Approach-start delay: {approachDelay:F1}s (LOW SUSPICION range {approachDelayMin}-{approachDelayMax}s | gauge={gauge})");
+        }
+        yield return new WaitForSeconds(approachDelay);
+
+        ApplyApproachSpeed(isManual, suspicionFraction);
+
+        RouteState chosenRoute;
+        if (routeOverride == RouteOverride.PassBy)
+        {
+            chosenRoute = RouteState.PassBy;
+        }
+        else if (routeOverride == RouteOverride.Door)
+        {
+            chosenRoute = RouteState.DoorPeek;
+        }
+        else
+        {
+            chosenRoute = ChooseRoute();
+        }
+
+        ActiveRoute = chosenRoute;
+        Debug.Log($"[ParentWarningSystem] ROUTE CHOSEN: {ActiveRoute}");
+
+        switch (ActiveRoute)
+        {
+            case RouteState.DoorPeek:
+                approachController.StartApproachDoorOnly();
+                break;
+
+            case RouteState.PassBy:
+            case RouteState.PassByThenDoorSound:
+                approachController.StartApproachPassByOnly();
+                break;
+        }
+
+        _foreshadowCoroutine = null;
+    }
+
+    private RouteState ChooseRoute()
+    {
+        float suspicionFraction = GetSuspicionFraction();
+        float doorChance = Mathf.Lerp(doorChanceAtMinSuspicion, doorChanceAtMaxSuspicion, suspicionFraction);
+        float roll = Random.value;
+
+        if (roll < doorChance)
+        {
+            Debug.Log($"[ParentWarningSystem] ChooseRoute | suspicion={suspicionFraction:F2} | doorChance={doorChance:F2} | result=DoorPeek");
+            return RouteState.DoorPeek;
+        }
+
+        float nonDoorRoll = Random.value;
+        RouteState result = nonDoorRoll < basePassByThenDoorSoundChance
+            ? RouteState.PassByThenDoorSound
+            : RouteState.PassBy;
+
+        Debug.Log(
+            $"[ParentWarningSystem] ChooseRoute | suspicion={suspicionFraction:F2} | doorChance={doorChance:F2} | nonDoorRoll={nonDoorRoll:F2} | result={result}"
+        );
+
+        return result;
+    }
+
+    private void ApplyApproachSpeed(bool isManual, float suspicionFraction = 0f)
+    {
+        if (approachController == null) return;
+
+        float speed;
+
+        if (isManual && useFixedDebugApproachSpeed)
+        {
+            speed = fixedDebugApproachSpeed;
+            Debug.Log($"[ParentWarningSystem] APPROACH SPEED: {speed:F2} units/sec (FIXED DEBUG)");
+        }
+        else
+        {
+            int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+
+            if (!isManual && gauge > highSuspicionSpeedGaugeThreshold)
+            {
+                speed = Random.Range(highSuspicionApproachMoveSpeedMin, highSuspicionApproachMoveSpeedMax);
+                Debug.Log($"[ParentWarningSystem] APPROACH SPEED: {speed:F2} units/sec (HIGH SUSPICION RANGE)");
+            }
+            else
+            {
+                speed = Random.Range(approachMoveSpeedMin, approachMoveSpeedMax);
+
+                if (!isManual && approachSpeedSuspicionBonus > 0f)
+                    speed += approachSpeedSuspicionBonus * suspicionFraction;
+
+                Debug.Log($"[ParentWarningSystem] APPROACH SPEED: {speed:F2} units/sec (RANDOMISED, suspicion={suspicionFraction:F2})");
+            }
+        }
+
+        approachController.moveSpeed = speed;
+    }
+
+    private float GetSuspicionFraction()
+    {
+        if (motherGauge == null || motherGauge.maxGauge <= 0)
+            return 0f;
+
+        return Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge);
+    }
+
+    private void TurnOffAllLights()
+    {
+        if (firstFloorLight != null) firstFloorLight.SetActive(false);
+        if (secondFloorLight1 != null) secondFloorLight1.SetActive(false);
+        if (secondFloorLight2 != null) secondFloorLight2.SetActive(false);
+        if (secondFloorLight3 != null) secondFloorLight3.SetActive(false);
     }
 
     private void SubscribeApproachEvents()
     {
-        if (eventsSubscribed || approachController == null) return;
+        if (_eventsSubscribed || approachController == null) return;
 
         approachController.OnApproachStarted.AddListener(HandleApproachStarted);
         approachController.OnReachedDoor.AddListener(HandleReachedDoor);
         approachController.OnStoppedAtDoor.AddListener(HandleStoppedAtDoor);
         approachController.OnPassedByDoor.AddListener(HandlePassedByDoor);
 
-        eventsSubscribed = true;
+        _eventsSubscribed = true;
         Debug.Log("[ParentWarningSystem] Subscribed to ParentApproachController events");
     }
 
     private void UnsubscribeApproachEvents()
     {
-        if (!eventsSubscribed || approachController == null) return;
+        if (!_eventsSubscribed || approachController == null) return;
 
         approachController.OnApproachStarted.RemoveListener(HandleApproachStarted);
         approachController.OnReachedDoor.RemoveListener(HandleReachedDoor);
         approachController.OnStoppedAtDoor.RemoveListener(HandleStoppedAtDoor);
         approachController.OnPassedByDoor.RemoveListener(HandlePassedByDoor);
 
-        eventsSubscribed = false;
+        _eventsSubscribed = false;
     }
 
     private void HandleApproachStarted()
     {
-        Debug.Log("[ParentWarningSystem] EVENT: Approach started - mother is moving");
+        Debug.Log("[ParentWarningSystem] EVENT: Approach started");
+
+        if (parentDetection != null)
+            parentDetection.OnApproachStarted();
     }
 
     private void HandleReachedDoor()
     {
-        Debug.Log("[ParentWarningSystem] EVENT: Reached door - mother arrived at waypoint");
+        Debug.Log("[ParentWarningSystem] EVENT: Reached door");
     }
 
     private void HandleStoppedAtDoor()
     {
-        Debug.Log("[ParentWarningSystem] EVENT: Stopped at door - forwarding to ParentDetectionV2.OnApproachReachedDoor()");
+        Debug.Log("[ParentWarningSystem] EVENT: Stopped at door — forwarding to ParentDetectionV2.OnApproachReachedDoor()");
 
         if (!isWarningActive)
         {
-            Debug.Log("[ParentWarningSystem] HandleStoppedAtDoor: ignoring - warning not active");
+            Debug.Log("[ParentWarningSystem] HandleStoppedAtDoor: ignoring — warning not active");
             return;
         }
 
-        IsPeekingNow = true;
-        Debug.Log("[ParentWarningSystem] IsPeekingNow = true");
-
         if (parentDetection != null)
-        {
             parentDetection.OnApproachReachedDoor();
-        }
         else
-        {
-            Debug.LogWarning("[ParentWarningSystem] HandleStoppedAtDoor: parentDetection is NULL - cannot forward event");
-        }
+            Debug.LogWarning("[ParentWarningSystem] HandleStoppedAtDoor: parentDetection is NULL");
     }
 
     private void HandlePassedByDoor()
     {
-        Debug.Log("[ParentWarningSystem] EVENT: Passed by door - forwarding to ParentDetectionV2.OnApproachPassedBy()");
+        Debug.Log("[ParentWarningSystem] EVENT: Passed by door");
 
         if (!isWarningActive)
         {
-            Debug.Log("[ParentWarningSystem] HandlePassedByDoor: ignoring - warning not active");
+            Debug.Log("[ParentWarningSystem] HandlePassedByDoor: ignoring — warning not active");
             return;
         }
 
-        if (parentDetection != null)
+        if (ActiveRoute == RouteState.PassByThenDoorSound)
         {
+            if (_passByThenDoorSoundCoroutine != null)
+                StopCoroutine(_passByThenDoorSoundCoroutine);
+
+            _passByThenDoorSoundCoroutine = StartCoroutine(PlayPassByThenDoorSoundCoroutine());
+        }
+
+        if (parentDetection != null)
             parentDetection.OnApproachPassedBy();
+        else
+            Debug.LogWarning("[ParentWarningSystem] HandlePassedByDoor: parentDetection is NULL");
+    }
+
+    private IEnumerator PlayPassByThenDoorSoundCoroutine()
+    {
+        float delay = Mathf.Max(0f, passByThenDoorSoundDelay);
+        Debug.Log($"[ParentWarningSystem] PassByThenDoorSound: waiting {delay:F1}s");
+
+        yield return new WaitForSeconds(delay);
+
+        if (passByThenDoorSoundAudioSource != null)
+        {
+            Debug.Log("[ParentWarningSystem] PassByThenDoorSound: PLAY");
+            passByThenDoorSoundAudioSource.Play();
         }
         else
         {
-            Debug.LogWarning("[ParentWarningSystem] HandlePassedByDoor: parentDetection is NULL - cannot forward event");
+            Debug.LogWarning("[ParentWarningSystem] PassByThenDoorSound: AudioSource is NULL");
         }
 
-        EndWarningSequence();
+        _passByThenDoorSoundCoroutine = null;
+    }
+
+    private bool ValidateController()
+    {
+        if (approachController != null) return true;
+        Debug.LogWarning("[ParentWarningSystem] approachController is NULL — assign it in the Inspector.", this);
+        return false;
     }
 }
