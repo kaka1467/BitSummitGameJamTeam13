@@ -944,7 +944,7 @@ MonoBehaviour:
   - {fileID: 862824614}
   - {fileID: 1281346543}
   selectionArrow: {fileID: 1684528022}
-  arrowOffsetX: 420
+  arrowOffsetX: 4
   arrowOffsetY: 0
   cancelButtons:
   - {fileID: 228826732}
@@ -952,8 +952,8 @@ MonoBehaviour:
   cancelArrowOffsetX: 0
   cancelArrowOffsetY: 0
   connectingCancelButton: {fileID: 1707610820}
-  connectingCancelArrowOffsetX: 215
-  connectingCancelArrowOffsetY: -1
+  connectingCancelArrowOffsetX: 2
+  connectingCancelArrowOffsetY: 0
   exclusivePanels:
   - {fileID: 1036910372}
   - {fileID: 1503059194}
@@ -1281,6 +1281,10 @@ MonoBehaviour:
   cancelUiObject: {fileID: 716815019}
   creditsPanel: {fileID: 1036910372}
   settingsPanel: {fileID: 1503059194}
+  animatedSpriteObjects:
+  - {fileID: 2010241166}
+  - {fileID: 1238464460}
+  titleImageObject: {fileID: 118420765}
   connectLabel: connect
   connectingLabel: connecting
 --- !u!4 &415572612
@@ -4603,6 +4607,54 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1401817832}
   m_CullTransparentMesh: 1
+--- !u!1 &1430748482
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1430748484}
+  - component: {fileID: 1430748483}
+  m_Layer: 0
+  m_Name: UIManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1430748483
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1430748482}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a5d0d83d043a5af46a558eac465600d3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIManager
+  character: {fileID: 1238464460}
+  backStar: {fileID: 2010241166}
+  characterAnimator: {fileID: 0}
+  backStarAnimator: {fileID: 0}
+--- !u!4 &1430748484
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1430748482}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.10376, y: -0, z: 93.25945}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1433361293
 GameObject:
   m_ObjectHideFlags: 0
@@ -8388,3 +8440,4 @@ SceneRoots:
   - {fileID: 269724753}
   - {fileID: 1238464462}
   - {fileID: 2010241168}
+  - {fileID: 1430748484}
