@@ -1,89 +1,118 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem; // 新Input Systemに対応
+using UnityEngine.InputSystem;
 
 /// <summary>
-/// ParentWarningScheduler: automatically triggers ParentWarningSystem at intervals.
-/// Higher suspicion shortens the interval; loud items can force an imminent check.
+/// ParentWarningScheduler:
+/// Automatically triggers ParentWarningSystem in repeating time windows.
+/// - First, a grace period blocks all automatic approaches.
+/// - After grace, each window triggers exactly one automatic approach
+///   at a random time within that window.
+/// - Higher suspicion shortens the effective window by windowReductionPerGauge seconds per stage.
+///   e.g. baseWindow=20s, windowReductionPerGauge=1s, gauge=9 → 11s window.
+/// - Loud items can still force an early check via TriggerSoon().
 /// </summary>
 public class ParentWarningScheduler : MonoBehaviour
 {
     [Header("System References")]
     [Tooltip("The ParentWarningSystem to control")]
     public ParentWarningSystem warningSystem;
+    public MotherGauge motherGauge;
 
     [Header("Scheduler Settings")]
     [Tooltip("Automatically trigger warnings")]
     public bool autoTrigger = true;
 
-    public float initialDelayMin = 5.0f;
-    public float initialDelayMax = 10.0f;
-    public float intervalMin = 20.0f;
-    public float intervalMax = 40.0f;
+    [Tooltip("No automatic parent approach happens during this many seconds after scene start.")]
+    public float graceSeconds = 15f;
+
+    [Tooltip("Minimum base window length in seconds before per-gauge reduction is applied.")]
+    public float baseWindowMinSeconds = 20f;
+
+    [Tooltip("Maximum base window length in seconds before per-gauge reduction is applied. Set equal to baseWindowMinSeconds for a fixed base window.")]
+    public float baseWindowMaxSeconds = 20f;
 
     [Header("Scaling by Suspicion")]
-    [Tooltip("Minimum scale applied to intervals at max suspicion (0..1). Lower makes checks more frequent.)")]
-    [Range(0.1f, 1f)]
-    public float minIntervalScale = 0.4f;
+    [Tooltip("Seconds subtracted from the base window per gauge stage. e.g. baseWindow=20, value=1, gauge=9 → 11s window.")]
+    public float windowReductionPerGauge = 1f;
+    [Tooltip("Minimum window size in seconds regardless of suspicion level. Prevents windows from collapsing to zero.")]
+    public float minimumWindowSize = 5f;
 
     [Header("Debug")]
-    [Tooltip("Time remaining until next warning (for debugging)")]
+    [Tooltip("Time remaining until next automatic warning inside the current active window.")]
     public float timeUntilNextWarning = 0f;
 
+    [SerializeField] private bool showDebugLogs = true;
+
     private Coroutine schedulerCoroutine;
+    private Coroutine triggerSoonCoroutine;
+    private bool _gracePeriodOver = false;
+
+    public bool IsGracePeriodOver => _gracePeriodOver;
 
     void Start()
     {
         if (warningSystem == null)
-        {
             warningSystem = GetComponent<ParentWarningSystem>();
-        }
+
+        if (motherGauge == null)
+            motherGauge = Object.FindFirstObjectByType<MotherGauge>();
 
         if (autoTrigger)
-        {
             StartScheduler();
-        }
     }
 
     void Update()
     {
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.nKey.wasPressedThisFrame)
-            {
-                Debug.Log("[ParentWarningScheduler] N key pressed - manual PASS-BY trigger");
-                TriggerPassByNow();
-            }
+        if (Keyboard.current == null) return;
 
-            if (Keyboard.current.mKey.wasPressedThisFrame)
-            {
-                Debug.Log("[ParentWarningScheduler] M key pressed - manual DOOR-OPEN trigger");
-                TriggerDoorNow();
-            }
+        if (Keyboard.current.nKey.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningScheduler] N key pressed - manual PASS-BY trigger");
+            TriggerPassByNow();
+        }
+
+        if (Keyboard.current.mKey.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningScheduler] M key pressed - manual DOOR trigger");
+            TriggerDoorNow();
         }
     }
 
     public void StartScheduler()
     {
-        if (schedulerCoroutine != null)
-        {
-            StopCoroutine(schedulerCoroutine);
-        }
+        StopSchedulerInternal();
+
+        if (!autoTrigger)
+            return;
+
         schedulerCoroutine = StartCoroutine(SchedulerCoroutine());
     }
 
     public void StopScheduler()
+    {
+        StopSchedulerInternal();
+    }
+
+    private void StopSchedulerInternal()
     {
         if (schedulerCoroutine != null)
         {
             StopCoroutine(schedulerCoroutine);
             schedulerCoroutine = null;
         }
+
+        if (triggerSoonCoroutine != null)
+        {
+            StopCoroutine(triggerSoonCoroutine);
+            triggerSoonCoroutine = null;
+        }
+
+        timeUntilNextWarning = 0f;
     }
 
     /// <summary>
     /// Manual debug trigger (N key) — forces pass-by route.
-    /// Mother walks the full path but never stops at the door.
     /// </summary>
     public void TriggerPassByNow()
     {
@@ -99,13 +128,12 @@ public class ParentWarningScheduler : MonoBehaviour
             return;
         }
 
-        Debug.Log("[ParentWarningScheduler] TriggerPassByNow: MANUAL PASS-BY TRIGGER - starting pass-by warning sequence");
+        Debug.Log("[ParentWarningScheduler] TriggerPassByNow: MANUAL PASS-BY TRIGGER");
         warningSystem.StartManualPassByWarningSequence();
     }
 
     /// <summary>
-    /// Manual debug trigger (M key) — forces door-open/peek route.
-    /// Mother walks the full path and always stops at the door.
+    /// Manual debug trigger (M key) — forces door route.
     /// </summary>
     public void TriggerDoorNow()
     {
@@ -121,7 +149,7 @@ public class ParentWarningScheduler : MonoBehaviour
             return;
         }
 
-        Debug.Log("[ParentWarningScheduler] TriggerDoorNow: MANUAL DOOR TRIGGER - starting door-open warning sequence");
+        Debug.Log("[ParentWarningScheduler] TriggerDoorNow: MANUAL DOOR TRIGGER");
         warningSystem.StartManualDoorWarningSequence();
     }
 
@@ -139,26 +167,37 @@ public class ParentWarningScheduler : MonoBehaviour
             return;
         }
 
-        Debug.Log("[ParentWarningScheduler] TriggerNow: MANUAL TRIGGER - starting warning sequence");
+        Debug.Log("[ParentWarningScheduler] TriggerNow: MANUAL TRIGGER");
         warningSystem.StartWarningSequence();
     }
 
     /// <summary>
-    /// Trigger a warning after a short delay (used for loud items)
+    /// Trigger a warning after a short delay (used for loud items).
+    /// Resets the scheduler loop so urgent checks can happen early.
     /// </summary>
     public void TriggerSoon(float delaySeconds = 1f)
     {
+        if (showDebugLogs)
+            Debug.Log($"[ParentWarningScheduler] TriggerSoon requested: delay={delaySeconds:F1}s");
+
         if (schedulerCoroutine != null)
         {
             StopCoroutine(schedulerCoroutine);
             schedulerCoroutine = null;
         }
-        StartCoroutine(TriggerSoonCoroutine(delaySeconds));
+
+        if (triggerSoonCoroutine != null)
+        {
+            StopCoroutine(triggerSoonCoroutine);
+        }
+
+        triggerSoonCoroutine = StartCoroutine(TriggerSoonCoroutine(delaySeconds));
     }
 
     private IEnumerator TriggerSoonCoroutine(float delay)
     {
-        float t = delay;
+        float t = Mathf.Max(0f, delay);
+
         while (t > 0f)
         {
             t -= Time.deltaTime;
@@ -167,56 +206,84 @@ public class ParentWarningScheduler : MonoBehaviour
 
         if (warningSystem != null && !warningSystem.isWarningActive)
         {
+            Debug.Log("[ParentWarningScheduler] TriggerSoon firing warning now");
             warningSystem.StartWarningSequence();
+            yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
         }
 
-        // Resume normal scheduling
+        triggerSoonCoroutine = null;
         StartScheduler();
     }
 
     private IEnumerator SchedulerCoroutine()
     {
-        float initialDelay = Random.Range(initialDelayMin, initialDelayMax);
-        timeUntilNextWarning = initialDelay;
+        _gracePeriodOver = false;
 
-        while (timeUntilNextWarning > 0)
+        float grace = Mathf.Max(0f, graceSeconds);
+        if (showDebugLogs)
+            Debug.Log($"[ParentWarningScheduler] Grace period started: {grace:F1}s");
+
+        timeUntilNextWarning = grace;
+        while (timeUntilNextWarning > 0f)
         {
             timeUntilNextWarning -= Time.deltaTime;
             yield return null;
         }
 
+        _gracePeriodOver = true;
+        timeUntilNextWarning = 0f;
+
+        if (showDebugLogs)
+            Debug.Log("[ParentWarningScheduler] Grace period over");
+
         while (true)
         {
-            if (warningSystem != null && !warningSystem.isWarningActive)
+            if (warningSystem != null && warningSystem.isWarningActive)
             {
-                Debug.Log("[ParentWarningScheduler] Warning triggered by scheduler");
-                warningSystem.StartWarningSequence();
-
-                // Wait while the warning sequence is active
-                yield return new WaitWhile(() => warningSystem.isWarningActive);
+                yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
             }
 
-            // Determine next interval scaled by current suspicion level (if available)
-            float nextInterval = Random.Range(intervalMin, intervalMax);
+            int currentGauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+            float baseWindow = Random.Range(baseWindowMinSeconds, baseWindowMaxSeconds);
+            float effectiveWindow = Mathf.Max(minimumWindowSize, baseWindow - currentGauge * windowReductionPerGauge);
+            float fireOffset = Random.Range(0f, effectiveWindow);
 
-            // Try to get suspicion fraction (0..1)
-            float suspicionFraction = 0f;
-            var gauge = Object.FindFirstObjectByType<MotherGauge>();
-            if (gauge != null && gauge.maxGauge > 0)
+            if (showDebugLogs)
             {
-                suspicionFraction = (float)gauge.currentGauge / gauge.maxGauge;
+                Debug.Log(
+                    $"[ParentWarningScheduler] New window | base={baseWindow:F2}s | gauge={currentGauge} | reduction={currentGauge * windowReductionPerGauge:F2}s | effective={effectiveWindow:F2}s | fireOffset={fireOffset:F2}s"
+                );
             }
 
-            float scale = Mathf.Lerp(1f, minIntervalScale, suspicionFraction);
-            nextInterval *= scale;
+            float elapsed = 0f;
+            bool firedThisWindow = false;
 
-            timeUntilNextWarning = nextInterval;
-
-            while (timeUntilNextWarning > 0)
+            while (elapsed < effectiveWindow)
             {
-                timeUntilNextWarning -= Time.deltaTime;
+                if (warningSystem != null && warningSystem.isWarningActive)
+                {
+                    yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
+                }
+
+                elapsed += Time.deltaTime;
+                timeUntilNextWarning = Mathf.Max(0f, fireOffset - elapsed);
+
+                if (!firedThisWindow && elapsed >= fireOffset)
+                {
+                    firedThisWindow = true;
+
+                    if (warningSystem != null && !warningSystem.isWarningActive)
+                    {
+                        Debug.Log("[ParentWarningScheduler] Approach triggered by scheduler");
+                        warningSystem.StartWarningSequence();
+                        yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
+                    }
+                }
+
                 yield return null;
             }
+
+            timeUntilNextWarning = 0f;
         }
     }
 

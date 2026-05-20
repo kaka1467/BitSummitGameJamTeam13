@@ -4,393 +4,359 @@ using UnityEngine.Events;
 
 /// <summary>
 /// ParentApproachController:
-/// Moves the mother model from downstairs to the door along explicitly separated
-/// movement and rotation-change waypoints, then either stops or passes by.
+/// Moves the mother along inspector-assigned waypoints in two explicit routes:
+///   Pass-by  : startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint → passByPoint
+///   Door only: startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint (stop)
 ///
-/// Waypoint layout:
-///   startPoint                  — where the mother spawns / resets
-///   stairMoveWaypoints[]        — movement points while ascending stairs (Y = stairYaw = -90)
-///   stairCornerTurnWaypoint     — position where the mother turns the corner (Y snaps to cornerYaw = 0)
-///   hallwayMoveWaypoints[]      — movement points through the hallway after the turn (Y = cornerYaw = 0)
-///   doorMoveWaypoint            — position in front of the door (Y snaps to doorYaw = 90 on arrival)
-///   passByPoint                 — where the mother walks to when passing by
+/// Rotation rules (fixed Y, X/Z locked):
+///   Stair climb  : Y = -90  (set instantly at phase start)
+///   Stair turn   : Y =   0  (smooth rotation at stairTurnPoint)
+///   Door arrival : Y =  90  (smooth rotation at doorPoint)
 /// </summary>
 public class ParentApproachController : MonoBehaviour
 {
-    [Header("Start")]
+    // ── Waypoints ─────────────────────────────────────────────────────────────
+    [Header("Waypoints")]
     [Tooltip("Where the mother spawns and resets to.")]
-    [SerializeField] private Transform startPoint;
-    [Tooltip("The root GameObject of the mother model. Will be re-enabled on each approach start and reset.")]
-    [SerializeField] private GameObject motherModelObject;
+    public Transform startPoint;
 
-    [Header("Stair Phase")]
-    [Tooltip("Movement waypoints while the mother ascends the stairs. Facing is locked to stairYaw throughout.")]
-    [SerializeField] private Transform[] stairMoveWaypoints;
-    [Tooltip("The corner waypoint where the mother turns after the stairs. Facing snaps to cornerYaw when she arrives here.")]
-    [SerializeField] private Transform stairCornerTurnWaypoint;
+    [Tooltip("Waypoints for climbing the stairs. Mother faces Y=-90 throughout.")]
+    public Transform[] stairClimbPoints;
 
-    [Header("Hallway Phase")]
-    [Tooltip("Movement waypoints through the hallway after the stair corner. Facing is locked to cornerYaw throughout.")]
-    [SerializeField] private Transform[] hallwayMoveWaypoints;
+    [Tooltip("Single point where stair climbing ends and the mother rotates toward the hallway (Y=0).")]
+    public Transform stairTurnPoint;
 
-    [Header("Door Phase")]
-    [Tooltip("The position in front of the door the mother walks to. Facing snaps to doorYaw only after she arrives here.")]
-    [SerializeField] private Transform doorMoveWaypoint;
-    [Tooltip("Where the mother continues to when passing by (pass-by route only).")]
-    [SerializeField] private Transform passByPoint;
+    [Tooltip("Waypoints for hallway movement after the stair turn.")]
+    public Transform[] hallwayPoints;
 
-    [Header("Movement Speed")]
-    [Tooltip("Movement speed for the entire approach sequence.")]
-    [SerializeField] private float moveSpeed = 2.0f;
+    [Tooltip("Position in front of the door. Mother rotates to Y=90 on arrival.")]
+    public Transform doorPoint;
 
+    [Tooltip("Where the mother walks after passing the door (pass-by route only).")]
+    public Transform passByPoint;
 
-    [Header("Approach Behavior")]
-    [Range(0f, 1f)]
-    [SerializeField] private float passByProbability = 0.35f;
-    [SerializeField] private float pauseAtDoorSeconds = 2.0f;
-    [SerializeField] private float pauseBeforePassBySeconds = 0.5f;
+    // ── Movement ──────────────────────────────────────────────────────────────
+    [Header("Movement")]
+    [Tooltip("Base movement speed (units/sec).")]
+    public float moveSpeed = 2f;
 
-    [Header("Explicit Phase Yaw Angles")]
-    [Tooltip("Y rotation while ascending the stairs.")]
-    [SerializeField] private float stairYaw = -90f;
-    [Tooltip("Y rotation after reaching the stair corner turn waypoint.")]
-    [SerializeField] private float cornerYaw = 0f;
-    [Tooltip("Y rotation applied only after the mother has fully arrived at doorMoveWaypoint.")]
-    [SerializeField] private float doorYaw = 90f;
+    [Tooltip("How close (units) the mother must be to a waypoint to count as arrived.")]
+    public float stopDistance = 0.05f;
 
-    [Header("Presentation")]
-    [SerializeField] private GameObject firstFloorLight;
-    [SerializeField] private AudioSource firstFloorLightAudio;
-    [SerializeField] private AudioSource approachFootstepAudio;
-    [SerializeField] private AudioSource arrivedAtDoorAudio;
-    [SerializeField] private AudioSource passByAudio;
+    // ── Rotation Speeds ───────────────────────────────────────────────────────
+    [Header("Rotation Speeds")]
+    [Tooltip("Speed (deg/sec) when rotating at the stair corner turn.")]
+    public float stairTurnRotationSpeed = 90f;
 
-    [Header("Debug")]
-    [SerializeField] private bool forcePassByForDebug = false;
+    [Tooltip("Speed (deg/sec) when rotating to face the door on arrival.")]
+    public float doorTurnRotationSpeed = 120f;
 
+    // ── Visibility ────────────────────────────────────────────────────────────
+    [Header("Mother Model Visibility")]
+    [Tooltip("The root GameObject of the walking mother model. Will be SetActive(true) on approach start and SetActive(false) is NOT called here — PDV2 manages hide via realMotherObject.")]
+    public GameObject motherModelRoot;
+    [Tooltip("Optional: child Renderers to enable/disable if motherModelRoot alone is not enough (e.g. LOD children).")]
+    public Renderer[] motherModelRenderers;
+
+    // ── Audio ──────────────────────────────────────────────────────────────────
+    [Header("Audio")]
+    [Tooltip("AudioSource looped during stair climb and hallway walk. Stopped automatically when the mother stops at the door, completes a pass-by, resets, or is cancelled.")]
+    public AudioSource movementLoopAudioSource;
+
+    // ── Timing ────────────────────────────────────────────────────────────────
+    [Header("Timing")]
+    [Tooltip("Seconds the mother pauses at the door before the OnStoppedAtDoor event.")]
+    public float pauseAtDoorSeconds = 2f;
+
+    [Tooltip("Seconds the mother pauses at the door before continuing to passByPoint.")]
+    public float pauseBeforePassBySeconds = 0.5f;
+
+    // ── Events ────────────────────────────────────────────────────────────────
     [Header("Events")]
     public UnityEvent OnApproachStarted;
     public UnityEvent OnReachedDoor;
     public UnityEvent OnStoppedAtDoor;
     public UnityEvent OnPassedByDoor;
 
-    public bool IsApproaching    { get; private set; } = false;
-    public bool ReachedDoor      { get; private set; } = false;
-    public bool StoppedAtDoor    { get; private set; } = false;
-    public bool PassedByDoor     { get; private set; } = false;
+    // ── Public read-only state ────────────────────────────────────────────────
+    public bool IsApproaching    { get; private set; }
+    public bool ReachedDoor      { get; private set; }
+    public bool StoppedAtDoor    { get; private set; }
+    public bool PassedByDoor     { get; private set; }
+    public bool IsInHallwayPhase { get; private set; }
 
-    /// <summary>
-    /// True from the moment the stair corner turn completes until the approach ends.
-    /// ParentDetectionV2 uses this to decide if suspicion should rise during a peek.
-    /// </summary>
-    public bool IsInHallwayPhase { get; private set; } = false;
+    // ── Private ───────────────────────────────────────────────────────────────
+    private Coroutine _approachCoroutine;
+    private float _fixedPitch;
+    private float _fixedRoll;
 
-    private Coroutine approachCoroutine;
-    private float currentSpeed = 1f;
-    private float _fixedPitch; // X — locked for entire run
-    private float _fixedRoll;  // Z — locked for entire run
-    private bool _forcePassByThisRun = false;
-    private bool _forceDoorThisRun   = false;
-
-    // Cached start transform — set once from startPoint in Awake so ResetApproach
-    // always has a valid home position even across multiple runs.
-    private Vector3 _cachedStartPosition;
-    private Quaternion _cachedStartRotation;
-    private bool _hasCachedStart = false;
-
-    private void Awake()
-    {
-        if (startPoint != null)
-        {
-            _cachedStartPosition = startPoint.position;
-            _cachedStartRotation = startPoint.rotation;
-            _hasCachedStart = true;
-        }
-    }
+    // Fixed yaw angles — not exposed; adjusted via requirements only
+    private const float StairYaw   = -90f;
+    private const float HallwayYaw =   0f;
+    private const float DoorYaw    =  90f;
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Public API
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Starts the approach and randomly picks pass-by or door (default entry point).</summary>
     public void StartApproach()
     {
-        Debug.Log($"[ParentApproachController] StartApproach() called on object='{gameObject.name}'");
-
-        if (IsApproaching)
-        {
-            Debug.Log("[ParentApproachController] StartApproach: BLOCKED - already approaching");
-            return;
-        }
-
-        if (startPoint == null)
-        {
-            Debug.LogWarning("[ParentApproachController] StartApproach: FAILED - startPoint is NULL.", this);
-            return;
-        }
-
-        if (doorMoveWaypoint == null)
-        {
-            Debug.LogWarning("[ParentApproachController] StartApproach: FAILED - doorMoveWaypoint is NULL.", this);
-            return;
-        }
-
-        int stairCount   = (stairMoveWaypoints   != null) ? stairMoveWaypoints.Length   : 0;
-        int hallwayCount = (hallwayMoveWaypoints != null) ? hallwayMoveWaypoints.Length : 0;
-        bool hasCorner   = stairCornerTurnWaypoint != null;
-        Debug.Log($"[ParentApproachController] StartApproach: startPoint='{startPoint.name}' | stairMoveWaypoints={stairCount} | hasCorner={hasCorner} | hallwayMoveWaypoints={hallwayCount} | doorMoveWaypoint='{doorMoveWaypoint.name}' | moveSpeed={moveSpeed}");
-
-        ResetStateFlags();
-
-        // Re-enable the mother model in case it was disabled by a previous run.
-        if (motherModelObject != null && !motherModelObject.activeSelf)
-        {
-            motherModelObject.SetActive(true);
-            Debug.Log("[ParentApproachController] StartApproach: re-enabled motherModelObject");
-        }
-
-        Vector3 startEuler = transform.rotation.eulerAngles;
-        _fixedPitch = startEuler.x;
-        _fixedRoll  = startEuler.z;
-        Debug.Log($"[ParentApproachController] Locked pitch={_fixedPitch:F2} roll={_fixedRoll:F2} | yaw phases: stair={stairYaw} corner={cornerYaw} door={doorYaw}");
-
-        if (firstFloorLight != null) firstFloorLight.SetActive(true);
-        if (firstFloorLightAudio != null) firstFloorLightAudio.Play();
-
-        currentSpeed = moveSpeed;
-        Debug.Log($"[ParentApproachController] Movement beginning | moveSpeed={moveSpeed:F2}");
-
-        _forcePassByThisRun = false;
-        _forceDoorThisRun   = false;
-        approachCoroutine = StartCoroutine(ApproachRoutine());
-        IsApproaching = true;
-        OnApproachStarted?.Invoke();
-
-        if (approachFootstepAudio != null)
-        {
-            approachFootstepAudio.loop = true;
-            approachFootstepAudio.Play();
-        }
+        StartApproachDoorOnly();
     }
 
-    /// <summary>
-    /// Starts the approach and forces the pass-by outcome regardless of passByProbability.
-    /// Use this for the N-key manual debug trigger — the mother will never stop at the door.
-    /// </summary>
+    /// <summary>Pass-by route: mother walks all the way past the door without stopping.</summary>
     public void StartApproachPassByOnly()
     {
-        Debug.Log("[ParentApproachController] StartApproachPassByOnly() called - will force pass-by route");
-        _forceDoorThisRun   = false;
-        _forcePassByThisRun = true;
-        StartApproach();
+        if (IsApproaching)
+        {
+            Debug.Log("[ParentApproachController] Already approaching — ignoring StartApproachPassByOnly");
+            return;
+        }
+        if (!ValidateWaypoints(requirePassBy: true)) return;
+
+        BeginApproach(passByRoute: true);
     }
 
-    /// <summary>
-    /// Starts the approach and forces the door-stop outcome regardless of passByProbability.
-    /// Use this for the M-key manual debug trigger — the mother will always stop at the door.
-    /// </summary>
+    /// <summary>Door route: mother walks to the door and stops there.</summary>
     public void StartApproachDoorOnly()
     {
-        Debug.Log("[ParentApproachController] StartApproachDoorOnly() called - will force door-stop route");
-        _forcePassByThisRun = false;
-        _forceDoorThisRun   = true;
-        StartApproach();
+        if (IsApproaching)
+        {
+            Debug.Log("[ParentApproachController] Already approaching — ignoring StartApproachDoorOnly");
+            return;
+        }
+        if (!ValidateWaypoints(requirePassBy: false)) return;
+
+        BeginApproach(passByRoute: false);
     }
 
     public void ResetApproach()
     {
-        Debug.Log($"[ParentApproachController] ResetApproach() called | IsApproaching={IsApproaching}");
+        Debug.Log($"[ParentApproachController] ResetApproach | IsApproaching={IsApproaching}");
 
-        if (approachCoroutine != null)
+        if (_approachCoroutine != null)
         {
-            StopCoroutine(approachCoroutine);
-            approachCoroutine = null;
+            StopCoroutine(_approachCoroutine);
+            _approachCoroutine = null;
         }
 
         ResetStateFlags();
 
-        if (approachFootstepAudio != null)
-        {
-            approachFootstepAudio.Stop();
-            approachFootstepAudio.loop = false;
-        }
-
-        // Re-enable the mother model so the next run can see her.
-        if (motherModelObject != null && !motherModelObject.activeSelf)
-        {
-            motherModelObject.SetActive(true);
-            Debug.Log("[ParentApproachController] ResetApproach: re-enabled motherModelObject");
-        }
-
-        // Reposition to startPoint, falling back to cached position if startPoint is null.
         if (startPoint != null)
         {
             transform.position = startPoint.position;
             transform.rotation = startPoint.rotation;
-            // Refresh cache while we're here.
-            _cachedStartPosition = startPoint.position;
-            _cachedStartRotation = startPoint.rotation;
-            _hasCachedStart = true;
-            Debug.Log($"[ParentApproachController] Reset: repositioned to startPoint='{startPoint.name}'");
-        }
-        else if (_hasCachedStart)
-        {
-            transform.position = _cachedStartPosition;
-            transform.rotation = _cachedStartRotation;
-            Debug.Log("[ParentApproachController] Reset: startPoint is NULL - used cached start position");
         }
         else
         {
-            Debug.LogWarning("[ParentApproachController] Reset: startPoint is NULL and no cached start - cannot reposition");
+            Debug.LogWarning("[ParentApproachController] ResetApproach: startPoint is NULL — cannot reposition.");
         }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Approach coroutine
+    //  Internal start helper
     // ──────────────────────────────────────────────────────────────────────────
 
-    private IEnumerator ApproachRoutine()
+    private void BeginApproach(bool passByRoute)
     {
-        Debug.Log("[ParentApproachController] ApproachRoutine: STARTED");
+        ResetStateFlags();
 
-        // ── Phase 1: Stair ascent ─────────────────────────────────────────────
-        // Snap to startPoint position and face stairYaw. Hold stairYaw for all
-        // stairMoveWaypoints. Do NOT change yaw until stairCornerTurnWaypoint.
+        // Capture pitch/roll from startPoint.rotation so a stale mid-run transform
+        // does not carry over incorrect values after a cancelled cycle.
+        Vector3 startEuler = startPoint.rotation.eulerAngles;
+        _fixedPitch = startEuler.x;
+        _fixedRoll  = startEuler.z;
+
         transform.position = startPoint.position;
-        SetFacingYaw(stairYaw);
-        Debug.Log($"[ParentApproachController] Phase 1: STAIR ASCENT | yaw={stairYaw}");
+        transform.rotation = startPoint.rotation;
+        SetYaw(StairYaw);
 
-        if (stairMoveWaypoints != null)
-        {
-            for (int i = 0; i < stairMoveWaypoints.Length; i++)
-            {
-                if (stairMoveWaypoints[i] == null) continue;
-                Debug.Log($"[ParentApproachController]   Moving to stairMoveWaypoints[{i}]='{stairMoveWaypoints[i].name}' | yaw={stairYaw}");
-                yield return MoveToPointWithYaw(stairMoveWaypoints[i], stairYaw);
-                Debug.Log($"[ParentApproachController]   Reached stairMoveWaypoints[{i}]='{stairMoveWaypoints[i].name}'");
-            }
-        }
+        ShowMotherModel();
 
-        // ── Phase 2: Corner turn ──────────────────────────────────────────────
-        // Move to stairCornerTurnWaypoint still at stairYaw, then snap to cornerYaw
-        // after arriving. IsInHallwayPhase becomes true here.
-        if (stairCornerTurnWaypoint != null)
-        {
-            Debug.Log($"[ParentApproachController] Phase 2: CORNER TURN | moving to '{stairCornerTurnWaypoint.name}' still at yaw={stairYaw}");
-            yield return MoveToPointWithYaw(stairCornerTurnWaypoint, stairYaw);
-            SetFacingYaw(cornerYaw);
-            IsInHallwayPhase = true;
-            Debug.Log($"[ParentApproachController]   Arrived at corner — yaw snapped to {cornerYaw} | IsInHallwayPhase=true");
-        }
-        else
-        {
-            Debug.Log("[ParentApproachController] Phase 2: CORNER TURN skipped — stairCornerTurnWaypoint is NULL");
-            IsInHallwayPhase = true;
-        }
+        IsApproaching = true;
+        OnApproachStarted?.Invoke();
 
-        // ── Phase 3: Hallway ──────────────────────────────────────────────────
-        // Move through hallway waypoints while holding cornerYaw.
-        if (hallwayMoveWaypoints != null)
-        {
-            for (int i = 0; i < hallwayMoveWaypoints.Length; i++)
-            {
-                if (hallwayMoveWaypoints[i] == null) continue;
-                Debug.Log($"[ParentApproachController]   Moving to hallwayMoveWaypoints[{i}]='{hallwayMoveWaypoints[i].name}' | yaw={cornerYaw}");
-                yield return MoveToPointWithYaw(hallwayMoveWaypoints[i], cornerYaw);
-                Debug.Log($"[ParentApproachController]   Reached hallwayMoveWaypoints[{i}]='{hallwayMoveWaypoints[i].name}'");
-            }
-        }
+        Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1}");
+        _approachCoroutine = StartCoroutine(passByRoute ? PassByRoutine() : DoorRoutine());
+    }
 
-        // ── Phase 4: Approach door ────────────────────────────────────────────
-        // Move to doorMoveWaypoint while holding cornerYaw.
-        // Only AFTER arriving snap to doorYaw.
-        Debug.Log($"[ParentApproachController] Phase 4: APPROACH DOOR | moving to '{doorMoveWaypoint.name}' at yaw={cornerYaw}");
-        yield return MoveToPointWithYaw(doorMoveWaypoint, cornerYaw);
-        SetFacingYaw(doorYaw);
-        Debug.Log($"[ParentApproachController]   Arrived at door — yaw snapped to {doorYaw} | rotation={transform.rotation.eulerAngles}");
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Coroutines
+    // ──────────────────────────────────────────────────────────────────────────
 
+    private IEnumerator DoorRoutine()
+    {
+        Debug.Log("[ParentApproachController] DoorRoutine: START");
+
+        yield return RunStairPhase();
+        yield return RunHallwayPhase();
+
+        Debug.Log($"[ParentApproachController] Phase: DOOR | moving to '{doorPoint.name}' then rotate to yaw=90");
+        yield return MoveToPoint(doorPoint);
+        yield return RotateToYaw(DoorYaw, doorTurnRotationSpeed);
 
         ReachedDoor = true;
-        Debug.Log("[ParentApproachController] REACHED DOOR - firing OnReachedDoor");
+        Debug.Log("[ParentApproachController] REACHED DOOR — firing OnReachedDoor");
         OnReachedDoor?.Invoke();
 
-        if (arrivedAtDoorAudio != null)
-        {
-            arrivedAtDoorAudio.Play();
-        }
+        yield return new WaitForSeconds(pauseAtDoorSeconds);
 
-        // ── Pass-by decision ──────────────────────────────────────────────────
-        // _forceDoorThisRun overrides all other flags to guarantee a door stop.
-        bool shouldPassBy = !_forceDoorThisRun && (_forcePassByThisRun || forcePassByForDebug || Random.value < passByProbability);
-        Debug.Log($"[ParentApproachController] passByDecision: shouldPassBy={shouldPassBy} | _forcePassByThisRun={_forcePassByThisRun} | _forceDoorThisRun={_forceDoorThisRun} | forcePassByForDebug={forcePassByForDebug} | passByProbability={passByProbability} | passByPoint={(passByPoint != null ? passByPoint.name : "NULL")}");
+        StopMovementAudio();
+        StoppedAtDoor = true;
+        IsApproaching = false;
+        // IsInHallwayPhase intentionally NOT cleared here.
+        // It must remain true while the mother is at the door so that
+        // ParentDetectionV2.TryStartHallwayPeekSuspicion() can fire correctly.
+        // ResetStateFlags() (called from ResetApproach) clears it after the cycle ends.
 
-        // ── Stop at door (normal mode) ────────────────────────────────────────
-        if (!shouldPassBy || passByPoint == null)
-        {
-            Debug.Log($"[ParentApproachController] Pausing at door for {pauseAtDoorSeconds}s then firing OnStoppedAtDoor");
-            yield return new WaitForSeconds(pauseAtDoorSeconds);
+        Debug.Log("[ParentApproachController] STOPPED AT DOOR — firing OnStoppedAtDoor");
+        OnStoppedAtDoor?.Invoke();
+    }
 
-            StoppedAtDoor    = true;
-            IsApproaching    = false;
-            IsInHallwayPhase = false;
+    private IEnumerator PassByRoutine()
+    {
+        Debug.Log("[ParentApproachController] PassByRoutine: START");
 
-            if (approachFootstepAudio != null)
-            {
-                approachFootstepAudio.Stop();
-                approachFootstepAudio.loop = false;
-            }
+        yield return RunStairPhase();
+        yield return RunHallwayPhase();
 
-            Debug.Log("[ParentApproachController] STOPPED AT DOOR - firing OnStoppedAtDoor");
-            OnStoppedAtDoor?.Invoke();
-            yield break;
-        }
+        Debug.Log($"[ParentApproachController] Phase: DOOR (pass-by) | moving through '{doorPoint.name}' — no stop, no rotation");
+        yield return MoveToPoint(doorPoint);
 
-        // ── Pass by ───────────────────────────────────────────────────────────
         yield return new WaitForSeconds(pauseBeforePassBySeconds);
 
-        if (passByAudio != null)
-        {
-            passByAudio.Play();
-        }
+        Debug.Log($"[ParentApproachController] Phase: PASS-BY | moving to '{passByPoint.name}'");
+        yield return MoveToPoint(passByPoint);
 
-        Debug.Log($"[ParentApproachController] Phase 5: PASS BY | moving to passByPoint='{passByPoint.name}'");
-        yield return MoveToPointWithYaw(passByPoint, doorYaw);
+        StopMovementAudio();
+        PassedByDoor  = true;
+        IsApproaching = false;
+        // IsInHallwayPhase cleared by ResetStateFlags() only — consistent with DoorRoutine.
 
-        PassedByDoor     = true;
-        IsApproaching    = false;
-        IsInHallwayPhase = false;
-
-        if (approachFootstepAudio != null)
-        {
-            approachFootstepAudio.Stop();
-            approachFootstepAudio.loop = false;
-        }
-
-        Debug.Log("[ParentApproachController] PASSED BY DOOR - firing OnPassedByDoor");
+        Debug.Log("[ParentApproachController] PASSED BY DOOR — firing OnPassedByDoor");
         OnPassedByDoor?.Invoke();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Movement helpers
+    //  Shared phase helpers
     // ──────────────────────────────────────────────────────────────────────────
 
-    // Move toward target holding an explicit yaw the entire way.
-    private IEnumerator MoveToPointWithYaw(Transform target, float yaw)
+    private IEnumerator RunStairPhase()
     {
-        while (Vector3.Distance(transform.position, target.position) > 0.05f)
+        SetYaw(StairYaw);
+        Debug.Log("[ParentApproachController] Phase: STAIR CLIMB | yaw=-90");
+
+        if (movementLoopAudioSource != null)
         {
-            transform.position = Vector3.MoveTowards(transform.position, target.position, currentSpeed * Time.deltaTime);
-            transform.rotation = Quaternion.Euler(_fixedPitch, yaw, _fixedRoll);
-            yield return null;
+            movementLoopAudioSource.loop = true;
+            movementLoopAudioSource.Play();
         }
 
+        if (stairClimbPoints != null)
+        {
+            for (int i = 0; i < stairClimbPoints.Length; i++)
+            {
+                if (stairClimbPoints[i] == null) continue;
+                Debug.Log($"[ParentApproachController]   stairClimbPoints[{i}] '{stairClimbPoints[i].name}'");
+                yield return MoveToPoint(stairClimbPoints[i]);
+            }
+        }
+
+        if (stairTurnPoint != null)
+        {
+            Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0");
+            yield return MoveToPoint(stairTurnPoint);
+            yield return RotateToYaw(HallwayYaw, stairTurnRotationSpeed);
+            Debug.Log("[ParentApproachController]   STAIR TURN complete — movement audio continues into hallway");
+        }
+    }
+
+    private IEnumerator RunHallwayPhase()
+    {
+        IsInHallwayPhase = true;
+        Debug.Log("[ParentApproachController] Phase: HALLWAY | IsInHallwayPhase=true");
+
+        if (hallwayPoints != null)
+        {
+            for (int i = 0; i < hallwayPoints.Length; i++)
+            {
+                if (hallwayPoints[i] == null) continue;
+                Debug.Log($"[ParentApproachController]   hallwayPoints[{i}] '{hallwayPoints[i].name}'");
+                yield return MoveToPoint(hallwayPoints[i]);
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Movement / rotation helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private IEnumerator MoveToPoint(Transform target)
+    {
+        while (Vector3.Distance(transform.position, target.position) > stopDistance)
+        {
+            transform.position = Vector3.MoveTowards(
+                transform.position, target.position, moveSpeed * Time.deltaTime);
+            yield return null;
+        }
         transform.position = target.position;
+    }
+
+    private IEnumerator RotateToYaw(float targetYaw, float speed)
+    {
+        float current = NormalizeAngle(transform.rotation.eulerAngles.y);
+        float target  = NormalizeAngle(targetYaw);
+
+        while (Mathf.Abs(NormalizeAngle(transform.rotation.eulerAngles.y) - target) > 0.5f)
+        {
+            float newYaw = Mathf.MoveTowardsAngle(
+                transform.rotation.eulerAngles.y, targetYaw, speed * Time.deltaTime);
+            transform.rotation = Quaternion.Euler(_fixedPitch, newYaw, _fixedRoll);
+            yield return null;
+        }
+        SetYaw(targetYaw);
+    }
+
+    private void SetYaw(float yaw)
+    {
         transform.rotation = Quaternion.Euler(_fixedPitch, yaw, _fixedRoll);
     }
 
-    // Snap Y to an explicit yaw, preserving locked X and Z.
-    private void SetFacingYaw(float yaw)
+    private static float NormalizeAngle(float angle)
     {
-        transform.rotation = Quaternion.Euler(_fixedPitch, yaw, _fixedRoll);
+        angle %= 360f;
+        if (angle > 180f)  angle -= 360f;
+        if (angle < -180f) angle += 360f;
+        return angle;
+    }
+
+    private void StopMovementAudio()
+    {
+        if (movementLoopAudioSource != null && movementLoopAudioSource.isPlaying)
+        {
+            movementLoopAudioSource.Stop();
+            Debug.Log("[ParentApproachController] Movement audio stopped");
+        }
+    }
+
+    private void ShowMotherModel()
+    {
+        if (motherModelRoot != null)
+        {
+            motherModelRoot.SetActive(true);
+            Debug.Log($"[ParentApproachController] Mother model visibility restored | object='{motherModelRoot.name}'");
+        }
+
+        if (motherModelRenderers != null)
+        {
+            foreach (var r in motherModelRenderers)
+            {
+                if (r == null) continue;
+                r.enabled = true;
+                Debug.Log($"[ParentApproachController] Mother model visibility restored | renderer='{r.name}'");
+            }
+        }
     }
 
     private void ResetStateFlags()
@@ -400,70 +366,99 @@ public class ParentApproachController : MonoBehaviour
         StoppedAtDoor    = false;
         PassedByDoor     = false;
         IsInHallwayPhase = false;
+        StopMovementAudio();
     }
+
+    private bool ValidateWaypoints(bool requirePassBy)
+    {
+        if (startPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] startPoint is NULL.", this);
+            return false;
+        }
+        if (doorPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] doorPoint is NULL.", this);
+            return false;
+        }
+        if (requirePassBy && passByPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] passByPoint is NULL — required for pass-by route.", this);
+            return false;
+        }
+        if (stairTurnPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] stairTurnPoint is NULL — stair-to-hallway turn will be skipped.", this);
+        }
+        return true;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Scene gizmos
+    // ──────────────────────────────────────────────────────────────────────────
 
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
-        Transform previous = startPoint;
+        Transform prev = startPoint;
 
-        // Start point
+        // startPoint — white
         if (startPoint != null)
         {
             Gizmos.color = Color.white;
             Gizmos.DrawSphere(startPoint.position, 0.08f);
         }
 
-        // Stair move waypoints (cyan)
+        // stairClimbPoints — cyan
         Gizmos.color = Color.cyan;
-        if (stairMoveWaypoints != null)
+        if (stairClimbPoints != null)
         {
-            for (int i = 0; i < stairMoveWaypoints.Length; i++)
+            foreach (Transform wp in stairClimbPoints)
             {
-                if (stairMoveWaypoints[i] == null) continue;
-                Gizmos.DrawSphere(stairMoveWaypoints[i].position, 0.06f);
-                if (previous != null) Gizmos.DrawLine(previous.position, stairMoveWaypoints[i].position);
-                previous = stairMoveWaypoints[i];
+                if (wp == null) continue;
+                Gizmos.DrawSphere(wp.position, 0.06f);
+                if (prev != null) Gizmos.DrawLine(prev.position, wp.position);
+                prev = wp;
             }
         }
 
-        // Corner turn waypoint (green)
-        if (stairCornerTurnWaypoint != null)
+        // stairTurnPoint — blue
+        if (stairTurnPoint != null)
         {
-            Gizmos.color = Color.green;
-            Gizmos.DrawSphere(stairCornerTurnWaypoint.position, 0.08f);
-            if (previous != null) Gizmos.DrawLine(previous.position, stairCornerTurnWaypoint.position);
-            previous = stairCornerTurnWaypoint;
+            Gizmos.color = Color.blue;
+            Gizmos.DrawSphere(stairTurnPoint.position, 0.09f);
+            if (prev != null) Gizmos.DrawLine(prev.position, stairTurnPoint.position);
+            prev = stairTurnPoint;
         }
 
-        // Hallway move waypoints (orange)
-        if (hallwayMoveWaypoints != null)
+        // hallwayPoints — green
+        Gizmos.color = Color.green;
+        if (hallwayPoints != null)
         {
-            Gizmos.color = new Color(1f, 0.5f, 0f); // orange
-            for (int i = 0; i < hallwayMoveWaypoints.Length; i++)
+            foreach (Transform wp in hallwayPoints)
             {
-                if (hallwayMoveWaypoints[i] == null) continue;
-                Gizmos.DrawSphere(hallwayMoveWaypoints[i].position, 0.06f);
-                if (previous != null) Gizmos.DrawLine(previous.position, hallwayMoveWaypoints[i].position);
-                previous = hallwayMoveWaypoints[i];
+                if (wp == null) continue;
+                Gizmos.DrawSphere(wp.position, 0.06f);
+                if (prev != null) Gizmos.DrawLine(prev.position, wp.position);
+                prev = wp;
             }
         }
 
-        // Door move waypoint (yellow)
-        if (doorMoveWaypoint != null)
+        // doorPoint — yellow
+        if (doorPoint != null)
         {
             Gizmos.color = Color.yellow;
-            Gizmos.DrawSphere(doorMoveWaypoint.position, 0.09f);
-            if (previous != null) Gizmos.DrawLine(previous.position, doorMoveWaypoint.position);
-            previous = doorMoveWaypoint;
+            Gizmos.DrawSphere(doorPoint.position, 0.09f);
+            if (prev != null) Gizmos.DrawLine(prev.position, doorPoint.position);
+            prev = doorPoint;
         }
 
-        // Pass-by point (magenta)
+        // passByPoint — magenta
         if (passByPoint != null)
         {
             Gizmos.color = Color.magenta;
             Gizmos.DrawSphere(passByPoint.position, 0.08f);
-            if (previous != null) Gizmos.DrawLine(previous.position, passByPoint.position);
+            if (prev != null) Gizmos.DrawLine(prev.position, passByPoint.position);
         }
     }
 #endif

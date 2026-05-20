@@ -5,11 +5,11 @@ using UnityEngine.UI;
 /// <summary>
 /// MotherGauge: Canonical suspicion gauge (0..maxGauge) and UI visualizer.
 ///
-/// GAUGE OWNERSHIP — strict single-writer model:
-///   ParentDetectionV2 is the only gameplay script that writes to this gauge
-///   (continuous rise/drop via SetGaugeDirect every frame).
-///   Auto-decrease and arrow-key input are DEBUG/LEGACY features; both are
-///   disabled by default and must not be enabled in production gameplay.
+/// GAUGE OWNERSHIP:
+///   Suspicion (0..maxGauge) persists across warning cycles.
+///   Increases: AddGauge() calls from ParentDetectionV2 (loud items, check events).
+///   Decreases: HandleAutoDecrease() — 1 stage every decreaseIntervalSeconds (production).
+///   Arrow-key input is an editor-debug helper only.
 /// </summary>
 public class MotherGauge : MonoBehaviour
 {
@@ -38,9 +38,9 @@ public class MotherGauge : MonoBehaviour
     [Tooltip("DEBUG ONLY. Amount to change per arrow-key press in the editor. Has no effect in production if HandleInput is removed.")]
     public int gaugeStep = 1;
 
-    [Header("Auto Decrease Settings (DEBUG/LEGACY — disabled during gameplay)")]
-    [Tooltip("DEBUG ONLY. ParentDetectionV2 sets this false at runtime. Do not enable in production.")]
-    public bool enableAutoDecrease = false;
+    [Header("Auto Decrease Settings")]
+    [Tooltip("Enables automatic suspicion decrease by 1 stage every decreaseIntervalSeconds. Should be true in normal gameplay.")]
+    public bool enableAutoDecrease = true;
     [Tooltip("How many seconds between each automatic stage decrease (only used when enableAutoDecrease is true)")]
     public float decreaseIntervalSeconds = 20f;
 
@@ -77,8 +77,6 @@ public class MotherGauge : MonoBehaviour
 
     private void HandleAutoDecrease()
     {
-        // Auto-decrease is disabled by default and is overridden to false by
-        // ParentDetectionV2.Start(). It exists only as a legacy/debug fallback.
         if (!enableAutoDecrease || decreaseIntervalSeconds <= 0)
         {
             return;
