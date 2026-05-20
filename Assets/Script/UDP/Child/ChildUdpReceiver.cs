@@ -49,6 +49,8 @@ public class ChildUdpReceiver : MonoBehaviour
 
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
+    [SerializeField] private GameObject[] animatedSpriteObjects;
+    [SerializeField] private GameObject titleImageObject;
     [SerializeField] private string connectLabel = "Connect";
     [SerializeField] private string connectingLabel = "接続中";
     private string connectLabelDefault;
@@ -79,6 +81,7 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         creditsPanel.SetActive(!creditsPanel.activeSelf);
+        UpdateAnimatedSpritesVisibility();
     }
 
     public void OnCloseCreditsClicked()
@@ -89,6 +92,7 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         creditsPanel.SetActive(false);
+        UpdateAnimatedSpritesVisibility();
     }
 
     public void OnSettingsButtonClicked()
@@ -99,6 +103,7 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         settingsPanel.SetActive(!settingsPanel.activeSelf);
+        UpdateAnimatedSpritesVisibility();
     }
 
     public void OnCloseSettingsClicked()
@@ -109,6 +114,7 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         settingsPanel.SetActive(false);
+        UpdateAnimatedSpritesVisibility();
     }
 
     public void SendState(string message)
@@ -155,6 +161,7 @@ public class ChildUdpReceiver : MonoBehaviour
             connectButton.onClick.AddListener(OnConnectButtonClicked);
         }
 
+        UpdateAnimatedSpritesVisibility();
         UpdateUi();
     }
 
@@ -324,6 +331,32 @@ public class ChildUdpReceiver : MonoBehaviour
                 target = text.transform.parent.gameObject;
             }
             target.SetActive(active);
+        }
+    }
+
+    private void UpdateAnimatedSpritesVisibility()
+    {
+        bool creditsOpen = creditsPanel != null && creditsPanel.activeSelf;
+        bool settingsOpen = settingsPanel != null && settingsPanel.activeSelf;
+        bool shouldShow = !(creditsOpen || settingsOpen);
+
+        if (titleImageObject != null)
+        {
+            titleImageObject.SetActive(shouldShow);
+        }
+
+        if (animatedSpriteObjects == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < animatedSpriteObjects.Length; i++)
+        {
+            GameObject target = animatedSpriteObjects[i];
+            if (target != null)
+            {
+                target.SetActive(shouldShow);
+            }
         }
     }
 
