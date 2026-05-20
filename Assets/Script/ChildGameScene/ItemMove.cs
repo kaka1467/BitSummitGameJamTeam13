@@ -8,6 +8,10 @@ public class ItemMove : MonoBehaviour
 
     void Update()
     {
+        // QTE 処理中は移動・削除を止める
+        ItemEffect effect = GetComponent<ItemEffect>();
+        if (effect != null && effect.IsQteLocked) return;
+
         transform.position += Vector3.left * speed * Time.deltaTime;
 
         Camera cam = Camera.main;

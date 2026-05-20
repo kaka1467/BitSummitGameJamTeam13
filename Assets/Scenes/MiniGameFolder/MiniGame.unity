@@ -1331,7 +1331,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &508756885
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2208,7 +2208,7 @@ MonoBehaviour:
   - {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
   - {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
   - {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-  - {fileID: 8010092503364828236, guid: b8b5f74075689f848a2b9889b3ef0b97, type: 3}
+  - {fileID: 4172965070517205106, guid: cadc328aa51d5074888a071193e6130a, type: 3}
   - {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
   poolSize: 10
 --- !u!4 &937483991
@@ -3252,7 +3252,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 1
+  m_SortingOrder: 4
   m_TargetDisplay: 0
 --- !u!224 &1533523147
 RectTransform:
@@ -3474,8 +3474,9 @@ MonoBehaviour:
       count: 15
   spawnEnabled: 1
   hugeObstacleSpawnCount: 1
+  hugeObstacleSpawnY: 0.00000001929803
   minSpawnDistanceX: 1.2
-  minSpawnDistanceY: 0.6
+  minSpawnDistanceY: 10
   recentSpawnWindow: 0.6
   overlapAvoidanceXStep: 0.8
   maxPlacementAttempts: 8

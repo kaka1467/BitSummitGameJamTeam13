@@ -24,7 +24,8 @@ public class Item : MonoBehaviour
     public float bgmVolume = 1f;
 
     // アイテムの効果を適用するメソッド。ItemEffect はトリガー専任となり、このメソッドに処理を委譲する。
-    public void ApplyEffect(Collider2D other)
+    // onFinished: HugeObstacle の場合、QTE 完了（成功/失敗問わず）後に呼ばれるコールバック。
+    public void ApplyEffect(Collider2D other, System.Action onFinished = null)
     {
         Debug.Log($"[Item] ApplyEffect type={itemType} on other={other.gameObject.name}");
         var gm = GameManager.instance;
@@ -64,8 +65,11 @@ public class Item : MonoBehaviour
                 {
                     // QTE をスキップした場合も、成功扱いとしてクールタイムを進める
                     QTEManager.RegisterHugeQteSuccess();
+                    onFinished?.Invoke();
                     return;
                 }
+
+                System.Action restoreObstacleAnimators = SetAnimatorsUnscaled(gameObject);
 
                 if (QTEManager.Instance == null)
                 {
@@ -74,6 +78,7 @@ public class Item : MonoBehaviour
 
                 bool started = QTEManager.Instance != null && QTEManager.Instance.StartHugeObstacleQte(success =>
                 {
+                    restoreObstacleAnimators?.Invoke();
                     if (!success)
                     {
                         // QTE失敗時にダメージアニメーション再生
@@ -85,13 +90,20 @@ public class Item : MonoBehaviour
                             gm.AddTime(-Mathf.Abs(timeAmount));
                         }
                     }
+                    // QTE 完了（成功・失敗どちらでも）を通知
+                    onFinished?.Invoke();
                 });
 
-                if (!started && gm != null)
+                if (!started)
                 {
+                    restoreObstacleAnimators?.Invoke();
                     // QTEが開始できなかった場合もダメージアニメーション再生
                     TriggerPlayerDamage(other);
-                    gm.AddTime(-Mathf.Abs(timeAmount));
+                    if (gm != null)
+                    {
+                        gm.AddTime(-Mathf.Abs(timeAmount));
+                    }
+                    onFinished?.Invoke();
                 }
                 applyTimeOnCollect = false;
                 break;
@@ -167,5 +179,30 @@ public class Item : MonoBehaviour
         {
             playerAnimator.PlayDamage();
         }
+    }
+
+    private static System.Action SetAnimatorsUnscaled(GameObject target)
+    {
+        if (target == null) return null;
+
+        Animator[] animators = target.GetComponentsInChildren<Animator>(true);
+        if (animators == null || animators.Length == 0) return null;
+
+        AnimatorUpdateMode[] updateModes = new AnimatorUpdateMode[animators.Length];
+        for (int i = 0; i < animators.Length; i++)
+        {
+            if (animators[i] == null) continue;
+            updateModes[i] = animators[i].updateMode;
+            animators[i].updateMode = AnimatorUpdateMode.UnscaledTime;
+        }
+
+        return () =>
+        {
+            for (int i = 0; i < animators.Length; i++)
+            {
+                if (animators[i] == null) continue;
+                animators[i].updateMode = updateModes[i];
+            }
+        };
     }
 }

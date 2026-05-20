@@ -32,6 +32,8 @@ public class QTEManager : MonoBehaviour
     private float remainingTime;
     private Action<bool> onFinished;
     private Coroutine missSpriteRoutine;
+    private bool hasStoredPlayerUpdateMode;
+    private AnimatorUpdateMode storedPlayerUpdateMode;
 
     public bool IsQteActive => isQteActive;
 
@@ -81,6 +83,9 @@ public class QTEManager : MonoBehaviour
         // QTE中はダメージポーズを維持し、自動でRunに戻らないようロックする
         ResolvePlayerAnimator();
         if (playerAnimator != null) playerAnimator.SetDamageLock(true);
+
+        ResolveAnimatorComponent();
+        SetPlayerAnimatorUnscaled(true);
 
         Time.timeScale = 0f;
         SetQteVisible(true);
@@ -253,6 +258,8 @@ public class QTEManager : MonoBehaviour
         Time.timeScale = 1f;
         SetQteVisible(false);
 
+        SetPlayerAnimatorUnscaled(false);
+
         if (disableAnimatorOnMiss && playerAnimatorComponent != null)
         {
             playerAnimatorComponent.enabled = true;
@@ -265,6 +272,28 @@ public class QTEManager : MonoBehaviour
         onFinished = null;
         callback?.Invoke(success);
         HugeQteFinished?.Invoke(success);
+    }
+
+    private void SetPlayerAnimatorUnscaled(bool enabled)
+    {
+        if (playerAnimatorComponent == null) return;
+
+        if (enabled)
+        {
+            if (!hasStoredPlayerUpdateMode)
+            {
+                storedPlayerUpdateMode = playerAnimatorComponent.updateMode;
+                hasStoredPlayerUpdateMode = true;
+            }
+            playerAnimatorComponent.updateMode = AnimatorUpdateMode.UnscaledTime;
+            return;
+        }
+
+        if (hasStoredPlayerUpdateMode)
+        {
+            playerAnimatorComponent.updateMode = storedPlayerUpdateMode;
+            hasStoredPlayerUpdateMode = false;
+        }
     }
 
     private void UpdateQteText()

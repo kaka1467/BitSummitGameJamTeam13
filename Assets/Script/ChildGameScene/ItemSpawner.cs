@@ -45,6 +45,7 @@ public class ItemSpawner : MonoBehaviour
 
     [Header("HugeObstacle")]
     [SerializeField, Min(0)] private int hugeObstacleSpawnCount = 1;
+    [SerializeField] private float hugeObstacleSpawnY = 1.929803e-08f;
 
     [Header("Overlap Avoidance")]
     [SerializeField, Min(0f)] private float minSpawnDistanceX = 1.2f;
@@ -521,6 +522,9 @@ public class ItemSpawner : MonoBehaviour
     {
         if (item == null) return false;
 
+        Item itemComp = item.GetComponent<Item>();
+        bool forceHugeObstacleY = itemComp != null && itemComp.itemType == ItemType.HugeObstacle;
+
         float baseSpawnX = GetSpawnXWorld();
         float now = Time.unscaledTime;
         float clampedMaxExtraX = float.IsPositiveInfinity(maxExtraX) ? float.PositiveInfinity : Mathf.Max(0f, maxExtraX);
@@ -534,7 +538,7 @@ public class ItemSpawner : MonoBehaviour
             }
 
             float spawnX = baseSpawnX + extraX;
-            float y = SelectLaneYAvoidingOverlap(item, spawnX, preferHugeLane, now);
+            float y = forceHugeObstacleY ? hugeObstacleSpawnY : SelectLaneYAvoidingOverlap(item, spawnX, preferHugeLane, now);
             Vector3 candidate = new Vector3(spawnX, y, SpawnZ);
 
             if (!IsSpawnPositionOccupied(candidate, now, item))

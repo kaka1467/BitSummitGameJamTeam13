@@ -226,44 +226,59 @@ public class TutorialFlow : MonoBehaviour
 
     private IEnumerator RunQteStep()
     {
-        ClearActiveItems();
-        GameObject huge = null;
-        if (!itemSpawner.TrySpawnHugeObstacle(out huge) || huge == null)
-        {
-            yield break;
-        }
-
-        ClearActiveItemsExcept(huge);
-
-        yield return WaitForItemToEnterScreen(huge, qteWaitTimeout);
-
-        int laneIndex = GetNearestLaneIndex(huge.transform.position.y);
-        playerMove.SetAutoLane(laneIndex);
-
+        // QTE を成功するまでループする
         bool qteDone = false;
-        System.Action<bool> handler = _ => qteDone = true;
+        System.Action<bool> handler = success =>
+        {
+            // 成功したときだけ完了フラグを立てる
+            if (success) qteDone = true;
+        };
         QTEManager.HugeQteFinished += handler;
 
-        float timer = 0f;
-        float nextUpdate = 0f;
-        float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
-        while (!qteDone && timer < qteWaitTimeout)
+        while (!qteDone)
         {
-            timer += Time.unscaledDeltaTime;
-            if (autoHorizontalEnabled && huge != null && huge.activeInHierarchy && timer >= nextUpdate)
+            ClearActiveItems();
+            GameObject huge = null;
+            if (!itemSpawner.TrySpawnHugeObstacle(out huge) || huge == null)
             {
-                nextUpdate = timer + interval;
-                UpdateAutoTargetForItem(huge, AutoTargetMode.Qte);
+                // スポーン失敗なら少し待ってリトライ
+                yield return new WaitForSecondsRealtime(0.5f);
+                continue;
             }
-            yield return null;
-        }
 
-        if (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
-        {
-            while (!qteDone)
+            ClearActiveItemsExcept(huge);
+
+            yield return WaitForItemToEnterScreen(huge, qteWaitTimeout);
+
+            int laneIndex = GetNearestLaneIndex(huge.transform.position.y);
+            playerMove.SetAutoLane(laneIndex);
+
+            float timer = 0f;
+            float nextUpdate = 0f;
+            float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
+
+            // QTE が発火するか、タイムアウトするまで待つ
+            while (!qteDone && timer < qteWaitTimeout)
             {
+                timer += Time.unscaledDeltaTime;
+                if (autoHorizontalEnabled && huge != null && huge.activeInHierarchy && timer >= nextUpdate)
+                {
+                    nextUpdate = timer + interval;
+                    UpdateAutoTargetForItem(huge, AutoTargetMode.Qte);
+                }
                 yield return null;
             }
+
+            // QTE ウィンドウが開いている最中はクリアを待ち続ける
+            if (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+            {
+                while (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+                {
+                    yield return null;
+                }
+            }
+
+            // qteDone でなければ失敗 or タイムアウト → 再スポーンしてやり直し
         }
 
         QTEManager.HugeQteFinished -= handler;
