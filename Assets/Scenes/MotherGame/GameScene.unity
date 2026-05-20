@@ -1346,6 +1346,7 @@ MonoBehaviour:
   approachController: {fileID: 2053139200}
   parentDetection: {fileID: 1951468137}
   motherGauge: {fileID: 1418577572}
+  cameraSwitcher: {fileID: 1324364440}
   firstFloorLight: {fileID: 2118777199}
   secondFloorLight1: {fileID: 1913263790}
   secondFloorLight2: {fileID: 888717860}
@@ -1368,6 +1369,7 @@ MonoBehaviour:
   highSuspicionApproachMoveSpeedMax: 30
   useFixedDebugApproachSpeed: 0
   fixedDebugApproachSpeed: 30
+  loudItemRushInMoveSpeed: 140
   doorChanceAtMinSuspicion: 0.2
   doorChanceAtMaxSuspicion: 0.95
   basePassByThenDoorSoundChance: 0.33
@@ -4165,7 +4167,7 @@ Transform:
   m_GameObject: {fileID: 1553208258}
   serializedVersion: 2
   m_LocalRotation: {x: -0.16114761, y: 0.7596988, z: -0.59647065, w: 0.20276096}
-  m_LocalPosition: {x: 0.2033, y: -1.662, z: 0.2313}
+  m_LocalPosition: {x: 0.2353, y: -1.972, z: 0.1663}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -4212,7 +4214,7 @@ Light:
   m_Type: 2
   m_Color: {r: 1, g: 0.9215687, b: 0.8039216, a: 1}
   m_Intensity: 400
-  m_Range: 100
+  m_Range: 50
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -4867,96 +4869,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1718951538}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1665753778
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1665753779}
-  - component: {fileID: 1665753781}
-  - component: {fileID: 1665753780}
-  m_Layer: 0
-  m_Name: 1F_Lights_1
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1665753779
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1665753778}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0.45283553, y: 0.000000059604638, z: -0.00000008940696, w: 0.89159405}
-  m_LocalPosition: {x: 0.2074, y: -0.63033146, z: 0.0701}
-  m_LocalScale: {x: 1, y: 0.1918502, z: 2.2969518}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 2118777200}
-  m_LocalEulerAnglesHint: {x: 53.852, y: 90, z: 0}
---- !u!23 &1665753780
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1665753778}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: 31295082b6cb016449860cc7d5b7449b, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!33 &1665753781
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1665753778}
-  m_Mesh: {fileID: -2721331549007201028, guid: 3a1f578bf75eb43daa2dd92c93ff89f8, type: 3}
 --- !u!1 &1718951537
 GameObject:
   m_ObjectHideFlags: 0
@@ -5562,7 +5474,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DoorController
   door: {fileID: 121156756}
-  parentModel: {fileID: 0}
   closedAngle: 0
   peekAngle: 15
   openAngle: 90
@@ -6069,15 +5980,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentDetectionV2
   warningSystem: {fileID: 395735891}
-  warningScheduler: {fileID: 472387659}
   caughtReactionController: {fileID: 1372611141}
   motherGauge: {fileID: 1418577572}
   approachController: {fileID: 2053139200}
   sleepingController: {fileID: 2121813538}
   cameraSwitcher: {fileID: 1324364440}
   dummyDoorAudioSource: {fileID: 1017118909}
-  realMotherObject: {fileID: 0}
-  dummyMotherObject: {fileID: 0}
   mainDoorOpenAudioSource: {fileID: 1017118909}
   mainDoorCloseAudioSource: {fileID: 1079912679}
   rushInAudioSource: {fileID: 2088502699}
@@ -6087,13 +5995,12 @@ MonoBehaviour:
   roomCheckSafetyTimeout: 30
   leaveAfterSleepDelay: 2
   leaveAfterSleepDelayMax: 6
-  roomEntryBurstTickInterval: 0.2
-  enableLoudItemFeature: 0
+  roomEntryBurstTickInterval: 0.3
+  enableLoudItemFeature: 1
   loudItemGaugeAmount: 3
-  loudItemTriggerDelay: 1.5
   enableContinuousRoomSuspicion: 1
   continuousRoomSuspicionAmount: 1
-  continuousRoomSuspicionTickInterval: 2
+  continuousRoomSuspicionTickInterval: 0.5
   enableHallwayPeekSuspicion: 1
   hallwayPeekSuspicionTickInterval: 0.5
   isCaught: 0
@@ -6472,7 +6379,9 @@ MonoBehaviour:
   motherModelRoot: {fileID: 1300055334}
   motherModelRenderers: []
   movementLoopAudioSource: {fileID: 1615664220}
-  pauseAtDoorSeconds: 2
+  cameraSwitcher: {fileID: 1324364440}
+  pauseAtDoorSeconds: 0.5
+  rushInPauseAtDoorSeconds: 0.2
   pauseBeforePassBySeconds: 0.5
   OnApproachStarted:
     m_PersistentCalls:
@@ -6789,7 +6698,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &2118777200
 Transform:
   m_ObjectHideFlags: 0
@@ -6799,11 +6708,10 @@ Transform:
   m_GameObject: {fileID: 2118777199}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7071068, z: -0, w: 0.7071068}
-  m_LocalPosition: {x: -58.55111, y: -13.766102, z: 23.875618}
+  m_LocalPosition: {x: -78.5, y: 17.9, z: 9.2}
   m_LocalScale: {x: 319.48654, y: 42.824764, z: 319.48654}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1665753779}
   - {fileID: 1553208259}
   m_Father: {fileID: 1441270852}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
