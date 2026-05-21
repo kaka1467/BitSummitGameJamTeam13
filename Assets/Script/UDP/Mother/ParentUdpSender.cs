@@ -100,7 +100,11 @@ public class ParentUdpSender : MonoBehaviour
     }
 
     // ── Button callbacks ──────────────────────────────────────────────────────
-    public void OnConnectButtonClicked()  { currentState = ConnectionState.Connecting; }
+    public void OnConnectButtonClicked()
+    {
+        currentState = ConnectionState.Connecting;
+        Debug.Log($"[ParentUdpSender] OnConnectButtonClicked — state=Connecting, listening on broadcastPort={broadcastPort}. Waiting for child DISCOVERY_REQUEST.");
+    }
     public void OnCancelButtonClicked()   { currentState = ConnectionState.Disconnected; }
     public void OnStartButtonClicked()    { StartCoroutine(StartGameRoutine()); }
 
@@ -127,6 +131,7 @@ public class ParentUdpSender : MonoBehaviour
         udpClient           = new UdpClient();
         receiveClient       = new UdpClient(broadcastPort);
         normalReceiveClient = new UdpClient(parentReceivePort);
+        Debug.Log($"[ParentUdpSender] Sockets open — listening for discovery on :{broadcastPort}, normal data on :{parentReceivePort}. Initial targetIP='{targetIP}'");
 
         receiveThread = new Thread(ReceiveDiscovery) { IsBackground = true };
         receiveThread.Start();
@@ -166,6 +171,23 @@ public class ParentUdpSender : MonoBehaviour
         // Debug / hardware input: I key sends CAUGHT (Space and Gamepad A reserved for SleepingController)
         if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
             SendState("CAUGHT");
+
+        // Debug keys: Y = SLEEP_LOCK, U = SLEEP_UNLOCK
+        // (O/P/L are reserved by ParentDetectionV2)
+        var keyboard = Keyboard.current;
+        if (keyboard != null)
+        {
+            if (keyboard.yKey.wasPressedThisFrame)
+            {
+                Debug.Log("[ParentUdpSender] Debug key Y pressed — sending SLEEP_LOCK.");
+                SendStateSLEEP_LOCK();
+            }
+            if (keyboard.uKey.wasPressedThisFrame)
+            {
+                Debug.Log("[ParentUdpSender] Debug key U pressed — sending SLEEP_UNLOCK.");
+                SendStateSLEEP_UNLOCK();
+            }
+        }
     }
 
     void OnDestroy()
@@ -211,7 +233,7 @@ public class ParentUdpSender : MonoBehaviour
     // ── Public send API ───────────────────────────────────────────────────────
     public void SendState(string message)
     {
-        Debug.Log($"[ParentUdpSender] → '{message}' to {targetIP}:{normalPort}");
+        Debug.Log($"[ParentUdpSender] → '{message}' to {targetIP}:{normalPort} | connectionState={currentState}");
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
@@ -221,6 +243,16 @@ public class ParentUdpSender : MonoBehaviour
         {
             Debug.LogError($"[ParentUdpSender] SendState error: {e.Message}");
         }
+    }
+
+    public void SendStateSLEEP_LOCK()
+    {
+        SendState("SLEEP_LOCK");
+    }
+
+    public void SendStateSLEEP_UNLOCK()
+    {
+        SendState("SLEEP_UNLOCK");
     }
 
     // ── Incoming message dispatch (main thread) ───────────────────────────────
@@ -358,13 +390,15 @@ public class ParentUdpSender : MonoBehaviour
                 if (msg == MAGIC_NUMBER + "DISCOVERY_REQUEST")
                 {
                     string senderIP = ep.Address.ToString();
-                    Debug.Log($"[ParentUdpSender] DISCOVERY_REQUEST from {senderIP} — sending accept.");
+                    Debug.Log($"[ParentUdpSender] DISCOVERY_REQUEST from {senderIP} — queuing targetIP update and DISCOVERY_ACCEPT.");
                     actionQueue.Enqueue(() =>
                     {
+                        string oldIP = targetIP;
                         targetIP         = senderIP;
                         currentState     = ConnectionState.Connected;
                         lastReceiveTime  = Time.time;
                         gameStarted      = false;
+                        Debug.Log($"[ParentUdpSender] targetIP updated: '{oldIP}' → '{targetIP}' | state=Connected");
                         SendDiscoveryAccept(senderIP);
                     });
                 }

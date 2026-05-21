@@ -4151,7 +4151,7 @@ MonoBehaviour:
   gameOverSceneName: GameOverResult
   fadeSeconds: 3
   sceneChangeDelay: 0
-  showDebugLogs: 1
+  showDebugLogs: 0
 --- !u!4 &1372611142
 Transform:
   m_ObjectHideFlags: 0
@@ -4239,7 +4239,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ArduinoInputListener
   pillowSensor: {fileID: 479984877}
   udpSender: {fileID: 1385247218}
-  showDebugLogs: 1
+  showDebugLogs: 0
 --- !u!1 &1418577571
 GameObject:
   m_ObjectHideFlags: 0
