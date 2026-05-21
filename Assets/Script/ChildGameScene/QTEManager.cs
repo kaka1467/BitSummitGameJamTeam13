@@ -89,6 +89,8 @@ public class QTEManager : MonoBehaviour
 
     private void HandleQteInput()
     {
+        if (PlayerInputLock.IsLocked) return;
+
         if (Keyboard.current == null && Gamepad.current == null) return;
 
         char? input = GetInputChar();

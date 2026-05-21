@@ -312,20 +312,22 @@ public class ChildUdpReceiver : MonoBehaviour
         if (msg == "SLEEP_LOCK")
         {
             Debug.Log($"[ChildUdpReceiver] Received SLEEP_LOCK — playerMove={(playerMove != null ? playerMove.gameObject.name : "NULL")}.");
+            PlayerInputLock.SetLocked(true);
             if (playerMove != null)
                 playerMove.SetInputEnabled(false);
             else
-                Debug.LogWarning("[ChildUdpReceiver] SLEEP_LOCK received but playerMove is null — input NOT disabled.");
+                Debug.LogWarning("[ChildUdpReceiver] SLEEP_LOCK received but playerMove is null — global input lock is still enabled.");
             return;
         }
 
         if (msg == "SLEEP_UNLOCK")
         {
             Debug.Log($"[ChildUdpReceiver] Received SLEEP_UNLOCK — playerMove={(playerMove != null ? playerMove.gameObject.name : "NULL")}.");
+            PlayerInputLock.SetLocked(false);
             if (playerMove != null)
                 playerMove.SetInputEnabled(true);
             else
-                Debug.LogWarning("[ChildUdpReceiver] SLEEP_UNLOCK received but playerMove is null — input NOT re-enabled.");
+                Debug.LogWarning("[ChildUdpReceiver] SLEEP_UNLOCK received but playerMove is null — global input lock is still disabled.");
             return;
         }
 
