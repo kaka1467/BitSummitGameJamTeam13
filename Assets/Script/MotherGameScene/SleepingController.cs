@@ -6,6 +6,8 @@ using UnityEngine.InputSystem;
 /// PC debug input (Space key) has ABSOLUTE HIGHEST PRIORITY and overrides hardware sensor.
 /// Supports hardware pillow sensor (PillowSensor via serial/ESP32) as secondary input.
 /// Integrates New Input System for seamless PC testing.
+/// Automatically sends SLEEP_LOCK / SLEEP_UNLOCK via ParentUdpSender on state transitions,
+/// and sends a periodic SLEEP_UNLOCK heartbeat while awake to recover from false lock states.
 /// </summary>
 public class SleepingController : MonoBehaviour
 {
@@ -16,12 +18,24 @@ public class SleepingController : MonoBehaviour
     [Tooltip("Auto-found at Start if not assigned. Sends SLEEP_LOCK / SLEEP_UNLOCK on sleep state change.")]
     [SerializeField] private ParentUdpSender udpSender;
 
+    [Header("Safety Heartbeat")]
+    [Tooltip("Interval (seconds) at which SLEEP_UNLOCK is re-sent while the parent is awake.")]
+    [SerializeField] private float awakeHeartbeatInterval = 1.0f;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = false;
+    [Tooltip("When true, the pillow sensor is ignored and only Space/Gamepad controls isSleeping. Useful when the sensor is noisy during debug tests.")]
+    [SerializeField] private bool ignoreSensorForDebug = false;
 
     // Player sleeping state
     private bool isSleeping = false;
-    private bool _lastSentSleepingState = false;
+    private bool wasSleeping = false;
+
+    // Safety heartbeat timer
+    private float _awakeHeartbeatTimer = 0f;
+
+    // Tracks previous debug-input state to log Space activation without spamming every frame
+    private bool _wasDebugInputActive = false;
 
     /// <summary>
     /// Public read-only property: Player is sleeping (used by ParentDetectionV2 and CaughtReactionController)
@@ -33,17 +47,20 @@ public class SleepingController : MonoBehaviour
         if (udpSender == null)
             udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
         isSleeping = false;
+        wasSleeping = false;
+        _awakeHeartbeatTimer = 0f;
+        _wasDebugInputActive = false;
 
         // Initialize pillow sensor if assigned
         if (pillowSensor != null)
         {
             pillowSensor.ResetBaseline();
-            Debug.Log("? SleepingController: Pillow sensor baseline calibrated.");
+            Debug.Log("SleepingController: Pillow sensor baseline calibrated.");
         }
         else
         {
-            Debug.LogWarning("?? SleepingController: PillowSensor reference not assigned!");
-            Debug.Log("?? Will use PC debug input (Space key or Gamepad Button South) instead.");
+            Debug.LogWarning("SleepingController: PillowSensor reference not assigned!");
+            Debug.Log("SleepingController: Will use PC debug input (Space key or Gamepad Button South) instead.");
         }
     }
 
@@ -52,74 +69,105 @@ public class SleepingController : MonoBehaviour
         // Determine sleeping state with Space key having ABSOLUTE HIGHEST PRIORITY
         DetermineSleepingState();
 
-        if (isSleeping != _lastSentSleepingState)
+        // --- Edge detection: state transitions ---
+        if (isSleeping && !wasSleeping)
         {
-            _lastSentSleepingState = isSleeping;
+            // Awake -> Sleeping transition
+            Debug.Log("[SleepingController] State changed: AWAKE -> SLEEPING. Sending SLEEP_LOCK.");
             if (udpSender != null)
+                udpSender.SendStateSLEEP_LOCK();
+            else
+                Debug.LogWarning("[SleepingController] ParentUdpSender.instance is missing - cannot send SLEEP_LOCK.");
+            _awakeHeartbeatTimer = 0f;
+        }
+        else if (!isSleeping && wasSleeping)
+        {
+            // Sleeping -> Awake transition
+            Debug.Log("[SleepingController] State changed: SLEEPING -> AWAKE. Sending SLEEP_UNLOCK.");
+            if (udpSender != null)
+                udpSender.SendStateSLEEP_UNLOCK();
+            else
+                Debug.LogWarning("[SleepingController] ParentUdpSender.instance is missing - cannot send SLEEP_UNLOCK.");
+            _awakeHeartbeatTimer = 0f;
+        }
+
+        // --- Safety heartbeat: periodically re-send SLEEP_UNLOCK while awake ---
+        if (!isSleeping)
+        {
+            _awakeHeartbeatTimer += Time.deltaTime;
+            if (_awakeHeartbeatTimer >= awakeHeartbeatInterval)
             {
-                string cmd = isSleeping ? "SLEEP_LOCK" : "SLEEP_UNLOCK";
-                Debug.Log($"[SleepingController] Sleeping changed to {isSleeping} - sending {cmd}.");
-                udpSender.SendState(cmd);
+                _awakeHeartbeatTimer = 0f;
+                if (udpSender != null)
+                {
+                    if (showDebugLogs)
+                        Debug.Log("[SleepingController] Awake heartbeat: sending SLEEP_UNLOCK.");
+                    udpSender.SendStateSLEEP_UNLOCK();
+                }
+                else
+                {
+                    Debug.LogWarning("[SleepingController] ParentUdpSender.instance is missing - cannot send awake heartbeat SLEEP_UNLOCK.");
+                }
             }
         }
 
+        wasSleeping = isSleeping;
+
         if (showDebugLogs)
         {
-            Debug.Log($"?? Player Sleeping: {isSleeping}");
+            Debug.Log($"SleepingController: isSleeping={isSleeping}");
         }
     }
 
     /// <summary>
-    /// Determines the current sleeping state with priority hierarchy:
-    /// 1. ABSOLUTE HIGHEST: PC debug input (Space key or Gamepad Button South) Å® OVERRIDE everything
-    /// 2. SECONDARY: Hardware pillow sensor (if assigned)
-    /// 3. DEFAULT: false (not sleeping)
+    /// Determines the current sleeping state each frame.
+    ///
+    /// Normal mode  (ignoreSensorForDebug = false):
+    ///   isSleeping = debugInput || sensorSleeping
+    ///
+    /// Debug-only mode (ignoreSensorForDebug = true):
+    ///   isSleeping = debugInput
+    ///   The pillow sensor is completely ignored, so noisy hardware cannot
+    ///   prevent Space-release from clearing the sleeping state.
     /// </summary>
     private void DetermineSleepingState()
     {
-        // PRIORITY 1: Check PC debug input first (ABSOLUTE OVERRIDE)
-        if (CheckPCDebugInput())
-        {
-            isSleeping = true;
-            return;  // Exit immediately - Space key has absolute priority
-        }
+        bool debugInput = CheckPCDebugInput();
+        bool sensorSleeping = (pillowSensor != null) && pillowSensor.isSleeping;
 
-        // PRIORITY 2: Fall back to hardware sensor if debug input not active
-        if (pillowSensor != null)
-        {
-            isSleeping = pillowSensor.isSleeping;
-        }
+        // Log Space/Gamepad activation edge (once per press, not every frame)
+        if (debugInput && !_wasDebugInputActive)
+            Debug.Log("[SleepingController] Space/Gamepad debug override ACTIVE - forcing sleeping.");
+        else if (!debugInput && _wasDebugInputActive)
+            Debug.Log("[SleepingController] Space/Gamepad debug override RELEASED.");
+        _wasDebugInputActive = debugInput;
+
+        // Warn once per frame when sensor is being ignored (only if showDebugLogs is on)
+        if (ignoreSensorForDebug && sensorSleeping && showDebugLogs)
+            Debug.Log("[SleepingController] ignoreSensorForDebug=true: sensor reports sleeping but is being ignored.");
+
+        // Final sleeping state
+        if (ignoreSensorForDebug)
+            isSleeping = debugInput;              // Space/Gamepad only - sensor has no effect
         else
-        {
-            // PRIORITY 3: Default to not sleeping if no sensor and no debug input
-            isSleeping = false;
-        }
+            isSleeping = debugInput || sensorSleeping; // Normal: either source can trigger sleeping
     }
 
     /// <summary>
     /// Checks PC debug input for sleeping state.
-    /// Space key or Gamepad Button South (A on Xbox controller) = sleeping.
-    /// Returns true if ANY debug input is detected.
+    /// Uses isPressed (held state), NOT wasPressedThisFrame, so it stays true
+    /// for the entire duration Space / Button South is held down.
     /// </summary>
     private bool CheckPCDebugInput()
     {
-        // Check Space key (New Input System) - HIGHEST PRIORITY
+        // Space key held (New Input System)
         if (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
-        {
-            if (showDebugLogs)
-                Debug.Log("?? Space key pressed: OVERRIDING to sleeping (debug mode)");
             return true;
-        }
 
-        // Check Gamepad button (A / Button South) - ALSO HIGH PRIORITY
+        // Gamepad Button South held (A on Xbox / Cross on PlayStation)
         if (Gamepad.current != null && Gamepad.current.buttonSouth.isPressed)
-        {
-            if (showDebugLogs)
-                Debug.Log("?? Gamepad South button pressed: OVERRIDING to sleeping (debug mode)");
             return true;
-        }
 
-        // No debug input detected
         return false;
     }
 
@@ -132,7 +180,7 @@ public class SleepingController : MonoBehaviour
         isSleeping = shouldSleep;
 
         if (showDebugLogs)
-            Debug.Log($"?? Force sleep set to: {shouldSleep} (will be overridden by Space key if pressed)");
+            Debug.Log($"SleepingController: Force sleep set to: {shouldSleep} (will be overridden by Space key if pressed)");
     }
 
     /// <summary>
@@ -153,11 +201,11 @@ public class SleepingController : MonoBehaviour
         if (pillowSensor != null)
         {
             pillowSensor.ResetBaseline();
-            Debug.Log("?? Pillow sensor baseline reset.");
+            Debug.Log("SleepingController: Pillow sensor baseline reset.");
         }
         else
         {
-            Debug.LogWarning("?? No pillow sensor assigned. Cannot reset baseline.");
+            Debug.LogWarning("SleepingController: No pillow sensor assigned. Cannot reset baseline.");
         }
     }
 }
