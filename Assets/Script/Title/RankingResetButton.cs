@@ -7,7 +7,7 @@ public class RankingResetButton : MonoBehaviour
 
     private const string KeyGameOverRank = "GameOverRank_";
     private const string KeyTimeUpRank   = "TimeUpRank_";
-    private const int    RankingSize     = 3;
+    private const int    RankingSize     = 5;
 
     private void Start()
     {

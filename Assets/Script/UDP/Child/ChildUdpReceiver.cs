@@ -290,12 +290,22 @@ public class ChildUdpReceiver : MonoBehaviour
         if (msg == "CAUGHT")
         {
             Debug.Log($"[ChildUdpReceiver] Received CAUGHT — GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}.");
-            if (sleepingManager != null)
-                sleepingManager.SetCaughtState();
+            
+            // Prefer GameManager flow so score saving and UDP are consistent.
             if (GameManager.instance != null)
+            {
                 GameManager.instance.TriggerResult(GameManager.ResultType.GameOver);
+            }
             else
-                Debug.LogWarning("[ChildUdpReceiver] CAUGHT received but GameManager.instance is null — result not triggered.");
+            {
+                // Fallback: save a minimal score and notify parent, then load result.
+                int finalScore = 0;
+                PlayerPrefs.SetInt("LastGameOverScore", finalScore);
+                PlayerPrefs.Save();
+                SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
+                SceneManager.LoadScene("GameOverResult");
+            }
+            
             return;
         }
 

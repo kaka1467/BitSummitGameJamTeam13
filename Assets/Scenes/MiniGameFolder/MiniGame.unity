@@ -4071,13 +4071,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af5a7ea39818440e09b63965f01f653b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
-  gameOverSceneName: TimeUpResult
-  timeUpSceneName: TimeUp
+  gameOverSceneName: GameOverResult
+  timeUpSceneName: TimeUpResult
   gameOverDelay: 0
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 180
+  time: 10
   maxTime: 180
   feverCount: 0
   feverNeeded: 5

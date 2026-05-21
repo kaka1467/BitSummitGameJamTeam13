@@ -4113,7 +4113,7 @@ MonoBehaviour:
   connectButtonLabel: {fileID: 0}
   startButtonObject: {fileID: 0}
   gameSceneName: GameOverResult
-  gameOverSceneName: MotherGameOver
+  gameOverSceneName: GameOverResult
   timeUpSceneName: TimeUpResult
   cancelButton: {fileID: 0}
   parentDetection: {fileID: 1951468137}

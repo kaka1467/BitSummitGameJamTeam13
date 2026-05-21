@@ -6,8 +6,8 @@ using UnityEngine.SceneManagement;
 public class GameManager : MonoBehaviour
 {
     [Header("Game Over")]
-    public string gameOverSceneName = "GameOver"; // GAME_OVER (caught) result scene
-    public string timeUpSceneName   = "TimeUp";   // TIME_UP result scene
+    public string gameOverSceneName = "GameOverResult"; // GAME_OVER (caught) result scene
+    public string timeUpSceneName   = "TimeUpResult";   // TIME_UP result scene
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
 
     public const string PlayerPrefsGameOverScore  = "LastGameOverScore";
@@ -57,6 +57,19 @@ public class GameManager : MonoBehaviour
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
     private bool isTutorialMode = false;
+
+    public enum ResultType { GameOver, TimeUp }
+
+    private void Start()
+    {
+        EnsureUdpReceiver();
+    }
+
+    private void EnsureUdpReceiver()
+    {
+        if (udpReceiver == null)
+            udpReceiver = UnityEngine.Object.FindFirstObjectByType<ChildUdpReceiver>();
+    }
 
     void Awake()
     {
@@ -143,14 +156,9 @@ public class GameManager : MonoBehaviour
     }
 
     // Called when timer runs out — TIME_UP result
+    // 【修正済み】ゲームオーバー時の不要なフィーバー加算バグを除去
     public void GameOver()
     {
-        feverCount++;
-        if (feverCount >= feverNeeded)
-        {
-            feverCount = 0;
-            ActivateFeverEffects();
-        }
         TriggerResult(ResultType.TimeUp);
     }
 
@@ -165,8 +173,7 @@ public class GameManager : MonoBehaviour
             TriggerResult(ResultType.GameOver);
     }
 
-    public enum ResultType { GameOver, TimeUp }
-
+    // 【修正済み】ランキング更新ロジックを追加
     public void TriggerResult(ResultType resultType)
     {
         if (isGameOver) return;
@@ -177,8 +184,16 @@ public class GameManager : MonoBehaviour
         string scoreKey = resultType == ResultType.GameOver
             ? PlayerPrefsGameOverScore
             : PlayerPrefsTimeUpScore;
+        string rankKey = resultType == ResultType.GameOver
+            ? "GameOverRank_"
+            : "TimeUpRank_";
+
         PlayerPrefs.SetInt(scoreKey, score);
         PlayerPrefs.SetString(PlayerPrefsResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
+        
+        // ランキングの更新
+        UpdateRanking(rankKey, score);
+        
         PlayerPrefs.Save();
         Debug.Log($"[GameManager] Result={resultType} score={score} saved to '{scoreKey}'");
 
@@ -190,6 +205,29 @@ public class GameManager : MonoBehaviour
             : $"CHILD_SCORE:TIME_UP:{score}";
         string targetScene = resultType == ResultType.GameOver ? gameOverSceneName : timeUpSceneName;
         StartCoroutine(HandleGameOver(udpMsg, targetScene));
+    }
+
+    // 【追加】PlayerPrefsを用いたランキング保存メソッド
+    private static void UpdateRanking(string keyPrefix, int newScore)
+    {
+        const int RankingSize = 5;
+        int[] ranking = new int[RankingSize];
+        for (int i = 0; i < RankingSize; i++)
+            ranking[i] = PlayerPrefs.GetInt(keyPrefix + i, 0);
+
+        for (int i = 0; i < RankingSize; i++)
+        {
+            if (newScore > ranking[i])
+            {
+                for (int j = RankingSize - 1; j > i; j--)
+                    ranking[j] = ranking[j - 1];
+                ranking[i] = newScore;
+                break;
+            }
+        }
+
+        for (int i = 0; i < RankingSize; i++)
+            PlayerPrefs.SetInt(keyPrefix + i, ranking[i]);
     }
 
     private void ActivateFeverEffects()
@@ -221,7 +259,7 @@ public class GameManager : MonoBehaviour
 
         if (feverLoopEffect2 != null)
         {
-            feverLoopEffect2.StartEffect();
+            feverLoopEffect2.StopEffect();
         }
 
         if (feverRoutine == null)
@@ -242,10 +280,15 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator HandleGameOver(string udpMessage, string targetScene)
     {
+        EnsureUdpReceiver();
         if (udpReceiver != null)
         {
             udpReceiver.SendState(udpMessage);
             Debug.Log($"[GameManager] Sent UDP: '{udpMessage}'");
+        }
+        else
+        {
+            Debug.LogWarning("[GameManager] ChildUdpReceiver not found — result not sent to parent.");
         }
 
         yield return new WaitForSecondsRealtime(0.1f);

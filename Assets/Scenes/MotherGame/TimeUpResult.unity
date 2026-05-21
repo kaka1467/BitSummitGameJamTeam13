@@ -535,56 +535,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &394564030
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 394564032}
-  - component: {fileID: 394564031}
-  m_Layer: 0
-  m_Name: ResultUI
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &394564031
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 394564030}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a9f47b3fd96294ef1b6980487eee7406, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ResultScoreUI
-  resultScoreText: {fileID: 575331551}
-  rank1Text: {fileID: 2112662684}
-  rank2Text: {fileID: 2031223130}
-  rank3Text: {fileID: 1691850998}
-  rank4Text: {fileID: 0}
-  rank5Text: {fileID: 0}
---- !u!4 &394564032
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 394564030}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1066.1722, y: -0.00005, z: 87.09199}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &443034938
 GameObject:
   m_ObjectHideFlags: 0
@@ -1226,6 +1176,63 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1102252132}
   m_CullTransparentMesh: 1
+--- !u!1 &1105706888
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1105706890}
+  - component: {fileID: 1105706889}
+  m_Layer: 0
+  m_Name: ResultUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1105706889
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1105706888}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9f47b3fd96294ef1b6980487eee7406, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ResultScoreUI
+  resultType: 1
+  resultScoreText: {fileID: 575331551}
+  rankTexts:
+  - {fileID: 2112662684}
+  - {fileID: 1691850998}
+  - {fileID: 1691850998}
+  rank1Text: {fileID: 0}
+  rank2Text: {fileID: 0}
+  rank3Text: {fileID: 0}
+  crossRankTexts: []
+  crossRank1Text: {fileID: 0}
+  crossRank2Text: {fileID: 0}
+  crossRank3Text: {fileID: 0}
+--- !u!4 &1105706890
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1105706888}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -2.53382, y: 0, z: 93.64686}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1136841953
 GameObject:
   m_ObjectHideFlags: 0
@@ -3025,7 +3032,7 @@ SceneRoots:
   - {fileID: 1202348254}
   - {fileID: 708516397}
   - {fileID: 1005318088}
-  - {fileID: 394564032}
   - {fileID: 1353141596}
   - {fileID: 1463904138}
   - {fileID: 230671282}
+  - {fileID: 1105706890}

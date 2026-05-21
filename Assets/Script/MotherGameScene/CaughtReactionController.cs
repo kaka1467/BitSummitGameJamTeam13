@@ -47,8 +47,7 @@ public class CaughtReactionController : MonoBehaviour
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
         if (doorController == null)
             doorController = Object.FindFirstObjectByType<DoorController>();
-        if (udpSender == null)
-            udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
+        EnsureUdpSender();
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
 
@@ -64,6 +63,14 @@ public class CaughtReactionController : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log("[CaughtReactionController] initialized - game-over watchdog only (gauge owned by PDV2)");
+    }
+
+    private void EnsureUdpSender()
+    {
+        if (udpSender == null)
+            udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
+        if (udpSender == null)
+            udpSender = ParentUdpSender.instance;
     }
 
     void Update()
@@ -128,12 +135,33 @@ public class CaughtReactionController : MonoBehaviour
         if (showDebugLogs)
             Debug.LogWarning("[CaughtReactionController] GAME OVER TRIGGERED - suspicion reached max");
 
+        // ★★★ 【追加】子機（Child）へ親に捕まったこと（CAUGHT）を通知する ★★★
+        EnsureUdpSender();
+        if (udpSender != null)
+        {
+            udpSender.SendState("CAUGHT");
+            StartCoroutine(SendCaughtRetry());
+            if (showDebugLogs) Debug.Log("[CaughtReactionController] Sent CAUGHT message to child via UDP.");
+        }
+        else if (showDebugLogs)
+        {
+            Debug.LogWarning("[CaughtReactionController] ParentUdpSender not found — CAUGHT not sent.");
+        }
+
         // Disable game logic components
         DisableGameLogic();
 
-        // Start the game over routine (send CAUGHT and load scene)
+        // Start the game over routine (fade and load scene)
         if (gameOverRoutine != null) StopCoroutine(gameOverRoutine);
-        gameOverRoutine = StartCoroutine(GameOverRoutine());
+        gameOverRoutine = StartCoroutine(GameOverSequence());
+    }
+
+    private IEnumerator SendCaughtRetry()
+    {
+        yield return new WaitForSecondsRealtime(0.1f);
+        EnsureUdpSender();
+        if (udpSender != null)
+            udpSender.SendState("CAUGHT");
     }
 
     private void DisableGameLogic()
@@ -143,12 +171,9 @@ public class CaughtReactionController : MonoBehaviour
         if (parentDetection != null) { parentDetection.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Parent Detection disabled"); }
     }
 
-    private IEnumerator GameOverRoutine()
+    private IEnumerator GameOverSequence()
     {
-        if (showDebugLogs) Debug.Log("[CaughtReactionController] Sending CAUGHT signal via UDP...");
-        if (udpSender != null) udpSender.SendState("CAUGHT");
-        yield return new WaitForSecondsRealtime(0.1f);
-
+        // 1. 必要に応じて画面のフェードアウト処理
         if (fadeCanvasGroup != null)
         {
             if (!fadeCanvasGroup.gameObject.activeSelf)
@@ -161,12 +186,14 @@ public class CaughtReactionController : MonoBehaviour
             yield return StartCoroutine(FadeOutRoutine());
         }
 
+        // 2. 設定された遅延時間待機 (タイムスケールに依存しないRealtimeを維持)
         float delay = Mathf.Max(0f, sceneChangeDelay);
         if (delay > 0f)
         {
             yield return new WaitForSecondsRealtime(delay);
         }
 
+        // 3. 親機側のゲームオーバーシーン（GameOverResult）をロード
         if (showDebugLogs) Debug.Log($"[CaughtReactionController] Loading {gameOverSceneName} scene...");
 
         if (!string.IsNullOrEmpty(gameOverSceneName))

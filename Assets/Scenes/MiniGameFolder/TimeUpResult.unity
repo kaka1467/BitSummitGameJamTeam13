@@ -1672,12 +1672,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9f47b3fd96294ef1b6980487eee7406, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ResultScoreUI
-  resultScoreText: {fileID: 0}
+  resultType: 1
+  resultScoreText: {fileID: 1211335069}
+  rankTexts:
+  - {fileID: 884082493}
+  - {fileID: 223214026}
+  - {fileID: 989065675}
+  - {fileID: 1708340701}
+  - {fileID: 1950982629}
   rank1Text: {fileID: 0}
   rank2Text: {fileID: 0}
   rank3Text: {fileID: 0}
-  rank4Text: {fileID: 0}
-  rank5Text: {fileID: 0}
+  crossRankTexts: []
+  crossRank1Text: {fileID: 0}
+  crossRank2Text: {fileID: 0}
+  crossRank3Text: {fileID: 0}
 --- !u!4 &1131439400
 Transform:
   m_ObjectHideFlags: 0

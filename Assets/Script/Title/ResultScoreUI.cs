@@ -2,7 +2,7 @@ using UnityEngine;
 using TMPro;
 
 /// <summary>
-/// ResultScoreUI: Displays latest score and top-3 rankings for a specific result type.
+/// ResultScoreUI: Displays latest score and top rankings for a specific result type.
 ///
 /// Set resultType to GameOver on the GAME_OVER result scene,
 /// and to TimeUp on the TIME_UP result scene.
@@ -18,12 +18,15 @@ public class ResultScoreUI : MonoBehaviour
 
     [Header("This Result Score + Ranking")]
     [SerializeField] private TextMeshProUGUI resultScoreText;
+    [Tooltip("Assign any count; number of elements = display count.")]
+    [SerializeField] private TextMeshProUGUI[] rankTexts;
     [SerializeField] private TextMeshProUGUI rank1Text;
     [SerializeField] private TextMeshProUGUI rank2Text;
     [SerializeField] private TextMeshProUGUI rank3Text;
 
     [Header("Cross-Type Ranking (optional)")]
-    [Tooltip("Assign to show the other result type's top 3 on this scene.")]
+    [Tooltip("Assign any count; number of elements = display count.")]
+    [SerializeField] private TextMeshProUGUI[] crossRankTexts;
     [SerializeField] private TextMeshProUGUI crossRank1Text;
     [SerializeField] private TextMeshProUGUI crossRank2Text;
     [SerializeField] private TextMeshProUGUI crossRank3Text;
@@ -32,7 +35,7 @@ public class ResultScoreUI : MonoBehaviour
     private const string KeyTimeUpScore   = "LastTimeUpScore";
     private const string KeyGameOverRank  = "GameOverRank_";
     private const string KeyTimeUpRank    = "TimeUpRank_";
-    private const int    RankingSize      = 3;
+    private const int    RankingSize      = 5;
 
     private void Start()
     {
@@ -46,14 +49,12 @@ public class ResultScoreUI : MonoBehaviour
             resultScoreText.text = score.ToString("000000");
 
         int[] ranking = GetRanking(rankKey);
-        ApplyRankingText(rank1Text, ranking, 0);
-        ApplyRankingText(rank2Text, ranking, 1);
-        ApplyRankingText(rank3Text, ranking, 2);
+        TextMeshProUGUI[] primaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
+        ApplyRankingTexts(primaryTexts, ranking);
 
         int[] crossRanking = GetRanking(crossKey);
-        ApplyRankingText(crossRank1Text, crossRanking, 0);
-        ApplyRankingText(crossRank2Text, crossRanking, 1);
-        ApplyRankingText(crossRank3Text, crossRanking, 2);
+        TextMeshProUGUI[] otherTexts = ResolveTexts(crossRankTexts, crossRank1Text, crossRank2Text, crossRank3Text);
+        ApplyRankingTexts(otherTexts, crossRanking);
     }
 
     private static int[] GetRanking(string keyPrefix)
@@ -64,9 +65,21 @@ public class ResultScoreUI : MonoBehaviour
         return ranking;
     }
 
-    private static void ApplyRankingText(TextMeshProUGUI text, int[] ranking, int index)
+    private static TextMeshProUGUI[] ResolveTexts(TextMeshProUGUI[] preferred, params TextMeshProUGUI[] fallback)
     {
-        if (text == null || ranking == null || index < 0 || index >= ranking.Length) return;
-        text.text = ranking[index].ToString("000000");
+        if (preferred != null && preferred.Length > 0) return preferred;
+        return fallback;
+    }
+
+    private static void ApplyRankingTexts(TextMeshProUGUI[] texts, int[] ranking)
+    {
+        if (texts == null || ranking == null) return;
+
+        int count = Mathf.Min(texts.Length, ranking.Length);
+        for (int i = 0; i < count; i++)
+        {
+            if (texts[i] == null) continue;
+            texts[i].text = ranking[i].ToString("000000");
+        }
     }
 }
