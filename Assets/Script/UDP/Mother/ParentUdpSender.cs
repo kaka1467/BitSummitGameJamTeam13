@@ -34,6 +34,8 @@ public class ParentUdpSender : MonoBehaviour
 {
     private const string MAGIC_NUMBER = "TEAM13_";
     private const string CMD_START    = "START_GAME";
+    private const string ResultGameOverScene = "GameOverResult";
+    private const string ResultTimeUpScene   = "TimeUpResult";
 
     public enum ConnectionState { Disconnected, Connecting, Connected }
 
@@ -48,8 +50,8 @@ public class ParentUdpSender : MonoBehaviour
     public TextMeshProUGUI    connectButtonLabel;
     public GameObject         startButtonObject;
     public string             gameSceneName    = "GameScene";
-    public string             gameOverSceneName = "MotherGameOver";
-    public string             timeUpSceneName   = "MotherTimeUp";
+    public string             gameOverSceneName = "GameOverResult";
+    public string             timeUpSceneName   = "TimeUpResult";
     public Button             cancelButton;
 
     // PlayerPrefs keys — mirrored from GameManager constants
@@ -57,7 +59,7 @@ public class ParentUdpSender : MonoBehaviour
     private const string KeyTimeUpScore    = "LastTimeUpScore";
     private const string KeyGameOverRank   = "GameOverRank_";
     private const string KeyTimeUpRank     = "TimeUpRank_";
-    private const int    RankingSize       = 3;
+    private const int    RankingSize       = 5;
 
     [Header("Game References")]
     [Tooltip("Auto-found at Start if not assigned. Used to trigger rush-in on LOUD_ITEM.")]
@@ -113,6 +115,10 @@ public class ParentUdpSender : MonoBehaviour
     // ── Unity lifecycle ───────────────────────────────────────────────────────
     void Start()
     {
+        // Force result scenes to shared names across parent/child.
+        gameOverSceneName = ResultGameOverScene;
+        timeUpSceneName = ResultTimeUpScene;
+
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
 
@@ -281,11 +287,11 @@ public class ParentUdpSender : MonoBehaviour
             {
                 // GAME_OVER wins the race unconditionally
                 resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {childScore} — saving and loading {gameOverSceneName}.");
+                Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {childScore} — saving and loading {ResultGameOverScene}.");
                 PlayerPrefs.SetInt(KeyGameOverScore, childScore);
                 UpdateRanking(KeyGameOverRank, childScore);
                 PlayerPrefs.Save();
-                SceneManager.LoadScene(gameOverSceneName);
+                SceneManager.LoadScene(ResultGameOverScene);
             }
             else // TIME_UP
             {
@@ -295,11 +301,11 @@ public class ParentUdpSender : MonoBehaviour
                     return;
                 }
                 resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] CHILD_SCORE TIME_UP {childScore} — saving and loading {timeUpSceneName}.");
+                Debug.Log($"[ParentUdpSender] CHILD_SCORE TIME_UP {childScore} — saving and loading {ResultTimeUpScene}.");
                 PlayerPrefs.SetInt(KeyTimeUpScore, childScore);
                 UpdateRanking(KeyTimeUpRank, childScore);
                 PlayerPrefs.Save();
-                SceneManager.LoadScene(timeUpSceneName);
+                SceneManager.LoadScene(ResultTimeUpScene);
             }
             return;
         }
