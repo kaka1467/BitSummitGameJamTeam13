@@ -20,6 +20,11 @@ public class ArduinoInputListener : MonoBehaviour
     [Tooltip("ParentUdpSender that will transmit CAUGHT over UDP when triggered.")]
     [SerializeField] private ParentUdpSender udpSender;
 
+    // ── Debug ─────────────────────────────────────────────────────────────────
+    [Header("Debug")]
+    [Tooltip("Enable verbose console logging for on-site verification. Disable in production.")]
+    [SerializeField] private bool showDebugLogs = true;
+
     // ──────────────────────────────────────────────────────────────────────
     //  Unity lifecycle
     // ──────────────────────────────────────────────────────────────────────
@@ -32,12 +37,15 @@ public class ArduinoInputListener : MonoBehaviour
         if (pillowSensor != null)
         {
             pillowSensor.OnRawLine += HandleLine;
-            Debug.Log("[ArduinoInputListener] Subscribed to PillowSensor.OnRawLine.");
+            if (showDebugLogs) Debug.Log($"[ArduinoInputListener] Subscribed to PillowSensor.OnRawLine (port: {pillowSensor.PortName}, baud: {pillowSensor.BaudRate}).");
         }
         else
         {
-            Debug.LogWarning("[ArduinoInputListener] PillowSensor not found — command lines will not be received.");
+            Debug.LogError("[ArduinoInputListener] PillowSensor not found — serial lines will NOT be received. Assign it in the Inspector.");
         }
+
+        if (udpSender == null)
+            Debug.LogError("[ArduinoInputListener] ParentUdpSender (udpSender) is not assigned — CAUGHT will never be forwarded over UDP.");
     }
 
     private void OnDestroy()
@@ -50,11 +58,11 @@ public class ArduinoInputListener : MonoBehaviour
     {
         if (string.IsNullOrEmpty(line)) return;
 
-        Debug.Log($"[ArduinoInputListener] Received: '{line}'");
+        if (showDebugLogs) Debug.Log($"[ArduinoInputListener] Raw line received: '{line}'");
 
         if (line == "BOOT_OK")
         {
-            // Device ready — no action needed.
+            if (showDebugLogs) Debug.Log("[ArduinoInputListener] BOOT_OK — Arduino is ready.");
         }
         else if (line == "ERR_NOT_FOUND")
         {
@@ -62,15 +70,15 @@ public class ArduinoInputListener : MonoBehaviour
         }
         else if (line == "CAUGHT")
         {
-            Debug.Log("[ArduinoInputListener] Sending CAUGHT via ParentUdpSender.");
+            if (showDebugLogs) Debug.Log("[ArduinoInputListener] CAUGHT detected — forwarding to ParentUdpSender.");
             if (udpSender != null)
                 udpSender.SendState("CAUGHT");
             else
-                Debug.LogWarning("[ArduinoInputListener] udpSender is not assigned — CAUGHT not sent.");
+                Debug.LogError("[ArduinoInputListener] udpSender is not assigned — CAUGHT was detected but NOT sent over UDP.");
         }
         else
         {
-            Debug.Log($"[ArduinoInputListener] Unrecognised line (ignored): '{line}'");
+            if (showDebugLogs) Debug.Log($"[ArduinoInputListener] Unrecognised line (ignored): '{line}'");
         }
     }
 }
