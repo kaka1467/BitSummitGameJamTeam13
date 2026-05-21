@@ -161,6 +161,16 @@ public class ChildUdpReceiver : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// ラウドアイテムを取得したことを親機に送信する
+    /// </summary>
+    public void SendLoudItem()
+    {
+        // MAGIC_NUMBER ("TEAM13_") + "LOUD_ITEM" で送信
+        SendState("LOUD_ITEM");
+        Debug.Log("[ChildUdpReceiver] Sent LOUD_ITEM packet to Parent.");
+    }
+
     // ── Unity lifecycle ───────────────────────────────────────────────────────
     void Awake()
     {

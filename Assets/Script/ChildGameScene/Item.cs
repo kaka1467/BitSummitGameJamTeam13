@@ -116,18 +116,17 @@ public class Item : MonoBehaviour
                 // メガホン取得時にダメージアニメーション再生
                 TriggerPlayerDamage(other);
 
+                // BGMアイテム（ラウドアイテム）を拾った時に親機へUDP通知を送る
                 {
-                    ChildUdpReceiver _udp = (GameManager.instance != null)
-                        ? GameManager.instance.udpReceiver
-                        : Object.FindFirstObjectByType<ChildUdpReceiver>();
-                    if (_udp != null)
+                    ChildUdpReceiver udpReceiver = FindObjectOfType<ChildUdpReceiver>();
+                    if (udpReceiver != null)
                     {
-                        Debug.Log("[Item] BGM item collected — sending LOUD_ITEM to parent.");
-                        _udp.SendState("LOUD_ITEM");
+                        Debug.Log("[Item] BGM Item matched! Calling SendLoudItem().");
+                        udpReceiver.SendLoudItem();
                     }
                     else
                     {
-                        Debug.LogWarning("[Item] BGM item collected but ChildUdpReceiver not found — LOUD_ITEM not sent.");
+                        Debug.LogError("[Item] ChildUdpReceiver could not be found in the child game scene!");
                     }
                 }
                 
