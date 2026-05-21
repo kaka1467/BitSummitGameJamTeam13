@@ -82,7 +82,7 @@ public class ParentUdpSender : MonoBehaviour
     private float     timeoutLimit  = 3.0f;
     private bool      gameStarted        = false;
     private bool      resultProcessed    = false; // GAME_OVER wins race
-    public  bool      ChildLoadingComplete { get; private set; } = false;
+    public  bool      ChildLoadingComplete { get; set; } = false;
 
     public static ParentUdpSender instance { get; private set; }
 
@@ -147,8 +147,17 @@ public class ParentUdpSender : MonoBehaviour
         if (currentState == ConnectionState.Connected &&
             Time.time - lastReceiveTime > timeoutLimit)
         {
-            currentState = ConnectionState.Disconnected;
-            Debug.LogWarning("[ParentUdpSender] Connection timed out — child heartbeat lost.");
+            string sceneName = SceneManager.GetActiveScene().name;
+            if (sceneName == "MotherLoad")
+            {
+                // Keep connection alive during loading to avoid false timeouts.
+                lastReceiveTime = Time.time;
+            }
+            else
+            {
+                currentState = ConnectionState.Disconnected;
+                Debug.LogWarning("[ParentUdpSender] Connection timed out — child heartbeat lost.");
+            }
         }
 
         // Heartbeat coroutine lifecycle
@@ -312,8 +321,8 @@ public class ParentUdpSender : MonoBehaviour
 
         if (msg == "LOADING_COMPLETE")
         {
-            Debug.Log("[ParentUdpSender] Received LOADING_COMPLETE from child.");
             ChildLoadingComplete = true;
+            Debug.Log("[ParentUdpSender] Received LOADING_COMPLETE from child. Property set to true.");
             return;
         }
 

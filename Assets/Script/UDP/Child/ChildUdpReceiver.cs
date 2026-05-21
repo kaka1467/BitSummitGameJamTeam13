@@ -147,6 +147,13 @@ public class ChildUdpReceiver : MonoBehaviour
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
             sendClient.Send(data, data.Length, targetIP, parentReceivePort);
+
+            if (message == "LOADING_COMPLETE")
+            {
+                // Fallback: broadcast so parent can receive even if targetIP is stale.
+                sendClient.Send(data, data.Length, "255.255.255.255", parentReceivePort);
+                Debug.Log($"[ChildUdpReceiver] → '{message}' broadcast to 255.255.255.255:{parentReceivePort}");
+            }
         }
         catch (Exception e)
         {
