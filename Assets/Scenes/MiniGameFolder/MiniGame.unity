@@ -4325,6 +4325,7 @@ MonoBehaviour:
   playerMove: {fileID: 1865325544}
   itemSpawner: {fileID: 1639938498}
   gameManager: {fileID: 1949956396}
+  udpReceiver: {fileID: 243933951}
   countdownText: {fileID: 1034612421}
   startText: {fileID: 122390826}
   bgmController: {fileID: 912670074}

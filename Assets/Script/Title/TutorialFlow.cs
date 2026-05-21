@@ -10,6 +10,7 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private PlayerMove playerMove;
     [SerializeField] private ItemSpawner itemSpawner;
     [SerializeField] private GameManager gameManager;
+    [SerializeField] private ChildUdpReceiver udpReceiver;
     [SerializeField] private TextMeshProUGUI countdownText;
     [SerializeField] private TextMeshProUGUI startText;
     [SerializeField] private BGMController bgmController;
@@ -51,6 +52,9 @@ public class TutorialFlow : MonoBehaviour
     private bool tutorialRunning;
     private Tween startTween;
     private Coroutine autoTargetRoutine;
+    private Coroutine loadingCompleteRoutine;
+    private Coroutine startSignalRoutine;
+    private bool startSignalSent;
 
     private enum AutoTargetMode
     {
@@ -76,6 +80,7 @@ public class TutorialFlow : MonoBehaviour
     private IEnumerator TutorialRoutine()
     {
         tutorialRunning = true;
+        startSignalSent = false;
 
         if (playerMove == null)
         {
@@ -95,6 +100,11 @@ public class TutorialFlow : MonoBehaviour
         if (bgmController == null)
         {
             bgmController = FindFirstObjectByType<BGMController>();
+        }
+
+        if (udpReceiver == null)
+        {
+            udpReceiver = FindFirstObjectByType<ChildUdpReceiver>();
         }
 
         if (playerMove == null || itemSpawner == null)
@@ -226,11 +236,9 @@ public class TutorialFlow : MonoBehaviour
 
     private IEnumerator RunQteStep()
     {
-        // QTE を成功するまでループする
         bool qteDone = false;
         System.Action<bool> handler = success =>
         {
-            // 成功したときだけ完了フラグを立てる
             if (success) qteDone = true;
         };
         QTEManager.HugeQteFinished += handler;
@@ -241,7 +249,6 @@ public class TutorialFlow : MonoBehaviour
             GameObject huge = null;
             if (!itemSpawner.TrySpawnHugeObstacle(out huge) || huge == null)
             {
-                // スポーン失敗なら少し待ってリトライ
                 yield return new WaitForSecondsRealtime(0.5f);
                 continue;
             }
@@ -257,7 +264,6 @@ public class TutorialFlow : MonoBehaviour
             float nextUpdate = 0f;
             float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
 
-            // QTE が発火するか、タイムアウトするまで待つ
             while (!qteDone && timer < qteWaitTimeout)
             {
                 timer += Time.unscaledDeltaTime;
@@ -269,7 +275,6 @@ public class TutorialFlow : MonoBehaviour
                 yield return null;
             }
 
-            // QTE ウィンドウが開いている最中はクリアを待ち続ける
             if (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
             {
                 while (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
@@ -277,8 +282,6 @@ public class TutorialFlow : MonoBehaviour
                     yield return null;
                 }
             }
-
-            // qteDone でなければ失敗 or タイムアウト → 再スポーンしてやり直し
         }
 
         QTEManager.HugeQteFinished -= handler;
@@ -296,7 +299,6 @@ public class TutorialFlow : MonoBehaviour
                 countdownText.text = i.ToString();
                 yield return new WaitForSecondsRealtime(countdownStepSeconds);
             }
-
             countdownText.gameObject.SetActive(false);
 
             if (startText != null)
@@ -304,26 +306,92 @@ public class TutorialFlow : MonoBehaviour
                 PlayTutorialBgmIfNeeded();
                 startText.gameObject.SetActive(true);
                 startText.text = "Start";
+                
                 RectTransform rect = startText.rectTransform;
                 rect.localScale = startScaleFrom;
                 startTween?.Kill();
                 startTween = rect.DOScale(startScaleTo, startTweenSeconds)
                     .SetEase(startEase)
-                    .SetUpdate(true);
+                    .SetUpdate(true)
+                    .OnComplete(NotifyParentStartShown);
+
+                if (startSignalRoutine != null)
+                {
+                    StopCoroutine(startSignalRoutine);
+                }
+                startSignalRoutine = StartCoroutine(EnsureStartSignalAfterSeconds(startTweenSeconds));
+
+                // ここでStartの表示時間分待機している間に、親機側はMotherLoadを抜けてシーン遷移を開始します
                 yield return new WaitForSecondsRealtime(goDisplaySeconds);
                 startText.gameObject.SetActive(false);
                 yield break;
             }
-
+            
+            // startTextがNullだった場合の安全策
+            NotifyParentStartShown();
             yield return new WaitForSecondsRealtime(goDisplaySeconds);
             yield break;
         }
 
+        // countdownText自体がセットされていない場合の安全策
+        NotifyParentStartShown();
         float total = start * Mathf.Max(0f, countdownStepSeconds) + Mathf.Max(0f, goDisplaySeconds);
         if (total > 0f)
         {
             yield return new WaitForSecondsRealtime(total);
         }
+    }
+
+    private void NotifyParentStartShown()
+    {
+        if (startSignalSent) return;
+        startSignalSent = true;
+
+        if (udpReceiver == null)
+        {
+            udpReceiver = ChildUdpReceiver.instance != null
+                ? ChildUdpReceiver.instance
+                : FindFirstObjectByType<ChildUdpReceiver>();
+        }
+
+        if (udpReceiver != null)
+        {
+            udpReceiver.SendState("LOADING_COMPLETE");
+            Debug.Log("[TutorialFlow] Start shown — sent LOADING_COMPLETE to parent.");
+            if (loadingCompleteRoutine != null)
+            {
+                StopCoroutine(loadingCompleteRoutine);
+            }
+            loadingCompleteRoutine = StartCoroutine(ResendLoadingComplete());
+        }
+        else
+        {
+            Debug.LogWarning("[TutorialFlow] Start shown but ChildUdpReceiver not found — LOADING_COMPLETE not sent.");
+        }
+    }
+
+    private IEnumerator ResendLoadingComplete()
+    {
+        const int repeatCount = 4;
+        const float intervalSeconds = 0.2f;
+
+        for (int i = 0; i < repeatCount; i++)
+        {
+            yield return new WaitForSecondsRealtime(intervalSeconds);
+            if (udpReceiver != null)
+            {
+                udpReceiver.SendState("LOADING_COMPLETE");
+            }
+        }
+    }
+
+    private IEnumerator EnsureStartSignalAfterSeconds(float seconds)
+    {
+        if (seconds > 0f)
+        {
+            yield return new WaitForSecondsRealtime(seconds);
+        }
+        NotifyParentStartShown();
     }
 
     private void PlayTutorialBgmIfNeeded()

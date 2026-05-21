@@ -13,8 +13,12 @@ public class GaugeSceneChanger : MonoBehaviour
     [Header("遷移先シーン名")]
     [SerializeField] private string nextSceneName; // 切り替えるシーンの名前
 
+    [Header("挙動設定")]
+    [SerializeField] private bool changeSceneOnComplete = true;
+
     private float currentFillAmount = 0.0f;
     private bool isSceneChanging = false;
+    public bool IsComplete { get; private set; }
 
     void Start()
     {
@@ -46,8 +50,17 @@ public class GaugeSceneChanger : MonoBehaviour
         // ゲージが1（満タン）になったらシーン遷移
         if (gaugeImage.fillAmount >= 1.0f)
         {
-            ChangeScene();
+            IsComplete = true;
+            if (changeSceneOnComplete)
+            {
+                ChangeScene();
+            }
         }
+    }
+
+    public void SetChangeSceneOnComplete(bool enabled)
+    {
+        changeSceneOnComplete = enabled;
     }
 
     private void ChangeScene()

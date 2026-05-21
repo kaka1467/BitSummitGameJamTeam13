@@ -477,7 +477,7 @@ MonoBehaviour:
   slides:
   - {fileID: 135706950}
   - {fileID: 593497276}
-  displayDuration: 2.5
+  displayDuration: 5
   slideDuration: 0.5
   slideCurve:
     serializedVersion: 2
@@ -920,8 +920,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentLoadingController
   gameSceneName: GameScene
-  minimumDisplaySeconds: 1
-  timeoutSeconds: 10
+  udpSender: {fileID: 1915567012}
 --- !u!4 &1953161686
 Transform:
   m_ObjectHideFlags: 0

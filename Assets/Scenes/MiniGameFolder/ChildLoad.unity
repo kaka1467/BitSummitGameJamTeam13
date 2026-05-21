@@ -572,6 +572,7 @@ MonoBehaviour:
   gaugeImage: {fileID: 200993035}
   duration: 15
   nextSceneName: MiniGame
+  changeSceneOnComplete: 0
 --- !u!1 &564310545
 GameObject:
   m_ObjectHideFlags: 0
@@ -933,6 +934,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChildLoadingController
   gameSceneName: MiniGame
   minimumDisplaySeconds: 1
+  sendLoadingCompleteOnFinish: 0
+  waitForGaugeComplete: 1
+  gaugeSceneChanger: {fileID: 509414648}
 --- !u!4 &1306413369
 Transform:
   m_ObjectHideFlags: 0
