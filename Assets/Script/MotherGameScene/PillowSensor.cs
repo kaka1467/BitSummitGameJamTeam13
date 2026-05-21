@@ -26,7 +26,10 @@ public class PillowSensor : MonoBehaviour
 
     [Header("Detection Settings")]
     [Tooltip("Absolute delta threshold from baseline to consider 'sleeping'")]
+    [System.Obsolete("Use onThreshold/offThreshold hysteresis settings instead.")]
     [SerializeField] private long threshold = 50000;
+    [SerializeField] private long onThreshold = 100000;
+    [SerializeField] private long offThreshold = 70000;
 
     [Header("Calibration Settings")]
     [Tooltip("Number of samples to average when calibrating baseline")]
@@ -48,6 +51,7 @@ public class PillowSensor : MonoBehaviour
 
     // The baseline value established during calibration.
     private long baseline = 0L;
+    private bool baselineReady = false;
 
     // Background serial thread and control flag.
     private Thread serialThread;
@@ -181,7 +185,7 @@ public class PillowSensor : MonoBehaviour
         }
 
         // If we don't have a calibrated baseline yet, don't attempt detection.
-        if (!currentHasValue)
+        if (!currentHasValue || !baselineReady)
         {
             isSleeping = false;
             return;
@@ -189,7 +193,14 @@ public class PillowSensor : MonoBehaviour
 
         // Calculate absolute delta from baseline and determine sleep state.
         long delta = System.Math.Abs(currentValue - baseline);
-        isSleeping = delta > threshold;
+        if (!isSleeping)
+        {
+            isSleeping = delta >= onThreshold;
+        }
+        else if (delta <= offThreshold)
+        {
+            isSleeping = false;
+        }
 
         if (showDebugLogs && Time.frameCount % 60 == 0) // Occasional debug log.
         {
@@ -213,6 +224,8 @@ public class PillowSensor : MonoBehaviour
     /// </summary>
     private IEnumerator AutoCalibrateBaselineCoroutine()
     {
+        baselineReady = false;
+        isSleeping = false;
         if (showDebugLogs) Debug.Log("PillowSensor: Starting baseline calibration...");
 
         // Wait until we have at least one reading or timeout after ~2 seconds.
@@ -249,7 +262,8 @@ public class PillowSensor : MonoBehaviour
         if (collected > 0)
         {
             baseline = sum / collected;
-            if (showDebugLogs) Debug.Log($"PillowSensor: Calibration complete. Baseline={baseline} (samples={collected}).");
+            baselineReady = true;
+            if (showDebugLogs) Debug.Log($"PillowSensor: Baseline calibration complete. Baseline={baseline} (samples={collected}). Detection is now enabled.");
         }
         else
         {

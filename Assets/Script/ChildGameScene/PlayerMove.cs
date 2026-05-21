@@ -46,6 +46,8 @@ public class PlayerMove : MonoBehaviour
 
     void Update()
     {
+        if (PlayerInputLock.IsLocked) return;
+
         var gamepad = Gamepad.current;
         var keyboard = Keyboard.current;
 
