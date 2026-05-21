@@ -4163,7 +4163,7 @@ MonoBehaviour:
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 10
+  time: 180
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
