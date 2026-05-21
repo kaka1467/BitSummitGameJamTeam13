@@ -13,6 +13,11 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("ダメージアニメーションの再生時間（秒）。Animatorクリップの長さに合わせて調整してください。")]
     public float damageDuration = 0.8f;
 
+    [Header("ダメージSE設定")]
+    [SerializeField] private AudioClip damageSeClip;
+    [Range(0f, 1f)]
+    [SerializeField] private float damageSeVolume = 1f;
+
     // Animator パラメータ名（Unityエディタ側のパラメータ名と一致させること）
     private static readonly int ParamIsDamage = Animator.StringToHash("isDamage");
 
@@ -96,7 +101,29 @@ public class PlayerAnimator : MonoBehaviour
             damageRoutine = null;
         }
 
+        TryPlayDamageSe();
+
         damageRoutine = StartCoroutine(DamageRoutine());
+    }
+
+    private void TryPlayDamageSe()
+    {
+        if (damageSeClip == null)
+        {
+            return;
+        }
+
+        if (AudioManager.Instance == null)
+        {
+            new GameObject("AudioManager").AddComponent<AudioManager>();
+        }
+
+        if (AudioManager.Instance == null)
+        {
+            return;
+        }
+
+        AudioManager.Instance.PlaySE(damageSeClip, damageSeVolume);
     }
 
     private IEnumerator DamageRoutine()

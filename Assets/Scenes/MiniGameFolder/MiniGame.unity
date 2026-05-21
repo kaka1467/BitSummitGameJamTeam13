@@ -470,13 +470,13 @@ MonoBehaviour:
   m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
-  m_sharedMaterial: {fileID: 2100000, guid: 0b1b9d939192b4544b7daaf66dcc27f3, type: 2}
+  m_sharedMaterial: {fileID: 2100000, guid: 1cb7995144ff00e418c034af7ffa3998, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
+    rgba: 4282581007
   m_fontColor: {r: 0.05882353, g: 0, b: 0.2627451, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
@@ -812,6 +812,8 @@ MonoBehaviour:
   cancelUiObject: {fileID: 0}
   creditsPanel: {fileID: 0}
   settingsPanel: {fileID: 0}
+  animatedSpriteObjects: []
+  titleImageObject: {fileID: 0}
   connectLabel: Connect
   connectingLabel: "\u63A5\u7D9A\u4E2D"
 --- !u!4 &243933952
@@ -3536,9 +3538,6 @@ MonoBehaviour:
   qteText: {fileID: 861082791}
   playerAnimator: {fileID: 1865325551}
   playerAnimatorComponent: {fileID: 1865325552}
-  qteMissTargetRenderer: {fileID: 1865325548}
-  qteMissSprite: {fileID: 21300000, guid: ea1a87009b1604ad88fec5cde10548c3, type: 3}
-  disableAnimatorOnMiss: 1
   sequenceLength: 7
   timeLimitSeconds: 5
   enteredColor: {r: 1, g: 0, b: 0, a: 1}
@@ -3945,6 +3944,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
   damageDuration: 1
+  damageSeClip: {fileID: 8300000, guid: 4f25ea93e168eda4e8ae16fcadebd4ea, type: 3}
+  damageSeVolume: 1
 --- !u!95 &1865325552
 Animator:
   serializedVersion: 7
