@@ -6494,7 +6494,7 @@ MonoBehaviour:
   loudItemGaugeAmount: 3
   enableContinuousRoomSuspicion: 1
   continuousRoomSuspicionAmount: 2
-  continuousRoomSuspicionTickInterval: 0.2
+  continuousRoomSuspicionTickInterval: 0.5
   enableHallwayPeekSuspicion: 1
   hallwayPeekSuspicionTickInterval: 0.5
   isCaught: 0
@@ -7365,7 +7365,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SleepingController
   pillowSensor: {fileID: 479984877}
   udpSender: {fileID: 1385247218}
+  awakeHeartbeatInterval: 1
   showDebugLogs: 0
+  ignoreSensorForDebug: 0
 --- !u!4 &2121813539
 Transform:
   m_ObjectHideFlags: 0

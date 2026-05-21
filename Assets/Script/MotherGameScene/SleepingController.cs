@@ -37,6 +37,12 @@ public class SleepingController : MonoBehaviour
     // Tracks previous debug-input state to log Space activation without spamming every frame
     private bool _wasDebugInputActive = false;
 
+    // Diagnostic trackers: store last-logged values so we only print on change
+    private bool _diagLastDebugInput = false;
+    private bool _diagLastSensorSleeping = false;
+    private bool _diagLastIsSleeping = false;
+    private bool _diagLastWasSleeping = false;
+
     /// <summary>
     /// Public read-only property: Player is sleeping (used by ParentDetectionV2 and CaughtReactionController)
     /// </summary>
@@ -50,6 +56,16 @@ public class SleepingController : MonoBehaviour
         wasSleeping = false;
         _awakeHeartbeatTimer = 0f;
         _wasDebugInputActive = false;
+        _diagLastDebugInput = false;
+        _diagLastSensorSleeping = false;
+        _diagLastIsSleeping = false;
+        _diagLastWasSleeping = false;
+
+        // Log udpSender status at startup. GetUdpSender() will retry at runtime if still null.
+        if (udpSender != null)
+            Debug.Log($"[SC-DIAG] udpSender pre-assigned in Inspector: '{udpSender.gameObject.name}'");
+        else
+            Debug.LogWarning("[SC-DIAG] udpSender not set in Inspector - will auto-find at runtime via GetUdpSender().");
 
         // Initialize pillow sensor if assigned
         if (pillowSensor != null)
@@ -69,25 +85,49 @@ public class SleepingController : MonoBehaviour
         // Determine sleeping state with Space key having ABSOLUTE HIGHEST PRIORITY
         DetermineSleepingState();
 
+        // --- Diagnostic: log isSleeping and wasSleeping only when they change ---
+        if (isSleeping != _diagLastIsSleeping)
+        {
+            Debug.Log($"[SC-DIAG] isSleeping changed: {_diagLastIsSleeping} -> {isSleeping}  |  wasSleeping={wasSleeping}  |  udpSender={(udpSender != null ? udpSender.gameObject.name : "NULL")}");
+            _diagLastIsSleeping = isSleeping;
+        }
+        if (wasSleeping != _diagLastWasSleeping)
+        {
+            Debug.Log($"[SC-DIAG] wasSleeping changed: {_diagLastWasSleeping} -> {wasSleeping}");
+            _diagLastWasSleeping = wasSleeping;
+        }
+
         // --- Edge detection: state transitions ---
         if (isSleeping && !wasSleeping)
         {
             // Awake -> Sleeping transition
             Debug.Log("[SleepingController] State changed: AWAKE -> SLEEPING. Sending SLEEP_LOCK.");
-            if (udpSender != null)
-                udpSender.SendStateSLEEP_LOCK();
+            ParentUdpSender sender = GetUdpSender();
+            if (sender != null)
+            {
+                Debug.Log($"[SC-DIAG] >>> Calling SendStateSLEEP_LOCK() on '{sender.gameObject.name}'");
+                sender.SendStateSLEEP_LOCK();
+            }
             else
-                Debug.LogWarning("[SleepingController] ParentUdpSender.instance is missing - cannot send SLEEP_LOCK.");
+            {
+                Debug.LogWarning("[SC-DIAG] *** ParentUdpSender not found - SLEEP_LOCK NOT sent! Is ParentUdpSender in the scene and enabled? ***");
+            }
             _awakeHeartbeatTimer = 0f;
         }
         else if (!isSleeping && wasSleeping)
         {
             // Sleeping -> Awake transition
             Debug.Log("[SleepingController] State changed: SLEEPING -> AWAKE. Sending SLEEP_UNLOCK.");
-            if (udpSender != null)
-                udpSender.SendStateSLEEP_UNLOCK();
+            ParentUdpSender sender = GetUdpSender();
+            if (sender != null)
+            {
+                Debug.Log($"[SC-DIAG] >>> Calling SendStateSLEEP_UNLOCK() on '{sender.gameObject.name}'");
+                sender.SendStateSLEEP_UNLOCK();
+            }
             else
-                Debug.LogWarning("[SleepingController] ParentUdpSender.instance is missing - cannot send SLEEP_UNLOCK.");
+            {
+                Debug.LogWarning("[SC-DIAG] *** ParentUdpSender not found - SLEEP_UNLOCK NOT sent! Is ParentUdpSender in the scene and enabled? ***");
+            }
             _awakeHeartbeatTimer = 0f;
         }
 
@@ -98,15 +138,16 @@ public class SleepingController : MonoBehaviour
             if (_awakeHeartbeatTimer >= awakeHeartbeatInterval)
             {
                 _awakeHeartbeatTimer = 0f;
-                if (udpSender != null)
+                ParentUdpSender sender = GetUdpSender();
+                if (sender != null)
                 {
                     if (showDebugLogs)
                         Debug.Log("[SleepingController] Awake heartbeat: sending SLEEP_UNLOCK.");
-                    udpSender.SendStateSLEEP_UNLOCK();
+                    sender.SendStateSLEEP_UNLOCK();
                 }
                 else
                 {
-                    Debug.LogWarning("[SleepingController] ParentUdpSender.instance is missing - cannot send awake heartbeat SLEEP_UNLOCK.");
+                    Debug.LogWarning("[SleepingController] Awake heartbeat: ParentUdpSender not found - SLEEP_UNLOCK skipped.");
                 }
             }
         }
@@ -135,6 +176,18 @@ public class SleepingController : MonoBehaviour
         bool debugInput = CheckPCDebugInput();
         bool sensorSleeping = (pillowSensor != null) && pillowSensor.isSleeping;
 
+        // --- Diagnostic: log debugInput and sensorSleeping only when they change ---
+        if (debugInput != _diagLastDebugInput)
+        {
+            Debug.Log($"[SC-DIAG] debugInput changed: {_diagLastDebugInput} -> {debugInput}  (Keyboard.current={(Keyboard.current != null ? "OK" : "NULL")}  spaceKey.isPressed={(Keyboard.current != null ? Keyboard.current.spaceKey.isPressed.ToString() : "N/A")})");
+            _diagLastDebugInput = debugInput;
+        }
+        if (sensorSleeping != _diagLastSensorSleeping)
+        {
+            Debug.Log($"[SC-DIAG] sensorSleeping changed: {_diagLastSensorSleeping} -> {sensorSleeping}  (ignoreSensorForDebug={ignoreSensorForDebug})");
+            _diagLastSensorSleeping = sensorSleeping;
+        }
+
         // Log Space/Gamepad activation edge (once per press, not every frame)
         if (debugInput && !_wasDebugInputActive)
             Debug.Log("[SleepingController] Space/Gamepad debug override ACTIVE - forcing sleeping.");
@@ -151,6 +204,41 @@ public class SleepingController : MonoBehaviour
             isSleeping = debugInput;              // Space/Gamepad only - sensor has no effect
         else
             isSleeping = debugInput || sensorSleeping; // Normal: either source can trigger sleeping
+    }
+
+    /// <summary>
+    /// Returns the ParentUdpSender to use for sending, with a 3-level fallback:
+    ///   1. Inspector-assigned udpSender field (fastest, preferred)
+    ///   2. ParentUdpSender.instance (static singleton set by ParentUdpSender itself)
+    ///   3. FindFirstObjectByType (scene search, slowest - used only as last resort)
+    /// If found via fallback, the result is cached back into udpSender for next time.
+    /// </summary>
+    private ParentUdpSender GetUdpSender()
+    {
+        // Level 1: already cached
+        if (udpSender != null)
+            return udpSender;
+
+        // Level 2: static singleton
+        if (ParentUdpSender.instance != null)
+        {
+            udpSender = ParentUdpSender.instance;
+            Debug.Log($"[SC-DIAG] GetUdpSender: found via ParentUdpSender.instance ('{udpSender.gameObject.name}') - caching.");
+            return udpSender;
+        }
+
+        // Level 3: scene search
+        ParentUdpSender found = Object.FindFirstObjectByType<ParentUdpSender>();
+        if (found != null)
+        {
+            udpSender = found;
+            Debug.Log($"[SC-DIAG] GetUdpSender: found via FindFirstObjectByType ('{udpSender.gameObject.name}') - caching.");
+            return udpSender;
+        }
+
+        // Not found by any method
+        Debug.LogWarning($"[SC-DIAG] GetUdpSender: ParentUdpSender NOT found in scene! (called from '{gameObject.name}')");
+        return null;
     }
 
     /// <summary>
