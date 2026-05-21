@@ -1354,22 +1354,22 @@ MonoBehaviour:
   secondFloorDelayMin: 3
   secondFloorDelayMax: 6
   approachDelayMin: 1
-  approachDelayMax: 3
+  approachDelayMax: 2
   highSuspicionDelayGaugeThreshold: 5
   highSuspicionSecondFloorDelayMin: 1
   highSuspicionSecondFloorDelayMax: 3
   highSuspicionApproachDelayMin: 0
   highSuspicionApproachDelayMax: 1
-  approachMoveSpeedMin: 5
+  approachMoveSpeedMin: 10
   approachMoveSpeedMax: 15
-  approachSpeedSuspicionBonus: 0
+  approachSpeedSuspicionBonus: 10
   highSuspicionSpeedGaugeThreshold: 5
   highSuspicionApproachMoveSpeedMin: 25
   highSuspicionApproachMoveSpeedMax: 30
   loudItemRushInMoveSpeed: 140
   useFixedDebugApproachSpeed: 0
   fixedDebugApproachSpeed: 30
-  doorChanceAtMinSuspicion: 0.2
+  doorChanceAtMinSuspicion: 0.5
   doorChanceAtMaxSuspicion: 0.95
   basePassByThenDoorSoundChance: 0.33
   passByThenDoorSoundAudioSource: {fileID: 1615664220}
@@ -1571,8 +1571,8 @@ MonoBehaviour:
   motherGauge: {fileID: 1418577572}
   autoTrigger: 1
   graceSeconds: 15
-  baseWindowMinSeconds: 20
-  baseWindowMaxSeconds: 20
+  baseWindowMinSeconds: 5
+  baseWindowMaxSeconds: 10
   windowReductionPerGauge: 1
   minimumWindowSize: 5
   timeUntilNextWarning: 0
@@ -4113,7 +4113,10 @@ MonoBehaviour:
   connectButtonLabel: {fileID: 0}
   startButtonObject: {fileID: 0}
   gameSceneName: GameOverResult
+  gameOverSceneName: MotherGameOver
+  timeUpSceneName: TimeUpResult
   cancelButton: {fileID: 0}
+  parentDetection: {fileID: 1951468137}
 --- !u!4 &1385247219
 Transform:
   m_ObjectHideFlags: 0
@@ -4141,8 +4144,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b1c07f14a89f2354f8a810d280fa2cc2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ArduinoInputListener
-  portName: COM3
-  baudRate: 115200
+  pillowSensor: {fileID: 479984877}
   udpSender: {fileID: 1385247218}
 --- !u!1 &1418577571
 GameObject:
@@ -6385,8 +6387,8 @@ MonoBehaviour:
   enableLoudItemFeature: 1
   loudItemGaugeAmount: 3
   enableContinuousRoomSuspicion: 1
-  continuousRoomSuspicionAmount: 1
-  continuousRoomSuspicionTickInterval: 2
+  continuousRoomSuspicionAmount: 2
+  continuousRoomSuspicionTickInterval: 0.2
   enableHallwayPeekSuspicion: 1
   hallwayPeekSuspicionTickInterval: 0.5
   isCaught: 0
@@ -6760,8 +6762,8 @@ MonoBehaviour:
   passByPoint: {fileID: 91809491}
   moveSpeed: 15
   stopDistance: 0.05
-  stairTurnRotationSpeed: 180
-  doorTurnRotationSpeed: 240
+  stairTurnRotationSpeed: 200
+  doorTurnRotationSpeed: 250
   motherModelRoot: {fileID: 1300055334}
   motherModelRenderers: []
   movementLoopAudioSource: {fileID: 1615664220}
@@ -7256,6 +7258,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SleepingController
   pillowSensor: {fileID: 479984877}
+  udpSender: {fileID: 1385247218}
   showDebugLogs: 0
 --- !u!4 &2121813539
 Transform:

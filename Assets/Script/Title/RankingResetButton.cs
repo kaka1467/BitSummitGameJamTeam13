@@ -5,8 +5,9 @@ public class RankingResetButton : MonoBehaviour
 {
     [SerializeField] private GameObject confirmationPanel; // 確認UIのパネル
 
-    private const string RankingScoreKeyPrefix = "RankingScore_";
-    private const int RankingSize = 3;
+    private const string KeyGameOverRank = "GameOverRank_";
+    private const string KeyTimeUpRank   = "TimeUpRank_";
+    private const int    RankingSize     = 3;
 
     private void Start()
     {
@@ -36,8 +37,11 @@ public class RankingResetButton : MonoBehaviour
     {
         for (int i = 0; i < RankingSize; i++)
         {
-            PlayerPrefs.SetInt(RankingScoreKeyPrefix + i, 0);
+            PlayerPrefs.SetInt(KeyGameOverRank + i, 0);
+            PlayerPrefs.SetInt(KeyTimeUpRank   + i, 0);
         }
+        PlayerPrefs.SetInt("LastGameOverScore", 0);
+        PlayerPrefs.SetInt("LastTimeUpScore",   0);
         PlayerPrefs.Save();
 
         Debug.Log("[RankingResetButton] ランキングをリセットしました。");

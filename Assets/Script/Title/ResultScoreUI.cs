@@ -1,93 +1,72 @@
 using UnityEngine;
 using TMPro;
 
+/// <summary>
+/// ResultScoreUI: Displays latest score and top-3 rankings for a specific result type.
+///
+/// Set resultType to GameOver on the GAME_OVER result scene,
+/// and to TimeUp on the TIME_UP result scene.
+/// Optionally assign cross-type rank texts to show the other type's ranking.
+/// </summary>
 public class ResultScoreUI : MonoBehaviour
 {
+    public enum DisplayResultType { GameOver, TimeUp }
+
+    [Header("Result Type")]
+    [Tooltip("Set to GameOver on the GameOver result scene, TimeUp on the TimeUp result scene.")]
+    [SerializeField] private DisplayResultType resultType = DisplayResultType.GameOver;
+
+    [Header("This Result Score + Ranking")]
     [SerializeField] private TextMeshProUGUI resultScoreText;
     [SerializeField] private TextMeshProUGUI rank1Text;
     [SerializeField] private TextMeshProUGUI rank2Text;
     [SerializeField] private TextMeshProUGUI rank3Text;
-    [SerializeField] private TextMeshProUGUI rank4Text;
-    [SerializeField] private TextMeshProUGUI rank5Text;
 
-    private const string ResultScoreKey = "ResultScore";
-    private const string ResultScorePendingKey = "ResultScorePending";
-    private const string RankingScoreKeyPrefix = "RankingScore_";
-    private const int RankingSize = 5;
+    [Header("Cross-Type Ranking (optional)")]
+    [Tooltip("Assign to show the other result type's top 3 on this scene.")]
+    [SerializeField] private TextMeshProUGUI crossRank1Text;
+    [SerializeField] private TextMeshProUGUI crossRank2Text;
+    [SerializeField] private TextMeshProUGUI crossRank3Text;
+
+    private const string KeyGameOverScore = "LastGameOverScore";
+    private const string KeyTimeUpScore   = "LastTimeUpScore";
+    private const string KeyGameOverRank  = "GameOverRank_";
+    private const string KeyTimeUpRank    = "TimeUpRank_";
+    private const int    RankingSize      = 3;
 
     private void Start()
     {
-        int score = PlayerPrefs.GetInt(ResultScoreKey, 0);
+        string scoreKey   = resultType == DisplayResultType.GameOver ? KeyGameOverScore  : KeyTimeUpScore;
+        string rankKey    = resultType == DisplayResultType.GameOver ? KeyGameOverRank   : KeyTimeUpRank;
+        string crossKey   = resultType == DisplayResultType.GameOver ? KeyTimeUpRank     : KeyGameOverRank;
 
-        // ゲーム終了直後だけランキングへ反映し、Resultシーン再表示時の重複登録を防ぐ
-        if (PlayerPrefs.GetInt(ResultScorePendingKey, 0) == 1)
-        {
-            UpdateRanking(score);
-            PlayerPrefs.SetInt(ResultScorePendingKey, 0);
-            PlayerPrefs.Save();
-        }
+        int score = PlayerPrefs.GetInt(scoreKey, 0);
 
         if (resultScoreText != null)
-        {
             resultScoreText.text = score.ToString("000000");
-        }
 
-        int[] ranking = GetRanking();
+        int[] ranking = GetRanking(rankKey);
         ApplyRankingText(rank1Text, ranking, 0);
         ApplyRankingText(rank2Text, ranking, 1);
         ApplyRankingText(rank3Text, ranking, 2);
-        ApplyRankingText(rank4Text, ranking, 3);
-        ApplyRankingText(rank5Text, ranking, 4);
 
+        int[] crossRanking = GetRanking(crossKey);
+        ApplyRankingText(crossRank1Text, crossRanking, 0);
+        ApplyRankingText(crossRank2Text, crossRanking, 1);
+        ApplyRankingText(crossRank3Text, crossRanking, 2);
     }
 
-    private static void UpdateRanking(int newScore)
-    {
-        int[] ranking = GetRanking();
-
-        for (int i = 0; i < RankingSize; i++)
-        {
-            if (newScore > ranking[i])
-            {
-                for (int j = RankingSize - 1; j > i; j--)
-                {
-                    ranking[j] = ranking[j - 1];
-                }
-
-                ranking[i] = newScore;
-                break;
-            }
-        }
-
-        SaveRanking(ranking);
-    }
-
-    private static int[] GetRanking()
+    private static int[] GetRanking(string keyPrefix)
     {
         int[] ranking = new int[RankingSize];
         for (int i = 0; i < RankingSize; i++)
-        {
-            ranking[i] = PlayerPrefs.GetInt(RankingScoreKeyPrefix + i, 0);
-        }
-
+            ranking[i] = PlayerPrefs.GetInt(keyPrefix + i, 0);
         return ranking;
-    }
-
-    private static void SaveRanking(int[] ranking)
-    {
-        for (int i = 0; i < RankingSize; i++)
-        {
-            PlayerPrefs.SetInt(RankingScoreKeyPrefix + i, ranking[i]);
-        }
     }
 
     private static void ApplyRankingText(TextMeshProUGUI text, int[] ranking, int index)
     {
-        if (text == null || ranking == null || index < 0 || index >= ranking.Length)
-        {
-            return;
-        }
-
+        if (text == null || ranking == null || index < 0 || index >= ranking.Length) return;
         text.text = ranking[index].ToString("000000");
     }
 }

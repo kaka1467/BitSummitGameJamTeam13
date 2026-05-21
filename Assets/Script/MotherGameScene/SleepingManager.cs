@@ -17,11 +17,8 @@ public class SleepingManager : MonoBehaviour
         isCaught = true;
         Debug.Log("caught by parent");
         Debug.Log("IsCaught = True");
-        if (!hasLoadedGameOver)
-        {
-            SceneManager.LoadScene(gameOverSceneName);
-            hasLoadedGameOver = true;
-        }
+        // Scene transition is now handled by GameManager.TriggerResult(GameOver)
+        // so that score is saved and typed UDP message is sent before loading.
     }
 
     void Update()

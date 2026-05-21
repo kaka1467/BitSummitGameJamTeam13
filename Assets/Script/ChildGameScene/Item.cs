@@ -115,6 +115,21 @@ public class Item : MonoBehaviour
             case ItemType.BGM:
                 // メガホン取得時にダメージアニメーション再生
                 TriggerPlayerDamage(other);
+
+                {
+                    ChildUdpReceiver _udp = (GameManager.instance != null)
+                        ? GameManager.instance.udpReceiver
+                        : Object.FindFirstObjectByType<ChildUdpReceiver>();
+                    if (_udp != null)
+                    {
+                        Debug.Log("[Item] BGM item collected — sending LOUD_ITEM to parent.");
+                        _udp.SendState("LOUD_ITEM");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[Item] BGM item collected but ChildUdpReceiver not found — LOUD_ITEM not sent.");
+                    }
+                }
                 
                 // デバッグログを追加して呼び出し状況を確認
                 Debug.Log($"Item.ApplyEffect: BGM triggered on '{other.gameObject.name}', AudioManager.Instance is {(AudioManager.Instance == null ? "null" : "present")}, bgmClip is {(bgmClip == null ? "null" : bgmClip.name)}, loopBgm={loopBgm}, bgmVolume={bgmVolume}");

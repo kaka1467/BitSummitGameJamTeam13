@@ -826,7 +826,7 @@ GameObject:
   - component: {fileID: 1657176102}
   - component: {fileID: 1657176101}
   m_Layer: 0
-  m_Name: Parent UDP
+  m_Name: UDP
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -852,8 +852,11 @@ MonoBehaviour:
   connectButton: {fileID: 1745125928}
   connectButtonLabel: {fileID: 1849547969}
   startButtonObject: {fileID: 0}
-  gameSceneName: GameScene
+  gameSceneName: MotherLoad
+  gameOverSceneName: MotherGameOver
+  timeUpSceneName: MotherTimeUp
   cancelButton: {fileID: 1900922101}
+  parentDetection: {fileID: 0}
 --- !u!4 &1657176102
 Transform:
   m_ObjectHideFlags: 0

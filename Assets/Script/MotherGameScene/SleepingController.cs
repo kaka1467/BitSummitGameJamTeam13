@@ -12,11 +12,16 @@ public class SleepingController : MonoBehaviour
     [Header("Hardware Sensor")]
     [SerializeField] private PillowSensor pillowSensor;
 
+    [Header("UDP")]
+    [Tooltip("Auto-found at Start if not assigned. Sends SLEEP_LOCK / SLEEP_UNLOCK on sleep state change.")]
+    [SerializeField] private ParentUdpSender udpSender;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = false;
 
     // Player sleeping state
     private bool isSleeping = false;
+    private bool _lastSentSleepingState = false;
 
     /// <summary>
     /// Public read-only property: Player is sleeping (used by ParentDetectionV2 and CaughtReactionController)
@@ -25,6 +30,8 @@ public class SleepingController : MonoBehaviour
 
     void Start()
     {
+        if (udpSender == null)
+            udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
         isSleeping = false;
 
         // Initialize pillow sensor if assigned
@@ -44,6 +51,17 @@ public class SleepingController : MonoBehaviour
     {
         // Determine sleeping state with Space key having ABSOLUTE HIGHEST PRIORITY
         DetermineSleepingState();
+
+        if (isSleeping != _lastSentSleepingState)
+        {
+            _lastSentSleepingState = isSleeping;
+            if (udpSender != null)
+            {
+                string cmd = isSleeping ? "SLEEP_LOCK" : "SLEEP_UNLOCK";
+                Debug.Log($"[SleepingController] Sleeping changed to {isSleeping} - sending {cmd}.");
+                udpSender.SendState(cmd);
+            }
+        }
 
         if (showDebugLogs)
         {

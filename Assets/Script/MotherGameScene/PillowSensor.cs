@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.IO.Ports;
 using System.Threading;
 using UnityEngine;
@@ -37,6 +38,12 @@ public class PillowSensor : MonoBehaviour
     // Public flag indicating whether the player is detected as "sleeping".
     public bool isSleeping = false;
 
+    /// <summary>
+    /// Fired on the main thread for every non-numeric line received from the serial port.
+    /// Subscribe to this instead of opening a second SerialPort on the same COM port.
+    /// </summary>
+    public event System.Action<string> OnRawLine;
+
     // The baseline value established during calibration.
     private long baseline = 0L;
 
@@ -51,6 +58,9 @@ public class PillowSensor : MonoBehaviour
     private readonly object valueLock = new object();
     private long latestValue = 0L;
     private bool hasValue = false;
+
+    // Non-numeric lines queued by background thread, drained on main thread in Update().
+    private readonly Queue<string> _pendingRawLines = new Queue<string>();
 
     // Graceful join timeout (ms) for background thread on shutdown.
     private const int ThreadJoinTimeoutMs = 500;
@@ -122,7 +132,10 @@ public class PillowSensor : MonoBehaviour
                 }
                 else
                 {
-                    if (showDebugLogs) Debug.LogWarning($"PillowSensor: Unable to parse serial data '{line}'.");
+                    // Non-numeric line — forward to subscribers on the main thread via pending queue
+                    string captured = line;
+                    lock (valueLock) { _pendingRawLines.Enqueue(captured); }
+                    if (showDebugLogs) Debug.Log($"PillowSensor: Non-numeric line queued for dispatch: '{line}'.");
                 }
             }
             catch (System.TimeoutException)
@@ -143,6 +156,19 @@ public class PillowSensor : MonoBehaviour
 
     void Update()
     {
+        // Drain non-numeric lines and fire OnRawLine on the main thread.
+        while (true)
+        {
+            string rawLine = null;
+            lock (valueLock)
+            {
+                if (_pendingRawLines.Count > 0)
+                    rawLine = _pendingRawLines.Dequeue();
+            }
+            if (rawLine == null) break;
+            OnRawLine?.Invoke(rawLine);
+        }
+
         // Read the latest value from the background thread in a thread-safe manner.
         long currentValue = 0L;
         bool currentHasValue = false;
