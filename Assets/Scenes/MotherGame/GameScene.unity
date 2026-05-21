@@ -1696,10 +1696,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 917e04c5298cebc499ca4b751c3c4a92, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PillowSensor
-  portName: COM3
+  portName: /dev/cu.usbserial-0001
   baudRate: 115200
   readTimeout: 50
-  threshold: 500000
+  threshold: 85000
+  onThreshold: 80000
+  offThreshold: 60000
   calibrationSamples: 50
   calibrationSampleDelay: 0.02
   showDebugLogs: 1
@@ -4146,6 +4148,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ArduinoInputListener
   pillowSensor: {fileID: 479984877}
   udpSender: {fileID: 1385247218}
+  showDebugLogs: 1
 --- !u!1 &1418577571
 GameObject:
   m_ObjectHideFlags: 0

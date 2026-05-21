@@ -1243,7 +1243,7 @@ GameObject:
   - component: {fileID: 415572612}
   - component: {fileID: 415572611}
   m_Layer: 0
-  m_Name: ChildUDP
+  m_Name: UDP
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8242,7 +8242,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 8300000, guid: 2b6a96d968b5d0142af345b34b836b79, type: 3}
   m_PlayOnAwake: 1
-  m_Volume: 0.768
+  m_Volume: 0.338
   m_Pitch: 1
   Loop: 1
   Mute: 0
