@@ -75,6 +75,8 @@ public class ParentDetectionV2 : MonoBehaviour
     [Header("Loud Item Feature")]
     [Tooltip("Disable to make the L-key and any in-game loud-item triggers completely inert.")]
     [SerializeField] private bool enableLoudItemFeature = true;
+    [Tooltip("When true, a loud item will interrupt an active warning and force a rush-in.")]
+    [SerializeField] private bool forceLoudItemDuringWarning = false;
     [Tooltip("Gauge stages added to MotherGauge when a loud item fires. If this pushes gauge to max, game over triggers immediately instead of a rush-in.")]
     [SerializeField] private int loudItemGaugeAmount = 3;
 
@@ -253,8 +255,14 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (warningSystem != null && warningSystem.isWarningActive)
         {
-            Debug.Log("[PDV2] Loud item ignored — warning sequence already active");
-            return;
+            if (!forceLoudItemDuringWarning)
+            {
+                Debug.Log("[PDV2] Loud item ignored — warning sequence already active");
+                return;
+            }
+
+            Debug.Log("[PDV2] Loud item overriding active warning — forcing rush-in");
+            warningSystem.StopWarningSequence();
         }
 
         Debug.Log($"[PDV2] Loud item triggered rush-in request — adding {loudItemGaugeAmount} gauge stages");

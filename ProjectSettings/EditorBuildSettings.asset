@@ -14,13 +14,13 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/MiniGameFolder/ChildLoad.unity
     guid: 6a814ed6b70c246ee864ca5dbb2836ec
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MotherGame/MotherLoad.unity
     guid: 92f40eb34b00c0f46bd0ffec049ac43b
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MotherGame/Mother Title.unity
     guid: ea30e8b2763fc46b0bf39d1eadaa5b2c
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/MotherGame/GameScene.unity
     guid: 93c6c33e9d3004a6da09de5262d189f2
   - enabled: 1

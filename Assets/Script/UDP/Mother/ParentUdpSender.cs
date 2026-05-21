@@ -83,6 +83,7 @@ public class ParentUdpSender : MonoBehaviour
     private bool      gameStarted        = false;
     private bool      resultProcessed    = false; // GAME_OVER wins race
     public  bool      ChildLoadingComplete { get; set; } = false;
+    private bool      _shouldTriggerLoudItem = false;
 
     public static ParentUdpSender instance { get; private set; }
 
@@ -147,6 +148,19 @@ public class ParentUdpSender : MonoBehaviour
 
         while (receiveQueue.TryDequeue(out string raw))
             HandleIncoming(raw);
+
+        if (_shouldTriggerLoudItem)
+        {
+            if (parentDetection == null)
+            {
+                RefreshSceneReferences();
+                return;
+            }
+
+            _shouldTriggerLoudItem = false;
+            Debug.Log("[ParentUdpSender] Executing OnLoudItemTriggered on Main Thread!");
+            parentDetection.OnLoudItemTriggered();
+        }
 
         // Timeout check
         if (currentState == ConnectionState.Connected &&
@@ -358,11 +372,17 @@ public class ParentUdpSender : MonoBehaviour
 
         if (msg == "LOUD_ITEM")
         {
-            Debug.Log($"[ParentUdpSender] Received LOUD_ITEM — parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")}.");
+            Debug.Log("[ParentUdpSender] Received LOUD_ITEM network packet from Child.");
+
             if (parentDetection != null)
+            {
                 parentDetection.OnLoudItemTriggered();
+            }
             else
-                Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null — rush-in NOT triggered.");
+            {
+                Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null — will retry in Update.");
+                _shouldTriggerLoudItem = true;
+            }
             return;
         }
 
