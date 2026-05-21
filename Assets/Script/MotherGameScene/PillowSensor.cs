@@ -17,8 +17,10 @@ public class PillowSensor : MonoBehaviour
     [Header("Serial Settings")]
     [Tooltip("COM port name (change in Inspector if needed)")]
     [SerializeField] private string portName = "COM3";
+    public string PortName => portName;
     [Tooltip("Serial baud rate")]
     [SerializeField] private int baudRate = 115200;
+    public int BaudRate => baudRate;
     [Tooltip("Serial read timeout (ms)")]
     [SerializeField] private int readTimeout = 50;
 
