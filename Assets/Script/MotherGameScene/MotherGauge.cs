@@ -52,9 +52,7 @@ public class MotherGauge : MonoBehaviour
     [Tooltip("Log approach/suspicion gauge changes to the console")]
     public bool logOnChange = false;
 
-    private int _lastLoggedGauge = int.MinValue;
     private float _decreaseTimer = 0f;
-    private bool _hasTriggeredMax = false;
 
     private void Start()
     {

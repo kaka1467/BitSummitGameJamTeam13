@@ -774,7 +774,7 @@ GameObject:
   - component: {fileID: 243933952}
   - component: {fileID: 243933951}
   m_Layer: 0
-  m_Name: ConnectManager
+  m_Name: UDP
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -798,7 +798,7 @@ MonoBehaviour:
   targetIP: 127.0.0.1
   currentState: 0
   lastMessage: 
-  gameSceneName: Minigame Scene
+  gameSceneName: GameOverResult
   sleepingManager: {fileID: 508756885}
   connectButton: {fileID: 0}
   connectButtonLabel: {fileID: 0}
@@ -810,6 +810,7 @@ MonoBehaviour:
   connectButtonDefaultPosition: {x: 0, y: 0}
   connectButtonStartPosition: {x: 0, y: 0}
   cancelUiObject: {fileID: 0}
+  playerMove: {fileID: 0}
   creditsPanel: {fileID: 0}
   settingsPanel: {fileID: 0}
   animatedSpriteObjects: []
@@ -4071,6 +4072,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
   gameOverSceneName: TimeUpResult
+  timeUpSceneName: TimeUp
   gameOverDelay: 0
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3

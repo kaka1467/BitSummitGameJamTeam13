@@ -23,11 +23,13 @@ MonoBehaviour:
   - m_enabled: 1
     m_path: Assets/Scenes/MotherGame/Mother Title.unity
   - m_enabled: 1
+    m_path: Assets/Scenes/MotherGame/MotherLoad.unity
+  - m_enabled: 1
     m_path: Assets/Scenes/MotherGame/GameScene.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/MotherGameOver.unity
+    m_path: Assets/Scenes/MotherGame/GameOverResult.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/Ranking.unity
+    m_path: Assets/Scenes/MotherGame/TimeUpResult.unity
   m_HasScriptingDefines: 0
   m_ScriptingDefines: []
   m_PlayerSettingsYaml:

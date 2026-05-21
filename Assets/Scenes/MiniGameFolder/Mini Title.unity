@@ -1267,7 +1267,7 @@ MonoBehaviour:
   targetIP: 127.0.0.1
   currentState: 0
   lastMessage: 
-  gameSceneName: MiniGame
+  gameSceneName: ChildLoad
   sleepingManager: {fileID: 0}
   connectButton: {fileID: 1463660737}
   connectButtonLabel: {fileID: 1893753028}
@@ -1279,6 +1279,7 @@ MonoBehaviour:
   connectButtonDefaultPosition: {x: 314, y: -158}
   connectButtonStartPosition: {x: 489.3, y: -281.7}
   cancelUiObject: {fileID: 716815019}
+  playerMove: {fileID: 0}
   creditsPanel: {fileID: 1036910372}
   settingsPanel: {fileID: 1503059194}
   animatedSpriteObjects:

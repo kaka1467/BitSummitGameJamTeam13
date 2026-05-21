@@ -6,8 +6,13 @@ using UnityEngine.SceneManagement;
 public class GameManager : MonoBehaviour
 {
     [Header("Game Over")]
-    public string gameOverSceneName = "GameOver"; // 遷移先のシーン名をインスペクタで設定
+    public string gameOverSceneName = "GameOver"; // GAME_OVER (caught) result scene
+    public string timeUpSceneName   = "TimeUp";   // TIME_UP result scene
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
+
+    public const string PlayerPrefsGameOverScore  = "LastGameOverScore";
+    public const string PlayerPrefsTimeUpScore    = "LastTimeUpScore";
+    public const string PlayerPrefsResultTypePending = "ResultTypePending";
     [SerializeField] private CanvasGroup fadeCanvasGroup;
     [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
 
@@ -137,6 +142,7 @@ public class GameManager : MonoBehaviour
         score += amount;
     }
 
+    // Called when timer runs out — TIME_UP result
     public void GameOver()
     {
         feverCount++;
@@ -145,23 +151,45 @@ public class GameManager : MonoBehaviour
             feverCount = 0;
             ActivateFeverEffects();
         }
-        GameOver("TIME_UP");
+        TriggerResult(ResultType.TimeUp);
     }
 
+    // Called when parent catches child — GAME_OVER result
     public void GameOver(string udpMessage)
+    {
+        // Legacy entry point: "TIME_UP" and "CHILD_DEAD" use TIME_UP result;
+        // "CAUGHT" and anything else uses GAME_OVER result.
+        if (udpMessage == "TIME_UP" || udpMessage == "CHILD_DEAD")
+            TriggerResult(ResultType.TimeUp);
+        else
+            TriggerResult(ResultType.GameOver);
+    }
+
+    public enum ResultType { GameOver, TimeUp }
+
+    public void TriggerResult(ResultType resultType)
     {
         if (isGameOver) return;
 
         isGameOver = true;
 
-        // リザルト用にスコアを保存
-        PlayerPrefs.SetInt("ResultScore", score);
-        PlayerPrefs.SetInt("ResultScorePending", 1);
+        // Save score under type-specific key
+        string scoreKey = resultType == ResultType.GameOver
+            ? PlayerPrefsGameOverScore
+            : PlayerPrefsTimeUpScore;
+        PlayerPrefs.SetInt(scoreKey, score);
+        PlayerPrefs.SetString(PlayerPrefsResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
         PlayerPrefs.Save();
+        Debug.Log($"[GameManager] Result={resultType} score={score} saved to '{scoreKey}'");
 
         // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
         Time.timeScale = 0f;
-        StartCoroutine(HandleGameOver(udpMessage));
+
+        string udpMsg = resultType == ResultType.GameOver
+            ? $"CHILD_SCORE:GAME_OVER:{score}"
+            : $"CHILD_SCORE:TIME_UP:{score}";
+        string targetScene = resultType == ResultType.GameOver ? gameOverSceneName : timeUpSceneName;
+        StartCoroutine(HandleGameOver(udpMsg, targetScene));
     }
 
     private void ActivateFeverEffects()
@@ -212,11 +240,12 @@ public class GameManager : MonoBehaviour
         StopFeverEffects();
     }
 
-    private IEnumerator HandleGameOver(string udpMessage)
+    private IEnumerator HandleGameOver(string udpMessage, string targetScene)
     {
         if (udpReceiver != null)
         {
             udpReceiver.SendState(udpMessage);
+            Debug.Log($"[GameManager] Sent UDP: '{udpMessage}'");
         }
 
         yield return new WaitForSecondsRealtime(0.1f);
@@ -242,9 +271,9 @@ public class GameManager : MonoBehaviour
         // シーン遷移の前にタイムスケールを復帰させる
         Time.timeScale = 1f;
 
-        if (!string.IsNullOrEmpty(gameOverSceneName))
+        if (!string.IsNullOrEmpty(targetScene))
         {
-            SceneManager.LoadScene(gameOverSceneName);
+            SceneManager.LoadScene(targetScene);
         }
     }
 
