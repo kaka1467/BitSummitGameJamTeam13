@@ -163,10 +163,8 @@ public class ParentUdpSender : MonoBehaviour
         // UI
         UpdateUI();
 
-        // Debug / hardware input: Space or Gamepad A sends CAUGHT
-        bool spacePressed    = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
-        bool gamepadAPressed = Gamepad.current  != null && Gamepad.current.buttonSouth.wasPressedThisFrame;
-        if (spacePressed || gamepadAPressed)
+        // Debug / hardware input: I key sends CAUGHT (Space and Gamepad A reserved for SleepingController)
+        if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
             SendState("CAUGHT");
     }
 

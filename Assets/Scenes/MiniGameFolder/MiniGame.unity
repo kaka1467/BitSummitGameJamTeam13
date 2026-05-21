@@ -3376,7 +3376,7 @@ GameObject:
   - component: {fileID: 1639938499}
   - component: {fileID: 1639938498}
   m_Layer: 0
-  m_Name: ' ItemSpawner'
+  m_Name: ItemSpawner
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4077,7 +4077,7 @@ MonoBehaviour:
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 10
+  time: 180
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
