@@ -5,6 +5,16 @@ public class CameraSwitcher : MonoBehaviour
 {
     [SerializeField] private Camera[] cameras;
     [SerializeField] private Key switchKey = Key.K;
+
+    // 初期値として Numpad1 から Numpad9 までを自動設定
+    [SerializeField]
+    private Key[] extraSwitchKeys = new[]
+    {
+        Key.Numpad1, Key.Numpad2, Key.Numpad3,
+        Key.Numpad4, Key.Numpad5, Key.Numpad6,
+        Key.Numpad7, Key.Numpad8, Key.Numpad9
+    };
+
     [Header("Door")]
     [SerializeField] private Transform door;
     [SerializeField] private float closedYAngle = 0f;
@@ -42,9 +52,9 @@ public class CameraSwitcher : MonoBehaviour
             return;
         }
 
-        if (keyboard[switchKey].wasPressedThisFrame)
+        if (IsSwitchKeyPressed(keyboard))
         {
-            Debug.Log($"[CameraSwitcher] K detected | cameras={(cameras != null ? cameras.Length : 0)} | isDoorOpen before={isDoorOpen}");
+            Debug.Log($"[CameraSwitcher] Switch key detected | cameras={(cameras != null ? cameras.Length : 0)} | isDoorOpen before={isDoorOpen}");
             SwitchToNextCamera();
         }
 
@@ -64,6 +74,29 @@ public class CameraSwitcher : MonoBehaviour
 
         activeCameraIndex = (activeCameraIndex + 1) % cameras.Length;
         ApplyCameraState(activeCameraIndex);
+    }
+
+    private bool IsSwitchKeyPressed(Keyboard keyboard)
+    {
+        if (keyboard[switchKey].wasPressedThisFrame)
+        {
+            return true;
+        }
+
+        if (extraSwitchKeys == null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < extraSwitchKeys.Length; i++)
+        {
+            if (keyboard[extraSwitchKeys[i]].wasPressedThisFrame)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void ApplyCameraState(int activeIndex)
