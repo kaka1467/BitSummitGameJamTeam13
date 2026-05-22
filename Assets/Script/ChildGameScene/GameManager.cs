@@ -7,11 +7,11 @@ public class GameManager : MonoBehaviour
 {
     [Header("Game Over")]
     public string gameOverSceneName = "GameOverResult"; // GAME_OVER (caught) result scene
-    public string timeUpSceneName   = "TimeUpResult";   // TIME_UP result scene
+    public string timeUpSceneName = "TimeUpResult";   // TIME_UP result scene
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
 
-    public const string PlayerPrefsGameOverScore  = "LastGameOverScore";
-    public const string PlayerPrefsTimeUpScore    = "LastTimeUpScore";
+    public const string PlayerPrefsGameOverScore = "LastGameOverScore";
+    public const string PlayerPrefsTimeUpScore = "LastTimeUpScore";
     public const string PlayerPrefsResultTypePending = "ResultTypePending";
     [SerializeField] private CanvasGroup fadeCanvasGroup;
     [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
@@ -190,10 +190,10 @@ public class GameManager : MonoBehaviour
 
         PlayerPrefs.SetInt(scoreKey, score);
         PlayerPrefs.SetString(PlayerPrefsResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
-        
+
         // ランキングの更新
         UpdateRanking(rankKey, score);
-        
+
         PlayerPrefs.Save();
         Debug.Log($"[GameManager] Result={resultType} score={score} saved to '{scoreKey}'");
 
@@ -259,7 +259,7 @@ public class GameManager : MonoBehaviour
 
         if (feverLoopEffect2 != null)
         {
-            feverLoopEffect2.StopEffect();
+            feverLoopEffect2.StartEffect();
         }
 
         if (feverRoutine == null)

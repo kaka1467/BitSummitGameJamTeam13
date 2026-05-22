@@ -4045,6 +4045,7 @@ MonoBehaviour:
   - {fileID: 316360118}
   - {fileID: 1992152305}
   switchKey: 25
+  extraSwitchKeys: 5400000055000000560000005700000058000000590000005a0000005b0000005c0000005d000000
   door: {fileID: 1303533843}
   closedYAngle: 0
   openYAngle: 15.9
@@ -6491,6 +6492,7 @@ MonoBehaviour:
   leaveAfterSleepDelayMax: 6
   roomEntryBurstTickInterval: 0.2
   enableLoudItemFeature: 1
+  forceLoudItemDuringWarning: 0
   loudItemGaugeAmount: 3
   enableContinuousRoomSuspicion: 1
   continuousRoomSuspicionAmount: 2
@@ -6646,7 +6648,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1992152303
 MonoBehaviour:
   m_ObjectHideFlags: 0
