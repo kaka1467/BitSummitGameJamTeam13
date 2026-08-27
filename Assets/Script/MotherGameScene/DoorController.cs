@@ -2,39 +2,39 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// DoorController: Manages door rotation with smooth Lerp animation.
-/// Supports both manual toggle (E key) via New Input System and external commands from ParentDetectionV2.
+/// DoorController：Lerpアニメーションでドアの回転を管理する。
+/// 新しい入力システムによる手動切り替え（Eキー）と、ParentDetectionV2からの外部命令に対応する。
 /// </summary>
 public class DoorController : MonoBehaviour
 {
     /// <summary>
-    /// Door state enumeration
+    /// ドア状態の列挙
     /// </summary>
     public enum DoorState
     {
-        Closed,  // Door fully closed (0 degrees)
-        Peek,    // Door slightly open for peeking (-15 to -30 degrees)
-        Full     // Door fully open (-180 degrees)
+        Closed,  // ドアが完全に閉じた状態（0度）
+        Peek,    // 覗き見用に少し開いた状態（-15～-30度）
+        Full     // ドアが完全に開いた状態（-180度）
     }
 
-    [Header("Door Setup")]
-    [SerializeField] private Transform door;           // The door transform that rotates
+    [Header("ドア設定")]
+    [SerializeField] private Transform door;           // 回転させるドアのTransform
 
-    [Header("Rotation Settings")]
-    [SerializeField] private float closedAngle = 0f;   // Closed position (0 degrees)
-    [SerializeField] private float peekAngle = -15f;   // Peek position (-15 degrees for testing)
-    [SerializeField] private float openAngle = -180f;  // Fully open position (-180 degrees)
-    [SerializeField] private float openSpeed = 5f;     // Rotation speed multiplier
+    [Header("回転設定")]
+    [SerializeField] private float closedAngle = 0f;   // 閉じた位置（0度）
+    [SerializeField] private float peekAngle = -15f;   // 覗き見位置（テスト用に-15度）
+    [SerializeField] private float openAngle = -180f;  // 完全に開いた位置（-180度）
+    [SerializeField] private float openSpeed = 5f;     // 回転速度の倍率
 
-    [Header("Debug")]
+    [Header("デバッグ")]
     public bool showDebugLogs = false;
 
-    // Current door state
+    // 現在のドア状態
     private DoorState currentDoorState = DoorState.Closed;
     private DoorState targetDoorState = DoorState.Closed;
 
     /// <summary>
-    /// Read-only property: Get current door state
+    /// 読み取り専用プロパティ：現在のドア状態を取得
     /// </summary>
     public DoorState CurrentDoorState => currentDoorState;
 
@@ -49,13 +49,13 @@ public class DoorController : MonoBehaviour
 
     void Update()
     {
-        // Manual toggle via E key (New Input System)
+        // Eキーによる手動切り替え（新しい入力システム）
         if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
         {
             if (showDebugLogs)
-                Debug.Log("?? E Key pressed: Toggling door");
+                Debug.Log("?? Eキーを押しました：ドアを切り替えます");
 
-            // Toggle between Closed and Full
+            // ClosedとFullを切り替える
             if (targetDoorState == DoorState.Closed)
             {
                 SetDoorState(DoorState.Full);
@@ -66,12 +66,12 @@ public class DoorController : MonoBehaviour
             }
         }
 
-        // Smoothly rotate door towards target angle
+        // 目標角度に向けてドアを滑らかに回転させる
         UpdateDoorRotation();
     }
 
     /// <summary>
-    /// Updates door rotation towards target angle using Lerp
+    /// Lerpを使用して目標角度に向けてドアを回転させる
     /// </summary>
     private void UpdateDoorRotation()
     {
@@ -80,10 +80,10 @@ public class DoorController : MonoBehaviour
         float targetAngleY = GetTargetAngle(targetDoorState);
         Quaternion targetRotation = Quaternion.Euler(0f, targetAngleY, 0f);
 
-        // Lerp towards target rotation
+        // 目標回転へLerpする
         door.localRotation = Quaternion.Lerp(door.localRotation, targetRotation, Time.deltaTime * openSpeed);
 
-        // Update current state if rotation is close enough to target
+        // 回転が目標に十分近づいたら現在状態を更新する
         if (Quaternion.Angle(door.localRotation, targetRotation) < 1f)
         {
             currentDoorState = targetDoorState;
@@ -91,7 +91,7 @@ public class DoorController : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets the target Y rotation angle for the given door state
+    /// 指定したドア状態の目標Y回転角を取得する
     /// </summary>
     private float GetTargetAngle(DoorState state)
     {
@@ -105,7 +105,7 @@ public class DoorController : MonoBehaviour
     }
 
     /// <summary>
-    /// Sets door to a specific state (called by ParentDetectionV2 and manual input)
+    /// ドアを指定した状態にする（ParentDetectionV2および手動入力から呼び出される）
     /// </summary>
     public void SetDoorState(DoorState newState)
     {
@@ -114,12 +114,12 @@ public class DoorController : MonoBehaviour
         targetDoorState = newState;
 
         if (showDebugLogs)
-            Debug.Log($"?? Door state changed to: {newState}");
+            Debug.Log($"?? ドア状態を変更しました：{newState}");
     }
 
     /// <summary>
-    /// Backward compatibility method: Maps boolean to DoorState
-    /// true = Full open, false = Closed
+    /// 後方互換用メソッド：boolをDoorStateに変換する
+    /// trueの場合は完全に開き、falseの場合は閉じる。
     /// </summary>
     public void SetDoorOpen(bool isOpen)
     {
@@ -131,7 +131,7 @@ public class DoorController : MonoBehaviour
     }
 
     /// <summary>
-    /// Get the current rotation angle of the door (in degrees on Y-axis)
+    /// ドアの現在の回転角（Y軸の度数）を取得する
     /// </summary>
     public float GetCurrentDoorAngle()
     {

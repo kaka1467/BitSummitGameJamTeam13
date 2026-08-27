@@ -15,10 +15,10 @@ public class SleepingManager : MonoBehaviour
     public void SetCaughtState()
     {
         isCaught = true;
-        Debug.Log("caught by parent");
-        Debug.Log("IsCaught = True");
-        // Scene transition is now handled by GameManager.TriggerResult(GameOver)
-        // so that score is saved and typed UDP message is sent before loading.
+        Debug.Log("親に捕まりました");
+        Debug.Log("IsCaught = True（捕獲状態）");
+        // シーン遷移はGameManager.TriggerResult(GameOver)が処理する。
+        // スコアを保存し、型付きUDPメッセージを送信してからロードするため。
     }
 
     void Update()
@@ -34,9 +34,8 @@ public class SleepingManager : MonoBehaviour
     }
 }
 
-// Inspector Setup Notes:
-// - Attach this script to a GameObject in the child Unity app.
-// - This manager tracks whether the child has been caught by the parent.
-// - When caught, it stops reacting to sleep input (Space key).
-// - ChildUdpReceiver will call SetCaughtState() when receiving "CAUGHT" message.
-
+// インスペクター設定メモ：
+// - 子機のUnityアプリ内のGameObjectにこのスクリプトをアタッチする。
+// - このマネージャーは子機が親機に捕まったかを追跡する。
+// - 捕まると、睡眠入力（Spaceキー）への反応を停止する。
+// - ChildUdpReceiverは「CAUGHT」メッセージ受信時にSetCaughtState()を呼び出す。

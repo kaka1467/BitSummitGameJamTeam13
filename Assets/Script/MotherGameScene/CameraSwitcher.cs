@@ -15,7 +15,7 @@ public class CameraSwitcher : MonoBehaviour
         Key.Numpad7, Key.Numpad8, Key.Numpad9
     };
 
-    [Header("Door")]
+    [Header("ドア")]
     [SerializeField] private Transform door;
     [SerializeField] private float closedYAngle = 0f;
     [SerializeField] private float openYAngle = 90f;
@@ -25,14 +25,14 @@ public class CameraSwitcher : MonoBehaviour
     private bool isDoorOpen;
     private Quaternion targetDoorRotation;
 
-    /// <summary>True while the player is in the K-key peek view (door open state).</summary>
+    /// <summary>Kキーの覗き見視点（ドアが開いた状態）の間はtrue。</summary>
     public bool IsPeeking => isDoorOpen;
 
     private void Start()
     {
         if (cameras == null || cameras.Length == 0)
         {
-            Debug.LogWarning("CameraSwitcher: cameras is empty. Assign cameras in the Inspector.");
+            Debug.LogWarning("CameraSwitcher: カメラが空です。インスペクターでカメラを設定してください。");
             return;
         }
 
@@ -54,7 +54,7 @@ public class CameraSwitcher : MonoBehaviour
 
         if (IsSwitchKeyPressed(keyboard))
         {
-            Debug.Log($"[CameraSwitcher] Switch key detected | cameras={(cameras != null ? cameras.Length : 0)} | isDoorOpen before={isDoorOpen}");
+            Debug.Log($"[CameraSwitcher] 切り替えキーを検出 | cameras={(cameras != null ? cameras.Length : 0)} | isDoorOpen before={isDoorOpen}");
             SwitchToNextCamera();
         }
 
@@ -63,12 +63,12 @@ public class CameraSwitcher : MonoBehaviour
 
     private void SwitchToNextCamera()
     {
-        // Always toggle the door/peek state regardless of camera assignment.
+        // カメラの設定に関係なく、常にドア／覗き見状態を切り替える。
         ToggleDoor();
 
         if (cameras == null || cameras.Length == 0)
         {
-            Debug.Log("[CameraSwitcher] No cameras assigned — door toggled only");
+            Debug.Log("[CameraSwitcher] カメラが設定されていないため、ドアのみ切り替えました");
             return;
         }
 
@@ -125,7 +125,7 @@ public class CameraSwitcher : MonoBehaviour
         isDoorOpen = !isDoorOpen;
         float targetY = isDoorOpen ? openYAngle : closedYAngle;
         targetDoorRotation = Quaternion.Euler(0f, targetY, 0f);
-        Debug.Log($"[CameraSwitcher] IsPeeking changed to {isDoorOpen}");
+        Debug.Log($"[CameraSwitcher] IsPeeking を {isDoorOpen} に変更");
     }
 
     private void ApplyDoorStateImmediate()

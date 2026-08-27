@@ -5,92 +5,92 @@ using System.Threading;
 using UnityEngine;
 
 /// <summary>
-/// Reads raw integer values from an ESP32 over USB (Serial) and detects "pretend to sleep"
-/// when the load-cell value deviates from an auto-calibrated baseline by more than a threshold.
-/// - Runs serial reads on a background thread.
-/// - Uses a lock to publish the latest value to the main thread.
-/// - Provides an auto-calibration routine and a public ResetBaseline() method.
-/// - Safely closes the serial port on quit/destroy.
+/// USB（シリアル）経由でESP32から整数値を読み取り、
+/// ロードセル値が自動較正した基準値から閾値以上ずれたとき「寝たふり」を検出する。
+/// - シリアル読み取りはバックグラウンドスレッドで実行する。
+/// - lockを使って最新値をメインスレッドへ公開する。
+/// - 自動較正処理と公開ResetBaseline()メソッドを提供する。
+/// - 終了／破棄時にシリアルポートを安全に閉じる。
 /// </summary>
 public class PillowSensor : MonoBehaviour
 {
-    [Header("Serial Settings")]
-    [Tooltip("COM port name (change in Inspector if needed)")]
+    [Header("シリアル設定")]
+    [Tooltip("COMポート名（必要に応じてインスペクターで変更）")]
     [SerializeField] private string portName = "COM3";
     public string PortName => portName;
-    [Tooltip("Serial baud rate")]
+    [Tooltip("シリアル通信のボーレート")]
     [SerializeField] private int baudRate = 115200;
     public int BaudRate => baudRate;
-    [Tooltip("Serial read timeout (ms)")]
+    [Tooltip("シリアル読み取りタイムアウト（ミリ秒）")]
     [SerializeField] private int readTimeout = 50;
 
-    [Header("Detection Settings")]
-    [Tooltip("Absolute delta threshold from baseline to consider 'sleeping'")]
+    [Header("検出設定")]
+    [Tooltip("「睡眠中」と判定する基準値からの絶対差分閾値")]
     [System.Obsolete("Use onThreshold/offThreshold hysteresis settings instead.")]
     [SerializeField] private long threshold = 50000;
     [SerializeField] private long onThreshold = 100000;
     [SerializeField] private long offThreshold = 70000;
 
-    [Header("Calibration Settings")]
-    [Tooltip("Number of samples to average when calibrating baseline")]
+    [Header("較正設定")]
+    [Tooltip("基準値の較正時に平均するサンプル数")]
     [SerializeField] private int calibrationSamples = 50;
-    [Tooltip("Delay between calibration samples (seconds)")]
+    [Tooltip("較正サンプル間の遅延（秒）")]
     [SerializeField] private float calibrationSampleDelay = 0.02f;
 
-    [Header("Debug")]
+    [Header("デバッグ")]
     [SerializeField] private bool showDebugLogs = false;
 
-    // Public flag indicating whether the player is detected as "sleeping".
+    // プレイヤーが「睡眠中」と検出されたかを示す公開フラグ。
     public bool isSleeping = false;
 
     /// <summary>
-    /// Fired on the main thread for every non-numeric line received from the serial port.
-    /// Subscribe to this instead of opening a second SerialPort on the same COM port.
+    /// シリアルポートから受信した数値以外の各行について、メインスレッドで発生する。
+    /// 同じCOMポートで2つ目のSerialPortを開く代わりに、これを購読する。
     /// </summary>
     public event System.Action<string> OnRawLine;
 
-    // The baseline value established during calibration.
+    // 較正時に確立した基準値。
     private long baseline = 0L;
     private bool baselineReady = false;
 
-    // Background serial thread and control flag.
+    // バックグラウンドのシリアルスレッドと制御フラグ。
     private Thread serialThread;
     private volatile bool isRunning = false;
 
-    // Serial port instance.
+    // シリアルポートのインスタンス。
     private SerialPort serialPort;
 
-    // Shared latest value with thread safety.
+    // スレッドセーフに共有する最新値。
     private readonly object valueLock = new object();
     private long latestValue = 0L;
     private bool hasValue = false;
 
-    // Non-numeric lines queued by background thread, drained on main thread in Update().
+    // バックグラウンドスレッドがキューに入れた数値以外の行。Update()でメインスレッドから取り出す。
     private readonly Queue<string> _pendingRawLines = new Queue<string>();
 
-    // Graceful join timeout (ms) for background thread on shutdown.
+    // 終了時にバックグラウンドスレッドを正常結合するためのタイムアウト（ミリ秒）。
     private const int ThreadJoinTimeoutMs = 500;
 
     void Start()
     {
         OpenSerialPort();
-        // Start background reader if port opened successfully.
+        // ポートのオープンに成功した場合、バックグラウンド読み取りを開始する。
         if (serialPort != null && serialPort.IsOpen)
         {
             isRunning = true;
             serialThread = new Thread(SerialReadLoop) { IsBackground = true };
             serialThread.Start();
-            // Start auto-calibration after thread begins producing values.
+            // スレッドが値を生成し始めた後、自動較正を開始する。
             StartCoroutine(AutoCalibrateBaselineCoroutine());
         }
         else
         {
-            Debug.LogError($"PillowSensor: Failed to open serial port {portName}.");
+            Debug.LogError($"PillowSensor: シリアルポート{portName}を開けませんでした。");
         }
     }
 
     /// <summary>
-    /// Opens and configures the serial port with safe exception handling.
+    /// 安全な例外処理を行い、シリアルポートを開いて設定する。
     /// </summary>
     private void OpenSerialPort()
     {
@@ -114,8 +114,8 @@ public class PillowSensor : MonoBehaviour
     }
 
     /// <summary>
-    /// Background loop: reads lines from the serial port and publishes the latest parsed integer.
-    /// Executes continuously while isRunning is true.
+    /// バックグラウンドループ：シリアルポートから行を読み、解析した最新の整数を公開する。
+    /// isRunningがtrueの間、継続的に実行する。
     /// </summary>
     private void SerialReadLoop()
     {
@@ -123,7 +123,7 @@ public class PillowSensor : MonoBehaviour
         {
             try
             {
-                string line = serialPort.ReadLine(); // Running on background thread per requirements.
+                string line = serialPort.ReadLine(); // 要件によりバックグラウンドスレッドで実行する。
                 if (string.IsNullOrEmpty(line))
                     continue;
 
@@ -138,7 +138,7 @@ public class PillowSensor : MonoBehaviour
                 }
                 else
                 {
-                    // Non-numeric line — forward to subscribers on the main thread via pending queue
+                    // 数値以外の行 — 保留キュー経由でメインスレッドの購読者へ転送する
                     string captured = line;
                     lock (valueLock) { _pendingRawLines.Enqueue(captured); }
                     if (showDebugLogs) Debug.Log($"PillowSensor: Non-numeric line queued for dispatch: '{line}'.");
@@ -146,23 +146,23 @@ public class PillowSensor : MonoBehaviour
             }
             catch (System.TimeoutException)
             {
-                // ReadTimeout expired - this is expected from time to time. Ignore and continue.
+                // ReadTimeoutが期限切れ — 時々発生する想定内の動作。無視して続行する。
             }
             catch (System.Exception ioEx)
             {
                 Debug.LogError($"PillowSensor: Serial IO exception: {ioEx.Message}");
-                // On IO exceptions, break the loop to avoid tight error loop.
+                // IO例外時はエラーの高速ループを避けるためループを抜ける。
                 break;
             }
         }
 
-        // Ensure port closure if we exit loop due to exception.
+        // 例外でループを抜けた場合もポートを確実に閉じる。
         SafeClosePort();
     }
 
     void Update()
     {
-        // Drain non-numeric lines and fire OnRawLine on the main thread.
+        // 数値以外の行を取り出し、メインスレッドでOnRawLineを発生させる。
         while (true)
         {
             string rawLine = null;
@@ -175,7 +175,7 @@ public class PillowSensor : MonoBehaviour
             OnRawLine?.Invoke(rawLine);
         }
 
-        // Read the latest value from the background thread in a thread-safe manner.
+        // バックグラウンドスレッドの最新値をスレッドセーフに読み取る。
         long currentValue = 0L;
         bool currentHasValue = false;
         lock (valueLock)
@@ -184,14 +184,14 @@ public class PillowSensor : MonoBehaviour
             currentValue = latestValue;
         }
 
-        // If we don't have a calibrated baseline yet, don't attempt detection.
+        // 基準値の較正がまだなら検出を行わない。
         if (!currentHasValue || !baselineReady)
         {
             isSleeping = false;
             return;
         }
 
-        // Calculate absolute delta from baseline and determine sleep state.
+        // 基準値からの絶対差分を計算し、睡眠状態を判定する。
         long delta = System.Math.Abs(currentValue - baseline);
         if (!isSleeping)
         {
@@ -202,33 +202,33 @@ public class PillowSensor : MonoBehaviour
             isSleeping = false;
         }
 
-        if (showDebugLogs && Time.frameCount % 60 == 0) // Occasional debug log.
+        if (showDebugLogs && Time.frameCount % 60 == 0) // 定期的なデバッグ記録。
         {
             Debug.Log($"PillowSensor: current={currentValue}, baseline={baseline}, delta={delta}, isSleeping={isSleeping}");
         }
     }
 
     /// <summary>
-    /// Public method to trigger baseline recalibration at runtime.
+    /// 実行時に基準値の再較正を開始する公開メソッド。
     /// </summary>
     public void ResetBaseline()
     {
-        // Stop any running calibration and start a fresh one.
+        // 実行中の較正を停止し、新しい較正を開始する。
         StopCoroutine(AutoCalibrateBaselineCoroutine());
         StartCoroutine(AutoCalibrateBaselineCoroutine());
     }
 
     /// <summary>
-    /// Coroutine that gathers a number of recent samples on the main thread and computes an averaged baseline.
-    /// This uses the latestValue published by the background thread.
+    /// メインスレッドで最近のサンプルを集め、平均基準値を計算するコルーチン。
+    /// バックグラウンドスレッドが公開したlatestValueを使用する。
     /// </summary>
     private IEnumerator AutoCalibrateBaselineCoroutine()
     {
         baselineReady = false;
         isSleeping = false;
-        if (showDebugLogs) Debug.Log("PillowSensor: Starting baseline calibration...");
+        if (showDebugLogs) Debug.Log("PillowSensor: 基準値の較正を開始...");
 
-        // Wait until we have at least one reading or timeout after ~2 seconds.
+        // 少なくとも1つの読み取り値を得るか、約2秒後にタイムアウトするまで待つ。
         float waitStart = Time.time;
         while (true)
         {
@@ -239,7 +239,7 @@ public class PillowSensor : MonoBehaviour
             }
             if (Time.time - waitStart > 2.0f)
             {
-                Debug.LogWarning("PillowSensor: Calibration timed out waiting for serial data.");
+                Debug.LogWarning("PillowSensor: シリアルデータ待機中に較正がタイムアウトしました。");
                 yield break;
             }
             yield return null;
@@ -267,12 +267,12 @@ public class PillowSensor : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("PillowSensor: Calibration failed to collect samples.");
+            Debug.LogWarning("PillowSensor: サンプルを収集できず、較正に失敗しました。");
         }
     }
 
     /// <summary>
-    /// Attempts to close the serial port safely.
+    /// シリアルポートを安全に閉じる。
     /// </summary>
     private void SafeClosePort()
     {
@@ -305,11 +305,11 @@ public class PillowSensor : MonoBehaviour
         {
             if (serialThread != null && serialThread.IsAlive)
             {
-                // Wait briefly for the thread to finish gracefully.
+                // スレッドが正常終了するために短時間待つ。
                 if (!serialThread.Join(ThreadJoinTimeoutMs))
                 {
-                    // If it doesn't stop, log and continue (thread is background).
-                    if (showDebugLogs) Debug.LogWarning("PillowSensor: Serial thread did not terminate in time.");
+                    // 停止しない場合は記録して続行する（バックグラウンドスレッド）。
+                    if (showDebugLogs) Debug.LogWarning("PillowSensor: シリアルスレッドが時間内に終了しませんでした。");
                 }
             }
         }

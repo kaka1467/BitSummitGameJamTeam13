@@ -4,42 +4,41 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// ParentWarningScheduler:
-/// Automatically triggers ParentWarningSystem in repeating time windows.
-/// - First, a grace period blocks all automatic approaches.
-/// - After grace, each window triggers exactly one automatic approach
-///   at a random time within that window.
-/// - Higher suspicion shortens the effective window by windowReductionPerGauge seconds per stage.
-///   e.g. baseWindow=20s, windowReductionPerGauge=1s, gauge=9 → 11s window.
-/// - Loud items can still force an early check via TriggerSoon().
+/// ParentWarningSystemを一定の時間ウィンドウで自動的に発生させる。
+/// - 最初は猶予期間として自動接近をすべて阻止する。
+/// - 猶予期間後は各ウィンドウで1回だけ、ウィンドウ内のランダムな時刻に自動接近を発生させる。
+/// - 疑惑が高いほど、1段階あたりwindowReductionPerGauge秒だけ実効ウィンドウを短縮する。
+///   例：baseWindow=20秒、windowReductionPerGauge=1秒、gauge=9なら11秒のウィンドウ。
+/// - 大きな音のアイテムはTriggerSoon()で早期チェックを強制できる。
 /// </summary>
 public class ParentWarningScheduler : MonoBehaviour
 {
-    [Header("System References")]
-    [Tooltip("The ParentWarningSystem to control")]
+    [Header("システム参照")]
+    [Tooltip("制御対象のParentWarningSystem")]
     public ParentWarningSystem warningSystem;
     public MotherGauge motherGauge;
 
-    [Header("Scheduler Settings")]
-    [Tooltip("Automatically trigger warnings")]
+    [Header("スケジューラー設定")]
+    [Tooltip("警告を自動的に発生させる")]
     public bool autoTrigger = true;
 
-    [Tooltip("No automatic parent approach happens during this many seconds after scene start.")]
+    [Tooltip("シーン開始後、この秒数の間は親機が自動接近しません。")]
     public float graceSeconds = 15f;
 
-    [Tooltip("Minimum base window length in seconds before per-gauge reduction is applied.")]
+    [Tooltip("ゲージによる減少を適用する前の基本ウィンドウ最小時間（秒）。")]
     public float baseWindowMinSeconds = 20f;
 
-    [Tooltip("Maximum base window length in seconds before per-gauge reduction is applied. Set equal to baseWindowMinSeconds for a fixed base window.")]
+    [Tooltip("ゲージによる減少を適用する前の基本ウィンドウ最大時間（秒）。固定する場合はbaseWindowMinSecondsと同じ値にします。")]
     public float baseWindowMaxSeconds = 20f;
 
-    [Header("Scaling by Suspicion")]
-    [Tooltip("Seconds subtracted from the base window per gauge stage. e.g. baseWindow=20, value=1, gauge=9 → 11s window.")]
+    [Header("疑惑によるスケーリング")]
+    [Tooltip("ゲージ1段階ごとに基本ウィンドウから減らす秒数。例：baseWindow=20、値=1、gauge=9なら11秒。")]
     public float windowReductionPerGauge = 1f;
-    [Tooltip("Minimum window size in seconds regardless of suspicion level. Prevents windows from collapsing to zero.")]
+    [Tooltip("疑惑レベルに関係なく保証するウィンドウの最小時間（秒）。0になるのを防ぐ。")]
     public float minimumWindowSize = 5f;
 
-    [Header("Debug")]
-    [Tooltip("Time remaining until next automatic warning inside the current active window.")]
+    [Header("デバッグ")]
+    [Tooltip("現在の有効ウィンドウ内で、次の自動警告までの残り時間。")]
     public float timeUntilNextWarning = 0f;
 
     [SerializeField] private bool showDebugLogs = true;
@@ -68,13 +67,13 @@ public class ParentWarningScheduler : MonoBehaviour
 
         if (Keyboard.current.nKey.wasPressedThisFrame)
         {
-            Debug.Log("[ParentWarningScheduler] N key pressed - manual PASS-BY trigger");
+            Debug.Log("[ParentWarningScheduler] Nキーを押下 - 手動通過トリガー");
             TriggerPassByNow();
         }
 
         if (Keyboard.current.mKey.wasPressedThisFrame)
         {
-            Debug.Log("[ParentWarningScheduler] M key pressed - manual DOOR trigger");
+            Debug.Log("[ParentWarningScheduler] Mキーを押下 - 手動ドアトリガー");
             TriggerDoorNow();
         }
     }
@@ -112,7 +111,7 @@ public class ParentWarningScheduler : MonoBehaviour
     }
 
     /// <summary>
-    /// Manual debug trigger (N key) — forces pass-by route.
+    /// 手動デバッグトリガー（Nキー）— 通過ルートを強制する。
     /// </summary>
     public void TriggerPassByNow()
     {
@@ -133,7 +132,7 @@ public class ParentWarningScheduler : MonoBehaviour
     }
 
     /// <summary>
-    /// Manual debug trigger (M key) — forces door route.
+    /// 手動デバッグトリガー（Mキー）— ドアルートを強制する。
     /// </summary>
     public void TriggerDoorNow()
     {
@@ -172,8 +171,8 @@ public class ParentWarningScheduler : MonoBehaviour
     }
 
     /// <summary>
-    /// Trigger a warning after a short delay (used for loud items).
-    /// Resets the scheduler loop so urgent checks can happen early.
+    /// 短い遅延後に警告を発生させる（大きな音のアイテムで使用）。
+    /// 緊急チェックを早期に行えるようスケジューラーループをリセットする。
     /// </summary>
     public void TriggerSoon(float delaySeconds = 1f)
     {

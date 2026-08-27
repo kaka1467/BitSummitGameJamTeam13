@@ -3,21 +3,21 @@ using UnityEngine.SceneManagement;
 using System.Collections;
 
 /// <summary>
-/// CaughtReactionController:
+/// CaughtReactionController：
 ///
-/// GAUGE OWNERSHIP — strict single-writer model:
-///   ParentDetectionV2 is the ONLY script that writes to MotherGauge
-///   (continuous rise/drop via SetGaugeDirect every frame, loud items via AddGauge).
-///   This script MUST NOT write to MotherGauge at all.
+/// ゲージ管理 — 厳密な単一書き込みモデル：
+///   MotherGaugeに書き込む唯一のスクリプトはParentDetectionV2
+///   （毎フレームのSetGaugeDirectによる増減、大きな音によるAddGauge）。
+///   このスクリプトはMotherGaugeに一切書き込まない。
 ///
-/// This script is responsible for:
-///   - Game-over watchdog: monitors gauge and fires scene/UDP transition when max is hit
-///   - Forwarding NotifyGameOver to ParentDetectionV2 to halt its progression
-///   - Disabling game logic components on game over
+/// このスクリプトの責務：
+///   - ゲームオーバー監視：ゲージを監視し、最大値到達時にシーン／UDP遷移を実行
+///   - ParentDetectionV2へNotifyGameOverを転送し、進行を停止
+///   - ゲームオーバー時にゲームロジックのコンポーネントを無効化
 /// </summary>
 public class CaughtReactionController : MonoBehaviour
 {
-    [Header("System References")]
+    [Header("システム参照")]
     [SerializeField] private ParentDetectionV2 parentDetection;
     [SerializeField] private SleepingController sleepingController;
     [SerializeField] private DoorController doorController;
@@ -25,17 +25,17 @@ public class CaughtReactionController : MonoBehaviour
     [SerializeField] private MotherGauge motherGauge;
     [SerializeField] private CanvasGroup fadeCanvasGroup;
 
-    [Header("Scene Settings")]
+    [Header("シーン設定")]
     [SerializeField] private string gameOverSceneName = "GameOverResult";
 
-    [Header("Fade Settings")]
+    [Header("フェード設定")]
     [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
     [SerializeField, Min(0f)] private float sceneChangeDelay = 0f;
 
-    [Header("Debug")]
+    [Header("デバッグ")]
     [SerializeField] private bool showDebugLogs = false;
 
-    // Game over state flag
+    // ゲームオーバー状態フラグ
     private bool hasTriggeredGameOver = false;
     private Coroutine gameOverRoutine = null;
 
@@ -78,9 +78,8 @@ public class CaughtReactionController : MonoBehaviour
         if (hasTriggeredGameOver) return;
         if (motherGauge == null) return;
 
-        // Game-over watchdog: PDV2 writes gauge every frame and calls OnPlayerCaught
-        // when max is hit. This is a secondary safety net in case PDV2 is disabled
-        // before it can fire its own game-over path.
+        // ゲームオーバー監視：PDV2は毎フレームゲージを書き込み、最大値到達時にOnPlayerCaughtを呼ぶ。
+        // PDV2が自身のゲームオーバー処理を実行する前に無効化された場合に備えた安全網。
         if (motherGauge.currentGauge >= motherGauge.maxGauge)
         {
             TriggerGameOver();
@@ -96,29 +95,29 @@ public class CaughtReactionController : MonoBehaviour
     }
 
     /// <summary>
-    /// Notification that the mother performed a check.
-    /// This script no longer modifies the gauge (PDV2 owns all writes).
-    /// Kept as a stub so existing UnityEvent wiring does not break.
+    /// 親機がチェックを行ったことを通知する。
+    /// このスクリプトはゲージを変更しない（すべての書き込みはPDV2が管理）。
+    /// 既存のUnityEvent接続を壊さないためスタブとして残す。
     /// </summary>
     public void OnMotherCheck(bool isFullCheck)
     {
         if (showDebugLogs)
-            Debug.Log($"[CaughtReactionController] OnMotherCheck ({(isFullCheck ? "FULL" : "PEEK")}) received - gauge write is PDV2's responsibility, no action taken here");
+            Debug.Log($"[CaughtReactionController] OnMotherCheck ({(isFullCheck ? "FULL" : "PEEK")})を受信 - ゲージ書き込みはPDV2の責務のため、ここでは何もしません");
     }
 
     /// <summary>
-    /// Notification that a loud item was triggered.
-    /// This script no longer modifies the gauge (PDV2.OnLoudItemTriggered owns the write).
-    /// Kept as a stub so existing wiring does not break.
+    /// 大きな音を出すアイテムが発生したことを通知する。
+    /// このスクリプトはゲージを変更しない（書き込みはPDV2.OnLoudItemTriggeredが管理）。
+    /// 既存の接続を壊さないためスタブとして残す。
     /// </summary>
     public void OnLoudItemTriggered()
     {
         if (showDebugLogs)
-            Debug.Log("[CaughtReactionController] OnLoudItemTriggered received - gauge write is PDV2's responsibility, no action taken here");
+            Debug.Log("[CaughtReactionController] OnLoudItemTriggeredを受信 - ゲージ書き込みはPDV2の責務のため、ここでは何もしません");
     }
 
     /// <summary>
-    /// Triggers the permanent game over sequence
+    /// 永続的なゲームオーバーシーケンスを開始する
     /// </summary>
     private void TriggerGameOver()
     {
@@ -126,16 +125,16 @@ public class CaughtReactionController : MonoBehaviour
 
         hasTriggeredGameOver = true;
 
-        // Notify parent detection of permanent game over so it stops progression
+        // ParentDetectionに永続的なゲームオーバーを通知し、進行を停止させる
         if (parentDetection != null)
         {
             try { parentDetection.NotifyGameOver(); } catch { }
         }
 
         if (showDebugLogs)
-            Debug.LogWarning("[CaughtReactionController] GAME OVER TRIGGERED - suspicion reached max");
+            Debug.LogWarning("[CaughtReactionController] ゲームオーバー発生 - 疑惑が最大値に到達");
 
-        // ★★★ 【追加】子機（Child）へ親に捕まったこと（CAUGHT）を通知する ★★★
+        // ★★★ 【追加】子機へ親に捕まったこと（CAUGHT）を通知する ★★★
         EnsureUdpSender();
         if (udpSender != null)
         {
@@ -148,10 +147,10 @@ public class CaughtReactionController : MonoBehaviour
             Debug.LogWarning("[CaughtReactionController] ParentUdpSender not found — CAUGHT not sent.");
         }
 
-        // Disable game logic components
+        // ゲームロジックのコンポーネントを無効化
         DisableGameLogic();
 
-        // Start the game over routine (fade and load scene)
+        // ゲームオーバー処理（フェードとシーンロード）を開始
         if (gameOverRoutine != null) StopCoroutine(gameOverRoutine);
         gameOverRoutine = StartCoroutine(GameOverSequence());
     }
@@ -173,7 +172,7 @@ public class CaughtReactionController : MonoBehaviour
 
     private IEnumerator GameOverSequence()
     {
-        // 1. 必要に応じて画面のフェードアウト処理
+        // 1. 必要に応じて画面をフェードアウト
         if (fadeCanvasGroup != null)
         {
             if (!fadeCanvasGroup.gameObject.activeSelf)
@@ -186,7 +185,7 @@ public class CaughtReactionController : MonoBehaviour
             yield return StartCoroutine(FadeOutRoutine());
         }
 
-        // 2. 設定された遅延時間待機 (タイムスケールに依存しないRealtimeを維持)
+        // 2. 設定された遅延時間を待機（タイムスケールに依存しないRealtime）
         float delay = Mathf.Max(0f, sceneChangeDelay);
         if (delay > 0f)
         {
@@ -194,7 +193,7 @@ public class CaughtReactionController : MonoBehaviour
         }
 
         // 3. 親機側のゲームオーバーシーン（GameOverResult）をロード
-        if (showDebugLogs) Debug.Log($"[CaughtReactionController] Loading {gameOverSceneName} scene...");
+        if (showDebugLogs) Debug.Log($"[CaughtReactionController] {gameOverSceneName}シーンをロード中...");
 
         if (!string.IsNullOrEmpty(gameOverSceneName))
         {
@@ -202,7 +201,7 @@ public class CaughtReactionController : MonoBehaviour
         }
         else
         {
-            Debug.LogError("[CaughtReactionController] gameOverSceneName is empty. Please set it in the Inspector.");
+            Debug.LogError("[CaughtReactionController] gameOverSceneNameが空です。インスペクターで設定してください。");
         }
         gameOverRoutine = null;
     }
@@ -240,13 +239,13 @@ public class CaughtReactionController : MonoBehaviour
     }
 
     /// <summary>
-    /// Debug-only helper to reset the gauge to zero from the Inspector or test code.
-    /// In normal gameplay the gauge is reset by ParentDetectionV2.ResetCycle().
+    /// インスペクターまたはテストコードからゲージを0に戻すデバッグ専用ヘルパー。
+    /// 通常のゲームプレイではParentDetectionV2.ResetCycle()がゲージをリセットする。
     /// </summary>
     public void DebugResetSuspicionGauge()
     {
         if (motherGauge == null) motherGauge = Object.FindFirstObjectByType<MotherGauge>();
         if (motherGauge != null) motherGauge.SetGaugeDirect(0);
-        if (showDebugLogs) Debug.Log("[CaughtReactionController] DebugResetSuspicionGauge: gauge set to 0 (debug only)");
+        if (showDebugLogs) Debug.Log("[CaughtReactionController] DebugResetSuspicionGauge: ゲージを0に設定（デバッグ専用）");
     }
 }
