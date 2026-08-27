@@ -1,48 +1,48 @@
 using UnityEngine;
 
 /// <summary>
-/// SleepVisionEffectController:
-/// Animates two UI eyelid RectTransforms based on SleepingController.IsSleeping.
-/// When sleeping: slides upper eyelid down and lower eyelid up toward their closed positions.
-/// When awake:    slides both eyelids back to their open positions.
-/// Pure presentation — no gameplay logic.
+/// SleepVisionEffectController：
+/// SleepingController.IsSleepingに応じて、2つのUIまぶたRectTransformを動かす。
+/// 睡眠中：上まぶたを下へ、下まぶたを上へ動かして閉じた位置に近づける。
+/// 起きているとき：両方のまぶたを開いた位置へ戻す。
+/// 表示専用で、ゲームプレイのロジックは持たない。
 /// </summary>
 public class SleepVisionEffectController : MonoBehaviour
 {
-    // ── References ────────────────────────────────────────────────────────────
-    [Header("References")]
-    [Tooltip("Source of the IsSleeping state. Auto-found at Start if not assigned.")]
+    // ── 参照 ────────────────────────────────────────────────────────────────
+    [Header("参照")]
+    [Tooltip("IsSleeping状態の参照元。未設定の場合はStart時に自動検索します。")]
     public SleepingController sleepingController;
 
-    [Tooltip("RectTransform for the upper eyelid image.")]
+    [Tooltip("上まぶた画像のRectTransform。")]
     public RectTransform upperEyelid;
 
-    [Tooltip("RectTransform for the lower eyelid image.")]
+    [Tooltip("下まぶた画像のRectTransform。")]
     public RectTransform lowerEyelid;
 
-    // ── Upper eyelid positions ────────────────────────────────────────────────
-    [Header("Upper Eyelid Positions")]
-    [Tooltip("anchoredPosition of the upper eyelid when the eye is fully open.")]
+    // ── 上まぶたの位置 ────────────────────────────────────────────────────────
+    [Header("上まぶたの位置")]
+    [Tooltip("目が完全に開いているときの上まぶたのanchoredPosition。")]
     public Vector2 upperOpenAnchoredPos = new Vector2(0f, 100f);
 
-    [Tooltip("anchoredPosition of the upper eyelid when the eye is in the sleep/closed position.")]
+    [Tooltip("睡眠／閉じた状態のときの上まぶたのanchoredPosition。")]
     public Vector2 upperClosedAnchoredPos = new Vector2(0f, 0f);
 
-    // ── Lower eyelid positions ────────────────────────────────────────────────
-    [Header("Lower Eyelid Positions")]
-    [Tooltip("anchoredPosition of the lower eyelid when the eye is fully open.")]
+    // ── 下まぶたの位置 ────────────────────────────────────────────────────────
+    [Header("下まぶたの位置")]
+    [Tooltip("目が完全に開いているときの下まぶたのanchoredPosition。")]
     public Vector2 lowerOpenAnchoredPos = new Vector2(0f, -100f);
 
-    [Tooltip("anchoredPosition of the lower eyelid when the eye is in the sleep/closed position.")]
+    [Tooltip("睡眠／閉じた状態のときの下まぶたのanchoredPosition。")]
     public Vector2 lowerClosedAnchoredPos = new Vector2(0f, 0f);
 
-    // ── Transition ────────────────────────────────────────────────────────────
-    [Header("Transition")]
-    [Tooltip("Units per second for MoveTowards interpolation. Higher = faster slide.")]
+    // ── 遷移 ────────────────────────────────────────────────────────────────
+    [Header("遷移")]
+    [Tooltip("MoveTowards補間の1秒あたりの移動量。大きいほど速くスライドします。")]
     public float transitionSpeed = 300f;
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Unity lifecycle
+    //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()

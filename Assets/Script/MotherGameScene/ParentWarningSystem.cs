@@ -2,121 +2,121 @@ using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// ParentWarningSystem:
-/// Owns all pre-approach presentation: foreshadowing lights, delays, speed scaling, and route selection.
-/// Also owns the loud-item rush-in entry point (bypasses lights/delays, forces DoorPeek at high speed).
+/// ParentWarningSystem：
+/// 接近前の演出（予告灯、遅延、速度スケーリング、ルート選択）をすべて管理する。
+/// 大きな音による突入の入口も管理する（灯りと遅延を省略し、高速でDoorPeekを強制）。
 ///
-/// Public entry points:
-///   StartWarningSequence()             — normal automatic flow (called by scheduler)
-///   StartManualPassByWarningSequence() — N-key debug: full foreshadow, forced PassBy
-///   StartManualDoorWarningSequence()   — M-key debug: full foreshadow, forced DoorPeek
-///   TriggerInstantPassBy()             — instant debug PassBy, no lights or delays
-///   TriggerInstantDoor()               — instant debug DoorPeek, no lights or delays
-///   StartLoudItemRushInSequence()      — loud-item rush-in: second-floor lights only, speed=loudItemRushInMoveSpeed
-///   StopWarningSequence()              — force-stop and reset (e.g. game over, scene unload)
-///   EndWarningSequence()               — clean end called by ParentDetectionV2 after a cycle completes
+/// 公開エントリーポイント：
+///   StartWarningSequence()             — 通常の自動フロー（スケジューラーから呼び出し）
+///   StartManualPassByWarningSequence() — Nキーのデバッグ：完全な予告、PassByを強制
+///   StartManualDoorWarningSequence()   — Mキーのデバッグ：完全な予告、DoorPeekを強制
+///   TriggerInstantPassBy()             — 即時デバッグ通過、灯りと遅延なし
+///   TriggerInstantDoor()               — 即時デバッグDoorPeek、灯りと遅延なし
+///   StartLoudItemRushInSequence()      — 大きな音による突入：2階の灯りのみ、速度=loudItemRushInMoveSpeed
+///   StopWarningSequence()              — 強制停止してリセット（ゲームオーバー、シーンアンロードなど）
+///   EndWarningSequence()               — サイクル完了後にParentDetectionV2が呼ぶ正常終了
 ///
-/// Responsibility boundaries:
-///   ParentWarningSystem     — lights, delays, speed, route probability, rush-in setup
-///   ParentApproachController— path movement and orientation
-///   ParentDetectionV2       — door branching, suspicion, room-check consequences, caught
+/// 責務の境界：
+///   ParentWarningSystem     — 灯り、遅延、速度、ルート確率、突入設定
+///   ParentApproachController— 経路移動と向き
+///   ParentDetectionV2       — ドア分岐、疑惑、部屋チェックの結果、捕獲
 /// </summary>
 public class ParentWarningSystem : MonoBehaviour
 {
-    // ── Core references ───────────────────────────────────────────────────────
-    [Header("References")]
+    // ── 主要な参照 ────────────────────────────────────────────────────────────
+    [Header("参照")]
     [SerializeField] public ParentApproachController approachController;
     [SerializeField] public ParentDetectionV2        parentDetection;
     [SerializeField] public MotherGauge              motherGauge;
 
-    // ── Foreshadowing lights ──────────────────────────────────────────────────
-    [Header("Foreshadowing Lights")]
+    // ── 予告灯 ────────────────────────────────────────────────────────────────
+    [Header("予告灯")]
     [SerializeField] private GameObject firstFloorLight;
     [SerializeField] private GameObject secondFloorLight1;
     [SerializeField] private GameObject secondFloorLight2;
     [SerializeField] private GameObject secondFloorLight3;
     [SerializeField] private AudioSource lightSwitchAudioSource;
 
-    // ── Foreshadowing delay scaling ───────────────────────────────────────────
-    [Header("Foreshadowing Delays (Low Suspicion)")]
-    [Tooltip("Min seconds between first-floor light and second-floor lights at low suspicion.")]
+    // ── 予告遅延のスケーリング ────────────────────────────────────────────────
+    [Header("予告遅延（低疑惑）")]
+    [Tooltip("低疑惑時の1階の灯りと2階の灯りの間隔の最小秒数。")]
     public float secondFloorDelayMin = 1f;
-    [Tooltip("Max seconds between first-floor light and second-floor lights at low suspicion.")]
+    [Tooltip("低疑惑時の1階の灯りと2階の灯りの間隔の最大秒数。")]
     public float secondFloorDelayMax = 10f;
-    [Tooltip("Min seconds between second-floor lights and approach start at low suspicion.")]
+    [Tooltip("低疑惑時の2階の灯りから接近開始までの最小秒数。")]
     public float approachDelayMin = 1f;
-    [Tooltip("Max seconds between second-floor lights and approach start at low suspicion.")]
+    [Tooltip("低疑惑時の2階の灯りから接近開始までの最大秒数。")]
     public float approachDelayMax = 3f;
 
-    [Header("Foreshadowing Delays (High Suspicion)")]
-    [Tooltip("If current gauge is above this threshold, use the high-suspicion delay ranges below.")]
+    [Header("予告遅延（高疑惑）")]
+    [Tooltip("現在のゲージがこの閾値を超えた場合、以下の高疑惑用遅延範囲を使用する。")]
     public int highSuspicionDelayGaugeThreshold = 5;
-    [Tooltip("Min seconds between first-floor light and second-floor lights when gauge is above threshold.")]
+    [Tooltip("ゲージが閾値を超えたときの1階の灯りと2階の灯りの間隔の最小秒数。")]
     public float highSuspicionSecondFloorDelayMin = 1f;
-    [Tooltip("Max seconds between first-floor light and second-floor lights when gauge is above threshold.")]
+    [Tooltip("ゲージが閾値を超えたときの1階の灯りと2階の灯りの間隔の最大秒数。")]
     public float highSuspicionSecondFloorDelayMax = 3f;
-    [Tooltip("Min seconds between second-floor lights and approach start when gauge is above threshold.")]
+    [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最小秒数。")]
     public float highSuspicionApproachDelayMin = 0f;
-    [Tooltip("Max seconds between second-floor lights and approach start when gauge is above threshold.")]
+    [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最大秒数。")]
     public float highSuspicionApproachDelayMax = 1f;
 
-    // ── Movement speed ────────────────────────────────────────────────────────
-    [Header("Approach Speed")]
-    [Tooltip("Minimum moveSpeed assigned for automatic runs.")]
+    // ── 移動速度 ──────────────────────────────────────────────────────────────
+    [Header("接近速度")]
+    [Tooltip("自動ルートに設定するmoveSpeedの最小値。")]
     public float approachMoveSpeedMin = 5f;
-    [Tooltip("Maximum moveSpeed assigned for automatic runs.")]
+    [Tooltip("自動ルートに設定するmoveSpeedの最大値。")]
     public float approachMoveSpeedMax = 15f;
-    [Tooltip("Extra moveSpeed added linearly at max suspicion on automatic runs.")]
+    [Tooltip("自動ルートで最大疑惑時に線形加算するmoveSpeed。")]
     public float approachSpeedSuspicionBonus = 0f;
-    [Tooltip("If current gauge is above this threshold, use the high suspicion speed range below.")]
+    [Tooltip("現在のゲージがこの閾値を超えた場合、以下の高疑惑速度範囲を使用する。")]
     public int highSuspicionSpeedGaugeThreshold = 5;
-    [Tooltip("Minimum moveSpeed assigned when gauge is above the threshold.")]
+    [Tooltip("ゲージが閾値を超えたときに設定するmoveSpeedの最小値。")]
     public float highSuspicionApproachMoveSpeedMin = 25f;
-    [Tooltip("Maximum moveSpeed assigned when gauge is above the threshold.")]
+    [Tooltip("ゲージが閾値を超えたときに設定するmoveSpeedの最大値。")]
     public float highSuspicionApproachMoveSpeedMax = 30f;
 
-    // ── Rush-in speed ─────────────────────────────────────────────────────────
-    [Header("Loud-Item Rush-In")]
-    [Tooltip("moveSpeed assigned to the approach controller for a loud-item rush-in. Should be noticeably faster than normal high-suspicion speeds.")]
+    // ── 突入速度 ──────────────────────────────────────────────────────────────
+    [Header("大きな音による突入")]
+    [Tooltip("大きな音による突入時に接近コントローラーへ設定するmoveSpeed。通常の高疑惑速度より明らかに速くする。")]
     public float loudItemRushInMoveSpeed = 40f;
 
-    // ── Debug speed override ──────────────────────────────────────────────────
-    [Header("Debug Speed Override (N / M manual routes)")]
-    [Tooltip("When true, manual N/M routes use fixedDebugApproachSpeed instead of the random range.")]
+    // ── デバッグ速度の上書き ──────────────────────────────────────────────────
+    [Header("デバッグ速度上書き（N／M手動ルート）")]
+    [Tooltip("trueの場合、N／M手動ルートはランダム範囲の代わりにfixedDebugApproachSpeedを使用する。")]
     public bool useFixedDebugApproachSpeed = false;
-    [Tooltip("Fixed moveSpeed used for manual N/M routes when useFixedDebugApproachSpeed is true.")]
+    [Tooltip("useFixedDebugApproachSpeedがtrueのときにN／M手動ルートで使う固定moveSpeed。")]
     public float fixedDebugApproachSpeed = 4f;
 
-    // ── Route probability ─────────────────────────────────────────────────────
-    [Header("Route Probability")]
-    [Tooltip("DoorPeek probability at zero suspicion (gauge=0).")]
+    // ── ルート確率 ────────────────────────────────────────────────────────────
+    [Header("ルート確率")]
+    [Tooltip("疑惑0（gauge=0）でのDoorPeek確率。")]
     [Range(0f, 1f)]
     public float doorChanceAtMinSuspicion = 0.2f;
-    [Tooltip("DoorPeek probability at maximum suspicion (gauge=maxGauge). Should be close to 1 for high danger feel.")]
+    [Tooltip("最大疑惑（gauge=maxGauge）でのDoorPeek確率。危険度を高く感じさせるため1に近い値を推奨。")]
     [Range(0f, 1f)]
     public float doorChanceAtMaxSuspicion = 0.95f;
-    [Tooltip("Among non-door outcomes, this fraction selects PassByThenDoorSound instead of PassBy.")]
+    [Tooltip("ドア以外の結果のうち、PassByではなくPassByThenDoorSoundを選ぶ割合。")]
     [Range(0f, 1f)]
     public float basePassByThenDoorSoundChance = 0.33f;
 
-    // ── Third route audio ─────────────────────────────────────────────────────
-    [Header("Pass-By-Then-Door-Sound Route")]
-    [Tooltip("AudioSource played after the pass-by completes on the PassByThenDoorSound route.")]
+    // ── 第3ルートのオーディオ ─────────────────────────────────────────────────
+    [Header("通過後ドア音ルート")]
+    [Tooltip("PassByThenDoorSoundルートで通過完了後に再生するAudioSource。")]
     [SerializeField] private AudioSource passByThenDoorSoundAudioSource;
-    [Tooltip("Seconds after pass-by finishes before the remote door sound plays.")]
+    [Tooltip("通過完了から遠くのドア音が再生されるまでの秒数。")]
     [SerializeField] private float passByThenDoorSoundDelay = 1f;
 
-    // ── State ─────────────────────────────────────────────────────────────────
-    [Header("State")]
-    [Tooltip("True while the warning / approach sequence is active.")]
+    // ── 状態 ──────────────────────────────────────────────────────────────────
+    [Header("状態")]
+    [Tooltip("警告／接近シーケンス中はtrue。")]
     public bool isWarningActive = false;
 
-    // ── Active route state ────────────────────────────────────────────────────
-    /// <summary>Route chosen for the current run. Set before movement starts; cleared when the sequence ends.</summary>
+    // ── 現在のルート状態 ──────────────────────────────────────────────────────
+    /// <summary>現在の実行で選択されたルート。移動開始前に設定され、シーケンス終了時に解除される。</summary>
     public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound }
     public RouteState ActiveRoute { get; private set; } = RouteState.None;
 
-    // ── Private ───────────────────────────────────────────────────────────────
+    // ── 非公開 ───────────────────────────────────────────────────────────────
     private bool      _eventsSubscribed    = false;
     private Coroutine _foreshadowCoroutine = null;
     private Coroutine _passByThenDoorSoundCoroutine = null;
@@ -227,10 +227,10 @@ public class ParentWarningSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Loud-item rush-in: skips first-floor light and foreshadow delays.
-    /// Turns on second-floor lights only, sets speed to loudItemRushInMoveSpeed, forces DoorPeek route.
-    /// Called by ParentDetectionV2.OnLoudItemTriggered() after audio and gauge are already applied.
-    /// No-op if a warning sequence is already active.
+    /// 大きな音による突入：1階の灯りと予告遅延を省略する。
+    /// 2階の灯りだけを点灯し、速度をloudItemRushInMoveSpeedに設定してDoorPeekルートを強制する。
+    /// 音声とゲージの処理後にParentDetectionV2.OnLoudItemTriggered()から呼び出される。
+    /// 警告シーケンスがすでに進行中の場合は何もしない。
     /// </summary>
     public void StartLoudItemRushInSequence()
     {
@@ -248,7 +248,7 @@ public class ParentWarningSystem : MonoBehaviour
         if (approachController != null)
             approachController.IsRushIn = true;
 
-        // Second-floor lights only — first-floor light is skipped for rush-in.
+        // 2階の灯りのみ — 突入時は1階の灯りを省略する。
         if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
         if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
         if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
@@ -261,7 +261,7 @@ public class ParentWarningSystem : MonoBehaviour
         approachController.StartApproachDoorOnly();
     }
 
-    /// <summary>Force-stops any active foreshadow or pass-by-sound coroutines, then calls EndWarningSequence().</summary>
+    /// <summary>実行中の予告または通過後ドア音のコルーチンを強制停止し、EndWarningSequence()を呼び出す。</summary>
     public void StopWarningSequence()
     {
         if (_foreshadowCoroutine != null)

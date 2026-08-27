@@ -3,53 +3,53 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// MotherGauge: Canonical suspicion gauge (0..maxGauge) and UI visualizer.
+/// MotherGauge：正規の疑惑ゲージ（0～maxGauge）とUI表示を管理する。
 ///
-/// GAUGE OWNERSHIP:
-///   Suspicion (0..maxGauge) persists across warning cycles.
-///   Increases: AddGauge() calls from ParentDetectionV2 (loud items, check events).
-///   Decreases: HandleAutoDecrease() — 1 stage every decreaseIntervalSeconds (production).
-///   Arrow-key input is an editor-debug helper only.
+/// ゲージの管理：
+///   疑惑値（0～maxGauge）は警告サイクルをまたいで保持される。
+///   増加：ParentDetectionV2からのAddGauge()呼び出し（大きな音、チェックイベント）。
+///   減少：HandleAutoDecrease() — decreaseIntervalSecondsごとに1段階（本番動作）。
+///   矢印キー入力はエディターデバッグ専用。
 /// </summary>
 public class MotherGauge : MonoBehaviour
 {
-    [Header("Scene References")]
+    [Header("シーン参照")]
     [SerializeField] private CaughtReactionController caughtReactionController;
 
-    // Number of suspicion stages (default 10)
+    // 疑惑段階の数（デフォルト10）
     public int maxGauge = 10;
 
-    // Current suspicion stage (0..maxGauge)
+    // 現在の疑惑段階（0～maxGauge）
     public int currentGauge = 0;
 
-    [Header("Approach Gauge Frames (visual)")]
-    [Tooltip("Assign the frame Images (left-to-right) used to visualize the approach/suspicion progression.")]
-    // Legacy serialized field name kept for compatibility with existing scenes/prefabs:
-    // 'suspiciousFrames' previously implied a suspicion meter; it now represents approach-progress frames.
+    [Header("接近ゲージフレーム（表示）")]
+    [Tooltip("接近／疑惑の進行を表示するフレームImageを左から順に設定します。")]
+    // 既存のシーン／プレハブとの互換性のため、シリアライズ済みフィールド名を維持する。
+    // 'suspiciousFrames'は以前は疑惑メーターを意味していたが、現在は接近進行フレームを表す。
     public Image[] suspiciousFrames;
 
-    [Header("Frame Sprites")]
-    [Tooltip("Sprite used for an empty (unfilled) approach frame")]
+    [Header("フレームスプライト")]
+    [Tooltip("空の（未充填）接近フレームに使用するSprite")]
     public Sprite frameOffSprite;
-    [Tooltip("Sprite used for a filled approach frame")]
+    [Tooltip("充填済みの接近フレームに使用するSprite")]
     public Sprite frameOnSprite;
 
-    [Header("Input Settings (Editor Debug Only)")]
-    [Tooltip("DEBUG ONLY. Amount to change per arrow-key press in the editor. Has no effect in production if HandleInput is removed.")]
+    [Header("入力設定（エディターデバッグ専用）")]
+    [Tooltip("デバッグ専用。エディターで矢印キーを1回押したときの変化量。HandleInputを削除した本番環境では効果なし。")]
     public int gaugeStep = 1;
 
-    [Header("Auto Decrease Settings")]
-    [Tooltip("Enables automatic suspicion decrease by 1 stage every decreaseIntervalSeconds. Should be true in normal gameplay.")]
+    [Header("自動減少設定")]
+    [Tooltip("decreaseIntervalSecondsごとに疑惑を1段階自動減少させます。通常のゲームプレイではtrueにしてください。")]
     public bool enableAutoDecrease = true;
-    [Tooltip("How many seconds between each automatic stage decrease (only used when enableAutoDecrease is true)")]
+    [Tooltip("自動で段階を減少させる間隔（秒）。enableAutoDecreaseがtrueの場合のみ使用。")]
     public float decreaseIntervalSeconds = 20f;
 
-    [Header("Audio")]
-    [Tooltip("AudioSource that plays a one-shot sound each time the gauge increases by one or more steps. Assign in the Inspector.")]
+    [Header("オーディオ")]
+    [Tooltip("ゲージが1段階以上増加するたびにワンショット音を再生するAudioSource。インスペクターで設定します。")]
     [SerializeField] private AudioSource gaugeStepAudioSource;
 
-    [Header("Debug")]
-    [Tooltip("Log approach/suspicion gauge changes to the console")]
+    [Header("デバッグ")]
+    [Tooltip("接近／疑惑ゲージの変化をコンソールに記録する")]
     public bool logOnChange = false;
 
     private float _decreaseTimer = 0f;
@@ -66,7 +66,7 @@ public class MotherGauge : MonoBehaviour
 
     private void OnValidate()
     {
-        // Reflect inspector changes immediately
+        // インスペクターの変更を即座に反映する
         currentGauge = Mathf.Clamp(currentGauge, 0, maxGauge);
         UpdateGaugeUI();
     }
@@ -89,7 +89,7 @@ public class MotherGauge : MonoBehaviour
         if (_decreaseTimer >= decreaseIntervalSeconds)
         {
             _decreaseTimer = 0f;
-            Debug.Log($"[MotherGauge-AutoDecrease] INTERVAL HIT | decreasing gauge by 1 | currentGauge BEFORE={currentGauge}");
+            Debug.Log($"[MotherGauge-AutoDecrease] 間隔到達 | ゲージを1減少 | currentGauge BEFORE={currentGauge}");
             AddGauge(-1);
         }
     }
@@ -98,51 +98,51 @@ public class MotherGauge : MonoBehaviour
     {
         if (Keyboard.current != null && Keyboard.current.rightArrowKey.isPressed)
         {
-            Debug.Log($"[MotherGauge-Input] RIGHT ARROW pressed | adding gaugeStep={gaugeStep} | currentGauge BEFORE={currentGauge}");
+            Debug.Log($"[MotherGauge-Input] 右矢印キーを押下 | gaugeStep={gaugeStep}を加算 | currentGauge BEFORE={currentGauge}");
             AddGauge(gaugeStep);
         }
         if (Keyboard.current != null && Keyboard.current.leftArrowKey.isPressed)
         {
-            Debug.Log($"[MotherGauge-Input] LEFT ARROW pressed | subtracting gaugeStep={gaugeStep} | currentGauge BEFORE={currentGauge}");
+            Debug.Log($"[MotherGauge-Input] 左矢印キーを押下 | gaugeStep={gaugeStep}を減算 | currentGauge BEFORE={currentGauge}");
             AddGauge(-gaugeStep);
         }
     }
 
     /// <summary>
-    /// Refreshes the UI frames to match the current currentGauge value without changing it.
-    /// Use this instead of AddGauge(0) when you only need to sync the visuals.
+    /// currentGaugeを変更せず、UIフレームを現在値に合わせて更新する。
+    /// 表示だけを同期したい場合はAddGauge(0)ではなくこちらを使う。
     /// </summary>
     public void RefreshUIOnly()
     {
         currentGauge = Mathf.Clamp(currentGauge, 0, maxGauge);
         UpdateGaugeUI();
-        Debug.Log($"[MotherGauge-RefreshUIOnly] UI refreshed | currentGauge={currentGauge}/{maxGauge} | value NOT changed by this call");
+        Debug.Log($"[MotherGauge-RefreshUIOnly] UIを更新 | currentGauge={currentGauge}/{maxGauge} | この呼び出しでは値を変更していません");
     }
 
     /// <summary>
-    /// Directly sets the suspicion gauge to a specific value.
-    /// Use this instead of assigning currentGauge directly, so the change is always logged.
+    /// 疑惑ゲージを指定値に直接設定する。
+    /// 変更が常に記録されるよう、currentGaugeへの直接代入ではなくこちらを使う。
     /// </summary>
     public void SetGaugeDirect(int newValue)
     {
         int previous = currentGauge;
         currentGauge = Mathf.Clamp(newValue, 0, maxGauge);
         UpdateGaugeUI();
-        Debug.Log($"[F:{Time.frameCount}][MotherGauge-SetGaugeDirect] DIRECT SET | newValue={newValue} | currentGauge BEFORE={previous} | currentGauge AFTER={currentGauge}/{maxGauge}");
+        Debug.Log($"[F:{Time.frameCount}][MotherGauge-SetGaugeDirect] 直接設定 | newValue={newValue} | currentGauge BEFORE={previous} | currentGauge AFTER={currentGauge}/{maxGauge}");
     }
 
     /// <summary>
-    /// Adjust the suspicion gauge by a discrete number of stages (positive to increase suspicion).
-    /// Changes are clamped to [0, maxGauge] and immediately update the visual frames.
+    /// 疑惑ゲージを指定した段階数だけ変更する（正数で疑惑が増加）。
+    /// 値は[0, maxGauge]に収められ、表示フレームも直ちに更新される。
     /// </summary>
     public void AddGauge(int amount)
     {
         int previous = currentGauge;
-        Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] CALLED | amount={amount} | currentGauge BEFORE={previous}");
+        Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] 呼び出し | amount={amount} | currentGauge BEFORE={previous}");
         currentGauge += amount;
         currentGauge = Mathf.Clamp(currentGauge, 0, maxGauge);
         UpdateGaugeUI();
-        Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] DONE   | currentGauge AFTER={currentGauge}/{maxGauge}");
+        Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] 完了   | currentGauge AFTER={currentGauge}/{maxGauge}");
 
         if (currentGauge > previous)
         {
@@ -152,7 +152,7 @@ public class MotherGauge : MonoBehaviour
 
         if (logOnChange && previous != currentGauge)
         {
-            Debug.Log($"[{nameof(MotherGauge)}] suspicion={currentGauge}/{maxGauge}", this);
+            Debug.Log($"[{nameof(MotherGauge)}] 疑惑={currentGauge}/{maxGauge}", this);
         }
     }
 
@@ -160,18 +160,18 @@ public class MotherGauge : MonoBehaviour
     {
         if (suspiciousFrames == null || suspiciousFrames.Length == 0)
         {
-            Debug.LogWarning($"[{nameof(MotherGauge)}] approach gauge frames are not assigned. Assign Image elements in the Inspector.", this);
+            Debug.LogWarning($"[{nameof(MotherGauge)}] 接近ゲージフレームが設定されていません。インスペクターでImage要素を設定してください。", this);
             return;
         }
 
         if (maxGauge <= 0)
         {
-            Debug.LogWarning($"[{nameof(MotherGauge)}] maxGauge is zero or negative. Set a positive value.", this);
+            Debug.LogWarning($"[{nameof(MotherGauge)}] maxGaugeが0以下です。正の値を設定してください。", this);
             SetFrames(0);
             return;
         }
 
-        // Map currentGauge (0..maxGauge) to frame count
+        // currentGauge（0～maxGauge）をフレーム数に変換する
         float ratio = Mathf.Clamp01((float)currentGauge / maxGauge);
         int filledCount = Mathf.RoundToInt(ratio * suspiciousFrames.Length);
         SetFrames(filledCount);

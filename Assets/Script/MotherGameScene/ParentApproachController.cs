@@ -3,119 +3,119 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// ParentApproachController:
-/// Moves the mother along inspector-assigned waypoints in two explicit routes:
-///   Pass-by  : startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint → passByPoint
-///   Door only: startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint (stop)
+/// ParentApproachController：
+/// インスペクターで設定したウェイポイントに沿って、2つの明示的なルートで親機を移動させる。
+///   通過：startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint → passByPoint
+///   ドアのみ：startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint（停止）
 ///
-/// Rotation rules (fixed Y, X/Z locked):
-///   Stair climb  : Y = -90  (set instantly at phase start)
-///   Stair turn   : Y =   0  (smooth rotation at stairTurnPoint)
-///   Door arrival : Y =  90  (smooth rotation at doorPoint)
+/// 回転規則（Y固定、X/Z固定）：
+///   階段上り：Y = -90（フェーズ開始時に即時設定）
+///   階段旋回：Y = 0（stairTurnPointで滑らかに回転）
+///   ドア到着：Y = 90（doorPointで滑らかに回転）
 ///
-/// Movement loop audio:
-///   Managed every frame in UpdateMovementLoopAudio().
-///   Plays only when IsApproaching=true, IsRushIn=false, and CameraSwitcher.IsPeeking=true.
-///   Stopped immediately when any condition is no longer met, and on ResetStateFlags().
+/// 移動ループ音：
+///   UpdateMovementLoopAudio()で毎フレーム管理する。
+///   IsApproaching=true、IsRushIn=false、CameraSwitcher.IsPeeking=trueのときだけ再生する。
+///   条件を満たさなくなったとき、またResetStateFlags()時に即座に停止する。
 ///
-/// Rush-in mode (IsRushIn=true):
-///   Set by ParentWarningSystem before calling StartApproachDoorOnly() for a loud-item rush.
-///   Suppresses movement loop audio and uses rushInPauseAtDoorSeconds instead of pauseAtDoorSeconds.
-///   Cleared automatically in ResetStateFlags().
+/// 突入モード（IsRushIn=true）：
+///   大きな音による突入でStartApproachDoorOnly()を呼ぶ前にParentWarningSystemが設定する。
+///   移動ループ音を抑制し、pauseAtDoorSecondsの代わりにrushInPauseAtDoorSecondsを使用する。
+///   ResetStateFlags()で自動的に解除される。
 /// </summary>
 public class ParentApproachController : MonoBehaviour
 {
-    // ── Waypoints ─────────────────────────────────────────────────────────────
-    [Header("Waypoints")]
-    [Tooltip("Where the mother spawns and resets to.")]
+    // ── ウェイポイント ────────────────────────────────────────────────────────
+    [Header("ウェイポイント")]
+    [Tooltip("親機が出現し、リセット時に戻る場所。")]
     public Transform startPoint;
 
-    [Tooltip("Waypoints for climbing the stairs. Mother faces Y=-90 throughout.")]
+    [Tooltip("階段を上るウェイポイント。親機は終始Y=-90を向く。")]
     public Transform[] stairClimbPoints;
 
-    [Tooltip("Single point where stair climbing ends and the mother rotates toward the hallway (Y=0).")]
+    [Tooltip("階段上りを終え、親機が廊下方向（Y=0）へ回転する1つの地点。")]
     public Transform stairTurnPoint;
 
-    [Tooltip("Waypoints for hallway movement after the stair turn.")]
+    [Tooltip("階段旋回後に廊下を移動するためのウェイポイント。")]
     public Transform[] hallwayPoints;
 
-    [Tooltip("Position in front of the door. Mother rotates to Y=90 on arrival.")]
+    [Tooltip("ドア前の位置。到着時に親機がY=90へ回転する。")]
     public Transform doorPoint;
 
-    [Tooltip("Where the mother walks after passing the door (pass-by route only).")]
+    [Tooltip("ドア通過後に親機が歩く場所（通過ルートのみ）。")]
     public Transform passByPoint;
 
-    // ── Movement ──────────────────────────────────────────────────────────────
-    [Header("Movement")]
-    [Tooltip("Base movement speed (units/sec).")]
+    // ── 移動 ──────────────────────────────────────────────────────────────────
+    [Header("移動")]
+    [Tooltip("基本移動速度（単位／秒）。")]
     public float moveSpeed = 2f;
 
-    [Tooltip("How close (units) the mother must be to a waypoint to count as arrived.")]
+    [Tooltip("到着と判定するウェイポイントまでの距離（単位）。")]
     public float stopDistance = 0.05f;
 
-    // ── Rotation Speeds ───────────────────────────────────────────────────────
-    [Header("Rotation Speeds")]
-    [Tooltip("Speed (deg/sec) when rotating at the stair corner turn.")]
+    // ── 回転速度 ──────────────────────────────────────────────────────────────
+    [Header("回転速度")]
+    [Tooltip("階段の角で旋回するときの速度（度／秒）。")]
     public float stairTurnRotationSpeed = 90f;
 
-    [Tooltip("Speed (deg/sec) when rotating to face the door on arrival.")]
+    [Tooltip("到着時にドアへ向く回転速度（度／秒）。")]
     public float doorTurnRotationSpeed = 120f;
 
-    // ── Visibility ────────────────────────────────────────────────────────────
-    [Header("Mother Model Visibility")]
-    [Tooltip("The root GameObject of the walking mother model. Will be SetActive(true) on approach start and SetActive(false) is NOT called here — PDV2 manages hide via realMotherObject.")]
+    // ── 表示 ──────────────────────────────────────────────────────────────────
+    [Header("親機モデルの表示")]
+    [Tooltip("歩く親機モデルのルートGameObject。接近開始時にSetActive(true)にする。ここではSetActive(false)を呼ばず、PDV2がrealMotherObject経由で非表示を管理する。")]
     public GameObject motherModelRoot;
-    [Tooltip("Optional: child Renderers to enable/disable if motherModelRoot alone is not enough (e.g. LOD children).")]
+    [Tooltip("任意：motherModelRootだけでは不十分な場合に有効／無効にする子Renderer（例：LODの子）。")]
     public Renderer[] motherModelRenderers;
 
-    // ── Audio ──────────────────────────────────────────────────────────────────
-    [Header("Audio")]
-    [Tooltip("AudioSource looped while approaching. Gated by peeking state each frame via UpdateMovementLoopAudio(). Never plays on rush-in runs.")]
+    // ── オーディオ ─────────────────────────────────────────────────────────────
+    [Header("オーディオ")]
+    [Tooltip("接近中にループ再生するAudioSource。UpdateMovementLoopAudio()で毎フレーム覗き見状態により制御する。突入ルートでは再生しない。")]
     public AudioSource movementLoopAudioSource;
-    [Tooltip("CameraSwitcher used to gate the movement loop audio. Auto-found at Start if not assigned.")]
+    [Tooltip("移動ループ音の制御に使うCameraSwitcher。未設定時はStartで自動検索する。")]
     public CameraSwitcher cameraSwitcher;
 
-    // ── Timing ────────────────────────────────────────────────────────────────
-    [Header("Timing")]
-    [Tooltip("Seconds the mother pauses at the door before the OnStoppedAtDoor event (normal run).")]
+    // ── タイミング ────────────────────────────────────────────────────────────
+    [Header("タイミング")]
+    [Tooltip("通常ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
     public float pauseAtDoorSeconds = 2f;
 
-    [Tooltip("Seconds the mother pauses at the door before the OnStoppedAtDoor event (loud-item rush-in run).")]
+    [Tooltip("大きな音による突入ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
     public float rushInPauseAtDoorSeconds = 0.2f;
 
-    [Tooltip("Seconds the mother pauses at the door before continuing to passByPoint.")]
+    [Tooltip("passByPointへ進む前にドアで停止する秒数。")]
     public float pauseBeforePassBySeconds = 0.5f;
 
-    // ── Events ────────────────────────────────────────────────────────────────
-    [Header("Events")]
+    // ── イベント ──────────────────────────────────────────────────────────────
+    [Header("イベント")]
     public UnityEvent OnApproachStarted;
     public UnityEvent OnReachedDoor;
     public UnityEvent OnStoppedAtDoor;
     public UnityEvent OnPassedByDoor;
 
-    // ── Public read-only state ────────────────────────────────────────────────
+    // ── 公開読み取り専用状態 ──────────────────────────────────────────────────
     public bool IsApproaching    { get; private set; }
     public bool ReachedDoor      { get; private set; }
     public bool StoppedAtDoor    { get; private set; }
     public bool PassedByDoor     { get; private set; }
     public bool IsInHallwayPhase { get; private set; }
 
-    // ── Run mode ──────────────────────────────────────────────────────────────
-    /// <summary>Set by ParentWarningSystem before starting a loud-item rush-in. Suppresses movement loop audio and uses rushInPauseAtDoorSeconds.</summary>
+    // ── 実行モード ────────────────────────────────────────────────────────────
+    /// <summary>大きな音による突入開始前にParentWarningSystemが設定する。移動ループ音を抑制し、rushInPauseAtDoorSecondsを使用する。</summary>
     public bool IsRushIn { get; set; }
 
-    // ── Private ───────────────────────────────────────────────────────────────
+    // ── 非公開 ───────────────────────────────────────────────────────────────
     private Coroutine _approachCoroutine;
     private float _fixedPitch;
     private float _fixedRoll;
 
-    // Fixed yaw angles — not exposed; adjusted via requirements only
+    // 固定ヨー角 — 外部公開せず、要件に応じて調整する
     private const float StairYaw   = -90f;
     private const float HallwayYaw =   0f;
     private const float DoorYaw    =  90f;
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Unity lifecycle
+    //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()
@@ -132,37 +132,37 @@ public class ParentApproachController : MonoBehaviour
     private void UpdateMovementLoopAudio()
     {
         if (movementLoopAudioSource == null) return;
-        // Rule: play only on a normal (non-rush-in) run while the approach is active AND player is peeking.
+        // ルール：接近中かつプレイヤーが覗き見している通常ルート（突入以外）のみ再生する。
         bool shouldPlay = !IsRushIn && IsApproaching && cameraSwitcher != null && cameraSwitcher.IsPeeking;
         if (shouldPlay && !movementLoopAudioSource.isPlaying)
         {
             movementLoopAudioSource.loop = true;
             movementLoopAudioSource.Play();
-            Debug.Log("[ParentApproachController] Movement loop started (peeking)");
+            Debug.Log("[ParentApproachController] 移動ループを開始（覗き見中）");
         }
         else if (!shouldPlay && movementLoopAudioSource.isPlaying)
         {
             movementLoopAudioSource.Stop();
-            Debug.Log("[ParentApproachController] Movement loop stopped (not peeking or rush-in)");
+            Debug.Log("[ParentApproachController] 移動ループを停止（覗き見中でない、または突入中）");
         }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Public API
+    //  公開API
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Default entry point — delegates to StartApproachDoorOnly(). Kept for backward-compatible scene wiring.</summary>
+    /// <summary>既定の入口 — StartApproachDoorOnly()へ委譲する。既存シーンの接続との互換性のため残す。</summary>
     public void StartApproach()
     {
         StartApproachDoorOnly();
     }
 
-    /// <summary>Starts a pass-by run: mother walks through the hallway, past the door, to passByPoint.</summary>
+    /// <summary>通過ルートを開始する：親機が廊下を通り、ドアを過ぎてpassByPointまで歩く。</summary>
     public void StartApproachPassByOnly()
     {
         if (IsApproaching)
         {
-            Debug.Log("[ParentApproachController] Already approaching — ignoring StartApproachPassByOnly");
+            Debug.Log("[ParentApproachController] すでに接近中 — StartApproachPassByOnlyを無視");
             return;
         }
         if (!ValidateWaypoints(requirePassBy: true)) return;
@@ -170,12 +170,12 @@ public class ParentApproachController : MonoBehaviour
         BeginApproach(passByRoute: true);
     }
 
-    /// <summary>Starts a door-stop run: mother walks to doorPoint, rotates to face the room, and stops. Also used for rush-in runs.</summary>
+    /// <summary>ドア停止ルートを開始する：親機がdoorPointまで歩き、部屋の方向を向いて停止する。突入ルートでも使用する。</summary>
     public void StartApproachDoorOnly()
     {
         if (IsApproaching)
         {
-            Debug.Log("[ParentApproachController] Already approaching — ignoring StartApproachDoorOnly");
+            Debug.Log("[ParentApproachController] すでに接近中 — StartApproachDoorOnlyを無視");
             return;
         }
         if (!ValidateWaypoints(requirePassBy: false)) return;
@@ -207,15 +207,15 @@ public class ParentApproachController : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Internal start helper
+    //  内部開始ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
     private void BeginApproach(bool passByRoute)
     {
         ResetStateFlags();
 
-        // Capture pitch/roll from startPoint.rotation so a stale mid-run transform
-        // does not carry over incorrect values after a cancelled cycle.
+        // startPoint.rotationからピッチ／ロールを取得し、キャンセルされたサイクル後に
+        // 実行途中の古いTransformが誤った値を引き継がないようにする。
         Vector3 startEuler = startPoint.rotation.eulerAngles;
         _fixedPitch = startEuler.x;
         _fixedRoll  = startEuler.z;
@@ -234,12 +234,12 @@ public class ParentApproachController : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Coroutines
+    //  コルーチン
     // ──────────────────────────────────────────────────────────────────────────
 
     private IEnumerator DoorRoutine()
     {
-        Debug.Log("[ParentApproachController] DoorRoutine: START");
+        Debug.Log("[ParentApproachController] DoorRoutine：開始");
 
         yield return RunStairPhase();
         yield return RunHallwayPhase();
@@ -249,7 +249,7 @@ public class ParentApproachController : MonoBehaviour
         yield return RotateToYaw(DoorYaw, doorTurnRotationSpeed);
 
         ReachedDoor = true;
-        Debug.Log("[ParentApproachController] REACHED DOOR — firing OnReachedDoor");
+        Debug.Log("[ParentApproachController] ドアに到着 — OnReachedDoorを発生");
         OnReachedDoor?.Invoke();
 
         float doorPause = IsRushIn ? rushInPauseAtDoorSeconds : pauseAtDoorSeconds;
@@ -259,18 +259,17 @@ public class ParentApproachController : MonoBehaviour
         StopMovementAudio();
         StoppedAtDoor = true;
         IsApproaching = false;
-        // IsInHallwayPhase is intentionally NOT cleared here.
-        // PDV2.HallwayPeekSuspicionCoroutine checks it to decide whether peek-ticks should fire
-        // while the mother stands at the door. ResetStateFlags() (via ResetApproach) clears it
-        // after the full cycle ends.
+        // IsInHallwayPhaseは意図的にここでは解除しない。
+        // PDV2.HallwayPeekSuspicionCoroutineが、親機がドアに立っている間に覗き見加算を行うか判定するために確認する。
+        // 完全なサイクル終了後、ResetApproach経由のResetStateFlags()で解除する。
 
-        Debug.Log("[ParentApproachController] STOPPED AT DOOR — firing OnStoppedAtDoor");
+        Debug.Log("[ParentApproachController] ドアで停止 — OnStoppedAtDoorを発生");
         OnStoppedAtDoor?.Invoke();
     }
 
     private IEnumerator PassByRoutine()
     {
-        Debug.Log("[ParentApproachController] PassByRoutine: START");
+        Debug.Log("[ParentApproachController] PassByRoutine：開始");
 
         yield return RunStairPhase();
         yield return RunHallwayPhase();
@@ -286,21 +285,21 @@ public class ParentApproachController : MonoBehaviour
         StopMovementAudio();
         PassedByDoor  = true;
         IsApproaching = false;
-        // IsInHallwayPhase cleared by ResetStateFlags() only — consistent with DoorRoutine.
+        // IsInHallwayPhaseはResetStateFlags()でのみ解除する — DoorRoutineと同じ動作。
 
-        Debug.Log("[ParentApproachController] PASSED BY DOOR — firing OnPassedByDoor");
+        Debug.Log("[ParentApproachController] ドアを通過 — OnPassedByDoorを発生");
         OnPassedByDoor?.Invoke();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Shared phase helpers
+    //  共通フェーズヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
     private IEnumerator RunStairPhase()
     {
         SetYaw(StairYaw);
         Debug.Log($"[ParentApproachController] Phase: STAIR CLIMB | yaw=-90 | IsRushIn={IsRushIn}");
-        // Movement loop audio is managed by UpdateMovementLoopAudio() in Update() — no Play() call here.
+        // 移動ループ音はUpdate()内のUpdateMovementLoopAudio()で管理する — ここではPlay()を呼ばない。
 
         if (stairClimbPoints != null)
         {
@@ -317,14 +316,14 @@ public class ParentApproachController : MonoBehaviour
             Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0");
             yield return MoveToPoint(stairTurnPoint);
             yield return RotateToYaw(HallwayYaw, stairTurnRotationSpeed);
-            Debug.Log("[ParentApproachController]   STAIR TURN complete");
+            Debug.Log("[ParentApproachController]   階段旋回完了");
         }
     }
 
     private IEnumerator RunHallwayPhase()
     {
         IsInHallwayPhase = true;
-        Debug.Log("[ParentApproachController] Phase: HALLWAY | IsInHallwayPhase=true");
+        Debug.Log("[ParentApproachController] フェーズ：廊下 | IsInHallwayPhase=true");
 
         if (hallwayPoints != null)
         {
@@ -338,7 +337,7 @@ public class ParentApproachController : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Movement / rotation helpers
+    //  移動／回転ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
     private IEnumerator MoveToPoint(Transform target)
@@ -385,7 +384,7 @@ public class ParentApproachController : MonoBehaviour
         if (movementLoopAudioSource != null && movementLoopAudioSource.isPlaying)
         {
             movementLoopAudioSource.Stop();
-            Debug.Log("[ParentApproachController] Movement audio stopped");
+            Debug.Log("[ParentApproachController] 移動音を停止");
         }
     }
 
@@ -394,7 +393,7 @@ public class ParentApproachController : MonoBehaviour
         if (motherModelRoot != null)
         {
             motherModelRoot.SetActive(true);
-            Debug.Log($"[ParentApproachController] Mother model visibility restored | object='{motherModelRoot.name}'");
+            Debug.Log($"[ParentApproachController] 親機モデルの表示を復元 | object='{motherModelRoot.name}'");
         }
 
         if (motherModelRenderers != null)
@@ -403,7 +402,7 @@ public class ParentApproachController : MonoBehaviour
             {
                 if (r == null) continue;
                 r.enabled = true;
-                Debug.Log($"[ParentApproachController] Mother model visibility restored | renderer='{r.name}'");
+                Debug.Log($"[ParentApproachController] 親機モデルの表示を復元 | renderer='{r.name}'");
             }
         }
     }
@@ -423,28 +422,28 @@ public class ParentApproachController : MonoBehaviour
     {
         if (startPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] startPoint is NULL.", this);
+            Debug.LogWarning("[ParentApproachController] startPointがNULLです。", this);
             return false;
         }
         if (doorPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] doorPoint is NULL.", this);
+            Debug.LogWarning("[ParentApproachController] doorPointがNULLです。", this);
             return false;
         }
         if (requirePassBy && passByPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] passByPoint is NULL — required for pass-by route.", this);
+            Debug.LogWarning("[ParentApproachController] passByPointがNULLです — 通過ルートに必要です。", this);
             return false;
         }
         if (stairTurnPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] stairTurnPoint is NULL — stair-to-hallway turn will be skipped.", this);
+            Debug.LogWarning("[ParentApproachController] stairTurnPointがNULLです — 階段から廊下への旋回をスキップします。", this);
         }
         return true;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Scene gizmos
+    //  シーンギズモ
     // ──────────────────────────────────────────────────────────────────────────
 
 #if UNITY_EDITOR
@@ -452,14 +451,14 @@ public class ParentApproachController : MonoBehaviour
     {
         Transform prev = startPoint;
 
-        // startPoint — white
+        // startPoint — 白
         if (startPoint != null)
         {
             Gizmos.color = Color.white;
             Gizmos.DrawSphere(startPoint.position, 0.08f);
         }
 
-        // stairClimbPoints — cyan
+        // stairClimbPoints — シアン
         Gizmos.color = Color.cyan;
         if (stairClimbPoints != null)
         {
@@ -472,7 +471,7 @@ public class ParentApproachController : MonoBehaviour
             }
         }
 
-        // stairTurnPoint — blue
+        // stairTurnPoint — 青
         if (stairTurnPoint != null)
         {
             Gizmos.color = Color.blue;
@@ -481,7 +480,7 @@ public class ParentApproachController : MonoBehaviour
             prev = stairTurnPoint;
         }
 
-        // hallwayPoints — green
+        // hallwayPoints — 緑
         Gizmos.color = Color.green;
         if (hallwayPoints != null)
         {
@@ -494,7 +493,7 @@ public class ParentApproachController : MonoBehaviour
             }
         }
 
-        // doorPoint — yellow
+        // doorPoint — 黄
         if (doorPoint != null)
         {
             Gizmos.color = Color.yellow;
@@ -503,7 +502,7 @@ public class ParentApproachController : MonoBehaviour
             prev = doorPoint;
         }
 
-        // passByPoint — magenta
+        // passByPoint — マゼンタ
         if (passByPoint != null)
         {
             Gizmos.color = Color.magenta;

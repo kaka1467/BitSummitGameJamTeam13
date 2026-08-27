@@ -4,29 +4,29 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// ParentDetectionV2:
-/// Door-event / branch controller only.
+/// ドアイベント／分岐のみを制御する。
 ///
-/// Responsibility boundaries:
-///   ParentApproachController  — movement and route presentation
-///   ParentWarningSystem       — sequence coordinator
-///   ParentWarningScheduler    — timing and N/M debug keys
-///   ParentDetectionV2 (this)  — reacts when the mother reaches the door or passes by,
-///                               handles branching, door state, cycle reset, and loud items
+/// 責務の境界：
+///   ParentApproachController  — 移動とルート演出
+///   ParentWarningSystem       — シーケンス調整
+///   ParentWarningScheduler    — タイミングとN/Mデバッグキー
+///   ParentDetectionV2（本クラス）— 親機のドア到着／通過に反応し、
+///                               分岐、ドア状態、サイクルリセット、大きな音を処理する
 ///
-/// Gauge is written in four cases:
-///   OnLoudItemTriggered              — discrete AddGauge() proportional to loudItemGaugeAmount
-///   TriggerPrimaryEvent              — discrete AddGauge() initial burst when mother enters room (if not sleeping)
-///   ContinuousRoomSuspicionCoroutine — timed AddGauge() while door is open and player is NOT sleeping
-///   HallwayPeekSuspicionCoroutine    — mild timed AddGauge() only when BOTH mother is in hallway phase
-///                                      AND player is actively peeking (CameraSwitcher.IsPeeking)
-/// Peek duration for the current run is: peekDurationBase + motherGauge.currentGauge
-/// Route branching (primary vs dummy) is driven by warningSystem.ActiveRoute.
-/// dummyProbability is only a fallback when ActiveRoute is None (e.g. P key debug).
+/// ゲージへの書き込みは次の4つの場合に行う：
+///   OnLoudItemTriggered              — loudItemGaugeAmountに応じたAddGauge()の段階加算
+///   TriggerPrimaryEvent              — 親機が部屋に入ったときの初回AddGauge()（睡眠中でない場合）
+///   ContinuousRoomSuspicionCoroutine — ドアが開き、プレイヤーが睡眠中でない間の時間制AddGauge()
+///   HallwayPeekSuspicionCoroutine    — 親機が廊下フェーズにいて、かつプレイヤーが覗き見中
+///                                      （CameraSwitcher.IsPeeking）の場合のみ、少量の時間制AddGauge()
+/// 現在のルートの覗き見時間はpeekDurationBase + motherGauge.currentGauge。
+/// ルート分岐（本チェックか覗き見か）はwarningSystem.ActiveRouteで決まる。
+/// dummyProbabilityはActiveRouteがNoneの場合（例：Pキーのデバッグ）のみ予備として使用する。
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
-    // ── System references ─────────────────────────────────────────────────────
-    [Header("System References")]
+    // ── システム参照 ──────────────────────────────────────────────────────────
+    [Header("システム参照")]
     public ParentWarningSystem       warningSystem;
     public CaughtReactionController  caughtReactionController;
     public MotherGauge               motherGauge;
@@ -34,73 +34,73 @@ public class ParentDetectionV2 : MonoBehaviour
     public SleepingController        sleepingController;
     public CameraSwitcher            cameraSwitcher;
 
-    // ── Audio ─────────────────────────────────────────────────────────────────
-    [Header("Audio Sources")]
-    [Tooltip("Played when the dummy (peek) door event fires.")]
+    // ── オーディオ ─────────────────────────────────────────────────────────────
+    [Header("オーディオソース")]
+    [Tooltip("ダミー（覗き見）ドアイベント発生時に再生。")]
     [SerializeField] private AudioSource dummyDoorAudioSource;
-    [Tooltip("Played when the primary (full) door opens.")]
+    [Tooltip("本チェック（全開）でドアが開いたときに再生。")]
     [SerializeField] private AudioSource mainDoorOpenAudioSource;
-    [Tooltip("Played when the door closes at the end of any event.")]
+    [Tooltip("各イベント終了時にドアが閉じるときに再生。")]
     [SerializeField] private AudioSource mainDoorCloseAudioSource;
-    [Tooltip("Played immediately when a loud-item rush-in is triggered.")]
+    [Tooltip("大きな音による突入が発生した直後に再生。")]
     [SerializeField] private AudioSource rushInAudioSource;
 
-    // ── Door ──────────────────────────────────────────────────────────────────
-    [Header("Door Control")]
+    // ── ドア ──────────────────────────────────────────────────────────────────
+    [Header("ドア制御")]
     [SerializeField] private DoorController targetDoorController;
 
-    // ── Branching ─────────────────────────────────────────────────────────────
-    [Header("Event Branching")]
-    [Tooltip("Fallback probability of a dummy (peek) check when no route state is available from ParentWarningSystem (e.g. P key debug).")]
+    // ── 分岐 ──────────────────────────────────────────────────────────────────
+    [Header("イベント分岐")]
+    [Tooltip("ParentWarningSystemからルート状態を取得できない場合のダミー（覗き見）チェック確率（例：Pキーのデバッグ）。")]
     [SerializeField, Range(0f, 1f)] private float dummyProbability = 0.3f;
 
-    // ── Peek / room-check timing ─────────────────────────────────────────────────
-    [Header("Room-Check Timing")]
-    [Tooltip("For the DUMMY (peek-only) event: base duration in seconds. Actual = peekDurationBase + currentGauge.")]
+    // ── 覗き見／部屋チェックのタイミング ─────────────────────────────────────
+    [Header("部屋チェックのタイミング")]
+    [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")]
     [SerializeField] private float peekDurationBase = 3f;
-    [Tooltip("For the PRIMARY (full check) event: mother stays in the room until the player falls asleep on the pillow. " +
-             "If the player never sleeps, the mother leaves after this many seconds as a safety timeout.")]
+    [Tooltip("本チェック（全開）イベントで、プレイヤーが枕で眠るまで親機が部屋に留まる時間。 " +
+             "一度も眠らない場合は、安全タイムアウトとしてこの秒数後に親機が退出する。")]
     [SerializeField] private float roomCheckSafetyTimeout = 30f;
-    [Tooltip("Seconds after the player falls asleep before the mother closes the door and leaves (at zero suspicion).")]
+    [Tooltip("プレイヤーが眠ってから親機がドアを閉めて退出するまでの秒数（疑惑0の場合）。")]
     [SerializeField] private float leaveAfterSleepDelay = 2f;
-    [Tooltip("Seconds after the player falls asleep before the mother leaves at maximum suspicion. Lerped from leaveAfterSleepDelay at zero suspicion to this at max suspicion.")]
+    [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")]
     [SerializeField] private float leaveAfterSleepDelayMax = 6f;
 
-    // ── Room entry suspicion ───────────────────────────────────────────────────
-    [Header("Room Entry Suspicion")]
-    [Tooltip("Seconds between each of the 3 burst ticks when the mother enters the room and player is NOT sleeping.")]
+    // ── 部屋侵入時の疑惑 ──────────────────────────────────────────────────────
+    [Header("部屋侵入時の疑惑")]
+    [Tooltip("親機が部屋に入り、プレイヤーが睡眠中でないときに発生する3回の増加の間隔（秒）。")]
     [SerializeField] private float roomEntryBurstTickInterval = 0.2f;
 
-    // ── Loud item ─────────────────────────────────────────────────────────────
-    [Header("Loud Item Feature")]
-    [Tooltip("Disable to make the L-key and any in-game loud-item triggers completely inert.")]
+    // ── 大きな音のアイテム ────────────────────────────────────────────────────
+    [Header("大きな音のアイテム機能")]
+    [Tooltip("無効にすると、Lキーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")]
     [SerializeField] private bool enableLoudItemFeature = true;
-    [Tooltip("When true, a loud item will interrupt an active warning and force a rush-in.")]
+    [Tooltip("trueの場合、大きな音のアイテムが進行中の警告を中断し、突入を強制する。")]
     [SerializeField] private bool forceLoudItemDuringWarning = false;
-    [Tooltip("Gauge stages added to MotherGauge when a loud item fires. If this pushes gauge to max, game over triggers immediately instead of a rush-in.")]
+    [Tooltip("大きな音のアイテム発生時にMotherGaugeへ加算する段階数。最大値に達した場合は突入せず即座にゲームオーバーになる。")]
     [SerializeField] private int loudItemGaugeAmount = 3;
 
-    // ── Continuous room suspicion ──────────────────────────────────────────────
-    [Header("Continuous Room Suspicion")]
-    [Tooltip("Enable continuous suspicion rise while the mother's full-check door event is active.")]
+    // ── 部屋内の継続疑惑 ──────────────────────────────────────────────────────
+    [Header("部屋内の継続疑惑")]
+    [Tooltip("親機の本チェックドアイベント中、疑惑を継続的に増加させる。")]
     [SerializeField] private bool enableContinuousRoomSuspicion = true;
-    [Tooltip("Gauge stages added per tick during the continuous room-check phase.")]
+    [Tooltip("部屋チェック継続フェーズで1回ごとに加算するゲージ段階数。")]
     [SerializeField] private int continuousRoomSuspicionAmount = 1;
-    [Tooltip("Seconds between each continuous-room suspicion tick.")]
+    [Tooltip("部屋内の継続疑惑を加算する間隔（秒）。")]
     [SerializeField] private float continuousRoomSuspicionTickInterval = 2f;
 
-    // ── Hallway peek suspicion ───────────────────────────────────────────────────
-    [Header("Hallway Peek Suspicion")]
-    [Tooltip("Enable mild suspicion increase while the mother is peeking from the hallway phase.")]
+    // ── 廊下からの覗き見疑惑 ──────────────────────────────────────────────────
+    [Header("廊下からの覗き見疑惑")]
+    [Tooltip("親機が廊下フェーズから覗き見している間、疑惑を少し増加させる。")]
     [SerializeField] private bool enableHallwayPeekSuspicion = true;
-    [Tooltip("Seconds between each +1 hallway-peek suspicion tick.")]
+    [Tooltip("+1の廊下覗き見疑惑を加算する間隔（秒）。")]
     [SerializeField] private float hallwayPeekSuspicionTickInterval = 0.5f;
 
-    // ── Public state ──────────────────────────────────────────────────────────
+    // ── 公開状態 ──────────────────────────────────────────────────────────────
     public bool isCaught          = false;
     public bool isMotherLookingNow = false;
 
-    // ── Private state ─────────────────────────────────────────────────────────
+    // ── 非公開状態 ────────────────────────────────────────────────────────────
     private Coroutine    dummyResetCoroutine        = null;
     private Coroutine    primaryResetCoroutine      = null;
     private Coroutine    hallwayPeekCoroutine       = null;
@@ -109,7 +109,7 @@ public class ParentDetectionV2 : MonoBehaviour
     private float        _activePeekDuration        = 3f;
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Unity lifecycle
+    //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()
@@ -178,13 +178,13 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Public API — called by ParentWarningSystem
+    //  公開API — ParentWarningSystemから呼び出される
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Called by ParentWarningSystem when the mother has stopped at the door.
-    /// Uses warningSystem.ActiveRoute to branch — route was decided before movement started.
-    /// Falls back to dummyProbability only when ActiveRoute is None (e.g. P key debug).
+    /// ParentWarningSystemから、親機がドアで停止したときに呼び出される。
+    /// warningSystem.ActiveRouteで分岐する — ルートは移動開始前に決定済み。
+    /// ActiveRouteがNoneの場合（例：Pキーのデバッグ）のみdummyProbabilityにフォールバックする。
     /// </summary>
     public void OnApproachReachedDoor()
     {
@@ -219,8 +219,8 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     /// <summary>
-    /// Called by ParentWarningSystem when the mother passes by without stopping.
-    /// Resets the cycle cleanly — no suspicion increase, no door event.
+    /// ParentWarningSystemから、親機が停止せず通過したときに呼び出される。
+    /// 疑惑増加やドアイベントを発生させず、サイクルを正常にリセットする。
     /// </summary>
     public void OnApproachPassedBy()
     {
@@ -239,9 +239,9 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     /// <summary>
-    /// Called when a loud child-device item is triggered (or by L-key debug).
-    /// Plays rush-in audio, adds gauge, then hands off to ParentWarningSystem.StartLoudItemRushInSequence().
-    /// Fully suppressed if a warning sequence is already active.
+    /// 子機の大きな音のアイテムが発生したとき（またはLキーのデバッグ時）に呼び出される。
+    /// 突入音を再生し、ゲージを加算してからParentWarningSystem.StartLoudItemRushInSequence()へ引き渡す。
+    /// 警告シーケンスがすでに進行中の場合は完全に抑制する。
     /// </summary>
     public void OnLoudItemTriggered()
     {
@@ -286,7 +286,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Final event branching
+    //  最終イベント分岐
     // ──────────────────────────────────────────────────────────────────────────
 
     private void TriggerFinalEvent(bool primary)
@@ -309,7 +309,7 @@ public class ParentDetectionV2 : MonoBehaviour
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: true);
 
-        // Room-entry suspicion: increase gauge when player is NOT sleeping.
+        // 部屋侵入時の疑惑：プレイヤーが睡眠中でない場合にゲージを増加させる。
         bool playerIsSleeping = (sleepingController != null) && sleepingController.IsSleeping;
         int gaugeBefore = (motherGauge != null) ? motherGauge.currentGauge : 0;
         Debug.Log($"[PDV2] Room entry | isMotherLookingNow=true | IsSleeping={playerIsSleeping} | gauge before={gaugeBefore}");
@@ -432,7 +432,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Room entry burst suspicion
+    //  部屋侵入時の疑惑バースト
     // ──────────────────────────────────────────────────────────────────────────
 
     private IEnumerator RoomEntryBurstSuspicionCoroutine()
@@ -459,7 +459,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Continuous room suspicion
+    //  部屋内の継続疑惑
     // ──────────────────────────────────────────────────────────────────────────
 
     private IEnumerator ContinuousRoomSuspicionCoroutine()
@@ -508,7 +508,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Hallway peek suspicion
+    //  廊下からの覗き見疑惑
     // ──────────────────────────────────────────────────────────────────────────
 
     public void OnApproachStarted()
@@ -587,7 +587,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Cycle reset
+    //  サイクルリセット
     // ──────────────────────────────────────────────────────────────────────────
 
     private void ResetCycle()
@@ -607,7 +607,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Game over
+    //  ゲームオーバー
     // ──────────────────────────────────────────────────────────────────────────
 
     private void OnPlayerCaught()
@@ -615,7 +615,7 @@ public class ParentDetectionV2 : MonoBehaviour
         Debug.Log("[PDV2] OnPlayerCaught — GAME OVER");
         isCaught           = true;
         isMotherLookingNow = true;
-        Debug.LogError("GAME OVER: Caught by Mother!");
+        Debug.LogError("ゲームオーバー：母親に捕まりました！");
 
         if (caughtReactionController != null)
             caughtReactionController.ForceGameOver();
