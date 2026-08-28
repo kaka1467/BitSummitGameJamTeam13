@@ -185,7 +185,7 @@ public class CaughtReactionController : MonoBehaviour
             yield return StartCoroutine(FadeOutRoutine());
         }
 
-        // 2. 設定された遅延時間を待機（タイムスケールに依存しないRealtime）
+        // 2. 設定された遅延時間を待機（タイムスケールに依存しないリアルタイム）
         float delay = Mathf.Max(0f, sceneChangeDelay);
         if (delay > 0f)
         {

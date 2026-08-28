@@ -42,7 +42,7 @@ public class SleepVisionEffectController : MonoBehaviour
     public float transitionSpeed = 300f;
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Unityライフサイクル
+    //  Unityのライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()

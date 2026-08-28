@@ -25,7 +25,7 @@ public class CameraSwitcher : MonoBehaviour
     private bool isDoorOpen;
     private Quaternion targetDoorRotation;
 
-    /// <summary>Kキーの覗き見視点（ドアが開いた状態）の間はtrue。</summary>
+    /// <summary>Kキーの覗き見視点（ドアが開いた状態）の間はtrueになります。</summary>
     public bool IsPeeking => isDoorOpen;
 
     private void Start()
