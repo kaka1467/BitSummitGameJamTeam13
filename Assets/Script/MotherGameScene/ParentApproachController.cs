@@ -115,7 +115,7 @@ public class ParentApproachController : MonoBehaviour
     private const float DoorYaw    =  90f;
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Unityライフサイクル
+    //  Unityのライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()

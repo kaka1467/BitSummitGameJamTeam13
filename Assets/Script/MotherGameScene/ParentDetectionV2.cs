@@ -109,7 +109,7 @@ public class ParentDetectionV2 : MonoBehaviour
     private float        _activePeekDuration        = 3f;
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  Unityライフサイクル
+    //  Unityのライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
     private void Start()
