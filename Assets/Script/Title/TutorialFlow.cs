@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class TutorialFlow : MonoBehaviour
 {
@@ -49,7 +50,58 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField, Min(0.02f)] private float autoTargetUpdateSeconds = 0.05f;
     [SerializeField, Min(0f)] private float autoCollectCenterRange = 0.8f;
 
+    [Header("Skip (prototype)")]
+    [Tooltip("skipKey を holdToSkipSeconds 秒ホールドすると演示フェーズをスキップする。")]
+    [SerializeField] private bool enableHoldToSkip = true;
+    [SerializeField] private Key skipKey = Key.K;
+    [SerializeField, Min(0.05f)] private float holdToSkipSeconds = 1f;
+
+    [Header("Interactive Collect (prototype)")]
+    [Tooltip("アイテム取得ステップをプレイヤー操作にする。false で従来どおりの自動演示。")]
+    [SerializeField] private bool interactiveCollect = true;
+    [Tooltip("1回の試行でプレイヤーが取れなかった場合に打ち切るまでの秒数。")]
+    [SerializeField, Min(1f)] private float playerCollectTimeout = 8f;
+    [Tooltip("取り逃したときに再挑戦させる回数。使い切ったら自動演示（お手本）へ。")]
+    [SerializeField, Min(0)] private int collectMaxRetries = 2;
+    [Tooltip("取得／回避の成否メッセージを見せる秒数。")]
+    [SerializeField, Min(0f)] private float collectSuccessPauseSeconds = 0.4f;
+    [Tooltip("失敗したあと、次のアイテム／障害物が出てくるまでの待ち時間（秒）。取得・回避で共通。")]
+    [SerializeField, Min(0f)] private float retryDelaySeconds = 1.2f;
+    [Tooltip("操作ガイドの表示先。未割り当てなら文字は出ない（機能自体は動く）。")]
+    [SerializeField] private TextMeshProUGUI interactiveHintText;
+    [Tooltip("矢印記号は多くのフォントに無いため、文字で書くのを推奨。")]
+    [SerializeField] private string collectHintMessage = "キーで動かしてアイテムを取ろう！";
+    [SerializeField] private string collectRetryMessage = "とりのがした… もういちど！";
+    [SerializeField] private string collectSuccessMessage = "nice!";
+    [Tooltip("アイテム／障害物がプレイヤーのX座標からこの距離だけ左へ流れたら『通過した』とみなす。")]
+    [SerializeField, Min(0.05f)] private float collectMissMargin = 0.5f;
+
+    [Header("Interactive Avoid (prototype)")]
+    [Tooltip("障害物の回避ステップをプレイヤー操作にする。false で従来どおりの自動演示。")]
+    [SerializeField] private bool interactiveAvoid = true;
+    [Tooltip("1回の試行でプレイヤーがよけ切れなかった場合に打ち切るまでの秒数。")]
+    [SerializeField, Min(1f)] private float playerAvoidTimeout = 8f;
+    [Tooltip("ぶつかったときに再挑戦させる回数。使い切ったら自動演示（お手本）へ。")]
+    [SerializeField, Min(0)] private int avoidMaxRetries = 2;
+    [Tooltip("回避の成否メッセージ／リトライ前に見せる秒数。")]
+    [SerializeField, Min(0f)] private float avoidResultPauseSeconds = 0.4f;
+    [SerializeField] private string avoidHintMessage = "しょうがいぶつが くる！レーンをかえて よけよう";
+    [SerializeField] private string avoidRetryMessage = "ぶつかった… もういちど！";
+    [SerializeField] private string avoidSuccessMessage = "よけた！";
+
+    [Header("Interactive QTE (prototype)")]
+    [Tooltip("QTE ステップにガイド文を出す。QTE の入力自体は元から実操作。false でガイドなし。")]
+    [SerializeField] private bool explainQte = true;
+    [Tooltip("QTE 突破メッセージを見せる秒数。")]
+    [SerializeField, Min(0f)] private float qteResultPauseSeconds = 0.5f;
+    [SerializeField] private string qteApproachMessage = "おおきな しょうがいぶつ！ ぶつかると ボタンれんだ";
+    [Tooltip("QTE 中に出すガイド。空にすると QTE 側の表示だけになる。")]
+    [SerializeField] private string qteActiveMessage = "ボタンを ひょうじの じゅんに おそう！ まちがえても OK";
+    [SerializeField] private string qteSuccessMessage = "とっぱ！";
+
     private bool tutorialRunning;
+    private bool skipRequested;
+    private PlayerAnimator playerAnimator;
     private Tween startTween;
     private Coroutine autoTargetRoutine;
     private Coroutine loadingCompleteRoutine;
@@ -107,6 +159,13 @@ public class TutorialFlow : MonoBehaviour
             udpReceiver = FindFirstObjectByType<ChildUdpReceiver>();
         }
 
+        if (playerAnimator == null && playerMove != null)
+        {
+            playerAnimator = playerMove.GetComponent<PlayerAnimator>()
+                             ?? playerMove.GetComponentInChildren<PlayerAnimator>()
+                             ?? FindFirstObjectByType<PlayerAnimator>();
+        }
+
         if (playerMove == null || itemSpawner == null)
         {
             Debug.LogError("TutorialFlow: Missing PlayerMove or ItemSpawner.");
@@ -144,16 +203,33 @@ public class TutorialFlow : MonoBehaviour
             yield return new WaitForSecondsRealtime(initialDelay);
         }
 
+        // 演示フェーズ（skipKey ホールドでスキップ可能。監視はこの区間のみ）
+        skipRequested = false;
+        Coroutine skipWatch = enableHoldToSkip ? StartCoroutine(WatchForSkipRoutine()) : null;
+
         yield return RunAutoCollect();
         yield return RunAutoAvoid();
         ClearActiveItems();
         yield return RunQteStep();
 
-        if (afterQteDelay > 0f)
+        if (!skipRequested && afterQteDelay > 0f)
         {
             yield return new WaitForSecondsRealtime(afterQteDelay);
         }
 
+        if (skipWatch != null)
+        {
+            StopCoroutine(skipWatch);
+        }
+
+        if (skipRequested)
+        {
+            HandleSkipCleanup();
+        }
+
+        // スキップ時もカウントダウンは実行する。
+        // 親機への LOADING_COMPLETE 送信（NotifyParentStartShown）とゲームBGM開始が
+        // RunCountdown 内にあり、飛ばすと親機が遷移できなくなるため。
         yield return RunCountdown();
 
         playerMove.SetInputEnabled(true);
@@ -169,7 +245,52 @@ public class TutorialFlow : MonoBehaviour
             gameManager.ResetScoreAndFever();
         }
 
+        HideInteractiveHint();
         tutorialRunning = false;
+    }
+
+    private IEnumerator WatchForSkipRoutine()
+    {
+        while (!skipRequested)
+        {
+            float held = 0f;
+            while (!skipRequested && Keyboard.current != null && Keyboard.current[skipKey].isPressed)
+            {
+                held += Time.unscaledDeltaTime;
+                if (held >= holdToSkipSeconds)
+                {
+                    skipRequested = true;
+                    Debug.Log("[TutorialFlow] Skip requested (hold key).");
+                    yield break;
+                }
+                yield return null;
+            }
+            yield return null;
+        }
+    }
+
+    // スキップ確定時の後始末。演示用コルーチンは skipRequested チェックで自然終了するため
+    // ここでは外部で走っているものだけを止める。
+    private void HandleSkipCleanup()
+    {
+        if (autoTargetRoutine != null)
+        {
+            StopCoroutine(autoTargetRoutine);
+            autoTargetRoutine = null;
+        }
+
+        // 進行中の Huge QTE を成功扱いで終了（Time.timeScale / QTE UI / ダメージロックを復帰）
+        if (QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+        {
+            QTEManager.RegisterHugeQteSuccess();
+        }
+
+        ClearActiveItems();
+        HideInteractiveHint();
+        if (playerMove != null)
+        {
+            playerMove.SetAutoTargetX(null);
+        }
     }
 
     private IEnumerator RunAutoCollect()
@@ -179,21 +300,96 @@ public class TutorialFlow : MonoBehaviour
             ? tutorialItems
             : new List<GameObject>();
 
-        for (int i = 0; i < items.Count; i++)
+        for (int i = 0; i < items.Count && !skipRequested; i++)
         {
             GameObject prefab = items[i];
             if (prefab == null) continue;
 
+            yield return CollectOneItem(prefab);
+        }
+
+        HideInteractiveHint();
+    }
+
+    private IEnumerator CollectOneItem(GameObject prefab)
+    {
+        int attempts = interactiveCollect ? (1 + Mathf.Max(0, collectMaxRetries)) : 0;
+        bool collected = false;
+
+        for (int attempt = 0; attempt < attempts && !collected && !skipRequested; attempt++)
+        {
             GameObject item = null;
-            bool spawned = itemSpawner.TrySpawnByPrefab(prefab, out item);
-            if (!spawned || item == null)
+            if (!itemSpawner.TrySpawnByPrefab(prefab, out item) || item == null)
             {
                 yield return new WaitForSecondsRealtime(0.2f);
                 continue;
             }
 
             ClearActiveItemsExcept(item);
+            yield return WaitForItemToEnterScreen(item, collectTimeout);
+            if (skipRequested) yield break;
 
+            // --- プレイヤーが取る番 ---
+            playerMove.SetAutoTargetX(null);
+            playerMove.SetAutoDrive(false);
+            playerMove.SetInputEnabled(true);
+            ShowInteractiveHint(attempt == 0 ? collectHintMessage : collectRetryMessage);
+
+            float waited = 0f;
+            while (!skipRequested
+                   && item != null && item.activeInHierarchy
+                   && !IsItemPastPlayer(item)
+                   && waited < playerCollectTimeout)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            collected = !skipRequested && (item == null || !item.activeInHierarchy);
+
+            // 自動運転へ戻す
+            playerMove.SetInputEnabled(false);
+            playerMove.SetAutoDrive(true);
+
+            if (collected && !skipRequested)
+            {
+                ShowInteractiveHint(collectSuccessMessage);
+                if (collectSuccessPauseSeconds > 0f)
+                {
+                    yield return new WaitForSecondsRealtime(collectSuccessPauseSeconds);
+                }
+                ClearActiveItems();
+                HideInteractiveHint();
+            }
+            else if (!skipRequested)
+            {
+                ClearActiveItems();
+                if (attempt + 1 < attempts)
+                {
+                    // 取り逃しメッセージを出したまま、次が来るまで一拍おく
+                    ShowInteractiveHint(collectRetryMessage);
+                    if (retryDelaySeconds > 0f)
+                    {
+                        yield return new WaitForSecondsRealtime(retryDelaySeconds);
+                    }
+                }
+                else
+                {
+                    HideInteractiveHint();
+                }
+            }
+        }
+
+        // 実操作で取れなかった / interactiveCollect=false → 従来の自動お手本
+        if (!collected && !skipRequested)
+        {
+            GameObject item = null;
+            if (!itemSpawner.TrySpawnByPrefab(prefab, out item) || item == null)
+            {
+                yield break;
+            }
+
+            ClearActiveItemsExcept(item);
             yield return WaitForItemToEnterScreen(item, collectTimeout);
 
             int laneIndex = GetNearestLaneIndex(item.transform.position.y);
@@ -203,27 +399,138 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
+    private void ShowInteractiveHint(string message)
+    {
+        if (interactiveHintText == null) return;
+        interactiveHintText.text = message;
+        if (!interactiveHintText.gameObject.activeSelf)
+        {
+            interactiveHintText.gameObject.SetActive(true);
+        }
+    }
+
+    private void HideInteractiveHint()
+    {
+        if (interactiveHintText == null) return;
+        if (interactiveHintText.gameObject.activeSelf)
+        {
+            interactiveHintText.gameObject.SetActive(false);
+        }
+    }
+
+    // アイテムがプレイヤーの左（＝もう取れない位置）まで流れたか
+    private bool IsItemPastPlayer(GameObject item)
+    {
+        if (item == null || playerMove == null) return false;
+        return item.transform.position.x < playerMove.transform.position.x - collectMissMargin;
+    }
+
     private IEnumerator RunAutoAvoid()
     {
         if (tutorialObstacles == null || tutorialObstacles.Count == 0) yield break;
 
         ClearActiveItems();
 
-        for (int i = 0; i < tutorialObstacles.Count; i++)
+        for (int i = 0; i < tutorialObstacles.Count && !skipRequested; i++)
         {
             GameObject prefab = tutorialObstacles[i];
             if (prefab == null) continue;
 
+            yield return AvoidOneObstacle(prefab);
+        }
+
+        HideInteractiveHint();
+    }
+
+    private IEnumerator AvoidOneObstacle(GameObject prefab)
+    {
+        int attempts = interactiveAvoid ? (1 + Mathf.Max(0, avoidMaxRetries)) : 0;
+        bool dodged = false;
+
+        for (int attempt = 0; attempt < attempts && !dodged && !skipRequested; attempt++)
+        {
             GameObject obstacle = null;
-            bool spawned = itemSpawner.TrySpawnByPrefab(prefab, out obstacle);
-            if (!spawned || obstacle == null)
+            if (!itemSpawner.TrySpawnByPrefab(prefab, out obstacle) || obstacle == null)
             {
                 yield return new WaitForSecondsRealtime(0.2f);
                 continue;
             }
 
             ClearActiveItemsExcept(obstacle);
+            yield return WaitForItemToEnterScreen(obstacle, avoidTimeout);
+            if (skipRequested) yield break;
 
+            // 直前のダメージ演出が残っていたら終わるまで待つ（誤検知防止）
+            while (!skipRequested && playerAnimator != null && playerAnimator.IsDamaging)
+            {
+                yield return null;
+            }
+
+            // --- プレイヤーがよける番 ---
+            playerMove.SetAutoTargetX(null);
+            playerMove.SetAutoDrive(false);
+            playerMove.SetInputEnabled(true);
+            ShowInteractiveHint(attempt == 0 ? avoidHintMessage : avoidRetryMessage);
+
+            float waited = 0f;
+            while (!skipRequested
+                   && obstacle != null && obstacle.activeInHierarchy
+                   && !IsItemPastPlayer(obstacle)
+                   && !(playerAnimator != null && playerAnimator.IsDamaging)
+                   && waited < playerAvoidTimeout)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            bool hit = !skipRequested
+                       && ((obstacle == null || !obstacle.activeInHierarchy)
+                           || (playerAnimator != null && playerAnimator.IsDamaging));
+            dodged = !skipRequested && !hit && obstacle != null && IsItemPastPlayer(obstacle);
+
+            // 自動運転へ戻す
+            playerMove.SetInputEnabled(false);
+            playerMove.SetAutoDrive(true);
+
+            if (dodged && !skipRequested)
+            {
+                ShowInteractiveHint(avoidSuccessMessage);
+                if (avoidResultPauseSeconds > 0f)
+                {
+                    yield return new WaitForSecondsRealtime(avoidResultPauseSeconds);
+                }
+                ClearActiveItems();
+                HideInteractiveHint();
+            }
+            else if (!skipRequested)
+            {
+                ClearActiveItems();
+                if (attempt + 1 < attempts)
+                {
+                    // 「ぶつかった」メッセージを出したまま、次が来るまで一拍おく
+                    ShowInteractiveHint(avoidRetryMessage);
+                    if (retryDelaySeconds > 0f)
+                    {
+                        yield return new WaitForSecondsRealtime(retryDelaySeconds);
+                    }
+                }
+                else
+                {
+                    HideInteractiveHint();
+                }
+            }
+        }
+
+        // 実操作でよけ切れなかった / interactiveAvoid=false → 従来の自動お手本
+        if (!dodged && !skipRequested)
+        {
+            GameObject obstacle = null;
+            if (!itemSpawner.TrySpawnByPrefab(prefab, out obstacle) || obstacle == null)
+            {
+                yield break;
+            }
+
+            ClearActiveItemsExcept(obstacle);
             yield return WaitForItemToEnterScreen(obstacle, avoidTimeout);
 
             int obstacleLane = GetNearestLaneIndex(obstacle.transform.position.y);
@@ -243,9 +550,12 @@ public class TutorialFlow : MonoBehaviour
         };
         QTEManager.HugeQteFinished += handler;
 
-        while (!qteDone)
+        // skipRequested で自然にループを抜けるので、-= handler は必ず実行され購読は残らない。
+        while (!qteDone && !skipRequested)
         {
             ClearActiveItems();
+            bool qteHintSwapped = false;
+
             GameObject huge = null;
             if (!itemSpawner.TrySpawnHugeObstacle(out huge) || huge == null)
             {
@@ -257,6 +567,11 @@ public class TutorialFlow : MonoBehaviour
 
             yield return WaitForItemToEnterScreen(huge, qteWaitTimeout);
 
+            if (explainQte && !skipRequested)
+            {
+                ShowInteractiveHint(qteApproachMessage);
+            }
+
             int laneIndex = GetNearestLaneIndex(huge.transform.position.y);
             playerMove.SetAutoLane(laneIndex);
 
@@ -264,9 +579,10 @@ public class TutorialFlow : MonoBehaviour
             float nextUpdate = 0f;
             float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
 
-            while (!qteDone && timer < qteWaitTimeout)
+            while (!qteDone && !skipRequested && timer < qteWaitTimeout)
             {
                 timer += Time.unscaledDeltaTime;
+                qteHintSwapped = SwapQteHintIfActive(qteHintSwapped);
                 if (autoHorizontalEnabled && huge != null && huge.activeInHierarchy && timer >= nextUpdate)
                 {
                     nextUpdate = timer + interval;
@@ -275,9 +591,10 @@ public class TutorialFlow : MonoBehaviour
                 yield return null;
             }
 
-            if (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+            if (!qteDone && !skipRequested && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
             {
-                while (!qteDone && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+                qteHintSwapped = SwapQteHintIfActive(qteHintSwapped);
+                while (!qteDone && !skipRequested && QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
                 {
                     yield return null;
                 }
@@ -286,6 +603,34 @@ public class TutorialFlow : MonoBehaviour
 
         QTEManager.HugeQteFinished -= handler;
         playerMove.SetAutoTargetX(null);
+
+        if (explainQte && qteDone && !skipRequested)
+        {
+            ShowInteractiveHint(qteSuccessMessage);
+            if (qteResultPauseSeconds > 0f)
+            {
+                yield return new WaitForSecondsRealtime(qteResultPauseSeconds);
+            }
+        }
+
+        HideInteractiveHint();
+    }
+
+    // QTE が始まった瞬間に一度だけガイド文を切り替える（qteActiveMessage が空なら隠す）。戻り値＝切替済みか
+    private bool SwapQteHintIfActive(bool alreadySwapped)
+    {
+        if (alreadySwapped || !explainQte || skipRequested) return alreadySwapped;
+        if (QTEManager.Instance == null || !QTEManager.Instance.IsQteActive) return false;
+
+        if (string.IsNullOrEmpty(qteActiveMessage))
+        {
+            HideInteractiveHint();
+        }
+        else
+        {
+            ShowInteractiveHint(qteActiveMessage);
+        }
+        return true;
     }
 
     private IEnumerator RunCountdown()
@@ -306,7 +651,7 @@ public class TutorialFlow : MonoBehaviour
                 PlayTutorialBgmIfNeeded();
                 startText.gameObject.SetActive(true);
                 startText.text = "Start";
-                
+
                 RectTransform rect = startText.rectTransform;
                 rect.localScale = startScaleFrom;
                 startTween?.Kill();
@@ -326,7 +671,7 @@ public class TutorialFlow : MonoBehaviour
                 startText.gameObject.SetActive(false);
                 yield break;
             }
-            
+
             // startTextがNullだった場合の安全策
             NotifyParentStartShown();
             yield return new WaitForSecondsRealtime(goDisplaySeconds);
@@ -466,7 +811,7 @@ public class TutorialFlow : MonoBehaviour
     private IEnumerator WaitForItemToDeactivate(GameObject item, float timeout)
     {
         float timer = 0f;
-        while (item != null && item.activeInHierarchy && timer < timeout)
+        while (!skipRequested && item != null && item.activeInHierarchy && timer < timeout)
         {
             timer += Time.unscaledDeltaTime;
             yield return null;
@@ -498,7 +843,7 @@ public class TutorialFlow : MonoBehaviour
         float interval = Mathf.Max(0.02f, autoTargetUpdateSeconds);
         float nextUpdate = 0f;
 
-        while (item != null && item.activeInHierarchy && timer < timeout)
+        while (!skipRequested && item != null && item.activeInHierarchy && timer < timeout)
         {
             timer += Time.unscaledDeltaTime;
             if (timer >= nextUpdate)
@@ -543,7 +888,7 @@ public class TutorialFlow : MonoBehaviour
     private IEnumerator WaitForItemToEnterScreen(GameObject item, float timeout)
     {
         float timer = 0f;
-        while (item != null && item.activeInHierarchy && timer < timeout)
+        while (!skipRequested && item != null && item.activeInHierarchy && timer < timeout)
         {
             if (IsItemInsideScreen(item))
             {
