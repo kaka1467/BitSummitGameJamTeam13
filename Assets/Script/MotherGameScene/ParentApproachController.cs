@@ -15,7 +15,7 @@ using UnityEngine.Events;
 ///
 /// 移動ループ音：
 ///   UpdateMovementLoopAudio()で毎フレーム管理する。
-///   IsApproaching=true、IsRushIn=false、CameraSwitcher.IsPeeking=trueのときだけ再生する。
+///   IsApproaching=true、IsRushIn=falseのときに再生する。
 ///   条件を満たさなくなったとき、またResetStateFlags()時に即座に停止する。
 ///
 /// 突入モード（IsRushIn=true）：
@@ -70,10 +70,8 @@ public class ParentApproachController : MonoBehaviour
 
     // ── オーディオ ─────────────────────────────────────────────────────────────
     [Header("オーディオ")]
-    [Tooltip("接近中にループ再生するAudioSource。UpdateMovementLoopAudio()で毎フレーム覗き見状態により制御する。突入ルートでは再生しない。")]
+    [Tooltip("接近中にループ再生するAudioSource。UpdateMovementLoopAudio()で毎フレーム制御する。突入ルートでは再生しない。")]
     public AudioSource movementLoopAudioSource;
-    [Tooltip("移動ループ音の制御に使うCameraSwitcher。未設定時はStartで自動検索する。")]
-    public CameraSwitcher cameraSwitcher;
 
     // ── タイミング ────────────────────────────────────────────────────────────
     [Header("タイミング")]
@@ -118,12 +116,6 @@ public class ParentApproachController : MonoBehaviour
     //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void Start()
-    {
-        if (cameraSwitcher == null)
-            cameraSwitcher = Object.FindFirstObjectByType<CameraSwitcher>();
-    }
-
     private void Update()
     {
         UpdateMovementLoopAudio();
@@ -132,18 +124,18 @@ public class ParentApproachController : MonoBehaviour
     private void UpdateMovementLoopAudio()
     {
         if (movementLoopAudioSource == null) return;
-        // ルール：接近中かつプレイヤーが覗き見している通常ルート（突入以外）のみ再生する。
-        bool shouldPlay = !IsRushIn && IsApproaching && cameraSwitcher != null && cameraSwitcher.IsPeeking;
+        // 覗き機能削除に伴い、通常ルートの接近中は常に移動ループを再生する。
+        bool shouldPlay = !IsRushIn && IsApproaching;
         if (shouldPlay && !movementLoopAudioSource.isPlaying)
         {
             movementLoopAudioSource.loop = true;
             movementLoopAudioSource.Play();
-            Debug.Log("[ParentApproachController] 移動ループを開始（覗き見中）");
+            Debug.Log("[ParentApproachController] 移動ループを開始（接近中）");
         }
         else if (!shouldPlay && movementLoopAudioSource.isPlaying)
         {
             movementLoopAudioSource.Stop();
-            Debug.Log("[ParentApproachController] 移動ループを停止（覗き見中でない、または突入中）");
+            Debug.Log("[ParentApproachController] 移動ループを停止（接近終了、または突入中）");
         }
     }
 
@@ -260,7 +252,6 @@ public class ParentApproachController : MonoBehaviour
         StoppedAtDoor = true;
         IsApproaching = false;
         // IsInHallwayPhaseは意図的にここでは解除しない。
-        // PDV2.HallwayPeekSuspicionCoroutineが、親機がドアに立っている間に覗き見加算を行うか判定するために確認する。
         // 完全なサイクル終了後、ResetApproach経由のResetStateFlags()で解除する。
 
         Debug.Log("[ParentApproachController] ドアで停止 — OnStoppedAtDoorを発生");
