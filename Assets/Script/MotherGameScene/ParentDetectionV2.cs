@@ -17,8 +17,6 @@ using UnityEngine.InputSystem;
 ///   OnLoudItemTriggered              — loudItemGaugeAmountに応じたAddGauge()の段階加算
 ///   TriggerPrimaryEvent              — 親機が部屋に入ったときの初回AddGauge()（睡眠中でない場合）
 ///   ContinuousRoomSuspicionCoroutine — ドアが開き、プレイヤーが睡眠中でない間の時間制AddGauge()
-///   HallwayPeekSuspicionCoroutine    — 親機が廊下フェーズにいて、かつプレイヤーが覗き見中
-///                                      （CameraSwitcher.IsPeeking）の場合のみ、少量の時間制AddGauge()
 /// 現在のルートの覗き見時間はpeekDurationBase + motherGauge.currentGauge。
 /// ルート分岐（本チェックか覗き見か）はwarningSystem.ActiveRouteで決まる。
 /// dummyProbabilityはActiveRouteがNoneの場合（例：Pキーのデバッグ）のみ予備として使用する。
@@ -32,7 +30,6 @@ public class ParentDetectionV2 : MonoBehaviour
     public MotherGauge               motherGauge;
     public ParentApproachController  approachController;
     public SleepingController        sleepingController;
-    public CameraSwitcher            cameraSwitcher;
 
     // ── オーディオ ─────────────────────────────────────────────────────────────
     [Header("オーディオソース")]
@@ -89,13 +86,6 @@ public class ParentDetectionV2 : MonoBehaviour
     [Tooltip("部屋内の継続疑惑を加算する間隔（秒）。")]
     [SerializeField] private float continuousRoomSuspicionTickInterval = 2f;
 
-    // ── 廊下からの覗き見疑惑 ──────────────────────────────────────────────────
-    [Header("廊下からの覗き見疑惑")]
-    [Tooltip("親機が廊下フェーズから覗き見している間、疑惑を少し増加させる。")]
-    [SerializeField] private bool enableHallwayPeekSuspicion = true;
-    [Tooltip("+1の廊下覗き見疑惑を加算する間隔（秒）。")]
-    [SerializeField] private float hallwayPeekSuspicionTickInterval = 0.5f;
-
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     public bool isCaught          = false;
     public bool isMotherLookingNow = false;
@@ -103,7 +93,6 @@ public class ParentDetectionV2 : MonoBehaviour
     // ── 非公開状態 ────────────────────────────────────────────────────────────
     private Coroutine    dummyResetCoroutine        = null;
     private Coroutine    primaryResetCoroutine      = null;
-    private Coroutine    hallwayPeekCoroutine       = null;
     private Coroutine    continuousRoomCoroutine    = null;
     private bool         hasPermanentGameOver       = false;
     private float        _activePeekDuration        = 3f;
@@ -138,23 +127,11 @@ public class ParentDetectionV2 : MonoBehaviour
         if (sleepingController == null)
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
 
-        if (cameraSwitcher == null)
-            cameraSwitcher = Object.FindFirstObjectByType<CameraSwitcher>();
     }
 
     private void Update()
     {
-        if (!hasPermanentGameOver && !isCaught)
-        {
-            if (cameraSwitcher   != null && cameraSwitcher.IsPeeking   &&
-                warningSystem    != null && warningSystem.isWarningActive &&
-                warningSystem.ActiveRoute == ParentWarningSystem.RouteState.DoorPeek &&
-                approachController != null && (approachController.ReachedDoor || approachController.StoppedAtDoor))
-            {
-                Debug.Log("[PDV2] Immediate caught: player peeked after mother reached the door");
-                OnPlayerCaught();
-            }
-        }
+        // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
 
         if (Keyboard.current == null) return;
 
@@ -513,77 +490,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
     public void OnApproachStarted()
     {
-        if (!enableHallwayPeekSuspicion) return;
-
-        if (hallwayPeekCoroutine != null)
-        {
-            Debug.Log("[PDV2] OnApproachStarted: HallwayPeekSuspicion already running — skipping");
-            return;
-        }
-
-        Debug.Log("[PDV2] OnApproachStarted: starting HallwayPeekSuspicion");
-        hallwayPeekCoroutine = StartCoroutine(HallwayPeekSuspicionCoroutine());
-    }
-
-    private void TryStartHallwayPeekSuspicion()
-    {
-        if (!enableHallwayPeekSuspicion) return;
-        if (hallwayPeekCoroutine != null) return;
-        if (approachController == null)  return;
-        if (warningSystem == null || !warningSystem.isWarningActive) return;
-
-        Debug.Log("[PDV2] TryStartHallwayPeekSuspicion: starting HallwayPeekSuspicion");
-        hallwayPeekCoroutine = StartCoroutine(HallwayPeekSuspicionCoroutine());
-    }
-
-    private IEnumerator HallwayPeekSuspicionCoroutine()
-    {
-        while (true)
-        {
-            yield return new WaitForSeconds(hallwayPeekSuspicionTickInterval);
-
-            bool _warningActive  = (warningSystem      != null) && warningSystem.isWarningActive;
-            bool _hallway        = (approachController != null) && approachController.IsInHallwayPhase;
-            bool _playerPeeking  = (cameraSwitcher     != null) && cameraSwitcher.IsPeeking;
-            Debug.Log($"[PDV2] HallwayPeekSuspicion state | warningActive={_warningActive} | hallway={_hallway} | playerPeeking={_playerPeeking}");
-
-            if (hasPermanentGameOver || isCaught)
-            {
-                Debug.Log("[PDV2] HallwayPeekSuspicion stopped — game over or caught");
-                yield break;
-            }
-            if (!_warningActive)
-            {
-                Debug.Log("[PDV2] HallwayPeekSuspicion stopped — warning sequence ended");
-                yield break;
-            }
-            if (motherGauge == null)
-            {
-                Debug.Log("[PDV2] HallwayPeekSuspicion stopped — motherGauge is null");
-                yield break;
-            }
-
-            if (!_hallway)
-            {
-                Debug.Log("[PDV2] HallwayPeekSuspicion tick SKIPPED — not in hallway phase");
-                continue;
-            }
-            if (!_playerPeeking)
-            {
-                Debug.Log("[PDV2] HallwayPeekSuspicion tick SKIPPED — player is not peeking (IsPeeking=false)");
-                continue;
-            }
-
-            motherGauge.AddGauge(1);
-            Debug.Log($"[PDV2] HallwayPeekSuspicion tick +1 | gauge now {motherGauge.currentGauge}");
-
-            if (motherGauge.currentGauge >= motherGauge.maxGauge)
-            {
-                Debug.Log("[PDV2] HallwayPeekSuspicion stopped — gauge reached max");
-                OnPlayerCaught();
-                yield break;
-            }
-        }
+        // 覗き機能削除に伴い、廊下覗き見による疑惑加算は実行しない。
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -597,7 +504,6 @@ public class ParentDetectionV2 : MonoBehaviour
         if (dummyResetCoroutine != null)      { StopCoroutine(dummyResetCoroutine);      dummyResetCoroutine      = null; }
         if (primaryResetCoroutine != null)    { StopCoroutine(primaryResetCoroutine);    primaryResetCoroutine    = null; }
         if (continuousRoomCoroutine != null)  { StopCoroutine(continuousRoomCoroutine);  continuousRoomCoroutine  = null; Debug.Log("[PDV2] Continuous room suspicion stopped — ResetCycle"); }
-        if (hallwayPeekCoroutine != null)     { StopCoroutine(hallwayPeekCoroutine);     hallwayPeekCoroutine     = null; Debug.Log("[PDV2] HallwayPeekSuspicion stopped — ResetCycle"); }
 
         isMotherLookingNow    = false;
         _activePeekDuration   = peekDurationBase;
