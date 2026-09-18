@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -32,27 +34,28 @@ using UnityEngine.UI;
 public class ChildUdpReceiver : MonoBehaviour
 {
     private const string MAGIC_NUMBER = "TEAM13_";
-    private const string CMD_START    = "START_GAME";
+    private const string CMD_START = "START_GAME";
 
     public enum ConnectionState { Disconnected, Connecting, Connected }
 
     // ── Inspector ─────────────────────────────────────────────────────────────
-    public int    normalPort        = 8000;
-    public int    broadcastPort     = 8001;
-    public int    parentReceivePort = 8002;
-    public string targetIP          = "127.0.0.1";
+    public int normalPort = 8000;
+    public int broadcastPort = 8001;
+    public int parentReceivePort = 8002;
+    public string targetIP = "127.0.0.1";
     public ConnectionState currentState = ConnectionState.Disconnected;
-    public string lastMessage   = "";
+    public string lastMessage = "";
     public string gameSceneName = "GameScene";
+    public string titleSceneName = "Mini Title";
 
-    public SleepingManager     sleepingManager;
-    public Button              connectButton;
-    public TextMeshProUGUI     connectButtonLabel;
-    public Button              creditsButton;
-    public Button              settingsButton;
-    public Button              startButton;
-    public TextMeshProUGUI     statusText;
-    public Button              cancelButton;
+    public SleepingManager sleepingManager;
+    public Button connectButton;
+    public TextMeshProUGUI connectButtonLabel;
+    public Button creditsButton;
+    public Button settingsButton;
+    public Button startButton;
+    public TextMeshProUGUI statusText;
+    public Button cancelButton;
 
     [Header("Connect Button Position Settings")]
     [Tooltip("Disconnected/Connecting状態のときのconnectButtonの位置")]
@@ -68,28 +71,28 @@ public class ChildUdpReceiver : MonoBehaviour
     [Tooltip("Auto-found at Start if not assigned. Used for SLEEP_LOCK / SLEEP_UNLOCK.")]
     public PlayerMove playerMove;
 
-    [SerializeField] private GameObject   creditsPanel;
-    [SerializeField] private GameObject   settingsPanel;
+    [SerializeField] private GameObject creditsPanel;
+    [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject[] animatedSpriteObjects;
-    [SerializeField] private GameObject   titleImageObject;
-    [SerializeField] private string connectLabel   = "Connect";
+    [SerializeField] private GameObject titleImageObject;
+    [SerializeField] private string connectLabel = "Connect";
     [SerializeField] private string connectingLabel = "接続中";
 
     // ── Private networking ────────────────────────────────────────────────────
     private UdpClient udpClient;
     private UdpClient sendClient;
-    private Thread    receiveThread;
+    private Thread receiveThread;
     private volatile bool isRunning = false;
 
     private readonly ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
-    private readonly ConcurrentQueue<Action> actionQueue  = new ConcurrentQueue<Action>();
+    private readonly ConcurrentQueue<Action> actionQueue = new ConcurrentQueue<Action>();
 
     private Coroutine discoveryCoroutine;
     private Coroutine heartbeatCoroutine;
-    private float     lastReceiveTime;
-    private float     pingInterval = 1.0f;
-    private float     timeoutLimit = 3.0f;
-    private bool      gameSceneLoaded = false;
+    private float lastReceiveTime;
+    private float pingInterval = 1.0f;
+    private float timeoutLimit = 3.0f;
+    private bool gameSceneLoaded = false;
 
     public static ChildUdpReceiver instance { get; private set; }
 
@@ -102,12 +105,19 @@ public class ChildUdpReceiver : MonoBehaviour
             currentState = ConnectionState.Connecting;
     }
 
-    public void OnCancelButtonClicked()  { currentState = ConnectionState.Disconnected; }
+    public void OnCancelButtonClicked() { currentState = ConnectionState.Disconnected; }
 
     public void OnCreditsButtonClicked()
     {
-        if (creditsPanel == null) return;
+        creditsPanel = FindGameObject(null, "Credits");
+        if (creditsPanel == null)
+        {
+            Debug.LogWarning("[ChildUdpReceiver] Credits panel was not found.");
+            return;
+        }
+
         creditsPanel.SetActive(!creditsPanel.activeSelf);
+        Debug.Log($"[ChildUdpReceiver] Credits panel active: {creditsPanel.activeSelf}");
         UpdateAnimatedSpritesVisibility();
     }
 
@@ -120,8 +130,15 @@ public class ChildUdpReceiver : MonoBehaviour
 
     public void OnSettingsButtonClicked()
     {
-        if (settingsPanel == null) return;
+        settingsPanel = FindGameObject(null, "SettingsPanel");
+        if (settingsPanel == null)
+        {
+            Debug.LogWarning("[ChildUdpReceiver] Settings panel was not found.");
+            return;
+        }
+
         settingsPanel.SetActive(!settingsPanel.activeSelf);
+        Debug.Log($"[ChildUdpReceiver] Settings panel active: {settingsPanel.activeSelf}");
         UpdateAnimatedSpritesVisibility();
     }
 
@@ -190,21 +207,23 @@ public class ChildUdpReceiver : MonoBehaviour
 
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
+        RefreshUiReferences();
+        AttachUiListeners();
+
+        if (IsTitleScene(SceneManager.GetActiveScene().name))
+        {
+            ResetForNewSession();
+            InitializeTitleUi();
+        }
 
         isRunning = true;
 
-        udpClient  = new UdpClient(normalPort);
+        udpClient = new UdpClient(normalPort);
         sendClient = new UdpClient();
         sendClient.EnableBroadcast = true;
 
         receiveThread = new Thread(ReceiveData) { IsBackground = true };
         receiveThread.Start();
-
-        if (connectButton != null)
-        {
-            connectButton.onClick.RemoveAllListeners();
-            connectButton.onClick.AddListener(OnConnectButtonClicked);
-        }
 
         UpdateAnimatedSpritesVisibility();
         UpdateUi();
@@ -254,10 +273,10 @@ public class ChildUdpReceiver : MonoBehaviour
         isRunning = false;
 
         if (discoveryCoroutine != null) { StopCoroutine(discoveryCoroutine); discoveryCoroutine = null; }
-        if (heartbeatCoroutine  != null) { StopCoroutine(heartbeatCoroutine);  heartbeatCoroutine  = null; }
+        if (heartbeatCoroutine != null) { StopCoroutine(heartbeatCoroutine); heartbeatCoroutine = null; }
 
         // Close sockets — unblocks blocking Receive() so the thread exits naturally.
-        CloseClient(ref udpClient,  "udpClient");
+        CloseClient(ref udpClient, "udpClient");
         CloseClient(ref sendClient, "sendClient");
     }
 
@@ -266,6 +285,148 @@ public class ChildUdpReceiver : MonoBehaviour
     {
         Debug.Log($"[ChildUdpReceiver] Scene loaded: '{scene.name}' — refreshing scene references.");
         RefreshSceneReferences();
+        RefreshUiReferences();
+        AttachUiListeners();
+
+        if (IsTitleScene(scene.name))
+        {
+            ResetForNewSession();
+            ClearTitleUiReferences();
+            StartCoroutine(RebindTitleUiNextFrame());
+            Debug.Log($"[ChildUdpReceiver] Title scene loaded ('{scene.name}') — reset state for next round.");
+        }
+    }
+
+    private IEnumerator RebindTitleUiNextFrame()
+    {
+        yield return null;
+
+        if (!IsTitleScene(SceneManager.GetActiveScene().name))
+            yield break;
+
+        RefreshUiReferences();
+        AttachUiListeners();
+        UpdateAnimatedSpritesVisibility();
+        InitializeTitleUi();
+    }
+
+    private void ClearTitleUiReferences()
+    {
+        connectButton = null;
+        connectButtonLabel = null;
+        creditsButton = null;
+        settingsButton = null;
+        cancelButton = null;
+        creditsPanel = null;
+        settingsPanel = null;
+        titleImageObject = null;
+        cancelUiObject = null;
+    }
+
+    private void InitializeTitleUi()
+    {
+        creditsPanel = FindGameObject(null, "Credits");
+        settingsPanel = FindGameObject(null, "SettingsPanel");
+        cancelUiObject = FindGameObject(null, "Cancel");
+
+        if (creditsPanel != null)
+            creditsPanel.SetActive(false);
+
+        if (settingsPanel != null)
+            settingsPanel.SetActive(false);
+
+        if (cancelUiObject != null)
+            cancelUiObject.SetActive(false);
+
+        UpdateAnimatedSpritesVisibility();
+        UpdateUi();
+    }
+
+    private bool IsTitleScene(string sceneName)
+    {
+        return sceneName == titleSceneName ||
+               sceneName == "TitleScene" ||
+               sceneName == "Title" ||
+               sceneName.Contains("Title") ||
+               sceneName == "Mini Title";
+    }
+
+    private void AttachUiListeners()
+    {
+        // シーン遷移後にリスナーを再登録する。
+        // RemoveAllListeners() はInspectorで設定した他の処理まで消してしまうため使用しない。
+
+        AttachButtonListener(connectButton, OnConnectButtonClicked, nameof(OnConnectButtonClicked));
+        AttachButtonListener(cancelButton, OnCancelButtonClicked, nameof(OnCancelButtonClicked));
+        AttachButtonListener(creditsButton, OnCreditsButtonClicked, nameof(OnCreditsButtonClicked));
+        AttachButtonListener(settingsButton, OnSettingsButtonClicked, nameof(OnSettingsButtonClicked));
+
+        AttachCloseButtonListener(creditsPanel, OnCloseCreditsClicked);
+        AttachCloseButtonListener(settingsPanel, OnCloseSettingsClicked);
+    }
+
+    private void AttachButtonListener(Button button, UnityEngine.Events.UnityAction action, string methodName)
+    {
+        if (button == null)
+            return;
+
+        // On the first title load, the Inspector already calls this receiver.
+        // Adding the same callback again toggles panels twice (off -> on -> off).
+        // After returning to the title, the Inspector target is the destroyed
+        // scene-local receiver, so a runtime callback is required instead.
+        button.onClick.RemoveListener(action);
+        for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+        {
+            if (button.onClick.GetPersistentTarget(i) == this &&
+                button.onClick.GetPersistentMethodName(i) == methodName)
+                return;
+        }
+
+        button.onClick.AddListener(action);
+    }
+
+    private void AttachCloseButtonListener(GameObject panel, UnityEngine.Events.UnityAction action)
+    {
+        if (panel == null) return;
+
+        bool isSettingsPanel = panel == settingsPanel;
+        Button closeBtn = panel.GetComponentsInChildren<Button>(true)
+            .FirstOrDefault(button =>
+                button.name.Equals("CloseButton", StringComparison.OrdinalIgnoreCase) ||
+                (isSettingsPanel && button.name.Equals("CancelButton", StringComparison.OrdinalIgnoreCase)));
+
+        if (closeBtn != null)
+        {
+            AttachButtonListener(closeBtn, action, action.Method.Name);
+        }
+    }
+
+    public void ResetForNewSession()
+    {
+        currentState = ConnectionState.Disconnected;
+        lastReceiveTime = 0f;
+        lastMessage = "";
+        targetIP = "127.0.0.1";
+        gameSceneLoaded = false;
+        PlayerInputLock.SetLocked(false);
+
+        if (discoveryCoroutine != null)
+        {
+            StopCoroutine(discoveryCoroutine);
+            discoveryCoroutine = null;
+        }
+
+        if (heartbeatCoroutine != null)
+        {
+            StopCoroutine(heartbeatCoroutine);
+            heartbeatCoroutine = null;
+        }
+
+        if (playerMove != null)
+            playerMove.SetInputEnabled(true);
+
+        if (sleepingManager != null)
+            Debug.Log("[ChildUdpReceiver] ResetForNewSession: sleepingManager remains as reference for next round.");
     }
 
     private void RefreshSceneReferences()
@@ -281,6 +442,41 @@ public class ChildUdpReceiver : MonoBehaviour
             Debug.Log($"[ChildUdpReceiver] sleepingManager found: '{sleepingManager.gameObject.name}'.");
         else
             Debug.Log("[ChildUdpReceiver] sleepingManager not found in current scene (OK on game/loading scenes).");
+    }
+
+    private void RefreshUiReferences()
+    {
+        connectButton = FindButton(connectButton, "ConnectButton", "Connect Button");
+        if (connectButtonLabel == null && connectButton != null)
+            connectButtonLabel = connectButton.GetComponentInChildren<TextMeshProUGUI>(true);
+
+        // The title scene currently uses names with a trailing space. The
+        // receiver survives scene loads, so these references must be reacquired
+        // whenever the title scene is loaded.
+        creditsButton = FindButton(creditsButton, "CrediButton ", "Credit", "CrediButton", "CreditsButton", "CreditButton");
+        settingsButton = FindButton(settingsButton, "SettingButton ", "Setting", "SettingsButton", "SettingButton");
+        cancelButton = FindButton(cancelButton, "CancelButton", "cancel button");
+        cancelUiObject = FindGameObject(cancelUiObject, "Cancel");
+
+        creditsPanel = FindGameObject(creditsPanel, "Credits");
+        settingsPanel = FindGameObject(settingsPanel, "SettingsPanel");
+        titleImageObject = FindGameObject(titleImageObject, "Title", "TitleImage", "TitleImageObject");
+
+        if (IsTitleScene(SceneManager.GetActiveScene().name))
+        {
+            animatedSpriteObjects = new[]
+            {
+                FindGameObject(null, "BackStar"),
+                FindGameObject(null, "Character")
+            }.Where(go => go != null).ToArray();
+        }
+
+        DisableRaycastTargets(titleImageObject);
+        if (animatedSpriteObjects != null)
+        {
+            foreach (GameObject go in animatedSpriteObjects)
+                DisableRaycastTargets(go);
+        }
     }
 
     // ── Incoming message dispatch (main thread) ───────────────────────────────
@@ -307,7 +503,7 @@ public class ChildUdpReceiver : MonoBehaviour
         if (msg == "CAUGHT")
         {
             Debug.Log($"[ChildUdpReceiver] Received CAUGHT — GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}.");
-            
+
             // Prefer GameManager flow so score saving and UDP are consistent.
             if (GameManager.instance != null)
             {
@@ -322,7 +518,7 @@ public class ChildUdpReceiver : MonoBehaviour
                 SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
                 SceneManager.LoadScene("GameOverResult");
             }
-            
+
             return;
         }
 
@@ -400,9 +596,9 @@ public class ChildUdpReceiver : MonoBehaviour
         {
             try
             {
-                IPEndPoint ep   = new IPEndPoint(IPAddress.Any, normalPort);
-                byte[]     data = udpClient.Receive(ref ep);
-                string     msg  = Encoding.UTF8.GetString(data);
+                IPEndPoint ep = new IPEndPoint(IPAddress.Any, normalPort);
+                byte[] data = udpClient.Receive(ref ep);
+                string msg = Encoding.UTF8.GetString(data);
                 Debug.Log($"[ChildUdpReceiver] Received: '{msg}' from {ep.Address}");
 
                 if (msg == MAGIC_NUMBER + "DISCOVERY_ACCEPT")
@@ -411,8 +607,8 @@ public class ChildUdpReceiver : MonoBehaviour
                     Debug.Log($"[ChildUdpReceiver] DISCOVERY_ACCEPT from {parentIP} — now Connected.");
                     actionQueue.Enqueue(() =>
                     {
-                        targetIP        = parentIP;
-                        currentState    = ConnectionState.Connected;
+                        targetIP = parentIP;
+                        currentState = ConnectionState.Connected;
                         lastReceiveTime = Time.time;
                         gameSceneLoaded = false;
                     });
@@ -430,24 +626,24 @@ public class ChildUdpReceiver : MonoBehaviour
     // ── UI ────────────────────────────────────────────────────────────────────
     private void UpdateUi()
     {
-        if (connectButtonLabel != null)
+        foreach (TextMeshProUGUI label in FindTexts("Connect TMP", "ConnectButton", "Connect Button"))
         {
             switch (currentState)
             {
-                case ConnectionState.Disconnected: connectButtonLabel.text = connectLabel;    break;
-                case ConnectionState.Connecting:   connectButtonLabel.text = connectingLabel; break;
-                case ConnectionState.Connected:    connectButtonLabel.text = "START!";        break;
+                case ConnectionState.Disconnected: label.text = connectLabel; break;
+                case ConnectionState.Connecting: label.text = connectingLabel; break;
+                case ConnectionState.Connected: label.text = "START!"; break;
             }
         }
 
-        if (connectButton != null)
+        foreach (Button button in FindButtons("ConnectButton", "Connect Button"))
         {
-            connectButton.gameObject.SetActive(true);
-            connectButton.interactable = currentState != ConnectionState.Connecting;
+            button.gameObject.SetActive(true);
+            button.interactable = currentState != ConnectionState.Connecting;
 
-            Transform moveTarget = connectButton.transform.parent != null
-                ? connectButton.transform.parent
-                : connectButton.transform;
+            Transform moveTarget = button.transform.parent != null
+                ? button.transform.parent
+                : button.transform;
             RectTransform rt = moveTarget.GetComponent<RectTransform>();
             if (rt != null)
                 rt.anchoredPosition = currentState == ConnectionState.Connected
@@ -457,16 +653,17 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (cancelUiObject != null)
             cancelUiObject.SetActive(currentState == ConnectionState.Connecting);
-        else if (cancelButton != null)
-            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
+        else
+            foreach (Button button in FindButtons("CancelButton", "cancel button"))
+                button.gameObject.SetActive(currentState == ConnectionState.Connecting);
 
-        SetActiveForButton(creditsButton,  currentState != ConnectionState.Connected);
+        SetActiveForButton(creditsButton, currentState != ConnectionState.Connected);
         SetActiveForButton(settingsButton, currentState != ConnectionState.Connected);
     }
 
     private void UpdateAnimatedSpritesVisibility()
     {
-        bool shouldShow = !(creditsPanel  != null && creditsPanel.activeSelf) &&
+        bool shouldShow = !(creditsPanel != null && creditsPanel.activeSelf) &&
                           !(settingsPanel != null && settingsPanel.activeSelf);
 
         if (titleImageObject != null)
@@ -494,10 +691,113 @@ public class ChildUdpReceiver : MonoBehaviour
         target.SetActive(active);
     }
 
+    private static Button FindButton(Button current, params string[] candidateNames)
+    {
+        if (current != null)
+            return current;
+
+        foreach (string candidateName in candidateNames)
+        {
+            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
+                    continue;
+
+                if (candidate.name != candidateName)
+                    continue;
+
+                Button button = candidate.GetComponent<Button>();
+                if (button != null)
+                    return button;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<Button> FindButtons(params string[] candidateNames)
+    {
+        foreach (string candidateName in candidateNames)
+        {
+            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
+                    continue;
+
+                if (candidate.name != candidateName)
+                    continue;
+
+                Button button = candidate.GetComponent<Button>();
+                if (button != null)
+                    yield return button;
+            }
+        }
+    }
+
+    private static IEnumerable<TextMeshProUGUI> FindTexts(params string[] candidateNames)
+    {
+        foreach (string candidateName in candidateNames)
+        {
+            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
+                    continue;
+
+                if (candidate.name != candidateName)
+                    continue;
+
+                TextMeshProUGUI[] texts = candidate.GetComponentsInChildren<TextMeshProUGUI>(true);
+                foreach (TextMeshProUGUI text in texts)
+                    yield return text;
+            }
+        }
+    }
+
+    private static void SetActiveForButtons(IEnumerable<Button> buttons, bool active)
+    {
+        foreach (Button button in buttons)
+        {
+            if (button == null) continue;
+            GameObject target = button.transform.parent != null
+                ? button.transform.parent.gameObject
+                : button.gameObject;
+            target.SetActive(active);
+        }
+    }
+
+    private static GameObject FindGameObject(GameObject current, params string[] candidateNames)
+    {
+        if (current != null)
+            return current;
+
+        foreach (string candidateName in candidateNames)
+        {
+            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
+                    continue;
+
+                if (candidate.name == candidateName)
+                    return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static void DisableRaycastTargets(GameObject target)
+    {
+        if (target == null)
+            return;
+
+        foreach (Graphic graphic in target.GetComponentsInChildren<Graphic>(true))
+            graphic.raycastTarget = false;
+    }
+
     private static void CloseClient(ref UdpClient client, string label)
     {
         if (client == null) return;
-        try   { client.Close(); client.Dispose(); }
+        try { client.Close(); client.Dispose(); }
         catch (Exception e) { Debug.LogWarning($"[ChildUdpReceiver] Error closing {label}: {e.Message}"); }
         client = null;
     }
