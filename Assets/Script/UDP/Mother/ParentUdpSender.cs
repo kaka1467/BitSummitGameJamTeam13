@@ -50,6 +50,7 @@ public class ParentUdpSender : MonoBehaviour
     public TextMeshProUGUI    connectButtonLabel;
     public GameObject         startButtonObject;
     public string             gameSceneName    = "GameScene";
+    public string             titleSceneName   = "Mini Title";
     public string             gameOverSceneName = "GameOverResult";
     public string             timeUpSceneName   = "TimeUpResult";
     public Button             cancelButton;
@@ -126,6 +127,8 @@ public class ParentUdpSender : MonoBehaviour
 
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
+        RefreshUiReferences();
+        AttachUiListeners();
 
         isRunning = true;
 
@@ -236,12 +239,65 @@ public class ParentUdpSender : MonoBehaviour
     {
         Debug.Log($"[ParentUdpSender] Scene loaded: '{scene.name}' — refreshing scene references.");
         RefreshSceneReferences();
+        RefreshUiReferences();
+        AttachUiListeners();
+
+        if (IsTitleScene(scene.name))
+        {
+            ResetForNewSession();
+            Debug.Log($"[ParentUdpSender] Title scene loaded ('{scene.name}') — reset state for next round.");
+            return;
+        }
+
         // Reset result guard for new game session
         if (scene.name == gameSceneName)
         {
             resultProcessed = false;
             Debug.Log("[ParentUdpSender] resultProcessed reset for new game session.");
         }
+    }
+
+    private bool IsTitleScene(string sceneName)
+    {
+        return sceneName == titleSceneName ||
+               sceneName == "TitleScene" ||
+               sceneName == "Title" ||
+               sceneName.Contains("Title") ||
+               sceneName == "Mini Title";
+    }
+
+    private void AttachUiListeners()
+    {
+        if (connectButton != null)
+        {
+            connectButton.onClick.RemoveAllListeners();
+            connectButton.onClick.AddListener(OnConnectButtonClicked);
+        }
+
+        if (cancelButton != null)
+        {
+            cancelButton.onClick.RemoveAllListeners();
+            cancelButton.onClick.AddListener(OnCancelButtonClicked);
+        }
+    }
+
+    public void ResetForNewSession()
+    {
+        currentState = ConnectionState.Disconnected;
+        targetIP = "127.0.0.1";
+        lastReceiveTime = 0f;
+        gameStarted = false;
+        resultProcessed = false;
+        ChildLoadingComplete = false;
+        _shouldTriggerLoudItem = false;
+
+        if (heartbeatCoroutine != null)
+        {
+            StopCoroutine(heartbeatCoroutine);
+            heartbeatCoroutine = null;
+        }
+
+        Debug.Log("[ParentUdpSender] ResetForNewSession: session flags cleared.");
     }
 
     private void RefreshSceneReferences()
@@ -251,6 +307,24 @@ public class ParentUdpSender : MonoBehaviour
             Debug.Log($"[ParentUdpSender] parentDetection found: '{parentDetection.gameObject.name}'.");
         else
             Debug.Log("[ParentUdpSender] parentDetection not found in current scene (OK on title/connect scenes).");
+    }
+
+    private void RefreshUiReferences()
+    {
+        connectButton = FindButton(connectButton, "Connect Button", "ConnectButton");
+        if (connectButtonLabel == null && connectButton != null)
+            connectButtonLabel = connectButton.GetComponentInChildren<TextMeshProUGUI>(true);
+
+        cancelButton = FindButton(cancelButton, "cancel button", "CancelButton");
+
+        if (startButtonObject == null)
+        {
+            GameObject startButton = GameObject.Find("Start Button");
+            if (startButton == null)
+                startButton = GameObject.Find("StartButton");
+            if (startButton != null)
+                startButtonObject = startButton;
+        }
     }
 
     // ── Public send API ───────────────────────────────────────────────────────
@@ -515,5 +589,29 @@ public class ParentUdpSender : MonoBehaviour
         try   { client.Close(); client.Dispose(); }
         catch (Exception e) { Debug.LogWarning($"[ParentUdpSender] Error closing {label}: {e.Message}"); }
         client = null;
+    }
+
+    private static Button FindButton(Button current, params string[] candidateNames)
+    {
+        if (current != null)
+            return current;
+
+        foreach (string candidateName in candidateNames)
+        {
+            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
+                    continue;
+
+                if (candidate.name != candidateName)
+                    continue;
+
+                Button button = candidate.GetComponent<Button>();
+                if (button != null)
+                    return button;
+            }
+        }
+
+        return null;
     }
 }
