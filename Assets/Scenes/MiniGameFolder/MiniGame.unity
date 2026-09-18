@@ -182,7 +182,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 1
-  orthographic size: 0.815
+  orthographic size: 0.7714286
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -830,6 +830,7 @@ MonoBehaviour:
   currentState: 0
   lastMessage: 
   gameSceneName: GameOverResult
+  titleSceneName: Mini Title
   sleepingManager: {fileID: 508756885}
   connectButton: {fileID: 0}
   connectButtonLabel: {fileID: 0}
@@ -3626,7 +3627,7 @@ MonoBehaviour:
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 2
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -3642,7 +3643,7 @@ MonoBehaviour:
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 3
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -3658,7 +3659,7 @@ MonoBehaviour:
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 4
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
