@@ -20,7 +20,7 @@ public class ResultSceneChamger : MonoBehaviour
     public float autoChangeDelay = 30.0f; // 自動遷移までの時間（秒）
     
     [Header("遷移先シーン名")]
-    public string titleSceneName = "TitleScene"; 
+    public string titleSceneName = "Mini Title"; 
 
     private bool isFading = false;
     private float elapsed = 0f;
