@@ -73,6 +73,22 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("接近中にループ再生するAudioSource。UpdateMovementLoopAudio()で毎フレーム制御する。突入ルートでは再生しない。")]
     public AudioSource movementLoopAudioSource;
 
+    [Header("足音音量（段階的制御）")]
+    [Tooltip("開始地点付近（遠い段階）での足音音量。")]
+    [Range(0f, 1f)]
+    [SerializeField] private float farVolume = 0.2f;
+
+    [Tooltip("階段・廊下（中間段階）での足音音量。")]
+    [Range(0f, 1f)]
+    [SerializeField] private float midVolume = 0.5f;
+
+    [Tooltip("扉前（扉に近い段階）での足音音量。")]
+    [Range(0f, 1f)]
+    [SerializeField] private float nearDoorVolume = 1.0f;
+
+    [Tooltip("現在の音量から目標音量へ変化する速さ（単位／秒）。")]
+    [SerializeField] private float volumeChangeSpeed = 1.0f;
+
     // ── タイミング ────────────────────────────────────────────────────────────
     [Header("タイミング")]
     [Tooltip("通常ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
@@ -106,6 +122,8 @@ public class ParentApproachController : MonoBehaviour
     private Coroutine _approachCoroutine;
     private float _fixedPitch;
     private float _fixedRoll;
+    private float _currentAudioVolume;
+    private float _targetAudioVolume;
 
     // 固定ヨー角 — 外部公開せず、要件に応じて調整する
     private const float StairYaw   = -90f;
@@ -115,6 +133,16 @@ public class ParentApproachController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
+
+    private void Start()
+    {
+        _currentAudioVolume = farVolume;
+        _targetAudioVolume = farVolume;
+        if (movementLoopAudioSource != null)
+        {
+            movementLoopAudioSource.volume = farVolume;
+        }
+    }
 
     private void Update()
     {
@@ -126,15 +154,26 @@ public class ParentApproachController : MonoBehaviour
         if (movementLoopAudioSource == null) return;
         // 覗き機能削除に伴い、通常ルートの接近中は常に移動ループを再生する。
         bool shouldPlay = !IsRushIn && IsApproaching;
-        if (shouldPlay && !movementLoopAudioSource.isPlaying)
+        if (shouldPlay)
         {
-            movementLoopAudioSource.loop = true;
-            movementLoopAudioSource.Play();
-            Debug.Log("[ParentApproachController] 移動ループを開始（接近中）");
+            if (!movementLoopAudioSource.isPlaying)
+            {
+                movementLoopAudioSource.loop = true;
+                movementLoopAudioSource.volume = _currentAudioVolume;
+                movementLoopAudioSource.Play();
+                Debug.Log("[ParentApproachController] 移動ループを開始（接近中）");
+            }
+
+            // 現在の音量から目標音量へ滑らかに変化させる
+            _currentAudioVolume = Mathf.MoveTowards(_currentAudioVolume, _targetAudioVolume, volumeChangeSpeed * Time.deltaTime);
+            movementLoopAudioSource.volume = _currentAudioVolume;
         }
-        else if (!shouldPlay && movementLoopAudioSource.isPlaying)
+        else if (movementLoopAudioSource.isPlaying)
         {
             movementLoopAudioSource.Stop();
+            _targetAudioVolume = farVolume;
+            _currentAudioVolume = farVolume;
+            movementLoopAudioSource.volume = farVolume;
             Debug.Log("[ParentApproachController] 移動ループを停止（接近終了、または突入中）");
         }
     }
@@ -206,6 +245,14 @@ public class ParentApproachController : MonoBehaviour
     {
         ResetStateFlags();
 
+        // 接近開始時は遠い段階の音量から初期化
+        _targetAudioVolume = farVolume;
+        _currentAudioVolume = farVolume;
+        if (movementLoopAudioSource != null)
+        {
+            movementLoopAudioSource.volume = farVolume;
+        }
+
         // startPoint.rotationからピッチ／ロールを取得し、キャンセルされたサイクル後に
         // 実行途中の古いTransformが誤った値を引き継がないようにする。
         Vector3 startEuler = startPoint.rotation.eulerAngles;
@@ -221,7 +268,7 @@ public class ParentApproachController : MonoBehaviour
         IsApproaching = true;
         OnApproachStarted?.Invoke();
 
-        Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1}");
+        Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1} | targetVolume={farVolume}");
         _approachCoroutine = StartCoroutine(passByRoute ? PassByRoutine() : DoorRoutine());
     }
 
@@ -236,7 +283,9 @@ public class ParentApproachController : MonoBehaviour
         yield return RunStairPhase();
         yield return RunHallwayPhase();
 
-        Debug.Log($"[ParentApproachController] Phase: DOOR | moving to '{doorPoint.name}' then rotate to yaw=90");
+        // 扉前フェーズ：目標音量を扉前（最大段階）に設定
+        _targetAudioVolume = nearDoorVolume;
+        Debug.Log($"[ParentApproachController] Phase: DOOR | moving to '{doorPoint.name}' then rotate to yaw=90 | targetVolume={nearDoorVolume}");
         yield return MoveToPoint(doorPoint);
         yield return RotateToYaw(DoorYaw, doorTurnRotationSpeed);
 
@@ -265,7 +314,9 @@ public class ParentApproachController : MonoBehaviour
         yield return RunStairPhase();
         yield return RunHallwayPhase();
 
-        Debug.Log($"[ParentApproachController] Phase: DOOR (pass-by) | moving through '{doorPoint.name}' — no stop, no rotation");
+        // 扉前フェーズ：目標音量を扉前（最大段階）に設定
+        _targetAudioVolume = nearDoorVolume;
+        Debug.Log($"[ParentApproachController] Phase: DOOR (pass-by) | moving through '{doorPoint.name}' — no stop, no rotation | targetVolume={nearDoorVolume}");
         yield return MoveToPoint(doorPoint);
 
         yield return new WaitForSeconds(pauseBeforePassBySeconds);
@@ -289,7 +340,9 @@ public class ParentApproachController : MonoBehaviour
     private IEnumerator RunStairPhase()
     {
         SetYaw(StairYaw);
-        Debug.Log($"[ParentApproachController] Phase: STAIR CLIMB | yaw=-90 | IsRushIn={IsRushIn}");
+        // 遠い段階（開始地点付近・階段上り開始）：目標音量を小さい段階に設定
+        _targetAudioVolume = farVolume;
+        Debug.Log($"[ParentApproachController] Phase: STAIR CLIMB | yaw=-90 | IsRushIn={IsRushIn} | targetVolume={farVolume}");
         // 移動ループ音はUpdate()内のUpdateMovementLoopAudio()で管理する — ここではPlay()を呼ばない。
 
         if (stairClimbPoints != null)
@@ -304,7 +357,9 @@ public class ParentApproachController : MonoBehaviour
 
         if (stairTurnPoint != null)
         {
-            Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0");
+            // 階段旋回（階段を上り終えて廊下へ向かう中間段階）：目標音量を中くらいに設定
+            _targetAudioVolume = midVolume;
+            Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0 | targetVolume={midVolume}");
             yield return MoveToPoint(stairTurnPoint);
             yield return RotateToYaw(HallwayYaw, stairTurnRotationSpeed);
             Debug.Log("[ParentApproachController]   階段旋回完了");
@@ -314,7 +369,9 @@ public class ParentApproachController : MonoBehaviour
     private IEnumerator RunHallwayPhase()
     {
         IsInHallwayPhase = true;
-        Debug.Log("[ParentApproachController] フェーズ：廊下 | IsInHallwayPhase=true");
+        // 中間段階（廊下）：stairTurnPointが未設定の場合でも確実に中間音量に設定
+        _targetAudioVolume = midVolume;
+        Debug.Log($"[ParentApproachController] フェーズ：廊下 | IsInHallwayPhase=true | targetVolume={midVolume}");
 
         if (hallwayPoints != null)
         {
@@ -372,11 +429,17 @@ public class ParentApproachController : MonoBehaviour
 
     private void StopMovementAudio()
     {
-        if (movementLoopAudioSource != null && movementLoopAudioSource.isPlaying)
+        if (movementLoopAudioSource != null)
         {
-            movementLoopAudioSource.Stop();
-            Debug.Log("[ParentApproachController] 移動音を停止");
+            if (movementLoopAudioSource.isPlaying)
+            {
+                movementLoopAudioSource.Stop();
+                Debug.Log("[ParentApproachController] 移動音を停止");
+            }
+            movementLoopAudioSource.volume = farVolume;
         }
+        _targetAudioVolume = farVolume;
+        _currentAudioVolume = farVolume;
     }
 
     private void ShowMotherModel()
