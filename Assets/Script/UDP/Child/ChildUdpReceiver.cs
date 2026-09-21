@@ -75,12 +75,8 @@ public class ChildUdpReceiver : MonoBehaviour
     [Tooltip("通信ログなどの詳細出力を有効にする")]
     [SerializeField] private bool showDebugLogs = true;
 
-<<<<<<< HEAD
     // 子機が現在適用している睡眠ロック状態（重複パケット処理の抑制用）
     private bool isSleepInputLocked = false;
-
-=======
->>>>>>> origin/main
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject[] animatedSpriteObjects;
