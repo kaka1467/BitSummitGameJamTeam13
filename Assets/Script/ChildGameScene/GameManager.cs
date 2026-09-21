@@ -10,9 +10,22 @@ public class GameManager : MonoBehaviour
     public string timeUpSceneName = "TimeUpResult";   // TIME_UP result scene
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
 
-    public const string PlayerPrefsGameOverScore = "LastGameOverScore";
-    public const string PlayerPrefsTimeUpScore = "LastTimeUpScore";
-    public const string PlayerPrefsResultTypePending = "ResultTypePending";
+    // ── PlayerPrefs Keys（結果・ランキング保存用） ─────────────────────────────
+    // 親機・子機で同じPlayerPrefs保存形式（キー文字列・降順TOP5）を使用します。
+    // 既存セーブデータおよびランキングとの互換性を保つため、キー文字列の値は絶対に変更しないでください。
+    private const string KeyGameOverScore  = "LastGameOverScore";
+    private const string KeyTimeUpScore    = "LastTimeUpScore";
+    private const string KeyGameOverRank   = "GameOverRank_";
+    private const string KeyTimeUpRank     = "TimeUpRank_";
+    private const int    RankingSize       = 5;
+
+    // 子機側専用: シーン遷移中に確定した結果種別（"GAME_OVER" または "TIME_UP"）を保持するキー
+    private const string KeyResultTypePending = "ResultTypePending";
+
+    // 互換性保持用の公開定数
+    public const string PlayerPrefsGameOverScore = KeyGameOverScore;
+    public const string PlayerPrefsTimeUpScore = KeyTimeUpScore;
+    public const string PlayerPrefsResultTypePending = KeyResultTypePending;
     [SerializeField] private CanvasGroup fadeCanvasGroup;
     [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
 
@@ -182,14 +195,14 @@ public class GameManager : MonoBehaviour
 
         // Save score under type-specific key
         string scoreKey = resultType == ResultType.GameOver
-            ? PlayerPrefsGameOverScore
-            : PlayerPrefsTimeUpScore;
+            ? KeyGameOverScore
+            : KeyTimeUpScore;
         string rankKey = resultType == ResultType.GameOver
-            ? "GameOverRank_"
-            : "TimeUpRank_";
+            ? KeyGameOverRank
+            : KeyTimeUpRank;
 
         PlayerPrefs.SetInt(scoreKey, score);
-        PlayerPrefs.SetString(PlayerPrefsResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
+        PlayerPrefs.SetString(KeyResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
 
         // ランキングの更新
         UpdateRanking(rankKey, score);
@@ -210,7 +223,6 @@ public class GameManager : MonoBehaviour
     // 【追加】PlayerPrefsを用いたランキング保存メソッド
     private static void UpdateRanking(string keyPrefix, int newScore)
     {
-        const int RankingSize = 5;
         int[] ranking = new int[RankingSize];
         for (int i = 0; i < RankingSize; i++)
             ranking[i] = PlayerPrefs.GetInt(keyPrefix + i, 0);

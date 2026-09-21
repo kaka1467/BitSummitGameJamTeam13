@@ -843,6 +843,7 @@ MonoBehaviour:
   connectButtonStartPosition: {x: 0, y: 0}
   cancelUiObject: {fileID: 0}
   playerMove: {fileID: 1865325544}
+  showDebugLogs: 1
   creditsPanel: {fileID: 0}
   settingsPanel: {fileID: 0}
   animatedSpriteObjects: []
@@ -3701,6 +3702,7 @@ MonoBehaviour:
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
       count: 15
   spawnEnabled: 1
+  showDebugLogs: 0
   hugeObstacleSpawnCount: 1
   hugeObstacleSpawnY: 0.00000001929803
   minSpawnDistanceX: 1.2

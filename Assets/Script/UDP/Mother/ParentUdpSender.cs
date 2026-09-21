@@ -55,7 +55,9 @@ public class ParentUdpSender : MonoBehaviour
     public string             timeUpSceneName   = "TimeUpResult";
     public Button             cancelButton;
 
-    // PlayerPrefs keys — mirrored from GameManager constants
+    // ── PlayerPrefs Keys（結果・ランキング保存用） ─────────────────────────────
+    // 親機・子機で同じPlayerPrefs保存形式（キー文字列・降順TOP5）を使用します。
+    // 既存セーブデータおよびランキングとの互換性を保つため、キー文字列の値は絶対に変更しないでください。
     private const string KeyGameOverScore  = "LastGameOverScore";
     private const string KeyTimeUpScore    = "LastTimeUpScore";
     private const string KeyGameOverRank   = "GameOverRank_";
