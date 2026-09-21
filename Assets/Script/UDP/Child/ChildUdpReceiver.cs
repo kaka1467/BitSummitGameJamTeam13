@@ -71,6 +71,13 @@ public class ChildUdpReceiver : MonoBehaviour
     [Tooltip("Auto-found at Start if not assigned. Used for SLEEP_LOCK / SLEEP_UNLOCK.")]
     public PlayerMove playerMove;
 
+    [Header("Debug")]
+    [Tooltip("通信ログなどの詳細出力を有効にする")]
+    [SerializeField] private bool showDebugLogs = true;
+
+    // 子機が現在適用している睡眠ロック状態（重複パケット処理の抑制用）
+    private bool isSleepInputLocked = false;
+
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject[] animatedSpriteObjects;
@@ -93,6 +100,9 @@ public class ChildUdpReceiver : MonoBehaviour
     private float pingInterval = 1.0f;
     private float timeoutLimit = 3.0f;
     private bool gameSceneLoaded = false;
+
+    // 最後にUIに反映した接続状態（状態変更時のみUI更新を行うためのキャッシュ）
+    private ConnectionState? lastAppliedUiState = null;
 
     public static ChildUdpReceiver instance { get; private set; }
 
@@ -159,7 +169,8 @@ public class ChildUdpReceiver : MonoBehaviour
     // ── Public send API ───────────────────────────────────────────────────────
     public void SendState(string message)
     {
-        Debug.Log($"[ChildUdpReceiver] → '{message}' to {targetIP}:{parentReceivePort}");
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] → '{message}' to {targetIP}:{parentReceivePort}");
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
@@ -169,7 +180,8 @@ public class ChildUdpReceiver : MonoBehaviour
             {
                 // Fallback: broadcast so parent can receive even if targetIP is stale.
                 sendClient.Send(data, data.Length, "255.255.255.255", parentReceivePort);
-                Debug.Log($"[ChildUdpReceiver] → '{message}' broadcast to 255.255.255.255:{parentReceivePort}");
+                if (showDebugLogs)
+                    Debug.Log($"[ChildUdpReceiver] → '{message}' broadcast to 255.255.255.255:{parentReceivePort}");
             }
         }
         catch (Exception e)
@@ -207,11 +219,11 @@ public class ChildUdpReceiver : MonoBehaviour
 
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
-        RefreshUiReferences();
-        AttachUiListeners();
 
         if (IsTitleScene(SceneManager.GetActiveScene().name))
         {
+            RefreshUiReferences();
+            AttachUiListeners();
             ResetForNewSession();
             InitializeTitleUi();
         }
@@ -224,9 +236,6 @@ public class ChildUdpReceiver : MonoBehaviour
 
         receiveThread = new Thread(ReceiveData) { IsBackground = true };
         receiveThread.Start();
-
-        UpdateAnimatedSpritesVisibility();
-        UpdateUi();
     }
 
     void Update()
@@ -285,8 +294,6 @@ public class ChildUdpReceiver : MonoBehaviour
     {
         Debug.Log($"[ChildUdpReceiver] Scene loaded: '{scene.name}' — refreshing scene references.");
         RefreshSceneReferences();
-        RefreshUiReferences();
-        AttachUiListeners();
 
         if (IsTitleScene(scene.name))
         {
@@ -294,6 +301,13 @@ public class ChildUdpReceiver : MonoBehaviour
             ClearTitleUiReferences();
             StartCoroutine(RebindTitleUiNextFrame());
             Debug.Log($"[ChildUdpReceiver] Title scene loaded ('{scene.name}') — reset state for next round.");
+        }
+        else if (scene.name == gameSceneName)
+        {
+            isSleepInputLocked = false;
+            PlayerInputLock.SetLocked(false);
+            if (playerMove != null)
+                playerMove.SetInputEnabled(true);
         }
     }
 
@@ -321,13 +335,14 @@ public class ChildUdpReceiver : MonoBehaviour
         settingsPanel = null;
         titleImageObject = null;
         cancelUiObject = null;
+        lastAppliedUiState = null;
     }
 
     private void InitializeTitleUi()
     {
-        creditsPanel = FindGameObject(null, "Credits");
-        settingsPanel = FindGameObject(null, "SettingsPanel");
-        cancelUiObject = FindGameObject(null, "Cancel");
+        creditsPanel = FindGameObject(creditsPanel, "Credits");
+        settingsPanel = FindGameObject(settingsPanel, "SettingsPanel");
+        cancelUiObject = FindGameObject(cancelUiObject, "Cancel");
 
         if (creditsPanel != null)
             creditsPanel.SetActive(false);
@@ -339,7 +354,7 @@ public class ChildUdpReceiver : MonoBehaviour
             cancelUiObject.SetActive(false);
 
         UpdateAnimatedSpritesVisibility();
-        UpdateUi();
+        UpdateUi(true);
     }
 
     private bool IsTitleScene(string sceneName)
@@ -408,6 +423,7 @@ public class ChildUdpReceiver : MonoBehaviour
         lastMessage = "";
         targetIP = "127.0.0.1";
         gameSceneLoaded = false;
+        isSleepInputLocked = false;
         PlayerInputLock.SetLocked(false);
 
         if (discoveryCoroutine != null)
@@ -446,9 +462,19 @@ public class ChildUdpReceiver : MonoBehaviour
 
     private void RefreshUiReferences()
     {
+        if (!IsTitleScene(SceneManager.GetActiveScene().name))
+            return;
+
         connectButton = FindButton(connectButton, "ConnectButton", "Connect Button");
         if (connectButtonLabel == null && connectButton != null)
             connectButtonLabel = connectButton.GetComponentInChildren<TextMeshProUGUI>(true);
+
+        if (connectButtonLabel == null)
+        {
+            GameObject tmpGo = FindGameObject(null, "Connect TMP");
+            if (tmpGo != null)
+                connectButtonLabel = tmpGo.GetComponent<TextMeshProUGUI>();
+        }
 
         // The title scene currently uses names with a trailing space. The
         // receiver survives scene loads, so these references must be reacquired
@@ -485,7 +511,8 @@ public class ChildUdpReceiver : MonoBehaviour
         if (!raw.StartsWith(MAGIC_NUMBER)) return;
         string msg = raw.Substring(MAGIC_NUMBER.Length);
         lastMessage = msg;
-        Debug.Log($"[ChildUdpReceiver] HandleIncoming: '{msg}' | scene='{SceneManager.GetActiveScene().name}' | playerMove={(playerMove != null ? playerMove.gameObject.name : "NULL")} | GameManager={(GameManager.instance != null ? "present" : "NULL")}");
+        if (msg != "PING" && showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] HandleIncoming: '{msg}' | scene='{SceneManager.GetActiveScene().name}' | playerMove={(playerMove != null ? playerMove.gameObject.name : "NULL")} | GameManager={(GameManager.instance != null ? "present" : "NULL")}");
 
         if (msg == "PING")
         {
@@ -495,14 +522,16 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (msg == CMD_START)
         {
-            Debug.Log("[ChildUdpReceiver] Received START_GAME from parent — loading game scene.");
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] Received START_GAME from parent — loading game scene.");
             LoadGameScene();
             return;
         }
 
         if (msg == "CAUGHT")
         {
-            Debug.Log($"[ChildUdpReceiver] Received CAUGHT — GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}.");
+            if (showDebugLogs)
+                Debug.Log($"[ChildUdpReceiver] Received CAUGHT — GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}.");
 
             // Prefer GameManager flow so score saving and UDP are consistent.
             if (GameManager.instance != null)
@@ -524,7 +553,17 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (msg == "SLEEP_LOCK")
         {
-            Debug.Log("[ChildUdpReceiver] Received SLEEP_LOCK");
+            if (isSleepInputLocked)
+            {
+                if (showDebugLogs)
+                    Debug.Log("[ChildUdpReceiver] Received redundant SLEEP_LOCK (already locked) — skipped.");
+                return;
+            }
+
+            isSleepInputLocked = true;
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] Received SLEEP_LOCK — locking input.");
+
             PlayerInputLock.SetLocked(true);
 
             if (playerMove != null)
@@ -533,7 +572,8 @@ public class ChildUdpReceiver : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning("[ChildUdpReceiver] SLEEP_LOCK received but playerMove is null.");
+                if (showDebugLogs)
+                    Debug.LogWarning("[ChildUdpReceiver] SLEEP_LOCK received but playerMove is null.");
             }
 
             return;
@@ -541,7 +581,17 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (msg == "SLEEP_UNLOCK")
         {
-            Debug.Log("[ChildUdpReceiver] Received SLEEP_UNLOCK");
+            if (!isSleepInputLocked)
+            {
+                if (showDebugLogs)
+                    Debug.Log("[ChildUdpReceiver] Received redundant SLEEP_UNLOCK (already unlocked) — skipped.");
+                return;
+            }
+
+            isSleepInputLocked = false;
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] Received SLEEP_UNLOCK — unlocking input.");
+
             PlayerInputLock.SetLocked(false);
 
             if (playerMove != null)
@@ -550,13 +600,15 @@ public class ChildUdpReceiver : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning("[ChildUdpReceiver] SLEEP_UNLOCK received but playerMove is null.");
+                if (showDebugLogs)
+                    Debug.LogWarning("[ChildUdpReceiver] SLEEP_UNLOCK received but playerMove is null.");
             }
 
             return;
         }
 
-        Debug.Log($"[ChildUdpReceiver] Unhandled message: '{msg}'");
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] Unhandled message: '{msg}'");
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────
@@ -624,39 +676,68 @@ public class ChildUdpReceiver : MonoBehaviour
     }
 
     // ── UI ────────────────────────────────────────────────────────────────────
-    private void UpdateUi()
+    /// <summary>
+    /// タイトル画面の接続UI表示を更新する。
+    /// タイトル画面以外では実行されず、状態変化があった時（またはforceUpdate時）のみ更新を行う。
+    /// </summary>
+    private void UpdateUi(bool forceUpdate = false)
     {
-        foreach (TextMeshProUGUI label in FindTexts("Connect TMP", "ConnectButton", "Connect Button"))
+        // タイトル画面以外ではUI更新を行わない
+        if (!IsTitleScene(SceneManager.GetActiveScene().name))
+            return;
+
+        // 状態変化がなく、強制更新でもない場合はスキップ
+        if (!forceUpdate && lastAppliedUiState.HasValue && lastAppliedUiState.Value == currentState)
+            return;
+
+        lastAppliedUiState = currentState;
+
+        // Connectボタンのラベル更新
+        if (connectButtonLabel != null)
         {
             switch (currentState)
             {
-                case ConnectionState.Disconnected: label.text = connectLabel; break;
-                case ConnectionState.Connecting: label.text = connectingLabel; break;
-                case ConnectionState.Connected: label.text = "START!"; break;
+                case ConnectionState.Disconnected:
+                    connectButtonLabel.text = connectLabel;
+                    break;
+                case ConnectionState.Connecting:
+                    connectButtonLabel.text = connectingLabel;
+                    break;
+                case ConnectionState.Connected:
+                    connectButtonLabel.text = "START!";
+                    break;
             }
         }
 
-        foreach (Button button in FindButtons("ConnectButton", "Connect Button"))
+        // Connectボタンの表示・位置更新
+        if (connectButton != null)
         {
-            button.gameObject.SetActive(true);
-            button.interactable = currentState != ConnectionState.Connecting;
+            connectButton.gameObject.SetActive(true);
+            connectButton.interactable = currentState != ConnectionState.Connecting;
 
-            Transform moveTarget = button.transform.parent != null
-                ? button.transform.parent
-                : button.transform;
+            Transform moveTarget = connectButton.transform.parent != null
+                ? connectButton.transform.parent
+                : connectButton.transform;
             RectTransform rt = moveTarget.GetComponent<RectTransform>();
             if (rt != null)
+            {
                 rt.anchoredPosition = currentState == ConnectionState.Connected
                     ? connectButtonStartPosition
                     : connectButtonDefaultPosition;
+            }
         }
 
+        // Cancelボタン / Cancel UIオブジェクトの更新
         if (cancelUiObject != null)
+        {
             cancelUiObject.SetActive(currentState == ConnectionState.Connecting);
-        else
-            foreach (Button button in FindButtons("CancelButton", "cancel button"))
-                button.gameObject.SetActive(currentState == ConnectionState.Connecting);
+        }
+        else if (cancelButton != null)
+        {
+            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
+        }
 
+        // クレジット・設定ボタンの更新
         SetActiveForButton(creditsButton, currentState != ConnectionState.Connected);
         SetActiveForButton(settingsButton, currentState != ConnectionState.Connected);
     }
@@ -713,56 +794,6 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         return null;
-    }
-
-    private static IEnumerable<Button> FindButtons(params string[] candidateNames)
-    {
-        foreach (string candidateName in candidateNames)
-        {
-            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
-            {
-                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
-                    continue;
-
-                if (candidate.name != candidateName)
-                    continue;
-
-                Button button = candidate.GetComponent<Button>();
-                if (button != null)
-                    yield return button;
-            }
-        }
-    }
-
-    private static IEnumerable<TextMeshProUGUI> FindTexts(params string[] candidateNames)
-    {
-        foreach (string candidateName in candidateNames)
-        {
-            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
-            {
-                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
-                    continue;
-
-                if (candidate.name != candidateName)
-                    continue;
-
-                TextMeshProUGUI[] texts = candidate.GetComponentsInChildren<TextMeshProUGUI>(true);
-                foreach (TextMeshProUGUI text in texts)
-                    yield return text;
-            }
-        }
-    }
-
-    private static void SetActiveForButtons(IEnumerable<Button> buttons, bool active)
-    {
-        foreach (Button button in buttons)
-        {
-            if (button == null) continue;
-            GameObject target = button.transform.parent != null
-                ? button.transform.parent.gameObject
-                : button.gameObject;
-            target.SetActive(active);
-        }
     }
 
     private static GameObject FindGameObject(GameObject current, params string[] candidateNames)
