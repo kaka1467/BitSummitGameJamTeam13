@@ -4154,10 +4154,12 @@ MonoBehaviour:
   connectButtonLabel: {fileID: 0}
   startButtonObject: {fileID: 0}
   gameSceneName: GameOverResult
+  titleSceneName: Mini Title
   gameOverSceneName: GameOverResult
   timeUpSceneName: TimeUpResult
   cancelButton: {fileID: 0}
   parentDetection: {fileID: 1951468137}
+  showDebugLogs: 1
 --- !u!4 &1385247219
 Transform:
   m_ObjectHideFlags: 0
@@ -6681,6 +6683,10 @@ MonoBehaviour:
   motherModelRoot: {fileID: 1300055334}
   motherModelRenderers: []
   movementLoopAudioSource: {fileID: 1615664220}
+  farVolume: 0.2
+  midVolume: 0.5
+  nearDoorVolume: 1
+  volumeChangeSpeed: 1
   pauseAtDoorSeconds: 0.2
   rushInPauseAtDoorSeconds: 0.2
   pauseBeforePassBySeconds: 0.5
