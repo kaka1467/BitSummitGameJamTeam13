@@ -175,15 +175,26 @@ public class ParentUdpSender : MonoBehaviour
 
         if (_shouldTriggerLoudItem)
         {
-            if (parentDetection == null)
+            string activeScene = SceneManager.GetActiveScene().name;
+            if (activeScene != gameSceneName)
             {
-                RefreshSceneReferences();
-                return;
+                // GameScene以外ではLOUD_ITEM処理を行わずリセット
+                _shouldTriggerLoudItem = false;
             }
-
-            _shouldTriggerLoudItem = false;
-            Debug.Log("[ParentUdpSender] Executing OnLoudItemTriggered on Main Thread!");
-            parentDetection.OnLoudItemTriggered();
+            else if (parentDetection != null)
+            {
+                _shouldTriggerLoudItem = false;
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] Executing OnLoudItemTriggered on Main Thread!");
+                parentDetection.OnLoudItemTriggered();
+            }
+            else
+            {
+                // GameScene内で万が一parentDetectionがnullの場合は毎フレーム再検索せず1度だけ警告して破棄
+                _shouldTriggerLoudItem = false;
+                if (showDebugLogs)
+                    Debug.LogWarning("[ParentUdpSender] LOUD_ITEM triggered but parentDetection is null in GameScene.");
+            }
         }
 
         // Timeout check
@@ -264,7 +275,8 @@ public class ParentUdpSender : MonoBehaviour
     // ── Scene reference refresh ──────────────────────────────────────────────
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        Debug.Log($"[ParentUdpSender] Scene loaded: '{scene.name}' — refreshing scene references.");
+        if (showDebugLogs)
+            Debug.Log($"[ParentUdpSender] Scene loaded: '{scene.name}' — refreshing scene references.");
         RefreshSceneReferences();
         RefreshUiReferences();
         AttachUiListeners();
@@ -272,7 +284,8 @@ public class ParentUdpSender : MonoBehaviour
         if (IsTitleScene(scene.name))
         {
             ResetForNewSession();
-            Debug.Log($"[ParentUdpSender] Title scene loaded ('{scene.name}') — reset state for next round.");
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] Title scene loaded ('{scene.name}') — reset state for next round.");
             return;
         }
 
@@ -280,12 +293,19 @@ public class ParentUdpSender : MonoBehaviour
         if (scene.name == gameSceneName)
         {
             resultProcessed = false;
+            _shouldTriggerLoudItem = false;
             if (caughtRetryCoroutine != null)
             {
                 StopCoroutine(caughtRetryCoroutine);
                 caughtRetryCoroutine = null;
             }
-            Debug.Log("[ParentUdpSender] resultProcessed reset for new game session.");
+            if (showDebugLogs)
+                Debug.Log("[ParentUdpSender] resultProcessed reset for new game session.");
+        }
+        else
+        {
+            // GameScene 以外へ遷移したときは _shouldTriggerLoudItem を安全に初期化
+            _shouldTriggerLoudItem = false;
         }
     }
 
@@ -340,11 +360,26 @@ public class ParentUdpSender : MonoBehaviour
 
     private void RefreshSceneReferences()
     {
-        parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetectionV2>();
-        if (parentDetection != null)
-            Debug.Log($"[ParentUdpSender] parentDetection found: '{parentDetection.gameObject.name}'.");
+        string currentScene = SceneManager.GetActiveScene().name;
+        if (currentScene == gameSceneName)
+        {
+            parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetectionV2>();
+            if (parentDetection != null)
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[ParentUdpSender] parentDetection found: '{parentDetection.gameObject.name}'.");
+            }
+            else
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning("[ParentUdpSender] parentDetection not found in GameScene.");
+            }
+        }
         else
-            Debug.Log("[ParentUdpSender] parentDetection not found in current scene (OK on title/connect scenes).");
+        {
+            parentDetection = null;
+            // GameScene以外ではparentDetectionを探さずログも出さない（Missingログの大量出力を防止）
+        }
     }
 
     private void RefreshUiReferences()
@@ -449,7 +484,7 @@ public class ParentUdpSender : MonoBehaviour
         if (!raw.StartsWith(MAGIC_NUMBER)) return;
         string msg = raw.Substring(MAGIC_NUMBER.Length);
 
-        if (msg != "PING")
+        if (msg != "PING" && showDebugLogs)
             Debug.Log($"[ParentUdpSender] HandleIncoming: '{msg}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | resultProcessed={resultProcessed}");
 
         if (msg == "PING")
@@ -463,7 +498,8 @@ public class ParentUdpSender : MonoBehaviour
             if (!gameStarted && currentState == ConnectionState.Connected)
             {
                 gameStarted = true;
-                Debug.Log("[ParentUdpSender] Received START_GAME from child — loading game scene.");
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] Received START_GAME from child — loading game scene.");
                 SceneManager.LoadScene(gameSceneName);
             }
             return;
@@ -545,7 +581,16 @@ public class ParentUdpSender : MonoBehaviour
 
         if (msg == "LOUD_ITEM")
         {
-            Debug.Log("[ParentUdpSender] Received LOUD_ITEM network packet from Child.");
+            if (showDebugLogs)
+                Debug.Log("[ParentUdpSender] Received LOUD_ITEM network packet from Child.");
+
+            string activeScene = SceneManager.GetActiveScene().name;
+            if (activeScene != gameSceneName)
+            {
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] LOUD_ITEM received outside GameScene — ignored.");
+                return;
+            }
 
             if (parentDetection != null)
             {
@@ -553,7 +598,8 @@ public class ParentUdpSender : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null — will retry in Update.");
+                if (showDebugLogs)
+                    Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null in GameScene — will retry in Update.");
                 _shouldTriggerLoudItem = true;
             }
             return;
@@ -658,7 +704,13 @@ public class ParentUdpSender : MonoBehaviour
                 IPEndPoint ep   = new IPEndPoint(IPAddress.Any, parentReceivePort);
                 byte[]     data = normalReceiveClient.Receive(ref ep);
                 string     msg  = Encoding.UTF8.GetString(data);
-                EnqueueLog(LogType.Log, $"[ParentUdpSender] Normal received: '{msg}' from {ep.Address}");
+
+                // PING 以外のメッセージのみログキューへ積む（毎秒のPINGによる文字列生成・ログ出力を抑制）
+                if (msg != MAGIC_NUMBER + "PING")
+                {
+                    EnqueueLog(LogType.Log, $"[ParentUdpSender] Normal received: '{msg}' from {ep.Address}");
+                }
+
                 receiveQueue.Enqueue(msg);
             }
             catch (Exception e)

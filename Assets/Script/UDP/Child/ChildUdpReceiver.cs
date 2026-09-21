@@ -703,7 +703,12 @@ public class ChildUdpReceiver : MonoBehaviour
                 IPEndPoint ep = new IPEndPoint(IPAddress.Any, normalPort);
                 byte[] data = udpClient.Receive(ref ep);
                 string msg = Encoding.UTF8.GetString(data);
-                EnqueueLog(LogType.Log, $"[ChildUdpReceiver] Received: '{msg}' from {ep.Address}");
+
+                // PING 以外のメッセージのみログキューへ積む（毎秒のPINGによる文字列生成・ログ出力を抑制）
+                if (msg != MAGIC_NUMBER + "PING")
+                {
+                    EnqueueLog(LogType.Log, $"[ChildUdpReceiver] Received: '{msg}' from {ep.Address}");
+                }
 
                 if (msg == MAGIC_NUMBER + "DISCOVERY_ACCEPT")
                 {
