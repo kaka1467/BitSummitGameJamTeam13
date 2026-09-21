@@ -134,17 +134,16 @@ public class CaughtReactionController : MonoBehaviour
         if (showDebugLogs)
             Debug.LogWarning("[CaughtReactionController] ゲームオーバー発生 - 疑惑が最大値に到達");
 
-        // ★★★ 【追加】子機へ親に捕まったこと（CAUGHT）を通知する ★★★
+        // ★★★ 親機捕獲確定をParentUdpSenderに通知（CAUGHTの即時送信・常駐再送・resultProcessed管理） ★★★
         EnsureUdpSender();
         if (udpSender != null)
         {
-            udpSender.SendState("CAUGHT");
-            StartCoroutine(SendCaughtRetry());
-            if (showDebugLogs) Debug.Log("[CaughtReactionController] Sent CAUGHT message to child via UDP.");
+            udpSender.NotifyGameOverFromParentCatch();
+            if (showDebugLogs) Debug.Log("[CaughtReactionController] Notified ParentUdpSender of caught game over.");
         }
         else if (showDebugLogs)
         {
-            Debug.LogWarning("[CaughtReactionController] ParentUdpSender not found — CAUGHT not sent.");
+            Debug.LogWarning("[CaughtReactionController] ParentUdpSender not found — NotifyGameOverFromParentCatch skipped.");
         }
 
         // ゲームロジックのコンポーネントを無効化
@@ -153,14 +152,6 @@ public class CaughtReactionController : MonoBehaviour
         // ゲームオーバー処理（フェードとシーンロード）を開始
         if (gameOverRoutine != null) StopCoroutine(gameOverRoutine);
         gameOverRoutine = StartCoroutine(GameOverSequence());
-    }
-
-    private IEnumerator SendCaughtRetry()
-    {
-        yield return new WaitForSecondsRealtime(0.1f);
-        EnsureUdpSender();
-        if (udpSender != null)
-            udpSender.SendState("CAUGHT");
     }
 
     private void DisableGameLogic()

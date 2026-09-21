@@ -548,19 +548,23 @@ public class ChildUdpReceiver : MonoBehaviour
             if (showDebugLogs)
                 Debug.Log($"[ChildUdpReceiver] Received CAUGHT — GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}.");
 
-            // Prefer GameManager flow so score saving and UDP are consistent.
+            // GameManagerフローを優先し、スコア保存とUDP送信の整合性を保つ
             if (GameManager.instance != null)
             {
                 GameManager.instance.TriggerResult(GameManager.ResultType.GameOver);
             }
             else
             {
-                // Fallback: save a minimal score and notify parent, then load result.
-                int finalScore = 0;
-                PlayerPrefs.SetInt("LastGameOverScore", finalScore);
-                PlayerPrefs.Save();
-                SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
-                SceneManager.LoadScene("GameOverResult");
+                // フォールバック：既に結果画面やタイトル画面にいる場合の二重ロードを防止
+                string activeScene = SceneManager.GetActiveScene().name;
+                if (activeScene != "GameOverResult" && activeScene != "TimeUpResult" && !IsTitleScene(activeScene))
+                {
+                    int finalScore = 0;
+                    PlayerPrefs.SetInt("LastGameOverScore", finalScore);
+                    PlayerPrefs.Save();
+                    SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
+                    SceneManager.LoadScene("GameOverResult");
+                }
             }
 
             return;
