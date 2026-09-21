@@ -1270,6 +1270,7 @@ MonoBehaviour:
   currentState: 0
   lastMessage: 
   gameSceneName: ChildLoad
+  titleSceneName: Mini Title
   sleepingManager: {fileID: 0}
   connectButton: {fileID: 1463660737}
   connectButtonLabel: {fileID: 1893753028}
@@ -1282,6 +1283,7 @@ MonoBehaviour:
   connectButtonStartPosition: {x: 489.3, y: -281.7}
   cancelUiObject: {fileID: 716815019}
   playerMove: {fileID: 0}
+  showDebugLogs: 1
   creditsPanel: {fileID: 1036910372}
   settingsPanel: {fileID: 1503059194}
   animatedSpriteObjects:
@@ -4619,7 +4621,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1430748484}
-  - component: {fileID: 1430748483}
   m_Layer: 0
   m_Name: UIManager
   m_TagString: Untagged
@@ -4627,18 +4628,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1430748483
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1430748482}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a5d0d83d043a5af46a558eac465600d3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::UIManager
 --- !u!4 &1430748484
 Transform:
   m_ObjectHideFlags: 0
