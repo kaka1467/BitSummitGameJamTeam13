@@ -18,6 +18,7 @@ public class ItemSpawnerEditor : Editor
     private SerializedProperty lanesYProp;
     private SerializedProperty hugeInitialDelayProp;
     private SerializedProperty hugeCooldownAfterQteProp;
+    private SerializedProperty showDebugLogsProp;
 
     private void OnEnable()
     {
@@ -33,6 +34,7 @@ public class ItemSpawnerEditor : Editor
         lanesYProp = serializedObject.FindProperty("lanesY");
         hugeInitialDelayProp = serializedObject.FindProperty("hugeInitialDelay");
         hugeCooldownAfterQteProp = serializedObject.FindProperty("hugeCooldownAfterQte");
+        showDebugLogsProp = serializedObject.FindProperty("showDebugLogs");
 
         EnsureRules();
     }
@@ -151,6 +153,13 @@ public class ItemSpawnerEditor : Editor
         EditorGUILayout.Space(6f);
         EditorGUILayout.PropertyField(spawnOffsetFromRightProp);
         EditorGUILayout.PropertyField(lanesYProp, true);
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Debug", EditorStyles.boldLabel);
+        if (showDebugLogsProp != null)
+        {
+            EditorGUILayout.PropertyField(showDebugLogsProp, new GUIContent("Show Debug Logs"));
+        }
 
         serializedObject.ApplyModifiedProperties();
     }
