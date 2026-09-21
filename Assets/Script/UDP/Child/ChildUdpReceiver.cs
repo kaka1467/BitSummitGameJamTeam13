@@ -75,9 +75,12 @@ public class ChildUdpReceiver : MonoBehaviour
     [Tooltip("通信ログなどの詳細出力を有効にする")]
     [SerializeField] private bool showDebugLogs = true;
 
+<<<<<<< HEAD
     // 子機が現在適用している睡眠ロック状態（重複パケット処理の抑制用）
     private bool isSleepInputLocked = false;
 
+=======
+>>>>>>> origin/main
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject[] animatedSpriteObjects;
@@ -91,8 +94,22 @@ public class ChildUdpReceiver : MonoBehaviour
     private Thread receiveThread;
     private volatile bool isRunning = false;
 
+    // ログ用のエントリ構造体
+    private struct LogEntry
+    {
+        public LogType type;
+        public string message;
+
+        public LogEntry(LogType type, string message)
+        {
+            this.type = type;
+            this.message = message;
+        }
+    }
+
     private readonly ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
     private readonly ConcurrentQueue<Action> actionQueue = new ConcurrentQueue<Action>();
+    private readonly ConcurrentQueue<LogEntry> logQueue = new ConcurrentQueue<LogEntry>();
 
     private Coroutine discoveryCoroutine;
     private Coroutine heartbeatCoroutine;
@@ -245,6 +262,8 @@ public class ChildUdpReceiver : MonoBehaviour
 
         while (actionQueue.TryDequeue(out Action action))
             action();
+
+        ProcessLogQueue();
 
         // Timeout
         if (currentState == ConnectionState.Connected &&
@@ -641,6 +660,39 @@ public class ChildUdpReceiver : MonoBehaviour
         }
     }
 
+    // ── Log queue processing ──────────────────────────────────────────────────
+    /// <summary>
+    /// 受信スレッドなどの別スレッドからログをキューに追加する
+    /// </summary>
+    private void EnqueueLog(LogType type, string message)
+    {
+        logQueue.Enqueue(new LogEntry(type, message));
+    }
+
+    /// <summary>
+    /// 受信スレッドからキューイングされたログをUnityメインスレッドで出力する
+    /// </summary>
+    private void ProcessLogQueue()
+    {
+        while (logQueue.TryDequeue(out LogEntry log))
+        {
+            switch (log.type)
+            {
+                case LogType.Log:
+                    if (showDebugLogs)
+                        Debug.Log(log.message);
+                    break;
+                case LogType.Warning:
+                    if (showDebugLogs)
+                        Debug.LogWarning(log.message);
+                    break;
+                case LogType.Error:
+                    Debug.LogError(log.message);
+                    break;
+            }
+        }
+    }
+
     // ── Background receive thread ─────────────────────────────────────────────
     private void ReceiveData()
     {
@@ -651,12 +703,12 @@ public class ChildUdpReceiver : MonoBehaviour
                 IPEndPoint ep = new IPEndPoint(IPAddress.Any, normalPort);
                 byte[] data = udpClient.Receive(ref ep);
                 string msg = Encoding.UTF8.GetString(data);
-                Debug.Log($"[ChildUdpReceiver] Received: '{msg}' from {ep.Address}");
+                EnqueueLog(LogType.Log, $"[ChildUdpReceiver] Received: '{msg}' from {ep.Address}");
 
                 if (msg == MAGIC_NUMBER + "DISCOVERY_ACCEPT")
                 {
                     string parentIP = ep.Address.ToString();
-                    Debug.Log($"[ChildUdpReceiver] DISCOVERY_ACCEPT from {parentIP} — now Connected.");
+                    EnqueueLog(LogType.Log, $"[ChildUdpReceiver] DISCOVERY_ACCEPT from {parentIP} — now Connected.");
                     actionQueue.Enqueue(() =>
                     {
                         targetIP = parentIP;
@@ -670,7 +722,10 @@ public class ChildUdpReceiver : MonoBehaviour
             }
             catch (Exception e)
             {
-                if (isRunning) Debug.LogError($"[ChildUdpReceiver] ReceiveData error: {e.Message}");
+                if (isRunning)
+                {
+                    EnqueueLog(LogType.Error, $"[ChildUdpReceiver] ReceiveData error: {e.Message}");
+                }
             }
         }
     }

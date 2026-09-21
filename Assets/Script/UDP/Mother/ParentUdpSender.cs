@@ -78,8 +78,22 @@ public class ParentUdpSender : MonoBehaviour
     private Thread    normalReceiveThread;
     private volatile bool isRunning = false;
 
+    // ログ用のエントリ構造体
+    private struct LogEntry
+    {
+        public LogType type;
+        public string message;
+
+        public LogEntry(LogType type, string message)
+        {
+            this.type = type;
+            this.message = message;
+        }
+    }
+
     private readonly ConcurrentQueue<Action> actionQueue  = new ConcurrentQueue<Action>();
     private readonly ConcurrentQueue<string> receiveQueue = new ConcurrentQueue<string>();
+    private readonly ConcurrentQueue<LogEntry> logQueue   = new ConcurrentQueue<LogEntry>();
 
     private Coroutine heartbeatCoroutine;
     private float     lastReceiveTime;
@@ -155,6 +169,8 @@ public class ParentUdpSender : MonoBehaviour
 
         while (receiveQueue.TryDequeue(out string raw))
             HandleIncoming(raw);
+
+        ProcessLogQueue();
 
         if (_shouldTriggerLoudItem)
         {
@@ -487,6 +503,39 @@ public class ParentUdpSender : MonoBehaviour
         }
     }
 
+    // ── Log queue processing ──────────────────────────────────────────────────
+    /// <summary>
+    /// 受信スレッドなどの別スレッドからログをキューに追加する
+    /// </summary>
+    private void EnqueueLog(LogType type, string message)
+    {
+        logQueue.Enqueue(new LogEntry(type, message));
+    }
+
+    /// <summary>
+    /// 受信スレッドからキューイングされたログをUnityメインスレッドで出力する
+    /// </summary>
+    private void ProcessLogQueue()
+    {
+        while (logQueue.TryDequeue(out LogEntry log))
+        {
+            switch (log.type)
+            {
+                case LogType.Log:
+                    if (showDebugLogs)
+                        Debug.Log(log.message);
+                    break;
+                case LogType.Warning:
+                    if (showDebugLogs)
+                        Debug.LogWarning(log.message);
+                    break;
+                case LogType.Error:
+                    Debug.LogError(log.message);
+                    break;
+            }
+        }
+    }
+
     // ── Background receive threads ────────────────────────────────────────────
     private void ReceiveDiscovery()
     {
@@ -497,12 +546,12 @@ public class ParentUdpSender : MonoBehaviour
                 IPEndPoint ep   = new IPEndPoint(IPAddress.Any, broadcastPort);
                 byte[]     data = receiveClient.Receive(ref ep);
                 string     msg  = Encoding.UTF8.GetString(data);
-                Debug.Log($"[ParentUdpSender] Broadcast received: '{msg}' from {ep.Address}");
+                EnqueueLog(LogType.Log, $"[ParentUdpSender] Broadcast received: '{msg}' from {ep.Address}");
 
                 if (msg == MAGIC_NUMBER + "DISCOVERY_REQUEST")
                 {
                     string senderIP = ep.Address.ToString();
-                    Debug.Log($"[ParentUdpSender] DISCOVERY_REQUEST from {senderIP} — queuing targetIP update and DISCOVERY_ACCEPT.");
+                    EnqueueLog(LogType.Log, $"[ParentUdpSender] DISCOVERY_REQUEST from {senderIP} — queuing targetIP update and DISCOVERY_ACCEPT.");
                     actionQueue.Enqueue(() =>
                     {
                         string oldIP = targetIP;
@@ -510,14 +559,18 @@ public class ParentUdpSender : MonoBehaviour
                         currentState     = ConnectionState.Connected;
                         lastReceiveTime  = Time.time;
                         gameStarted      = false;
-                        Debug.Log($"[ParentUdpSender] targetIP updated: '{oldIP}' → '{targetIP}' | state=Connected");
+                        if (showDebugLogs)
+                            Debug.Log($"[ParentUdpSender] targetIP updated: '{oldIP}' → '{targetIP}' | state=Connected");
                         SendDiscoveryAccept(senderIP);
                     });
                 }
             }
             catch (Exception e)
             {
-                if (isRunning) Debug.LogError($"[ParentUdpSender] ReceiveDiscovery error: {e.Message}");
+                if (isRunning)
+                {
+                    EnqueueLog(LogType.Error, $"[ParentUdpSender] ReceiveDiscovery error: {e.Message}");
+                }
             }
         }
     }
@@ -531,12 +584,15 @@ public class ParentUdpSender : MonoBehaviour
                 IPEndPoint ep   = new IPEndPoint(IPAddress.Any, parentReceivePort);
                 byte[]     data = normalReceiveClient.Receive(ref ep);
                 string     msg  = Encoding.UTF8.GetString(data);
-                Debug.Log($"[ParentUdpSender] Normal received: '{msg}' from {ep.Address}");
+                EnqueueLog(LogType.Log, $"[ParentUdpSender] Normal received: '{msg}' from {ep.Address}");
                 receiveQueue.Enqueue(msg);
             }
             catch (Exception e)
             {
-                if (isRunning) Debug.LogError($"[ParentUdpSender] ReceiveNormalData error: {e.Message}");
+                if (isRunning)
+                {
+                    EnqueueLog(LogType.Error, $"[ParentUdpSender] ReceiveNormalData error: {e.Message}");
+                }
             }
         }
     }
