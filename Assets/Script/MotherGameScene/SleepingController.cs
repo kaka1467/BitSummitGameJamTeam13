@@ -134,21 +134,24 @@ public class SleepingController : MonoBehaviour
         // --- 安全用ハートビート：起きている間、SLEEP_UNLOCKを定期的に再送する ---
         if (!isSleeping)
         {
-            _awakeHeartbeatTimer += Time.deltaTime;
-            if (_awakeHeartbeatTimer >= awakeHeartbeatInterval)
+            ParentUdpSender sender = GetUdpSender();
+            bool isConnected = sender != null && sender.currentState == ParentUdpSender.ConnectionState.Connected;
+
+            if (isConnected)
             {
-                _awakeHeartbeatTimer = 0f;
-                ParentUdpSender sender = GetUdpSender();
-                if (sender != null)
+                _awakeHeartbeatTimer += Time.deltaTime;
+                if (_awakeHeartbeatTimer >= awakeHeartbeatInterval)
                 {
+                    _awakeHeartbeatTimer = 0f;
                     if (showDebugLogs)
                         Debug.Log("[SleepingController] Awake heartbeat: sending SLEEP_UNLOCK.");
                     sender.SendStateSLEEP_UNLOCK();
                 }
-                else
-                {
-                    Debug.LogWarning("[SleepingController] Awake heartbeat: ParentUdpSender not found - SLEEP_UNLOCK skipped.");
-                }
+            }
+            else
+            {
+                // 切断中はタイマーをインターバル値に保持し、接続復帰時に速やかに再送できるようにする
+                _awakeHeartbeatTimer = awakeHeartbeatInterval;
             }
         }
 

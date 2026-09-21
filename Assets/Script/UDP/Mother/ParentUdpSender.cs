@@ -350,7 +350,12 @@ public class ParentUdpSender : MonoBehaviour
     // ── Public send API ───────────────────────────────────────────────────────
     public void SendState(string message)
     {
-        Debug.Log($"[ParentUdpSender] → '{message}' to {targetIP}:{normalPort} | connectionState={currentState}");
+        if (currentState != ConnectionState.Connected)
+            return;
+
+        if (showDebugLogs)
+            Debug.Log($"[ParentUdpSender] → '{message}' to {targetIP}:{normalPort} | connectionState={currentState}");
+
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
