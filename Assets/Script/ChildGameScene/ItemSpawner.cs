@@ -43,6 +43,10 @@ public class ItemSpawner : MonoBehaviour
     [Header("Spawn Control")]
     [SerializeField] private bool spawnEnabled = true;
 
+    [Header("Debug")]
+    [Tooltip("スポーン関連の詳細ログを出力するかどうか")]
+    [SerializeField] private bool showDebugLogs = false;
+
     [Header("HugeObstacle")]
     [SerializeField, Min(0)] private int hugeObstacleSpawnCount = 1;
     [SerializeField] private float hugeObstacleSpawnY = 1.929803e-08f;
@@ -370,11 +374,17 @@ public class ItemSpawner : MonoBehaviour
                         scheduled.cycleStartTime = nextCycleStart;
                         scheduled.retryCount   = 0;
 
-                        Debug.LogWarning($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため次サイクルへ持ち越します。");
+                        if (showDebugLogs)
+                        {
+                            Debug.Log($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため次サイクルへ持ち越します。");
+                        }
                     }
                     else
                     {
-                        Debug.LogWarning($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
+                        if (showDebugLogs)
+                        {
+                            Debug.Log($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
+                        }
                         scheduledNormalSpawns.RemoveAt(i);
                     }
                 }
