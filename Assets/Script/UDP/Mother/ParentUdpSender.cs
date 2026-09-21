@@ -483,19 +483,24 @@ public class ParentUdpSender : MonoBehaviour
     // ── Incoming message dispatch (main thread) ───────────────────────────────
     private void HandleIncoming(string raw)
     {
-        if (!raw.StartsWith(MAGIC_NUMBER)) return;
-        string msg = raw.Substring(MAGIC_NUMBER.Length);
+        ParentUdpMessage message = ParentUdpMessageParser.Parse(raw);
+        if (message.Type == ParentMessageType.Invalid)
+        {
+            if (!string.IsNullOrEmpty(message.ParseError))
+                Debug.LogWarning(message.ParseError);
+            return;
+        }
 
-        if (msg != "PING" && showDebugLogs)
-            Debug.Log($"[ParentUdpSender] HandleIncoming: '{msg}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | resultProcessed={resultProcessed}");
+        if (message.Type != ParentMessageType.Ping && showDebugLogs)
+            Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | resultProcessed={resultProcessed}");
 
-        if (msg == "PING")
+        if (message.Type == ParentMessageType.Ping)
         {
             lastReceiveTime = Time.time;
             return;
         }
 
-        if (msg == CMD_START)
+        if (message.Type == ParentMessageType.StartGame)
         {
             if (!gameStarted && currentState == ConnectionState.Connected)
             {
@@ -507,50 +512,32 @@ public class ParentUdpSender : MonoBehaviour
             return;
         }
 
-        if (msg == "TIME_UP" || msg == "CHILD_DEAD")
+        if (message.Type == ParentMessageType.TimeUp || message.Type == ParentMessageType.ChildDead)
         {
             // Legacy bare TIME_UP / CHILD_DEAD — treat as TIME_UP result
             if (!resultProcessed)
             {
                 resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] Received {msg} — TIME_UP result. Loading {timeUpSceneName}.");
+                Debug.Log($"[ParentUdpSender] Received {message.RawPayload} — TIME_UP result. Loading {timeUpSceneName}.");
                 SceneManager.LoadScene(timeUpSceneName);
             }
             else
             {
                 if (showDebugLogs)
-                    Debug.Log($"[ParentUdpSender] {msg} result ignored — result already processed.");
+                    Debug.Log($"[ParentUdpSender] {message.RawPayload} result ignored — result already processed.");
             }
             return;
         }
 
-        if (msg.StartsWith("CHILD_SCORE:"))
+        if (message.Type == ParentMessageType.ChildScore)
         {
-            // Format: CHILD_SCORE:GAME_OVER:<val>  or  CHILD_SCORE:TIME_UP:<val>
-            string payload = msg.Substring("CHILD_SCORE:".Length);
-            bool isGameOver = payload.StartsWith("GAME_OVER:");
-            bool isTimeUp   = payload.StartsWith("TIME_UP:");
-
-            if (!isGameOver && !isTimeUp)
-            {
-                Debug.LogWarning($"[ParentUdpSender] Unrecognised CHILD_SCORE format: '{payload}'");
-                return;
-            }
-
-            string numStr = payload.Substring(isGameOver ? "GAME_OVER:".Length : "TIME_UP:".Length);
-            if (!int.TryParse(numStr, out int childScore))
-            {
-                Debug.LogWarning($"[ParentUdpSender] Could not parse score in CHILD_SCORE: '{numStr}'");
-                return;
-            }
-
-            if (isGameOver)
+            if (message.ResultType == ChildGameResultType.GameOver)
             {
                 // GAME_OVER wins the race unconditionally
                 resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {childScore} — saving and loading {ResultGameOverScene}.");
-                PlayerPrefs.SetInt(KeyGameOverScore, childScore);
-                UpdateRanking(KeyGameOverRank, childScore);
+                Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {message.Score} — saving and loading {ResultGameOverScene}.");
+                PlayerPrefs.SetInt(KeyGameOverScore, message.Score);
+                UpdateRanking(KeyGameOverRank, message.Score);
                 PlayerPrefs.Save();
                 if (SceneManager.GetActiveScene().name != ResultGameOverScene)
                 {
@@ -565,23 +552,23 @@ public class ParentUdpSender : MonoBehaviour
                     return;
                 }
                 resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] CHILD_SCORE TIME_UP {childScore} — saving and loading {ResultTimeUpScene}.");
-                PlayerPrefs.SetInt(KeyTimeUpScore, childScore);
-                UpdateRanking(KeyTimeUpRank, childScore);
+                Debug.Log($"[ParentUdpSender] CHILD_SCORE TIME_UP {message.Score} — saving and loading {ResultTimeUpScene}.");
+                PlayerPrefs.SetInt(KeyTimeUpScore, message.Score);
+                UpdateRanking(KeyTimeUpRank, message.Score);
                 PlayerPrefs.Save();
                 SceneManager.LoadScene(ResultTimeUpScene);
             }
             return;
         }
 
-        if (msg == "LOADING_COMPLETE")
+        if (message.Type == ParentMessageType.LoadingComplete)
         {
             ChildLoadingComplete = true;
             Debug.Log("[ParentUdpSender] Received LOADING_COMPLETE from child. Property set to true.");
             return;
         }
 
-        if (msg == "LOUD_ITEM")
+        if (message.Type == ParentMessageType.LoudItem)
         {
             if (showDebugLogs)
                 Debug.Log("[ParentUdpSender] Received LOUD_ITEM network packet from Child.");
@@ -607,7 +594,8 @@ public class ParentUdpSender : MonoBehaviour
             return;
         }
 
-        Debug.Log($"[ParentUdpSender] Unhandled message: '{msg}'");
+        if (message.Type == ParentMessageType.Unknown)
+            Debug.Log($"[ParentUdpSender] Unhandled message: '{message.RawPayload}'");
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────
@@ -670,7 +658,8 @@ public class ParentUdpSender : MonoBehaviour
                 string     msg  = Encoding.UTF8.GetString(data);
                 EnqueueLog(LogType.Log, $"[ParentUdpSender] Broadcast received: '{msg}' from {ep.Address}");
 
-                if (msg == MAGIC_NUMBER + "DISCOVERY_REQUEST")
+                ParentUdpMessage message = ParentUdpMessageParser.Parse(msg);
+                if (message.Type == ParentMessageType.DiscoveryRequest)
                 {
                     string senderIP = ep.Address.ToString();
                     EnqueueLog(LogType.Log, $"[ParentUdpSender] DISCOVERY_REQUEST from {senderIP} — queuing targetIP update and DISCOVERY_ACCEPT.");
@@ -708,7 +697,7 @@ public class ParentUdpSender : MonoBehaviour
                 string     msg  = Encoding.UTF8.GetString(data);
 
                 // PING 以外のメッセージのみログキューへ積む（毎秒のPINGによる文字列生成・ログ出力を抑制）
-                if (msg != MAGIC_NUMBER + "PING")
+                if (ParentUdpMessageParser.Parse(msg).Type != ParentMessageType.Ping)
                 {
                     EnqueueLog(LogType.Log, $"[ParentUdpSender] Normal received: '{msg}' from {ep.Address}");
                 }
