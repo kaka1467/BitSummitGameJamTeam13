@@ -96,6 +96,7 @@ public class ParentUdpSender : MonoBehaviour
     private readonly ConcurrentQueue<LogEntry> logQueue   = new ConcurrentQueue<LogEntry>();
 
     private Coroutine heartbeatCoroutine;
+    private Coroutine caughtRetryCoroutine;
     private float     lastReceiveTime;
     private float     pingInterval  = 1.0f;
     private float     timeoutLimit  = 3.0f;
@@ -216,7 +217,7 @@ public class ParentUdpSender : MonoBehaviour
 
         // Debug / hardware input: I key sends CAUGHT (Space and Gamepad A reserved for SleepingController)
         if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
-            SendState("CAUGHT");
+            NotifyGameOverFromParentCatch();
 
         // Debug keys: Y = SLEEP_LOCK, U = SLEEP_UNLOCK
         // (O/P/L are reserved by ParentDetectionV2)
@@ -248,6 +249,12 @@ public class ParentUdpSender : MonoBehaviour
             heartbeatCoroutine = null;
         }
 
+        if (caughtRetryCoroutine != null)
+        {
+            StopCoroutine(caughtRetryCoroutine);
+            caughtRetryCoroutine = null;
+        }
+
         // Close sockets — this unblocks the blocking Receive() calls so threads exit naturally.
         CloseClient(ref udpClient,           "udpClient");
         CloseClient(ref receiveClient,       "receiveClient");
@@ -273,6 +280,11 @@ public class ParentUdpSender : MonoBehaviour
         if (scene.name == gameSceneName)
         {
             resultProcessed = false;
+            if (caughtRetryCoroutine != null)
+            {
+                StopCoroutine(caughtRetryCoroutine);
+                caughtRetryCoroutine = null;
+            }
             Debug.Log("[ParentUdpSender] resultProcessed reset for new game session.");
         }
     }
@@ -315,6 +327,12 @@ public class ParentUdpSender : MonoBehaviour
         {
             StopCoroutine(heartbeatCoroutine);
             heartbeatCoroutine = null;
+        }
+
+        if (caughtRetryCoroutine != null)
+        {
+            StopCoroutine(caughtRetryCoroutine);
+            caughtRetryCoroutine = null;
         }
 
         Debug.Log("[ParentUdpSender] ResetForNewSession: session flags cleared.");
@@ -377,6 +395,54 @@ public class ParentUdpSender : MonoBehaviour
         SendState("SLEEP_UNLOCK");
     }
 
+    /// <summary>
+    /// 親機の捕獲によるGame Over確定を通知する。
+    /// 初回呼び出し時のみ resultProcessed を true にし、CAUGHT を即時送信および短時間再送する。
+    /// </summary>
+    public void NotifyGameOverFromParentCatch()
+    {
+        if (resultProcessed && caughtRetryCoroutine != null)
+            return;
+
+        resultProcessed = true;
+
+        if (showDebugLogs)
+            Debug.Log("[ParentUdpSender] NotifyGameOverFromParentCatch: 親機の捕獲によるゲームオーバー確定。CAUGHT送信・再送を開始します。");
+
+        // 即時送信
+        SendState("CAUGHT");
+
+        // 短時間再送コルーチン（DontDestroyOnLoadのParentUdpSender上で実行）
+        if (caughtRetryCoroutine != null)
+        {
+            StopCoroutine(caughtRetryCoroutine);
+        }
+        caughtRetryCoroutine = StartCoroutine(CaughtRetryRoutine());
+    }
+
+    /// <summary>
+    /// CAUGHTメッセージの短時間再送処理（パケットロス対策）
+    /// 0.1秒間隔で計3回再送（即時送信と合わせて計4回送信）
+    /// </summary>
+    private IEnumerator CaughtRetryRoutine()
+    {
+        const int retryCount = 3;
+        const float retryInterval = 0.1f;
+
+        for (int i = 0; i < retryCount; i++)
+        {
+            yield return new WaitForSecondsRealtime(retryInterval);
+            if (currentState == ConnectionState.Connected)
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[ParentUdpSender] Sending CAUGHT retry ({i + 1}/{retryCount})...");
+                SendState("CAUGHT");
+            }
+        }
+
+        caughtRetryCoroutine = null;
+    }
+
     // ── Incoming message dispatch (main thread) ───────────────────────────────
     private void HandleIncoming(string raw)
     {
@@ -412,6 +478,11 @@ public class ParentUdpSender : MonoBehaviour
                 Debug.Log($"[ParentUdpSender] Received {msg} — TIME_UP result. Loading {timeUpSceneName}.");
                 SceneManager.LoadScene(timeUpSceneName);
             }
+            else
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[ParentUdpSender] {msg} result ignored — result already processed.");
+            }
             return;
         }
 
@@ -443,13 +514,16 @@ public class ParentUdpSender : MonoBehaviour
                 PlayerPrefs.SetInt(KeyGameOverScore, childScore);
                 UpdateRanking(KeyGameOverRank, childScore);
                 PlayerPrefs.Save();
-                SceneManager.LoadScene(ResultGameOverScene);
+                if (SceneManager.GetActiveScene().name != ResultGameOverScene)
+                {
+                    SceneManager.LoadScene(ResultGameOverScene);
+                }
             }
             else // TIME_UP
             {
                 if (resultProcessed)
                 {
-                    Debug.Log("[ParentUdpSender] TIME_UP result ignored — GAME_OVER already processed.");
+                    Debug.Log("[ParentUdpSender] TIME_UP result ignored — result (e.g. GAME_OVER) already processed.");
                     return;
                 }
                 resultProcessed = true;
