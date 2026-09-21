@@ -444,10 +444,10 @@ public class ParentUdpSender : MonoBehaviour
         resultProcessed = true;
 
         if (showDebugLogs)
-            Debug.Log("[ParentUdpSender] NotifyGameOverFromParentCatch: 親機の捕獲によるゲームオーバー確定。CAUGHT送信・再送を開始します。");
+            Debug.Log($"[ParentUdpSender] NotifyGameOverFromParentCatch: 親機の捕獲によるゲームオーバー確定。CAUGHT送信・再送を開始します。targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='TEAM13_CAUGHT'");
 
         // 即時送信
-        SendState("CAUGHT");
+        SendCaughtNotification();
 
         // 短時間再送コルーチン（DontDestroyOnLoadのParentUdpSender上で実行）
         if (caughtRetryCoroutine != null)
@@ -469,15 +469,43 @@ public class ParentUdpSender : MonoBehaviour
         for (int i = 0; i < retryCount; i++)
         {
             yield return new WaitForSecondsRealtime(retryInterval);
-            if (currentState == ConnectionState.Connected)
-            {
-                if (showDebugLogs)
-                    Debug.Log($"[ParentUdpSender] Sending CAUGHT retry ({i + 1}/{retryCount})...");
-                SendState("CAUGHT");
-            }
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] Sending CAUGHT retry ({i + 1}/{retryCount})...");
+            SendCaughtNotification();
         }
 
         caughtRetryCoroutine = null;
+    }
+
+    private void SendCaughtNotification()
+    {
+        const string message = "TEAM13_CAUGHT";
+
+        if (string.IsNullOrWhiteSpace(targetIP) ||
+            !IPAddress.TryParse(targetIP, out _))
+        {
+            Debug.LogWarning($"[ParentUdpSender] CAUGHT send skipped: invalid targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
+            return;
+        }
+
+        if (udpClient == null)
+        {
+            Debug.LogError($"[ParentUdpSender] CAUGHT send failed: udpClient is null, targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
+            return;
+        }
+
+        Debug.Log($"[ParentUdpSender] CAUGHT send attempt: targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
+
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(message);
+            udpClient.Send(data, data.Length, targetIP, normalPort);
+            Debug.Log($"[ParentUdpSender] CAUGHT send succeeded: targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[ParentUdpSender] CAUGHT send failed: targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}', error='{e.Message}'");
+        }
     }
 
     // ── Incoming message dispatch (main thread) ───────────────────────────────

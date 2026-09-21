@@ -77,6 +77,7 @@ public class ChildUdpReceiver : MonoBehaviour
 
     // 子機が現在適用している睡眠ロック状態（重複パケット処理の抑制用）
     private bool isSleepInputLocked = false;
+    private bool caughtHandled = false;
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject[] animatedSpriteObjects;
@@ -438,6 +439,7 @@ public class ChildUdpReceiver : MonoBehaviour
         lastMessage = "";
         targetIP = "127.0.0.1";
         gameSceneLoaded = false;
+        caughtHandled = false;
         isSleepInputLocked = false;
         PlayerInputLock.SetLocked(false);
 
@@ -545,25 +547,46 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (msg == "CAUGHT")
         {
+            string activeScene = SceneManager.GetActiveScene().name;
             if (showDebugLogs)
-                Debug.Log($"[ChildUdpReceiver] Received CAUGHT — GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}.");
+                Debug.Log($"[ChildUdpReceiver] Received TEAM13_CAUGHT — scene='{activeScene}', GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}, playerMove={(playerMove != null ? playerMove.gameObject.name : "NULL")}, sleepingManager={(sleepingManager != null ? sleepingManager.gameObject.name : "NULL")}.");
+
+            if (caughtHandled)
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[ChildUdpReceiver] TEAM13_CAUGHT ignored — scene='{activeScene}', game-over handling already started.");
+                return;
+            }
+
+            caughtHandled = true;
 
             // GameManagerフローを優先し、スコア保存とUDP送信の整合性を保つ
             if (GameManager.instance != null)
             {
+                if (showDebugLogs)
+                    Debug.Log($"[ChildUdpReceiver] CAUGHT fallback skipped — scene='{activeScene}', GameManager.instance is present.");
                 GameManager.instance.TriggerResult(GameManager.ResultType.GameOver);
             }
             else
             {
                 // フォールバック：既に結果画面やタイトル画面にいる場合の二重ロードを防止
-                string activeScene = SceneManager.GetActiveScene().name;
-                if (activeScene != "GameOverResult" && activeScene != "TimeUpResult" && !IsTitleScene(activeScene))
+                bool shouldRunFallback = activeScene != "GameOverResult" &&
+                                         activeScene != "TimeUpResult" &&
+                                         activeScene != "ChildLoad" &&
+                                         !IsTitleScene(activeScene);
+                if (shouldRunFallback)
                 {
+                    if (showDebugLogs)
+                        Debug.Log($"[ChildUdpReceiver] CAUGHT fallback executed — scene='{activeScene}', loading 'GameOverResult'.");
                     int finalScore = 0;
                     PlayerPrefs.SetInt("LastGameOverScore", finalScore);
                     PlayerPrefs.Save();
                     SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
                     SceneManager.LoadScene("GameOverResult");
+                }
+                else if (showDebugLogs)
+                {
+                    Debug.Log($"[ChildUdpReceiver] CAUGHT fallback skipped — scene='{activeScene}'.");
                 }
             }
 
