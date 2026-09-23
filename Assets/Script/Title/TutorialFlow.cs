@@ -56,6 +56,10 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private Key skipKey = Key.K;
     [SerializeField, Min(0.05f)] private float holdToSkipSeconds = 1f;
 
+    [Header("Skip UI")]
+    [SerializeField] private TextMeshProUGUI skipHintText;
+    [SerializeField] private string skipHintMessage = "Kキー長押しでスキップ";
+
     [Header("Interactive Collect (prototype)")]
     [Tooltip("アイテム取得ステップをプレイヤー操作にする。false で従来どおりの自動演示。")]
     [SerializeField] private bool interactiveCollect = true;
@@ -205,6 +209,14 @@ public class TutorialFlow : MonoBehaviour
 
         // 演示フェーズ（skipKey ホールドでスキップ可能。監視はこの区間のみ）
         skipRequested = false;
+
+        // スキップ案内を表示
+        if (skipHintText != null)
+        {
+            skipHintText.text = skipHintMessage;
+            skipHintText.gameObject.SetActive(enableHoldToSkip);
+        }
+
         Coroutine skipWatch = enableHoldToSkip ? StartCoroutine(WatchForSkipRoutine()) : null;
 
         yield return RunAutoCollect();
@@ -226,6 +238,9 @@ public class TutorialFlow : MonoBehaviour
         {
             HandleSkipCleanup();
         }
+
+        // カウントダウン開始時にスキップ案内を非表示
+        HideSkipHint();
 
         // スキップ時もカウントダウンは実行する。
         // 親機への LOADING_COMPLETE 送信（NotifyParentStartShown）とゲームBGM開始が
@@ -287,6 +302,7 @@ public class TutorialFlow : MonoBehaviour
 
         ClearActiveItems();
         HideInteractiveHint();
+        HideSkipHint();
         if (playerMove != null)
         {
             playerMove.SetAutoTargetX(null);
@@ -415,6 +431,14 @@ public class TutorialFlow : MonoBehaviour
         if (interactiveHintText.gameObject.activeSelf)
         {
             interactiveHintText.gameObject.SetActive(false);
+        }
+    }
+
+    private void HideSkipHint()
+    {
+        if (skipHintText != null && skipHintText.gameObject.activeSelf)
+        {
+            skipHintText.gameObject.SetActive(false);
         }
     }
 
