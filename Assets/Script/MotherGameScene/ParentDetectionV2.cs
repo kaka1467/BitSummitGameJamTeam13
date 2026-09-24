@@ -62,6 +62,8 @@ public class ParentDetectionV2 : MonoBehaviour
     [SerializeField] private float leaveAfterSleepDelay = 2f;
     [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")]
     [SerializeField] private float leaveAfterSleepDelayMax = 6f;
+    [Tooltip("部屋からの退室を要求してから退室完了（OnExitedRoom）を待つ最大秒数。超過した場合は従来どおりドアを閉じて終了する。")]
+    [SerializeField] private float roomExitSafetyTimeout = 15f;
 
     // ── 部屋侵入時の疑惑 ──────────────────────────────────────────────────────
     [Header("部屋侵入時の疑惑")]
@@ -97,6 +99,14 @@ public class ParentDetectionV2 : MonoBehaviour
     private bool         _hasPermanentGameOver;
     private float        _activePeekDuration        = 3f;
 
+    // ── 部屋入室（案B）：疑惑開始を「部屋入室完了」にずらすための状態 ────────────
+    private bool         _roomEntryAccepted;        // このサイクルでRequestRoomEntry()が受理されたか
+    private bool         _roomEntryStarted;         // OnEnteredRoom後に疑惑コルーチンを開始済みか
+    private bool         _roomExitCompleted;        // OnExitedRoomを受信済みか
+    private bool         _approachEventsSubscribed; // ParentApproachControllerの入退室イベントを購読中か
+    private int          _roomCycleId;              // OnApproachReachedDoorのたびに増えるサイクル識別子
+    private int          _primaryResetCycleId;      // HandlePrimaryResetSequence開始時点の_roomCycleId
+
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
@@ -127,7 +137,88 @@ public class ParentDetectionV2 : MonoBehaviour
         if (sleepingController == null)
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
 
+        // 部屋入室（案B）：入室完了／退室完了の通知を受け取る。
+        // approachControllerはコード上で解決するため、OnEnable()ではなくStart()末尾で購読する。
+        SubscribeApproachEvents();
     }
+
+    private void OnDestroy()
+    {
+        UnsubscribeApproachEvents();
+    }
+    // ── 部屋入室（案B）：ParentApproachControllerイベントの購読 ────────────────
+
+    private void SubscribeApproachEvents()
+    {
+        if (_approachEventsSubscribed || approachController == null) return;
+
+        approachController.onEnteredRoom.AddListener(HandleEnteredRoom);
+        approachController.onExitedRoom.AddListener(HandleExitedRoom);
+
+        _approachEventsSubscribed = true;
+        Debug.Log("[PDV2] Subscribed to ParentApproachController room events (OnEnteredRoom/OnExitedRoom)");
+    }
+
+    private void UnsubscribeApproachEvents()
+    {
+        if (!_approachEventsSubscribed || approachController == null) return;
+
+        approachController.onEnteredRoom.RemoveListener(HandleEnteredRoom);
+        approachController.onExitedRoom.RemoveListener(HandleExitedRoom);
+
+        _approachEventsSubscribed = false;
+    }
+
+    /// <summary>
+    /// ParentApproachControllerから、親機が部屋内部への移動を完了し入室したときに呼び出される。
+    /// ここで初めて部屋侵入時の疑惑（バースト／継続疑惑／睡眠退出待ち）を開始する。
+    /// </summary>
+    private void HandleEnteredRoom()
+    {
+        Debug.Log($"[PDV2] OnEnteredRoom | roomEntryAccepted={_roomEntryAccepted} roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+
+        if (isCaught || _hasPermanentGameOver) return;
+
+        // 入室が受理されていないサイクル（ダミー／覗き／通過／突入など）では疑惑を開始しない。
+        if (!_roomEntryAccepted)
+        {
+            Debug.Log("[PDV2] OnEnteredRoom: ignored — room entry was not accepted for this cycle");
+            return;
+        }
+
+        if (_roomEntryStarted) return;
+        _roomEntryStarted = true;
+
+        StartPrimaryRoomSuspicion();
+    }
+
+    /// <summary>
+    /// ParentApproachControllerから、親機が部屋内部から退室しdoorPointへ戻ったときに呼び出される。
+    /// 退室順序の最終段（ドアを閉じる→ResetCycle→EndWarningSequence）をここで実行する。
+    /// </summary>
+    private void HandleExitedRoom()
+    {
+        Debug.Log($"[PDV2] OnExitedRoom | roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+        _roomExitCompleted = true;
+
+        // ゲームオーバー確定後はドア状態・疑惑状態を変更しない（従来のサイクル終了と同じ扱い）。
+        if (isCaught || _hasPermanentGameOver) return;
+
+        if (mainDoorCloseAudioSource != null)
+            mainDoorCloseAudioSource.Play();
+
+        if (targetDoorController != null)
+            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+
+        ResetCycle();
+
+        if (warningSystem != null)
+            warningSystem.EndWarningSequence();
+
+        Debug.Log("[PDV2] OnExitedRoom: cycle finished — door closed, warning sequence ended");
+    }
+
+
 
     private void Update()
     {
@@ -191,6 +282,19 @@ public class ParentDetectionV2 : MonoBehaviour
             primary = !isDummy;
             Debug.Log($"[PDV2] Branch: fallback random isDummy={isDummy} (dummyProbability={dummyProbability:F2})");
         }
+
+        // 部屋入室（案B）のサイクル状態を初期化する（前サイクルの状態を持ち越さない）。
+        // 新しいサイクルが始まったことを、進行中のHandlePrimaryResetSequenceにも伝える。
+        _roomCycleId++;
+        _roomEntryAccepted = false;
+        _roomEntryStarted  = false;
+        _roomExitCompleted = false;
+
+        // Primaryの場合のみ、親機へ部屋入室を要求する。
+        // 受理された場合は、疑惑（バースト／継続疑惑）の開始を「部屋入室完了（OnEnteredRoom）」まで遅らせる。
+        // 受理されなかった場合は、従来どおりドア停止時点で疑惑を開始する。
+        if (primary && approachController != null)
+            _roomEntryAccepted = approachController.RequestRoomEntry();
 
         TriggerFinalEvent(primary: primary);
     }
@@ -286,6 +390,23 @@ public class ParentDetectionV2 : MonoBehaviour
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: true);
 
+        // 部屋入室（案B）：入室が受理された場合は、入室完了（OnEnteredRoom）まで疑惑を開始しない。
+        if (_roomEntryAccepted)
+        {
+            Debug.Log("[PDV2] Room entry accepted — suspicion burst/continuous will start on OnEnteredRoom (mother is walking into the room)");
+            return;
+        }
+
+        StartPrimaryRoomSuspicion();
+    }
+
+    /// <summary>
+    /// 部屋侵入時の疑惑（3回のバースト／継続疑惑／睡眠退出待ち）を開始する。
+    /// 従来はドア停止時に呼ばれていたが、部屋入室が受理された場合は入室完了時（OnEnteredRoom）に呼ばれる。
+    /// 加算量・間隔・ゲームオーバー条件は従来と同じ。
+    /// </summary>
+    private void StartPrimaryRoomSuspicion()
+    {
         // 部屋侵入時の疑惑：プレイヤーが睡眠中でない場合にゲージを増加させる。
         bool playerIsSleeping = (sleepingController != null) && sleepingController.IsSleeping;
         int gaugeBefore = (motherGauge != null) ? motherGauge.currentGauge : 0;
@@ -313,12 +434,15 @@ public class ParentDetectionV2 : MonoBehaviour
             _continuousRoomCoroutine = StartCoroutine(ContinuousRoomSuspicionCoroutine());
             Debug.Log("[PDV2] Continuous room suspicion started");
         }
-
     }
 
     private IEnumerator HandlePrimaryResetSequence()
     {
         Debug.Log("[PDV2] HandlePrimaryResetSequence: waiting for player sleep");
+
+        // このシーケンスが担当するサイクルを記録する。
+        // 別のサイクル（強制突入など）が始まった場合は、以降のドア操作をそのサイクルへ譲る。
+        _primaryResetCycleId = _roomCycleId;
 
         float elapsed = 0f;
         float timeout = Mathf.Max(0f, roomCheckSafetyTimeout);
@@ -326,7 +450,26 @@ public class ParentDetectionV2 : MonoBehaviour
         while (true)
         {
             if (_hasPermanentGameOver || isCaught)
+            {
+                _primaryResetCoroutine = null;
                 yield break;
+            }
+
+            if (_roomCycleId != _primaryResetCycleId)
+            {
+                Debug.Log("[PDV2] HandlePrimaryResetSequence: a newer cycle has started — aborting");
+                _primaryResetCoroutine = null;
+                yield break;
+            }
+
+            // 部屋からの退室が既に完了している場合（親機側の滞在タイムアウト等）は、
+            // ドア閉・ResetCycle・EndWarningSequenceはOnExitedRoom側で完了済みなので打ち切る。
+            if (_roomExitCompleted)
+            {
+                Debug.Log("[PDV2] HandlePrimaryResetSequence: room exit already completed — aborting (finished by OnExitedRoom)");
+                _primaryResetCoroutine = null;
+                yield break;
+            }
 
             bool sleeping = (sleepingController != null) && sleepingController.IsSleeping;
             if (sleeping)
@@ -357,7 +500,78 @@ public class ParentDetectionV2 : MonoBehaviour
             yield return new WaitForSeconds(leaveDelay);
 
         if (_hasPermanentGameOver || isCaught)
+        {
+            _primaryResetCoroutine = null;
             yield break;
+        }
+
+        if (_roomCycleId != _primaryResetCycleId)
+        {
+            Debug.Log("[PDV2] HandlePrimaryResetSequence: a newer cycle has started — aborting");
+            _primaryResetCoroutine = null;
+            yield break;
+        }
+
+        if (_roomExitCompleted)
+        {
+            // 滞在タイムアウト等で先に退室が完了している — 終了処理はOnExitedRoom側で完了済み。
+            Debug.Log("[PDV2] HandlePrimaryResetSequence: room exit already completed — skipping door close (finished by OnExitedRoom)");
+            _primaryResetCoroutine = null;
+            yield break;
+        }
+
+        // 部屋入室（案B）：入室済みの場合は、親機へ退室を要求し、doorPointへ戻るまで待つ。
+        // ドアを閉じる／ResetCycle／EndWarningSequenceは退室完了（OnExitedRoom）側で実行する。
+        if (_roomEntryStarted && approachController != null)
+        {
+            if (approachController.RequestLeaveRoom())
+            {
+                Debug.Log("[PDV2] RequestLeaveRoom sent — waiting for the mother to leave the room");
+
+                float exitElapsed = 0f;
+                float exitTimeout = Mathf.Max(0f, roomExitSafetyTimeout);
+
+                while (!_roomExitCompleted && !_hasPermanentGameOver && !isCaught
+                       && _roomCycleId == _primaryResetCycleId)
+                {
+                    if (exitTimeout > 0f)
+                    {
+                        exitElapsed += Time.deltaTime;
+                        if (exitElapsed >= exitTimeout)
+                        {
+                            Debug.LogWarning($"[PDV2] OnExitedRoom not received within {exitTimeout:F1}s — closing the door anyway");
+                            break;
+                        }
+                    }
+                    yield return null;
+                }
+
+                if (_hasPermanentGameOver || isCaught)
+                {
+                    _primaryResetCoroutine = null;
+                    yield break;
+                }
+
+                if (_roomCycleId != _primaryResetCycleId)
+                {
+                    // 新しいサイクル（強制突入など）が始まった — ドア操作はそのサイクルに任せる。
+                    Debug.Log("[PDV2] HandlePrimaryResetSequence: a newer cycle has started — aborting");
+                    _primaryResetCoroutine = null;
+                    yield break;
+                }
+
+                if (_roomExitCompleted)
+                {
+                    // 退室完了 — 終了処理はOnExitedRoom側で完了済み。
+                    _primaryResetCoroutine = null;
+                    yield break;
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[PDV2] RequestLeaveRoom was rejected — falling back to the legacy door close");
+            }
+        }
 
         if (mainDoorCloseAudioSource != null)
             mainDoorCloseAudioSource.Play();

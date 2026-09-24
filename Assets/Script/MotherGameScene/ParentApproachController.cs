@@ -6,13 +6,20 @@ using UnityEngine.Serialization;
 /// <summary>
 /// ParentApproachController：
 /// インスペクターで設定したウェイポイントに沿って、2つの明示的なルートで親機を移動させる。
-///   通過：startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint → passByPoint
-///   ドアのみ：startPoint → stairClimbPoints[] → stairTurnPoint → hallwayPoints[] → doorPoint（停止）
+///   ドア確認（通常）：startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint → hallwayPoint3 → doorPoint（停止）
+///             →（PDV2が入室を要求した場合のみ）roomEntryPoints[]へ入室 → doorPointへ復帰（退室）
+///   フェイント：startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint → hallwayPoint2 → hallwayPoint1 → startPoint（帰還）
 ///
-/// 回転規則（Y固定、X/Z固定）：
-///   階段上り：Y = -90（フェーズ開始時に即時設定）
-///   階段旋回：Y = 0（stairTurnPointで滑らかに回転）
-///   ドア到着：Y = 90（doorPointで滑らかに回転）
+/// 部屋入室（任意）：
+///   PDV2がOnStoppedAtDoorの処理中にRequestRoomEntry()を呼んだときのみ、ドア停止後にroomEntryPoints[]へ進む。
+///   入室完了でonEnteredRoom、退室完了（doorPoint復帰）でonExitedRoomを発生する。
+///   roomEntryPointsが未設定／空、突入（IsRushIn）サイクル、ドア停止ルート以外では入室せず、
+///   従来どおりdoorPointで停止したままコルーチンを終了する。
+///
+/// 回転規則（X/Z固定、YはウェイポイントのTransform.rotationから取得）：
+///   開始：startPoint.rotationで初期化
+///   方向転換：turnPoint.rotationのY角へ滑らかに回転
+///   ドア到着：doorPoint.rotationのY角へ滑らかに回転
 ///
 /// 移動ループ音：
 ///   UpdateMovementLoopAudio()で毎フレーム管理する。
@@ -31,20 +38,31 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("親機が出現し、リセット時に戻る場所。")]
     public Transform startPoint;
 
-    [Tooltip("階段を上るウェイポイント。親機は終始Y=-90を向く。")]
-    public Transform[] stairClimbPoints;
+    [Tooltip("廊下の1つ目のウェイポイント。未設定ならスキップして次へ進む。")]
+    public Transform hallwayPoint1;
 
-    [Tooltip("階段上りを終え、親機が廊下方向（Y=0）へ回転する1つの地点。")]
-    public Transform stairTurnPoint;
+    [Tooltip("廊下の2つ目のウェイポイント。未設定ならスキップして次へ進む。")]
+    public Transform hallwayPoint2;
 
-    [Tooltip("階段旋回後に廊下を移動するためのウェイポイント。")]
-    public Transform[] hallwayPoints;
+    [Tooltip("方向転換地点。到着後、このTransform.rotationのY角へ滑らかに回転する。未設定なら回転をスキップする。")]
+    public Transform turnPoint;
 
-    [Tooltip("ドア前の位置。到着時に親機がY=90へ回転する。")]
+    [Tooltip("方向転換後の廊下のウェイポイント（ドア確認ルートのみ使用）。未設定ならスキップする。")]
+    public Transform hallwayPoint3;
+
+    [Tooltip("ドア前の位置。到着時にこのTransform.rotationのY角へ回転する。")]
     public Transform doorPoint;
 
-    [Tooltip("ドア通過後に親機が歩く場所（通過ルートのみ）。")]
-    public Transform passByPoint;
+    // ── 部屋内部（入室） ──────────────────────────────────────────────────────
+    [Header("部屋内部（入室）")]
+    [Tooltip("部屋内部の立ち位置。doorPointから近い順に設定する。未設定または空の場合は入室せず、従来どおりdoorPointで停止する。")]
+    public Transform[] roomEntryPoints;
+
+    [Tooltip("部屋から出るとき（doorPointへ戻るとき）に親機が向くY角度（度）。入室時はdoorPointでの向き（Y=90）を維持する。")]
+    [SerializeField] private float roomExitYaw = -90f;
+
+    [Tooltip("部屋内に留まれる最大秒数。この時間を超えると、退室要求がなくても自動的に退室する。0以下で無効（無制限）。")]
+    [SerializeField] private float roomStayTimeoutSeconds = 20f;
 
     // ── 移動 ──────────────────────────────────────────────────────────────────
     [Header("移動")]
@@ -98,9 +116,6 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("大きな音による突入ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
     public float rushInPauseAtDoorSeconds = 0.2f;
 
-    [Tooltip("passByPointへ進む前にドアで停止する秒数。")]
-    public float pauseBeforePassBySeconds = 0.5f;
-
     // ── イベント ──────────────────────────────────────────────────────────────
     [Header("イベント")]
     [FormerlySerializedAs("OnApproachStarted")]
@@ -111,6 +126,10 @@ public class ParentApproachController : MonoBehaviour
     public UnityEvent onStoppedAtDoor;
     [FormerlySerializedAs("OnPassedByDoor")]
     public UnityEvent onPassedByDoor;
+    [Tooltip("親機が部屋内部への入室を完了したときに発生する（入室が受理されたサイクルのみ）。")]
+    public UnityEvent onEnteredRoom;
+    [Tooltip("親機が部屋内部からの退室を完了し、doorPointへ戻ったときに発生する。")]
+    public UnityEvent onExitedRoom;
 
     // ── 公開読み取り専用状態 ──────────────────────────────────────────────────
     private bool IsApproaching { get; set; }
@@ -130,10 +149,12 @@ public class ParentApproachController : MonoBehaviour
     private float _currentAudioVolume;
     private float _targetAudioVolume;
 
-    // 固定ヨー角 — 外部公開せず、要件に応じて調整する
-    private const float StairYaw   = -90f;
-    private const float HallwayYaw =   0f;
-    private const float DoorYaw    =  90f;
+    // 部屋入室（案B）の状態
+    private bool _cycleStartedAsRushIn;   // このサイクルが突入（大きな音）として開始されたか — BeginApproach()で捕捉する
+    private bool _doorRoutineActive;      // DoorRoutine()が実行中か（入室要求の受付条件）
+    private bool _roomEntryRequested;     // OnStoppedAtDoor中にPDV2から入室要求を受けたか
+    private bool _roomPhaseActive;        // 入室フェーズ（部屋内部への移動〜doorPoint復帰）が進行中か
+    private bool _leaveRoomRequested;     // 部屋内部からの退室要求を受けたか
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
@@ -193,7 +214,7 @@ public class ParentApproachController : MonoBehaviour
         StartApproachDoorOnly();
     }
 
-    /// <summary>通過ルートを開始する：親機が廊下を通り、ドアを過ぎてpassByPointまで歩く。</summary>
+    /// <summary>フェイントルートを開始する：turnPointで方向転換し、通ってきた廊下を戻ってstartPointへ帰還する。</summary>
     public void StartApproachPassByOnly()
     {
         if (IsApproaching)
@@ -217,6 +238,60 @@ public class ParentApproachController : MonoBehaviour
         if (!ValidateWaypoints(requirePassBy: false)) return;
 
         BeginApproach(passByRoute: false);
+    }
+
+    /// <summary>
+    /// 親機を部屋内部へ入室させる要求。OnStoppedAtDoorの処理中（＝ドア停止ルート実行中）にPDV2から呼ばれる。
+    /// 受理した場合は、ドア停止後にroomEntryPoints[]へ移動し、入室完了でonEnteredRoomを発生する。
+    /// 次のいずれかに該当する場合はfalseを返し、呼び出し側は従来どおりの即時処理を行う：
+    ///   ドア停止ルートが実行中ではない／突入（IsRushIn）サイクルである／roomEntryPointsが未設定または空である。
+    /// </summary>
+    public bool RequestRoomEntry()
+    {
+        if (!_doorRoutineActive)
+        {
+            Debug.Log("[ParentApproachController] RequestRoomEntry 却下：ドア停止ルートが実行中ではない");
+            return false;
+        }
+
+        if (_cycleStartedAsRushIn)
+        {
+            Debug.Log("[ParentApproachController] RequestRoomEntry 却下：突入サイクルのため入室しない");
+            return false;
+        }
+
+        if (roomEntryPoints == null || roomEntryPoints.Length == 0)
+        {
+            // 未設定時はログを出さず、従来どおりdoorPointで停止する挙動へフォールバックする。
+            return false;
+        }
+
+        if (doorPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] RequestRoomEntry 却下：doorPointがNULLです。", this);
+            return false;
+        }
+
+        _roomEntryRequested = true;
+        Debug.Log($"[ParentApproachController] RequestRoomEntry 受理 | roomEntryPoints={roomEntryPoints.Length}");
+        return true;
+    }
+
+    /// <summary>
+    /// 親機を部屋内部から退室させる要求。入室フェーズが進行中の場合のみ受理する。
+    /// 親機は入室時と逆順でdoorPointへ戻り、退室完了でonExitedRoomを発生する。
+    /// </summary>
+    public bool RequestLeaveRoom()
+    {
+        if (!_roomPhaseActive)
+        {
+            Debug.Log("[ParentApproachController] RequestLeaveRoom 却下：入室フェーズが進行中ではない");
+            return false;
+        }
+
+        _leaveRoomRequested = true;
+        Debug.Log("[ParentApproachController] RequestLeaveRoom 受理 — 部屋から退室する");
+        return true;
     }
 
     public void ResetApproach()
@@ -248,6 +323,11 @@ public class ParentApproachController : MonoBehaviour
 
     private void BeginApproach(bool passByRoute)
     {
+        // 「このサイクルは突入（大きな音）として開始されたか」を記録する。
+        // ParentWarningSystemはIsRushIn=trueを設定してから本メソッドを呼ぶため、
+        // ResetStateFlags()でIsRushInが消える前にここで捕捉する（入室可否の判定に使用する）。
+        _cycleStartedAsRushIn = IsRushIn;
+
         ResetStateFlags();
 
         // 接近開始時は遠い段階の音量から初期化
@@ -266,7 +346,6 @@ public class ParentApproachController : MonoBehaviour
 
         transform.position = startPoint.position;
         transform.rotation = startPoint.rotation;
-        SetYaw(StairYaw);
 
         ShowMotherModel();
 
@@ -283,16 +362,18 @@ public class ParentApproachController : MonoBehaviour
 
     private IEnumerator DoorRoutine()
     {
+        _doorRoutineActive = true;
         Debug.Log("[ParentApproachController] DoorRoutine：開始");
 
-        yield return RunStairPhase();
-        yield return RunHallwayPhase();
+        yield return MoveToTurnPoint();
+
+        yield return MoveToPoint(hallwayPoint3);
 
         // 扉前フェーズ：目標音量を扉前（最大段階）に設定
         _targetAudioVolume = nearDoorVolume;
-        Debug.Log($"[ParentApproachController] Phase: DOOR | moving to '{doorPoint.name}' then rotate to yaw=90 | targetVolume={nearDoorVolume}");
+        Debug.Log($"[ParentApproachController] Phase: DOOR | moving to '{doorPoint.name}' then rotate to doorPoint's yaw | targetVolume={nearDoorVolume}");
         yield return MoveToPoint(doorPoint);
-        yield return RotateToYaw(DoorYaw, doorTurnRotationSpeed);
+        yield return RotateToTransformYaw(doorPoint, doorTurnRotationSpeed);
 
         ReachedDoor = true;
         Debug.Log("[ParentApproachController] ドアに到着 — OnReachedDoorを発生");
@@ -310,82 +391,142 @@ public class ParentApproachController : MonoBehaviour
 
         Debug.Log("[ParentApproachController] ドアで停止 — OnStoppedAtDoorを発生");
         onStoppedAtDoor?.Invoke();
+
+        // OnStoppedAtDoorの処理中にPDV2が入室を要求した場合のみ、部屋内部へ移動する。
+        // 要求がない場合は従来どおりドア前で停止したままコルーチンを終了する。
+        if (_roomEntryRequested)
+        {
+            _roomEntryRequested = false;
+            yield return RoomPhaseCoroutine();
+        }
+
+        _doorRoutineActive = false;
     }
 
     private IEnumerator PassByRoutine()
     {
-        Debug.Log("[ParentApproachController] PassByRoutine：開始");
+        Debug.Log("[ParentApproachController] PassByRoutine（フェイント）：開始");
 
-        yield return RunStairPhase();
-        yield return RunHallwayPhase();
+        yield return MoveToTurnPoint();
 
-        // 扉前フェーズ：目標音量を扉前（最大段階）に設定
-        _targetAudioVolume = nearDoorVolume;
-        Debug.Log($"[ParentApproachController] Phase: DOOR (pass-by) | moving through '{doorPoint.name}' — no stop, no rotation | targetVolume={nearDoorVolume}");
-        yield return MoveToPoint(doorPoint);
-
-        yield return new WaitForSeconds(pauseBeforePassBySeconds);
-
-        Debug.Log($"[ParentApproachController] Phase: PASS-BY | moving to '{passByPoint.name}'");
-        yield return MoveToPoint(passByPoint);
+        // TurnPointで方向転換したあとは、通ってきた廊下を逆順に戻ってstartPointへ帰還する。
+        yield return MoveToPoint(hallwayPoint2);
+        yield return MoveToPoint(hallwayPoint1);
+        yield return MoveToPoint(startPoint);
 
         StopMovementAudio();
         PassedByDoor  = true;
         IsApproaching = false;
         // IsInHallwayPhaseはResetStateFlags()でのみ解除する — DoorRoutineと同じ動作。
 
-        Debug.Log("[ParentApproachController] ドアを通過 — OnPassedByDoorを発生");
+        Debug.Log("[ParentApproachController] フェイント完了 — OnPassedByDoorを発生");
         onPassedByDoor?.Invoke();
+    }
+
+    /// <summary>
+    /// roomEntryPointsのうち有効（null以外）な要素の数を返す。
+    /// </summary>
+    private int CountValidRoomEntryPoints()
+    {
+        if (roomEntryPoints == null) return 0;
+
+        int count = 0;
+        for (int i = 0; i < roomEntryPoints.Length; i++)
+        {
+            if (roomEntryPoints[i] != null) count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// ドア停止後、親機を部屋内部へ移動させ、退室要求（または安全タイムアウト）まで部屋に留まらせる。
+    /// 移動と回転は既存のMoveToPoint()／RotateToYaw()を再利用する。
+    /// 入室完了でonEnteredRoom、doorPointへ戻った時点でonExitedRoomを発生する。
+    /// </summary>
+    private IEnumerator RoomPhaseCoroutine()
+    {
+        _roomPhaseActive = true;
+
+        int entryCount = CountValidRoomEntryPoints();
+        Debug.Log($"[ParentApproachController] RoomPhase：入室開始 | 有効なroomEntryPoints={entryCount} | yaw={transform.rotation.eulerAngles.y:F1}");
+
+        if (entryCount > 0)
+        {
+            // 部屋内部へ入る（doorPointから近い順に設定されたウェイポイントを順に進む）。
+            // 向きはdoorPoint到着時のまま（doorPoint.rotation）を維持する。
+            for (int i = 0; i < roomEntryPoints.Length; i++)
+            {
+                if (roomEntryPoints[i] == null) continue;
+                Debug.Log($"[ParentApproachController]   roomEntry[{i}] '{roomEntryPoints[i].name}'");
+                yield return MoveToPoint(roomEntryPoints[i]);
+            }
+        }
+        else
+        {
+            // 有効なウェイポイントがない場合はその場（doorPoint）を部屋内部とみなす。
+            // onEnteredRoomは必ず発生させ、呼び出し側が待ち続けないようにする。
+            Debug.LogWarning("[ParentApproachController] RoomPhase：有効なroomEntryPointsがないため、doorPointで入室完了とする。", this);
+        }
+
+        Debug.Log("[ParentApproachController] 入室完了 — OnEnteredRoomを発生");
+        onEnteredRoom?.Invoke();
+
+        // 退室要求（RequestLeaveRoom）または安全タイムアウトまで部屋に留まる。
+        float timeout = Mathf.Max(0f, roomStayTimeoutSeconds);
+        float elapsed = 0f;
+        while (!_leaveRoomRequested)
+        {
+            if (timeout > 0f && elapsed >= timeout)
+            {
+                Debug.Log($"[ParentApproachController] 部屋滞在が安全タイムアウト（{timeout:F1}s）に達した — 自動的に退室する");
+                break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        _leaveRoomRequested = false;
+
+        // 部屋から出る：退室の向きへ回転してから、入室時と逆順でdoorPointへ戻る。
+        Debug.Log($"[ParentApproachController] RoomPhase：退室開始 | yaw={roomExitYaw:F1}");
+        yield return RotateToYaw(roomExitYaw, doorTurnRotationSpeed);
+
+        for (int i = roomEntryPoints.Length - 1; i >= 0; i--)
+        {
+            if (roomEntryPoints[i] == null) continue;
+            Debug.Log($"[ParentApproachController]   roomExit[{i}] '{roomEntryPoints[i].name}'");
+            yield return MoveToPoint(roomEntryPoints[i]);
+        }
+
+        yield return MoveToPoint(doorPoint);
+
+        _roomPhaseActive = false;
+        Debug.Log("[ParentApproachController] 退室完了 — OnExitedRoomを発生");
+        onExitedRoom?.Invoke();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
     //  共通フェーズヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
-    private IEnumerator RunStairPhase()
-    {
-        SetYaw(StairYaw);
-        // 遠い段階（開始地点付近・階段上り開始）：目標音量を小さい段階に設定
-        _targetAudioVolume = farVolume;
-        Debug.Log($"[ParentApproachController] Phase: STAIR CLIMB | yaw=-90 | IsRushIn={IsRushIn} | targetVolume={farVolume}");
-        // 移動ループ音はUpdate()内のUpdateMovementLoopAudio()で管理する — ここではPlay()を呼ばない。
-
-        if (stairClimbPoints != null)
-        {
-            for (int i = 0; i < stairClimbPoints.Length; i++)
-            {
-                if (stairClimbPoints[i] == null) continue;
-                Debug.Log($"[ParentApproachController]   stairClimbPoints[{i}] '{stairClimbPoints[i].name}'");
-                yield return MoveToPoint(stairClimbPoints[i]);
-            }
-        }
-
-        if (stairTurnPoint != null)
-        {
-            // 階段旋回（階段を上り終えて廊下へ向かう中間段階）：目標音量を中くらいに設定
-            _targetAudioVolume = midVolume;
-            Debug.Log($"[ParentApproachController] Phase: STAIR TURN | moving to '{stairTurnPoint.name}' then rotate to yaw=0 | targetVolume={midVolume}");
-            yield return MoveToPoint(stairTurnPoint);
-            yield return RotateToYaw(HallwayYaw, stairTurnRotationSpeed);
-            Debug.Log("[ParentApproachController]   階段旋回完了");
-        }
-    }
-
-    private IEnumerator RunHallwayPhase()
+    private IEnumerator MoveToTurnPoint()
     {
         IsInHallwayPhase = true;
-        // 中間段階（廊下）：stairTurnPointが未設定の場合でも確実に中間音量に設定
+        // 中間段階（廊下）：turnPointで方向転換するまでは中間音量を維持する
         _targetAudioVolume = midVolume;
         Debug.Log($"[ParentApproachController] フェーズ：廊下 | IsInHallwayPhase=true | targetVolume={midVolume}");
+        // 移動ループ音はUpdate()内のUpdateMovementLoopAudio()で管理する — ここではPlay()を呼ばない。
 
-        if (hallwayPoints != null)
+        // 中間ウェイポイントは未設定ならスキップして、可能な限り先へ進む（null安全）。
+        yield return MoveToPoint(hallwayPoint1);
+        yield return MoveToPoint(hallwayPoint2);
+
+        if (turnPoint != null)
         {
-            for (int i = 0; i < hallwayPoints.Length; i++)
-            {
-                if (hallwayPoints[i] == null) continue;
-                Debug.Log($"[ParentApproachController]   hallwayPoints[{i}] '{hallwayPoints[i].name}'");
-                yield return MoveToPoint(hallwayPoints[i]);
-            }
+            Debug.Log($"[ParentApproachController]   turnPoint '{turnPoint.name}' — yaw={turnPoint.rotation.eulerAngles.y:F1}へ旋回");
+            yield return MoveToPoint(turnPoint);
+            yield return RotateToTransformYaw(turnPoint, stairTurnRotationSpeed);
+            Debug.Log("[ParentApproachController]   方向転換完了");
         }
     }
 
@@ -395,6 +536,12 @@ public class ParentApproachController : MonoBehaviour
 
     private IEnumerator MoveToPoint(Transform target)
     {
+        if (target == null)
+        {
+            // 中間ウェイポイントが未設定の場合はスキップして続行する（null安全）。
+            yield break;
+        }
+
         while (Vector3.Distance(transform.position, target.position) > stopDistance)
         {
             transform.position = Vector3.MoveTowards(
@@ -402,6 +549,15 @@ public class ParentApproachController : MonoBehaviour
             yield return null;
         }
         transform.position = target.position;
+    }
+
+    private IEnumerator RotateToTransformYaw(Transform target, float speed)
+    {
+        if (target == null) yield break;
+
+        // ウェイポイントのTransform.rotationから目標Y角を取得する（コードへの角度埋め込みなし）。
+        float targetYaw = target.rotation.eulerAngles.y;
+        yield return RotateToYaw(targetYaw, speed);
     }
 
     private IEnumerator RotateToYaw(float targetYaw, float speed)
@@ -473,6 +629,14 @@ public class ParentApproachController : MonoBehaviour
         PassedByDoor     = false;
         IsInHallwayPhase = false;
         IsRushIn         = false;
+
+        // 部屋入室（案B）の状態を初期化する。_cycleStartedAsRushInはBeginApproach()で
+        // ResetStateFlags()より前に設定されるため、ここではクリアしない。
+        _doorRoutineActive  = false;
+        _roomEntryRequested = false;
+        _roomPhaseActive    = false;
+        _leaveRoomRequested = false;
+
         StopMovementAudio();
     }
 
@@ -488,15 +652,8 @@ public class ParentApproachController : MonoBehaviour
             Debug.LogWarning("[ParentApproachController] doorPointがNULLです。", this);
             return false;
         }
-        if (requirePassBy && passByPoint == null)
-        {
-            Debug.LogWarning("[ParentApproachController] passByPointがNULLです — 通過ルートに必要です。", this);
-            return false;
-        }
-        if (stairTurnPoint == null)
-        {
-            Debug.LogWarning("[ParentApproachController] stairTurnPointがNULLです — 階段から廊下への旋回をスキップします。", this);
-        }
+        // 中間ウェイポイント（hallwayPoint1〜3 / turnPoint）は未設定でも続行する。
+        // フェイントルートも検証内容は同じ（互換性のためrequirePassBy引数は残す）。
         return true;
     }
 
@@ -516,39 +673,37 @@ public class ParentApproachController : MonoBehaviour
             Gizmos.DrawSphere(startPoint.position, 0.08f);
         }
 
-        // stairClimbPoints — シアン
-        Gizmos.color = Color.cyan;
-        if (stairClimbPoints != null)
+        // hallwayPoint1 / hallwayPoint2 — 緑
+        Gizmos.color = Color.green;
+        if (hallwayPoint1 != null)
         {
-            foreach (Transform wp in stairClimbPoints)
-            {
-                if (wp == null) continue;
-                Gizmos.DrawSphere(wp.position, 0.06f);
-                if (prev != null) Gizmos.DrawLine(prev.position, wp.position);
-                prev = wp;
-            }
+            Gizmos.DrawSphere(hallwayPoint1.position, 0.06f);
+            if (prev != null) Gizmos.DrawLine(prev.position, hallwayPoint1.position);
+            prev = hallwayPoint1;
+        }
+        if (hallwayPoint2 != null)
+        {
+            Gizmos.DrawSphere(hallwayPoint2.position, 0.06f);
+            if (prev != null) Gizmos.DrawLine(prev.position, hallwayPoint2.position);
+            prev = hallwayPoint2;
         }
 
-        // stairTurnPoint — 青
-        if (stairTurnPoint != null)
+        // turnPoint — 青（方向転換）
+        if (turnPoint != null)
         {
             Gizmos.color = Color.blue;
-            Gizmos.DrawSphere(stairTurnPoint.position, 0.09f);
-            if (prev != null) Gizmos.DrawLine(prev.position, stairTurnPoint.position);
-            prev = stairTurnPoint;
+            Gizmos.DrawSphere(turnPoint.position, 0.09f);
+            if (prev != null) Gizmos.DrawLine(prev.position, turnPoint.position);
+            prev = turnPoint;
         }
 
-        // hallwayPoints — 緑
-        Gizmos.color = Color.green;
-        if (hallwayPoints != null)
+        // hallwayPoint3 — 緑（ドア確認ルートのみ）
+        if (hallwayPoint3 != null)
         {
-            foreach (Transform wp in hallwayPoints)
-            {
-                if (wp == null) continue;
-                Gizmos.DrawSphere(wp.position, 0.06f);
-                if (prev != null) Gizmos.DrawLine(prev.position, wp.position);
-                prev = wp;
-            }
+            Gizmos.color = Color.green;
+            Gizmos.DrawSphere(hallwayPoint3.position, 0.06f);
+            if (prev != null) Gizmos.DrawLine(prev.position, hallwayPoint3.position);
+            prev = hallwayPoint3;
         }
 
         // doorPoint — 黄
@@ -560,12 +715,25 @@ public class ParentApproachController : MonoBehaviour
             prev = doorPoint;
         }
 
-        // passByPoint — マゼンタ
-        if (passByPoint != null)
+        // フェイントの帰還ルート（TurnPoint → H2 → H1 → startPoint）— マゼンタ
+        Gizmos.color = Color.magenta;
+        if (hallwayPoint2 != null && hallwayPoint1 != null)
+            Gizmos.DrawLine(hallwayPoint2.position, hallwayPoint1.position);
+        if (hallwayPoint1 != null && startPoint != null)
+            Gizmos.DrawLine(hallwayPoint1.position, startPoint.position);
+
+        // roomEntryPoints — 橙（doorPointからの入室ルート）
+        if (roomEntryPoints != null && doorPoint != null)
         {
-            Gizmos.color = Color.magenta;
-            Gizmos.DrawSphere(passByPoint.position, 0.08f);
-            if (prev != null) Gizmos.DrawLine(prev.position, passByPoint.position);
+            Gizmos.color = new Color(1f, 0.5f, 0f);
+            Transform prevRoom = doorPoint;
+            foreach (Transform wp in roomEntryPoints)
+            {
+                if (wp == null) continue;
+                Gizmos.DrawSphere(wp.position, 0.07f);
+                Gizmos.DrawLine(prevRoom.position, wp.position);
+                prevRoom = wp;
+            }
         }
     }
 #endif

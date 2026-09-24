@@ -35,6 +35,15 @@ public class ParentWarningSystem : MonoBehaviour
     [SerializeField] private GameObject secondFloorLight1;
     [SerializeField] private GameObject secondFloorLight2;
     [SerializeField] private GameObject secondFloorLight3;
+
+    // 新部屋（Lights_Base配下）の予告灯。
+    // 旧部屋の参照（firstFloorLight / secondFloorLight1〜3）がNoneでも例外を出さないよう、
+    // 点灯・消灯はSetLightActive()経由で行う。
+    [SerializeField] private GameObject hallwayLight1;   // Lights_Hallway
+    [SerializeField] private GameObject hallwayLight2;   // Lights_Hallway 2
+    [SerializeField] private GameObject hallwayLight3;   // Lights_Hallway 3
+    [SerializeField] private GameObject frontLight;      // Lights_Front
+
     [SerializeField] private AudioSource lightSwitchAudioSource;
 
     // ── 予告遅延のスケーリング ────────────────────────────────────────────────
@@ -249,9 +258,7 @@ public class ParentWarningSystem : MonoBehaviour
             approachController.IsRushIn = true;
 
         // 2階の灯りのみ — 突入時は1階の灯りを省略する。
-        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
-        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
-        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
 
         if (approachController != null)
@@ -303,7 +310,7 @@ public class ParentWarningSystem : MonoBehaviour
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
 
-        if (firstFloorLight != null) firstFloorLight.SetActive(true);
+        TurnOnFirstStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] FIRST FLOOR LIGHT ON");
 
@@ -320,9 +327,7 @@ public class ParentWarningSystem : MonoBehaviour
         }
         yield return new WaitForSeconds(secondFloorDelay);
 
-        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
-        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
-        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] SECOND FLOOR LIGHTS ON");
 
@@ -439,12 +444,41 @@ public class ParentWarningSystem : MonoBehaviour
         return Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge);
     }
 
+    private void SetLightActive(GameObject lightObject, bool active)
+    {
+        if (lightObject != null) lightObject.SetActive(active);
+    }
+
+    // 予告 第1段階：新部屋の Lights_Hallway / Lights_Hallway 2 を点灯する。
+    // 旧部屋の1階灯り（firstFloorLight）がNoneの場合は何もしない。
+    private void TurnOnFirstStageLights()
+    {
+        SetLightActive(firstFloorLight, true);
+        SetLightActive(hallwayLight1, true);
+        SetLightActive(hallwayLight2, true);
+    }
+
+    // 予告 第2段階／突入の最終段階：新部屋の Lights_Hallway 3 / Lights_Front を点灯する。
+    // 第1段階の灯りは消さない（積み上げ演出）。旧部屋の2階灯りがNoneの場合は何もしない。
+    private void TurnOnSecondStageLights()
+    {
+        SetLightActive(secondFloorLight1, true);
+        SetLightActive(secondFloorLight2, true);
+        SetLightActive(secondFloorLight3, true);
+        SetLightActive(hallwayLight3, true);
+        SetLightActive(frontLight, true);
+    }
+
     private void TurnOffAllLights()
     {
-        if (firstFloorLight != null) firstFloorLight.SetActive(false);
-        if (secondFloorLight1 != null) secondFloorLight1.SetActive(false);
-        if (secondFloorLight2 != null) secondFloorLight2.SetActive(false);
-        if (secondFloorLight3 != null) secondFloorLight3.SetActive(false);
+        SetLightActive(firstFloorLight, false);
+        SetLightActive(secondFloorLight1, false);
+        SetLightActive(secondFloorLight2, false);
+        SetLightActive(secondFloorLight3, false);
+        SetLightActive(hallwayLight1, false);
+        SetLightActive(hallwayLight2, false);
+        SetLightActive(hallwayLight3, false);
+        SetLightActive(frontLight, false);
     }
 
     private void SubscribeApproachEvents()
