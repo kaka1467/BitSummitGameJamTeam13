@@ -55,7 +55,7 @@ MonoBehaviour:
   boostMultiplier: 0
   isMagnetable: 1
   seClip: {fileID: 8300000, guid: ca8e331026a7642f697471c3a7bb5f95, type: 3}
-  seVolume: 1
+  seVolume: 0.1
   bgmClip: {fileID: 0}
   loopBgm: 1
   bgmVolume: 1
