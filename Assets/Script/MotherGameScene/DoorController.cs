@@ -21,33 +21,33 @@ public class DoorController : MonoBehaviour
     [SerializeField] private Transform door;           // 回転させるドアのTransform
 
     [Header("回転設定")]
-    [SerializeField] private float closedAngle = 0f;   // 閉じた位置（0度）
+    [SerializeField] private float closedAngle;   // 閉じた位置（0度）
     [SerializeField] private float peekAngle = -15f;   // 覗き見位置（テスト用に-15度）
     [SerializeField] private float openAngle = -180f;  // 完全に開いた位置（-180度）
     [SerializeField] private float openSpeed = 5f;     // 回転速度の倍率
 
     [Header("デバッグ")]
-    public bool showDebugLogs = false;
+    public bool showDebugLogs;
 
     // 現在のドア状態
-    private DoorState currentDoorState = DoorState.Closed;
-    private DoorState targetDoorState = DoorState.Closed;
+    private DoorState _currentDoorState = DoorState.Closed;
+    private DoorState _targetDoorState = DoorState.Closed;
 
     /// <summary>
     /// 読み取り専用プロパティ：現在のドア状態を取得
     /// </summary>
-    public DoorState CurrentDoorState => currentDoorState;
+    public DoorState CurrentDoorState => _currentDoorState;
 
-    void Start()
+    private void Start()
     {
         if (door != null)
             door.localRotation = Quaternion.Euler(0f, closedAngle, 0f);
 
-        currentDoorState = DoorState.Closed;
-        targetDoorState  = DoorState.Closed;
+        _currentDoorState = DoorState.Closed;
+        _targetDoorState  = DoorState.Closed;
     }
 
-    void Update()
+    private void Update()
     {
         // Eキーによる手動切り替え（新しい入力システム）
         if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
@@ -56,7 +56,7 @@ public class DoorController : MonoBehaviour
                 Debug.Log("?? Eキーを押しました：ドアを切り替えます");
 
             // ClosedとFullを切り替える
-            if (targetDoorState == DoorState.Closed)
+            if (_targetDoorState == DoorState.Closed)
             {
                 SetDoorState(DoorState.Full);
             }
@@ -77,7 +77,7 @@ public class DoorController : MonoBehaviour
     {
         if (door == null) return;
 
-        float targetAngleY = GetTargetAngle(targetDoorState);
+        float targetAngleY = GetTargetAngle(_targetDoorState);
         Quaternion targetRotation = Quaternion.Euler(0f, targetAngleY, 0f);
 
         // 目標回転へLerpする
@@ -86,7 +86,7 @@ public class DoorController : MonoBehaviour
         // 回転が目標に十分近づいたら現在状態を更新する
         if (Quaternion.Angle(door.localRotation, targetRotation) < 1f)
         {
-            currentDoorState = targetDoorState;
+            _currentDoorState = _targetDoorState;
         }
     }
 
@@ -109,9 +109,9 @@ public class DoorController : MonoBehaviour
     /// </summary>
     public void SetDoorState(DoorState newState)
     {
-        if (targetDoorState == newState) return;
+        if (_targetDoorState == newState) return;
 
-        targetDoorState = newState;
+        _targetDoorState = newState;
 
         if (showDebugLogs)
             Debug.Log($"?? ドア状態を変更しました：{newState}");

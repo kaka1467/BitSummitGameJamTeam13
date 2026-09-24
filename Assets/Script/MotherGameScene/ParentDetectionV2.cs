@@ -87,14 +87,14 @@ public class ParentDetectionV2 : MonoBehaviour
     [SerializeField] private float continuousRoomSuspicionTickInterval = 2f;
 
     // ── 公開状態 ──────────────────────────────────────────────────────────────
-    public bool isCaught          = false;
-    public bool isMotherLookingNow = false;
+    public bool isCaught;
+    public bool isMotherLookingNow;
 
     // ── 非公開状態 ────────────────────────────────────────────────────────────
-    private Coroutine    dummyResetCoroutine        = null;
-    private Coroutine    primaryResetCoroutine      = null;
-    private Coroutine    continuousRoomCoroutine    = null;
-    private bool         hasPermanentGameOver       = false;
+    private Coroutine    _dummyResetCoroutine;
+    private Coroutine    _primaryResetCoroutine;
+    private Coroutine    _continuousRoomCoroutine;
+    private bool         _hasPermanentGameOver;
     private float        _activePeekDuration        = 3f;
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -165,8 +165,8 @@ public class ParentDetectionV2 : MonoBehaviour
     /// </summary>
     public void OnApproachReachedDoor()
     {
-        Debug.Log($"[PDV2] OnApproachReachedDoor | isCaught={isCaught} hasPermanentGameOver={hasPermanentGameOver}");
-        if (isCaught || hasPermanentGameOver) return;
+        Debug.Log($"[PDV2] OnApproachReachedDoor | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+        if (isCaught || _hasPermanentGameOver) return;
 
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         _activePeekDuration = peekDurationBase + gauge;
@@ -201,8 +201,8 @@ public class ParentDetectionV2 : MonoBehaviour
     /// </summary>
     public void OnApproachPassedBy()
     {
-        Debug.Log($"[PDV2] OnApproachPassedBy | isCaught={isCaught} hasPermanentGameOver={hasPermanentGameOver}");
-        if (isCaught || hasPermanentGameOver) return;
+        Debug.Log($"[PDV2] OnApproachPassedBy | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+        if (isCaught || _hasPermanentGameOver) return;
 
         ResetCycle();
 
@@ -212,7 +212,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
     public void NotifyGameOver()
     {
-        hasPermanentGameOver = true;
+        _hasPermanentGameOver = true;
     }
 
     /// <summary>
@@ -228,7 +228,7 @@ public class ParentDetectionV2 : MonoBehaviour
             return;
         }
 
-        if (isCaught || hasPermanentGameOver) return;
+        if (isCaught || _hasPermanentGameOver) return;
 
         if (warningSystem != null && warningSystem.isWarningActive)
         {
@@ -301,16 +301,16 @@ public class ParentDetectionV2 : MonoBehaviour
             Debug.Log("[PDV2] Room entry suspicion SKIPPED — player is sleeping");
         }
 
-        if (!hasPermanentGameOver)
+        if (!_hasPermanentGameOver)
         {
-            if (primaryResetCoroutine != null) StopCoroutine(primaryResetCoroutine);
-            primaryResetCoroutine = StartCoroutine(HandlePrimaryResetSequence());
+            if (_primaryResetCoroutine != null) StopCoroutine(_primaryResetCoroutine);
+            _primaryResetCoroutine = StartCoroutine(HandlePrimaryResetSequence());
         }
 
-        if (enableContinuousRoomSuspicion && !hasPermanentGameOver)
+        if (enableContinuousRoomSuspicion && !_hasPermanentGameOver)
         {
-            if (continuousRoomCoroutine != null) StopCoroutine(continuousRoomCoroutine);
-            continuousRoomCoroutine = StartCoroutine(ContinuousRoomSuspicionCoroutine());
+            if (_continuousRoomCoroutine != null) StopCoroutine(_continuousRoomCoroutine);
+            _continuousRoomCoroutine = StartCoroutine(ContinuousRoomSuspicionCoroutine());
             Debug.Log("[PDV2] Continuous room suspicion started");
         }
 
@@ -325,7 +325,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
         while (true)
         {
-            if (hasPermanentGameOver || isCaught)
+            if (_hasPermanentGameOver || isCaught)
                 yield break;
 
             bool sleeping = (sleepingController != null) && sleepingController.IsSleeping;
@@ -356,7 +356,7 @@ public class ParentDetectionV2 : MonoBehaviour
         if (leaveDelay > 0f)
             yield return new WaitForSeconds(leaveDelay);
 
-        if (hasPermanentGameOver || isCaught)
+        if (_hasPermanentGameOver || isCaught)
             yield break;
 
         if (mainDoorCloseAudioSource != null)
@@ -370,7 +370,7 @@ public class ParentDetectionV2 : MonoBehaviour
         if (warningSystem != null)
             warningSystem.EndWarningSequence();
 
-        primaryResetCoroutine = null;
+        _primaryResetCoroutine = null;
     }
 
     private void TriggerDummyEvent()
@@ -386,8 +386,8 @@ public class ParentDetectionV2 : MonoBehaviour
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: false);
 
-        if (dummyResetCoroutine != null) StopCoroutine(dummyResetCoroutine);
-        dummyResetCoroutine = StartCoroutine(HandleDummySequence());
+        if (_dummyResetCoroutine != null) StopCoroutine(_dummyResetCoroutine);
+        _dummyResetCoroutine = StartCoroutine(HandleDummySequence());
     }
 
     private IEnumerator HandleDummySequence()
@@ -405,7 +405,7 @@ public class ParentDetectionV2 : MonoBehaviour
         if (warningSystem != null)
             warningSystem.EndWarningSequence();
 
-        dummyResetCoroutine = null;
+        _dummyResetCoroutine = null;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ public class ParentDetectionV2 : MonoBehaviour
     {
         for (int i = 0; i < 3; i++)
         {
-            if (hasPermanentGameOver || isCaught) yield break;
+            if (_hasPermanentGameOver || isCaught) yield break;
             if (motherGauge == null) yield break;
 
             motherGauge.AddGauge(1);
@@ -445,11 +445,11 @@ public class ParentDetectionV2 : MonoBehaviour
         {
             yield return new WaitForSeconds(continuousRoomSuspicionTickInterval);
 
-            bool _contSleeping = (sleepingController != null) && sleepingController.IsSleeping;
-            int  _contGauge    = (motherGauge != null) ? motherGauge.currentGauge : 0;
-            Debug.Log($"[PDV2] Continuous room suspicion state | motherLooking={isMotherLookingNow} | playerSleeping={_contSleeping} | gaugeBefore={_contGauge}");
+            bool contSleeping = (sleepingController != null) && sleepingController.IsSleeping;
+            int  contGauge    = (motherGauge != null) ? motherGauge.currentGauge : 0;
+            Debug.Log($"[PDV2] Continuous room suspicion state | motherLooking={isMotherLookingNow} | playerSleeping={contSleeping} | gaugeBefore={contGauge}");
 
-            if (hasPermanentGameOver || isCaught)
+            if (_hasPermanentGameOver || isCaught)
             {
                 Debug.Log("[PDV2] Continuous room suspicion stopped — game over or caught");
                 yield break;
@@ -501,9 +501,9 @@ public class ParentDetectionV2 : MonoBehaviour
     {
         Debug.Log("[PDV2] ResetCycle");
 
-        if (dummyResetCoroutine != null)      { StopCoroutine(dummyResetCoroutine);      dummyResetCoroutine      = null; }
-        if (primaryResetCoroutine != null)    { StopCoroutine(primaryResetCoroutine);    primaryResetCoroutine    = null; }
-        if (continuousRoomCoroutine != null)  { StopCoroutine(continuousRoomCoroutine);  continuousRoomCoroutine  = null; Debug.Log("[PDV2] Continuous room suspicion stopped — ResetCycle"); }
+        if (_dummyResetCoroutine != null)      { StopCoroutine(_dummyResetCoroutine);      _dummyResetCoroutine      = null; }
+        if (_primaryResetCoroutine != null)    { StopCoroutine(_primaryResetCoroutine);    _primaryResetCoroutine    = null; }
+        if (_continuousRoomCoroutine != null)  { StopCoroutine(_continuousRoomCoroutine);  _continuousRoomCoroutine  = null; Debug.Log("[PDV2] Continuous room suspicion stopped — ResetCycle"); }
 
         isMotherLookingNow    = false;
         _activePeekDuration   = peekDurationBase;

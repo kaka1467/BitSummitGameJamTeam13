@@ -20,7 +20,7 @@ public class MotherGauge : MonoBehaviour
     public int maxGauge = 10;
 
     // 現在の疑惑段階（0～maxGauge）
-    public int currentGauge = 0;
+    public int currentGauge;
 
     [Header("接近ゲージフレーム（表示）")]
     [Tooltip("接近／疑惑の進行を表示するフレームImageを左から順に設定します。")]
@@ -50,9 +50,9 @@ public class MotherGauge : MonoBehaviour
 
     [Header("デバッグ")]
     [Tooltip("接近／疑惑ゲージの変化をコンソールに記録する")]
-    public bool logOnChange = false;
+    public bool logOnChange;
 
-    private float _decreaseTimer = 0f;
+    private float _decreaseTimer;
 
     private void Start()
     {

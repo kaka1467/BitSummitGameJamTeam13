@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// ParentApproachController：
@@ -102,13 +103,17 @@ public class ParentApproachController : MonoBehaviour
 
     // ── イベント ──────────────────────────────────────────────────────────────
     [Header("イベント")]
-    public UnityEvent OnApproachStarted;
-    public UnityEvent OnReachedDoor;
-    public UnityEvent OnStoppedAtDoor;
-    public UnityEvent OnPassedByDoor;
+    [FormerlySerializedAs("OnApproachStarted")]
+    public UnityEvent onApproachStarted;
+    [FormerlySerializedAs("OnReachedDoor")]
+    public UnityEvent onReachedDoor;
+    [FormerlySerializedAs("OnStoppedAtDoor")]
+    public UnityEvent onStoppedAtDoor;
+    [FormerlySerializedAs("OnPassedByDoor")]
+    public UnityEvent onPassedByDoor;
 
     // ── 公開読み取り専用状態 ──────────────────────────────────────────────────
-    public bool IsApproaching    { get; private set; }
+    private bool IsApproaching { get; set; }
     public bool ReachedDoor      { get; private set; }
     public bool StoppedAtDoor    { get; private set; }
     public bool PassedByDoor     { get; private set; }
@@ -266,7 +271,7 @@ public class ParentApproachController : MonoBehaviour
         ShowMotherModel();
 
         IsApproaching = true;
-        OnApproachStarted?.Invoke();
+        onApproachStarted?.Invoke();
 
         Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1} | targetVolume={farVolume}");
         _approachCoroutine = StartCoroutine(passByRoute ? PassByRoutine() : DoorRoutine());
@@ -291,7 +296,7 @@ public class ParentApproachController : MonoBehaviour
 
         ReachedDoor = true;
         Debug.Log("[ParentApproachController] ドアに到着 — OnReachedDoorを発生");
-        OnReachedDoor?.Invoke();
+        onReachedDoor?.Invoke();
 
         float doorPause = IsRushIn ? rushInPauseAtDoorSeconds : pauseAtDoorSeconds;
         Debug.Log($"[ParentApproachController] Door pause: {doorPause:F2}s (IsRushIn={IsRushIn})");
@@ -304,7 +309,7 @@ public class ParentApproachController : MonoBehaviour
         // 完全なサイクル終了後、ResetApproach経由のResetStateFlags()で解除する。
 
         Debug.Log("[ParentApproachController] ドアで停止 — OnStoppedAtDoorを発生");
-        OnStoppedAtDoor?.Invoke();
+        onStoppedAtDoor?.Invoke();
     }
 
     private IEnumerator PassByRoutine()
@@ -330,7 +335,7 @@ public class ParentApproachController : MonoBehaviour
         // IsInHallwayPhaseはResetStateFlags()でのみ解除する — DoorRoutineと同じ動作。
 
         Debug.Log("[ParentApproachController] ドアを通過 — OnPassedByDoorを発生");
-        OnPassedByDoor?.Invoke();
+        onPassedByDoor?.Invoke();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -401,7 +406,6 @@ public class ParentApproachController : MonoBehaviour
 
     private IEnumerator RotateToYaw(float targetYaw, float speed)
     {
-        float current = NormalizeAngle(transform.rotation.eulerAngles.y);
         float target  = NormalizeAngle(targetYaw);
 
         while (Mathf.Abs(NormalizeAngle(transform.rotation.eulerAngles.y) - target) > 0.5f)
