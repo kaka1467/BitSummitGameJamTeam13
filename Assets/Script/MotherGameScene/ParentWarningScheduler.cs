@@ -39,17 +39,17 @@ public class ParentWarningScheduler : MonoBehaviour
 
     [Header("デバッグ")]
     [Tooltip("現在の有効ウィンドウ内で、次の自動警告までの残り時間。")]
-    public float timeUntilNextWarning = 0f;
+    public float timeUntilNextWarning;
 
     [SerializeField] private bool showDebugLogs = true;
 
-    private Coroutine schedulerCoroutine;
-    private Coroutine triggerSoonCoroutine;
-    private bool _gracePeriodOver = false;
+    private Coroutine _schedulerCoroutine;
+    private Coroutine _triggerSoonCoroutine;
+    private bool _gracePeriodOver;
 
     public bool IsGracePeriodOver => _gracePeriodOver;
 
-    void Start()
+    private void Start()
     {
         if (warningSystem == null)
             warningSystem = GetComponent<ParentWarningSystem>();
@@ -61,7 +61,7 @@ public class ParentWarningScheduler : MonoBehaviour
             StartScheduler();
     }
 
-    void Update()
+    private void Update()
     {
         if (Keyboard.current == null) return;
 
@@ -78,33 +78,33 @@ public class ParentWarningScheduler : MonoBehaviour
         }
     }
 
-    public void StartScheduler()
+    private void StartScheduler()
     {
         StopSchedulerInternal();
 
         if (!autoTrigger)
             return;
 
-        schedulerCoroutine = StartCoroutine(SchedulerCoroutine());
+        _schedulerCoroutine = StartCoroutine(SchedulerCoroutine());
     }
 
-    public void StopScheduler()
+    private void StopScheduler()
     {
         StopSchedulerInternal();
     }
 
     private void StopSchedulerInternal()
     {
-        if (schedulerCoroutine != null)
+        if (_schedulerCoroutine != null)
         {
-            StopCoroutine(schedulerCoroutine);
-            schedulerCoroutine = null;
+            StopCoroutine(_schedulerCoroutine);
+            _schedulerCoroutine = null;
         }
 
-        if (triggerSoonCoroutine != null)
+        if (_triggerSoonCoroutine != null)
         {
-            StopCoroutine(triggerSoonCoroutine);
-            triggerSoonCoroutine = null;
+            StopCoroutine(_triggerSoonCoroutine);
+            _triggerSoonCoroutine = null;
         }
 
         timeUntilNextWarning = 0f;
@@ -113,7 +113,7 @@ public class ParentWarningScheduler : MonoBehaviour
     /// <summary>
     /// 手動デバッグトリガー（Nキー）— 通過ルートを強制する。
     /// </summary>
-    public void TriggerPassByNow()
+    private void TriggerPassByNow()
     {
         if (warningSystem == null)
         {
@@ -134,7 +134,7 @@ public class ParentWarningScheduler : MonoBehaviour
     /// <summary>
     /// 手動デバッグトリガー（Mキー）— ドアルートを強制する。
     /// </summary>
-    public void TriggerDoorNow()
+    private void TriggerDoorNow()
     {
         if (warningSystem == null)
         {
@@ -179,18 +179,18 @@ public class ParentWarningScheduler : MonoBehaviour
         if (showDebugLogs)
             Debug.Log($"[ParentWarningScheduler] TriggerSoon requested: delay={delaySeconds:F1}s");
 
-        if (schedulerCoroutine != null)
+        if (_schedulerCoroutine != null)
         {
-            StopCoroutine(schedulerCoroutine);
-            schedulerCoroutine = null;
+            StopCoroutine(_schedulerCoroutine);
+            _schedulerCoroutine = null;
         }
 
-        if (triggerSoonCoroutine != null)
+        if (_triggerSoonCoroutine != null)
         {
-            StopCoroutine(triggerSoonCoroutine);
+            StopCoroutine(_triggerSoonCoroutine);
         }
 
-        triggerSoonCoroutine = StartCoroutine(TriggerSoonCoroutine(delaySeconds));
+        _triggerSoonCoroutine = StartCoroutine(TriggerSoonCoroutine(delaySeconds));
     }
 
     private IEnumerator TriggerSoonCoroutine(float delay)
@@ -210,7 +210,7 @@ public class ParentWarningScheduler : MonoBehaviour
             yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
         }
 
-        triggerSoonCoroutine = null;
+        _triggerSoonCoroutine = null;
         StartScheduler();
     }
 
@@ -286,7 +286,7 @@ public class ParentWarningScheduler : MonoBehaviour
         }
     }
 
-    void OnDestroy()
+    private void OnDestroy()
     {
         StopScheduler();
     }

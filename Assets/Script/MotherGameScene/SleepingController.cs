@@ -23,43 +23,37 @@ public class SleepingController : MonoBehaviour
     [SerializeField] private float awakeHeartbeatInterval = 1.0f;
 
     [Header("デバッグ")]
-    [SerializeField] private bool showDebugLogs = false;
+    [SerializeField] private bool showDebugLogs;
     [Tooltip("trueの場合、枕センサーを無視し、Space／GamepadのみでisSleepingを制御します。デバッグ時にセンサーが不安定な場合に便利です。")]
-    [SerializeField] private bool ignoreSensorForDebug = false;
+    [SerializeField] private bool ignoreSensorForDebug;
 
     // プレイヤーの睡眠状態
-    private bool isSleeping = false;
-    private bool wasSleeping = false;
+    private bool _isSleeping;
+    private bool _wasSleeping;
 
     // 安全用ハートビートタイマー
-    private float _awakeHeartbeatTimer = 0f;
+    private float _awakeHeartbeatTimer;
 
     // 毎フレーム大量に出力せず、Spaceの有効化を記録するための前回デバッグ入力状態
-    private bool _wasDebugInputActive = false;
+    private bool _wasDebugInputActive;
 
     // 診断用トラッカー：変化時のみ出力するため、最後に記録した値を保持する
-    private bool _diagLastDebugInput = false;
-    private bool _diagLastSensorSleeping = false;
-    private bool _diagLastIsSleeping = false;
-    private bool _diagLastWasSleeping = false;
+    private bool _diagLastDebugInput;
+    private bool _diagLastSensorSleeping;
+    private bool _diagLastIsSleeping;
+    private bool _diagLastWasSleeping;
 
     /// <summary>
     /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（ParentDetectionV2とCaughtReactionControllerが使用）
     /// </summary>
-    public bool IsSleeping => isSleeping;
+    public bool IsSleeping => _isSleeping;
 
-    void Start()
+    private void Start()
     {
         if (udpSender == null)
             udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
-        isSleeping = false;
-        wasSleeping = false;
-        _awakeHeartbeatTimer = 0f;
-        _wasDebugInputActive = false;
-        _diagLastDebugInput = false;
-        _diagLastSensorSleeping = false;
-        _diagLastIsSleeping = false;
-        _diagLastWasSleeping = false;
+        _isSleeping = false;
+        _wasSleeping = false;
 
         // 起動時にudpSenderの状態を記録する。nullのままならGetUdpSender()が実行時に再試行する。
         if (udpSender != null)
@@ -80,25 +74,25 @@ public class SleepingController : MonoBehaviour
         }
     }
 
-    void Update()
+    private void Update()
     {
         // 最優先のSpaceキーを考慮して睡眠状態を判定する
         DetermineSleepingState();
 
         // --- 診断：isSleepingとwasSleepingが変化したときだけ記録する ---
-        if (isSleeping != _diagLastIsSleeping)
+        if (_isSleeping != _diagLastIsSleeping)
         {
-            Debug.Log($"[SC-DIAG] isSleeping changed: {_diagLastIsSleeping} -> {isSleeping}  |  wasSleeping={wasSleeping}  |  udpSender={(udpSender != null ? udpSender.gameObject.name : "NULL")}");
-            _diagLastIsSleeping = isSleeping;
+            Debug.Log($"[SC-DIAG] isSleeping changed: {_diagLastIsSleeping} -> {_isSleeping}  |  wasSleeping={_wasSleeping}  |  udpSender={(udpSender != null ? udpSender.gameObject.name : "NULL")}");
+            _diagLastIsSleeping = _isSleeping;
         }
-        if (wasSleeping != _diagLastWasSleeping)
+        if (_wasSleeping != _diagLastWasSleeping)
         {
-            Debug.Log($"[SC-DIAG] wasSleeping changed: {_diagLastWasSleeping} -> {wasSleeping}");
-            _diagLastWasSleeping = wasSleeping;
+            Debug.Log($"[SC-DIAG] wasSleeping changed: {_diagLastWasSleeping} -> {_wasSleeping}");
+            _diagLastWasSleeping = _wasSleeping;
         }
 
         // --- エッジ検出：状態遷移 ---
-        if (isSleeping && !wasSleeping)
+        if (_isSleeping && !_wasSleeping)
         {
             // 起床 -> 睡眠の遷移
             Debug.Log("[SleepingController] State changed: AWAKE -> SLEEPING. Sending SLEEP_LOCK.");
@@ -114,7 +108,7 @@ public class SleepingController : MonoBehaviour
             }
             _awakeHeartbeatTimer = 0f;
         }
-        else if (!isSleeping && wasSleeping)
+        else if (!_isSleeping && _wasSleeping)
         {
             // 睡眠 -> 起床の遷移
             Debug.Log("[SleepingController] State changed: SLEEPING -> AWAKE. Sending SLEEP_UNLOCK.");
@@ -132,7 +126,7 @@ public class SleepingController : MonoBehaviour
         }
 
         // --- 安全用ハートビート：起きている間、SLEEP_UNLOCKを定期的に再送する ---
-        if (!isSleeping)
+        if (!_isSleeping)
         {
             ParentUdpSender sender = GetUdpSender();
             bool isConnected = sender != null && sender.currentState == ParentUdpSender.ConnectionState.Connected;
@@ -155,11 +149,11 @@ public class SleepingController : MonoBehaviour
             }
         }
 
-        wasSleeping = isSleeping;
+        _wasSleeping = _isSleeping;
 
         if (showDebugLogs)
         {
-            Debug.Log($"SleepingController: isSleeping={isSleeping}");
+            Debug.Log($"SleepingController: isSleeping={_isSleeping}");
         }
     }
 
@@ -204,9 +198,9 @@ public class SleepingController : MonoBehaviour
 
         // 最終的な睡眠状態
         if (ignoreSensorForDebug)
-            isSleeping = debugInput;              // Space/Gamepadのみ — センサーは影響しない
+            _isSleeping = debugInput;              // Space/Gamepadのみ — センサーは影響しない
         else
-            isSleeping = debugInput || sensorSleeping; // 通常：どちらの入力元でも睡眠状態になる
+            _isSleeping = debugInput || sensorSleeping; // 通常：どちらの入力元でも睡眠状態になる
     }
 
     /// <summary>
@@ -268,7 +262,7 @@ public class SleepingController : MonoBehaviour
     /// </summary>
     public void ForceSleep(bool shouldSleep)
     {
-        isSleeping = shouldSleep;
+        _isSleeping = shouldSleep;
 
         if (showDebugLogs)
             Debug.Log($"SleepingController: Force sleep set to: {shouldSleep} (will be overridden by Space key if pressed)");
