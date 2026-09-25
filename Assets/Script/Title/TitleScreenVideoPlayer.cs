@@ -37,6 +37,10 @@ public class TitleScreenVideoPlayer : MonoBehaviour
     [Tooltip("フェードの時間(秒)")]
     [SerializeField] private float fadeDuration = 0.4f;
 
+    [Header("BGM連動")]
+    [Tooltip("動画再生に合わせてフェードアウト／終了時にフェードインさせるタイトルBGM（未設定なら自動検索、無ければ何もしない）")]
+    [SerializeField] private TitleBgmFader bgmFader;
+
     private float idleTimer = 0f;
     private bool isVideoPlaying = false;
     private Vector2 lastMousePosition;
@@ -46,6 +50,11 @@ public class TitleScreenVideoPlayer : MonoBehaviour
 
     void Start()
     {
+        if (bgmFader == null)
+        {
+            bgmFader = FindFirstObjectByType<TitleBgmFader>();
+        }
+
         // VideoPlayerの初期設定
         if (videoPlayer != null)
         {
@@ -184,6 +193,12 @@ public class TitleScreenVideoPlayer : MonoBehaviour
             yield return new WaitUntil(() => videoPlayer.isPrepared);
         }
 
+        // 動画に被らないよう、画面を暗転させ始めるのに合わせてBGMもフェードアウト
+        if (bgmFader != null)
+        {
+            bgmFader.FadeOut();
+        }
+
         // フェードアウト（画面を黒に）
         yield return StartCoroutine(Fade(0f, 1f));
 
@@ -226,6 +241,12 @@ public class TitleScreenVideoPlayer : MonoBehaviour
         foreach (var ui in uiToHide)
         {
             if (ui != null) ui.SetActive(true);
+        }
+
+        // タイトルに戻るのでBGMを復帰
+        if (bgmFader != null)
+        {
+            bgmFader.FadeIn();
         }
 
         // タイマーリセット
