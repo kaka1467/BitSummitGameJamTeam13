@@ -1282,6 +1282,10 @@ MonoBehaviour:
   secondFloorLight1: {fileID: 1913263790}
   secondFloorLight2: {fileID: 888717860}
   secondFloorLight3: {fileID: 2082205560}
+  hallwayLight1: {fileID: 0}
+  hallwayLight2: {fileID: 0}
+  hallwayLight3: {fileID: 0}
+  frontLight: {fileID: 0}
   lightSwitchAudioSource: {fileID: 1856311165}
   secondFloorDelayMin: 3
   secondFloorDelayMax: 6
@@ -2453,7 +2457,7 @@ AudioSource:
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
-  m_Resource: {fileID: 8300000, guid: 2ee0cce4a4833fe4eaca086df45368be, type: 3}
+  m_Resource: {fileID: 8300000, guid: 7f7159352532a414a9a9e6a01e2d558b, type: 3}
   m_PlayOnAwake: 1
   m_Volume: 1
   m_Pitch: 1
@@ -4122,6 +4126,8 @@ MonoBehaviour:
   enableAutoDecrease: 1
   decreaseIntervalSeconds: 30
   gaugeStepAudioSource: {fileID: 875155242}
+  raisePitchPerStep: 1
+  semitonesPerStep: 1
   logOnChange: 0
 --- !u!4 &1418577573
 Transform:
@@ -6291,6 +6297,7 @@ MonoBehaviour:
   roomCheckSafetyTimeout: 30
   leaveAfterSleepDelay: 2
   leaveAfterSleepDelayMax: 6
+  roomExitSafetyTimeout: 15
   roomEntryBurstTickInterval: 0.2
   enableLoudItemFeature: 1
   forceLoudItemDuringWarning: 0
@@ -6475,16 +6482,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentApproachController
   startPoint: {fileID: 987698540}
-  stairClimbPoints:
-  - {fileID: 118555310}
-  - {fileID: 434492881}
-  stairTurnPoint: {fileID: 1892394469}
-  hallwayPoints:
-  - {fileID: 316007617}
-  - {fileID: 1356449408}
-  - {fileID: 898337157}
+  hallwayPoint1: {fileID: 0}
+  hallwayPoint2: {fileID: 0}
+  turnPoint: {fileID: 0}
+  hallwayPoint3: {fileID: 0}
   doorPoint: {fileID: 1464248146}
-  passByPoint: {fileID: 91809491}
+  roomEntryPoints: []
+  roomExitYaw: -90
+  roomStayTimeoutSeconds: 20
   moveSpeed: 15
   stopDistance: 0.05
   stairTurnRotationSpeed: 200
@@ -6498,17 +6503,22 @@ MonoBehaviour:
   volumeChangeSpeed: 1
   pauseAtDoorSeconds: 0.2
   rushInPauseAtDoorSeconds: 0.2
-  pauseBeforePassBySeconds: 0.5
-  OnApproachStarted:
+  onApproachStarted:
     m_PersistentCalls:
       m_Calls: []
-  OnReachedDoor:
+  onReachedDoor:
     m_PersistentCalls:
       m_Calls: []
-  OnStoppedAtDoor:
+  onStoppedAtDoor:
     m_PersistentCalls:
       m_Calls: []
-  OnPassedByDoor:
+  onPassedByDoor:
+    m_PersistentCalls:
+      m_Calls: []
+  onEnteredRoom:
+    m_PersistentCalls:
+      m_Calls: []
+  onExitedRoom:
     m_PersistentCalls:
       m_Calls: []
 --- !u!1 &2057672896

@@ -139,6 +139,18 @@ public class ParentUdpSender : MonoBehaviour
         SceneManager.LoadScene(gameSceneName);
     }
 
+    // タイトルBGMがあればフェードアウトし、その時間だけ待ってからゲームシーンへ遷移する
+    private IEnumerator LoadGameSceneAfterBgmFade()
+    {
+        TitleBgmFader fader = FindFirstObjectByType<TitleBgmFader>();
+        if (fader != null && fader.FadeOut(allowResume: false))
+        {
+            yield return new WaitForSecondsRealtime(fader.FadeOutSeconds);
+        }
+
+        SceneManager.LoadScene(gameSceneName);
+    }
+
     // ── Unity lifecycle ───────────────────────────────────────────────────────
     void Start()
     {
@@ -535,7 +547,7 @@ public class ParentUdpSender : MonoBehaviour
                 gameStarted = true;
                 if (showDebugLogs)
                     Debug.Log("[ParentUdpSender] Received START_GAME from child — loading game scene.");
-                SceneManager.LoadScene(gameSceneName);
+                StartCoroutine(LoadGameSceneAfterBgmFade());
             }
             return;
         }
