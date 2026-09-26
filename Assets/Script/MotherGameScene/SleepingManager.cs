@@ -1,36 +1,27 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public class SleepingManager : MonoBehaviour
 {
-    private bool isCaught = false;
-    private bool isSleeping = false;
-    private bool hasLoadedGameOver = false;
+    private bool _isCaught;
+    private bool _isSleeping;
 
     public string gameOverSceneName = "GameOver";
 
-    public bool IsCaught => isCaught;
-    public bool IsSleeping => isSleeping;
+    public bool IsCaught => _isCaught;
+    public bool IsSleeping => _isSleeping;
 
     public void SetCaughtState()
     {
-        isCaught = true;
+        _isCaught = true;
         Debug.Log("親に捕まりました");
         Debug.Log("IsCaught = True（捕獲状態）");
         // シーン遷移はGameManager.TriggerResult(GameOver)が処理する。
         // スコアを保存し、型付きUDPメッセージを送信してからロードするため。
     }
 
-    void Update()
+    private void Update()
     {
-        if (!isCaught)
-        {
-            isSleeping = Input.GetKey(KeyCode.Space);
-        }
-        else
-        {
-            isSleeping = false;
-        }
+        _isSleeping = !_isCaught && Input.GetKey(KeyCode.Space);
     }
 }
 

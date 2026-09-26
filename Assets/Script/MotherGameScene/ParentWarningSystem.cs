@@ -35,6 +35,15 @@ public class ParentWarningSystem : MonoBehaviour
     [SerializeField] private GameObject secondFloorLight1;
     [SerializeField] private GameObject secondFloorLight2;
     [SerializeField] private GameObject secondFloorLight3;
+
+    // 新部屋（Lights_Base配下）の予告灯。
+    // 旧部屋の参照（firstFloorLight / secondFloorLight1〜3）がNoneでも例外を出さないよう、
+    // 点灯・消灯はSetLightActive()経由で行う。
+    [SerializeField] private GameObject hallwayLight1;   // Lights_Hallway
+    [SerializeField] private GameObject hallwayLight2;   // Lights_Hallway 2
+    [SerializeField] private GameObject hallwayLight3;   // Lights_Hallway 3
+    [SerializeField] private GameObject frontLight;      // Lights_Front
+
     [SerializeField] private AudioSource lightSwitchAudioSource;
 
     // ── 予告遅延のスケーリング ────────────────────────────────────────────────
@@ -56,7 +65,7 @@ public class ParentWarningSystem : MonoBehaviour
     [Tooltip("ゲージが閾値を超えたときの1階の灯りと2階の灯りの間隔の最大秒数。")]
     public float highSuspicionSecondFloorDelayMax = 3f;
     [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最小秒数。")]
-    public float highSuspicionApproachDelayMin = 0f;
+    public float highSuspicionApproachDelayMin;
     [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最大秒数。")]
     public float highSuspicionApproachDelayMax = 1f;
 
@@ -67,7 +76,7 @@ public class ParentWarningSystem : MonoBehaviour
     [Tooltip("自動ルートに設定するmoveSpeedの最大値。")]
     public float approachMoveSpeedMax = 15f;
     [Tooltip("自動ルートで最大疑惑時に線形加算するmoveSpeed。")]
-    public float approachSpeedSuspicionBonus = 0f;
+    public float approachSpeedSuspicionBonus;
     [Tooltip("現在のゲージがこの閾値を超えた場合、以下の高疑惑速度範囲を使用する。")]
     public int highSuspicionSpeedGaugeThreshold = 5;
     [Tooltip("ゲージが閾値を超えたときに設定するmoveSpeedの最小値。")]
@@ -83,7 +92,7 @@ public class ParentWarningSystem : MonoBehaviour
     // ── デバッグ速度の上書き ──────────────────────────────────────────────────
     [Header("デバッグ速度上書き（N／M手動ルート）")]
     [Tooltip("trueの場合、N／M手動ルートはランダム範囲の代わりにfixedDebugApproachSpeedを使用する。")]
-    public bool useFixedDebugApproachSpeed = false;
+    public bool useFixedDebugApproachSpeed;
     [Tooltip("useFixedDebugApproachSpeedがtrueのときにN／M手動ルートで使う固定moveSpeed。")]
     public float fixedDebugApproachSpeed = 4f;
 
@@ -109,7 +118,7 @@ public class ParentWarningSystem : MonoBehaviour
     // ── 状態 ──────────────────────────────────────────────────────────────────
     [Header("状態")]
     [Tooltip("警告／接近シーケンス中はtrue。")]
-    public bool isWarningActive = false;
+    public bool isWarningActive;
 
     // ── 現在のルート状態 ──────────────────────────────────────────────────────
     /// <summary>現在の実行で選択されたルート。移動開始前に設定され、シーケンス終了時に解除される。</summary>
@@ -117,9 +126,9 @@ public class ParentWarningSystem : MonoBehaviour
     public RouteState ActiveRoute { get; private set; } = RouteState.None;
 
     // ── 非公開 ───────────────────────────────────────────────────────────────
-    private bool      _eventsSubscribed    = false;
-    private Coroutine _foreshadowCoroutine = null;
-    private Coroutine _passByThenDoorSoundCoroutine = null;
+    private bool      _eventsSubscribed;
+    private Coroutine _foreshadowCoroutine;
+    private Coroutine _passByThenDoorSoundCoroutine;
 
     private void Start()
     {
@@ -249,9 +258,7 @@ public class ParentWarningSystem : MonoBehaviour
             approachController.IsRushIn = true;
 
         // 2階の灯りのみ — 突入時は1階の灯りを省略する。
-        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
-        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
-        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
 
         if (approachController != null)
@@ -303,7 +310,7 @@ public class ParentWarningSystem : MonoBehaviour
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
 
-        if (firstFloorLight != null) firstFloorLight.SetActive(true);
+        TurnOnFirstStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] FIRST FLOOR LIGHT ON");
 
@@ -320,9 +327,7 @@ public class ParentWarningSystem : MonoBehaviour
         }
         yield return new WaitForSeconds(secondFloorDelay);
 
-        if (secondFloorLight1 != null) secondFloorLight1.SetActive(true);
-        if (secondFloorLight2 != null) secondFloorLight2.SetActive(true);
-        if (secondFloorLight3 != null) secondFloorLight3.SetActive(true);
+        TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] SECOND FLOOR LIGHTS ON");
 
@@ -439,22 +444,51 @@ public class ParentWarningSystem : MonoBehaviour
         return Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge);
     }
 
+    private void SetLightActive(GameObject lightObject, bool active)
+    {
+        if (lightObject != null) lightObject.SetActive(active);
+    }
+
+    // 予告 第1段階：新部屋の Lights_Hallway / Lights_Hallway 2 を点灯する。
+    // 旧部屋の1階灯り（firstFloorLight）がNoneの場合は何もしない。
+    private void TurnOnFirstStageLights()
+    {
+        SetLightActive(firstFloorLight, true);
+        SetLightActive(hallwayLight1, true);
+        SetLightActive(hallwayLight2, true);
+    }
+
+    // 予告 第2段階／突入の最終段階：新部屋の Lights_Hallway 3 / Lights_Front を点灯する。
+    // 第1段階の灯りは消さない（積み上げ演出）。旧部屋の2階灯りがNoneの場合は何もしない。
+    private void TurnOnSecondStageLights()
+    {
+        SetLightActive(secondFloorLight1, true);
+        SetLightActive(secondFloorLight2, true);
+        SetLightActive(secondFloorLight3, true);
+        SetLightActive(hallwayLight3, true);
+        SetLightActive(frontLight, true);
+    }
+
     private void TurnOffAllLights()
     {
-        if (firstFloorLight != null) firstFloorLight.SetActive(false);
-        if (secondFloorLight1 != null) secondFloorLight1.SetActive(false);
-        if (secondFloorLight2 != null) secondFloorLight2.SetActive(false);
-        if (secondFloorLight3 != null) secondFloorLight3.SetActive(false);
+        SetLightActive(firstFloorLight, false);
+        SetLightActive(secondFloorLight1, false);
+        SetLightActive(secondFloorLight2, false);
+        SetLightActive(secondFloorLight3, false);
+        SetLightActive(hallwayLight1, false);
+        SetLightActive(hallwayLight2, false);
+        SetLightActive(hallwayLight3, false);
+        SetLightActive(frontLight, false);
     }
 
     private void SubscribeApproachEvents()
     {
         if (_eventsSubscribed || approachController == null) return;
 
-        approachController.OnApproachStarted.AddListener(HandleApproachStarted);
-        approachController.OnReachedDoor.AddListener(HandleReachedDoor);
-        approachController.OnStoppedAtDoor.AddListener(HandleStoppedAtDoor);
-        approachController.OnPassedByDoor.AddListener(HandlePassedByDoor);
+        approachController.onApproachStarted.AddListener(HandleApproachStarted);
+        approachController.onReachedDoor.AddListener(HandleReachedDoor);
+        approachController.onStoppedAtDoor.AddListener(HandleStoppedAtDoor);
+        approachController.onPassedByDoor.AddListener(HandlePassedByDoor);
 
         _eventsSubscribed = true;
         Debug.Log("[ParentWarningSystem] Subscribed to ParentApproachController events");
@@ -464,10 +498,10 @@ public class ParentWarningSystem : MonoBehaviour
     {
         if (!_eventsSubscribed || approachController == null) return;
 
-        approachController.OnApproachStarted.RemoveListener(HandleApproachStarted);
-        approachController.OnReachedDoor.RemoveListener(HandleReachedDoor);
-        approachController.OnStoppedAtDoor.RemoveListener(HandleStoppedAtDoor);
-        approachController.OnPassedByDoor.RemoveListener(HandlePassedByDoor);
+        approachController.onApproachStarted.RemoveListener(HandleApproachStarted);
+        approachController.onReachedDoor.RemoveListener(HandleReachedDoor);
+        approachController.onStoppedAtDoor.RemoveListener(HandleStoppedAtDoor);
+        approachController.onPassedByDoor.RemoveListener(HandlePassedByDoor);
 
         _eventsSubscribed = false;
     }

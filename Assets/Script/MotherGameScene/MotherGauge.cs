@@ -20,7 +20,7 @@ public class MotherGauge : MonoBehaviour
     public int maxGauge = 10;
 
     // 現在の疑惑段階（0～maxGauge）
-    public int currentGauge = 0;
+    public int currentGauge;
 
     [Header("接近ゲージフレーム（表示）")]
     [Tooltip("接近／疑惑の進行を表示するフレームImageを左から順に設定します。")]
@@ -47,12 +47,26 @@ public class MotherGauge : MonoBehaviour
     [Header("オーディオ")]
     [Tooltip("ゲージが1段階以上増加するたびにワンショット音を再生するAudioSource。インスペクターで設定します。")]
     [SerializeField] private AudioSource gaugeStepAudioSource;
+    [Tooltip("ゲージ段階が上がるほど、SEの音程を上げる。")]
+    [SerializeField] private bool raisePitchPerStep = true;
+    [Tooltip("1段階ごとに上げる半音の数。1で半音、2で全音。")]
+    [SerializeField, Min(0f)] private float semitonesPerStep = 1f;
 
     [Header("デバッグ")]
     [Tooltip("接近／疑惑ゲージの変化をコンソールに記録する")]
-    public bool logOnChange = false;
+    public bool logOnChange;
 
-    private float _decreaseTimer = 0f;
+    private float _decreaseTimer;
+    private float _baseSePitch = 1f;
+
+    private void Awake()
+    {
+        // インスペクターで設定された元のピッチを基準にする
+        if (gaugeStepAudioSource != null)
+        {
+            _baseSePitch = gaugeStepAudioSource.pitch;
+        }
+    }
 
     private void Start()
     {
@@ -147,7 +161,16 @@ public class MotherGauge : MonoBehaviour
         if (currentGauge > previous)
         {
             if (gaugeStepAudioSource != null)
+            {
+                if (raisePitchPerStep)
+                {
+                    // 1段階目＝元のピッチ。以降、段階ごとに semitonesPerStep 半音ずつ上げる
+                    float semitones = Mathf.Max(0, currentGauge - 1) * semitonesPerStep;
+                    gaugeStepAudioSource.pitch = Mathf.Clamp(_baseSePitch * Mathf.Pow(2f, semitones / 12f), 0.1f, 3f);
+                }
+
                 gaugeStepAudioSource.Play();
+            }
         }
 
         if (logOnChange && previous != currentGauge)

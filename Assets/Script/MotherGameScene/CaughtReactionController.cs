@@ -30,16 +30,16 @@ public class CaughtReactionController : MonoBehaviour
 
     [Header("フェード設定")]
     [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
-    [SerializeField, Min(0f)] private float sceneChangeDelay = 0f;
+    [SerializeField, Min(0f)] private float sceneChangeDelay;
 
     [Header("デバッグ")]
-    [SerializeField] private bool showDebugLogs = false;
+    [SerializeField] private bool showDebugLogs;
 
     // ゲームオーバー状態フラグ
-    private bool hasTriggeredGameOver = false;
-    private Coroutine gameOverRoutine = null;
+    private bool _hasTriggeredGameOver;
+    private Coroutine _gameOverRoutine;
 
-    void Start()
+    private void Start()
     {
         if (parentDetection == null)
             parentDetection = Object.FindFirstObjectByType<ParentDetectionV2>();
@@ -51,7 +51,7 @@ public class CaughtReactionController : MonoBehaviour
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
 
-        hasTriggeredGameOver = false;
+        _hasTriggeredGameOver = false;
 
         if (fadeCanvasGroup != null)
         {
@@ -73,9 +73,9 @@ public class CaughtReactionController : MonoBehaviour
             udpSender = ParentUdpSender.instance;
     }
 
-    void Update()
+    private void Update()
     {
-        if (hasTriggeredGameOver) return;
+        if (_hasTriggeredGameOver) return;
         if (motherGauge == null) return;
 
         // ゲームオーバー監視：PDV2は毎フレームゲージを書き込み、最大値到達時にOnPlayerCaughtを呼ぶ。
@@ -121,14 +121,21 @@ public class CaughtReactionController : MonoBehaviour
     /// </summary>
     private void TriggerGameOver()
     {
-        if (hasTriggeredGameOver) return;
+        if (_hasTriggeredGameOver) return;
 
-        hasTriggeredGameOver = true;
+        _hasTriggeredGameOver = true;
 
         // ParentDetectionに永続的なゲームオーバーを通知し、進行を停止させる
         if (parentDetection != null)
         {
-            try { parentDetection.NotifyGameOver(); } catch { }
+            try
+            {
+                parentDetection.NotifyGameOver();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception, this);
+            }
         }
 
         if (showDebugLogs)
@@ -150,8 +157,8 @@ public class CaughtReactionController : MonoBehaviour
         DisableGameLogic();
 
         // ゲームオーバー処理（フェードとシーンロード）を開始
-        if (gameOverRoutine != null) StopCoroutine(gameOverRoutine);
-        gameOverRoutine = StartCoroutine(GameOverSequence());
+        if (_gameOverRoutine != null) StopCoroutine(_gameOverRoutine);
+        _gameOverRoutine = StartCoroutine(GameOverSequence());
     }
 
     private void DisableGameLogic()
@@ -194,7 +201,7 @@ public class CaughtReactionController : MonoBehaviour
         {
             Debug.LogError("[CaughtReactionController] gameOverSceneNameが空です。インスペクターで設定してください。");
         }
-        gameOverRoutine = null;
+        _gameOverRoutine = null;
     }
 
     private IEnumerator FadeOutRoutine()
@@ -226,7 +233,7 @@ public class CaughtReactionController : MonoBehaviour
 
     public void ForceGameOver()
     {
-        if (!hasTriggeredGameOver) TriggerGameOver();
+        if (!_hasTriggeredGameOver) TriggerGameOver();
     }
 
     /// <summary>
