@@ -71,6 +71,12 @@ public class ChildUdpReceiver : MonoBehaviour
     [Tooltip("Auto-found at Start if not assigned. Used for SLEEP_LOCK / SLEEP_UNLOCK.")]
     public PlayerMove playerMove;
 
+    [Header("Sleep Lock Image")]
+    [Tooltip("親機が睡眠中のとき、子機側に表示する画像UI。GameObjectをアサインしてください。")]
+    [SerializeField] private GameObject sleepLockImageObject;
+    [Tooltip("未設定の場合に自動検索するGameObject名。")]
+    [SerializeField] private string sleepLockImageObjectName = "SleepLockImage";
+
     [Header("Debug")]
     [Tooltip("通信ログなどの詳細出力を有効にする")]
     [SerializeField] private bool showDebugLogs = true;
@@ -320,10 +326,13 @@ public class ChildUdpReceiver : MonoBehaviour
         }
         else if (scene.name == gameSceneName)
         {
-            isSleepInputLocked = false;
-            PlayerInputLock.SetLocked(false);
+            // シーン遷移時にSLEEP_LOCK状態を勝手に解除しない。
+            // 親機がすでに寝ている場合は、子機側の入力停止と画像表示を維持する。
+            PlayerInputLock.SetLocked(isSleepInputLocked);
             if (playerMove != null)
-                playerMove.SetInputEnabled(true);
+                playerMove.SetInputEnabled(!isSleepInputLocked);
+
+            StartCoroutine(RefreshSleepLockImageNextFrame());
         }
     }
 
@@ -442,6 +451,7 @@ public class ChildUdpReceiver : MonoBehaviour
         caughtHandled = false;
         isSleepInputLocked = false;
         PlayerInputLock.SetLocked(false);
+        SetSleepLockImageVisible(false);
 
         if (discoveryCoroutine != null)
         {
@@ -475,6 +485,15 @@ public class ChildUdpReceiver : MonoBehaviour
             Debug.Log($"[ChildUdpReceiver] sleepingManager found: '{sleepingManager.gameObject.name}'.");
         else
             Debug.Log("[ChildUdpReceiver] sleepingManager not found in current scene (OK on game/loading scenes).");
+
+        // シーンごとにUIオブジェクトが作り直されるため、毎回取り直す。
+        sleepLockImageObject = FindGameObject(null, sleepLockImageObjectName,
+            "SleepLockImage", "SleepLockUI", "SleepImage", "SleepLockPanel");
+
+        if (sleepLockImageObject != null && showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] Sleep lock image found: '{sleepLockImageObject.name}' | active={sleepLockImageObject.activeSelf}");
+
+        SetSleepLockImageVisible(isSleepInputLocked);
     }
 
     private void RefreshUiReferences()
@@ -608,6 +627,9 @@ public class ChildUdpReceiver : MonoBehaviour
 
             PlayerInputLock.SetLocked(true);
 
+            // 親機が寝ている間は、子機側にも睡眠中画像を表示する。
+            SetSleepLockImageVisible(true);
+
             if (playerMove != null)
             {
                 playerMove.SetInputEnabled(false);
@@ -635,6 +657,9 @@ public class ChildUdpReceiver : MonoBehaviour
                 Debug.Log("[ChildUdpReceiver] Received SLEEP_UNLOCK — unlocking input.");
 
             PlayerInputLock.SetLocked(false);
+
+            // 親機が起きたら、子機側の睡眠中画像を非表示にする。
+            SetSleepLockImageVisible(false);
 
             if (playerMove != null)
             {
@@ -839,6 +864,42 @@ public class ChildUdpReceiver : MonoBehaviour
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 親機のSLEEP_LOCK状態に合わせて、子機側の睡眠中画像を表示／非表示にする。
+    /// </summary>
+    private void SetSleepLockImageVisible(bool visible)
+    {
+        // シーン遷移後などで参照が切れていた場合は再検索する。
+        if (sleepLockImageObject == null)
+            sleepLockImageObject = FindGameObject(null, sleepLockImageObjectName,
+                "SleepLockImage", "SleepLockUI", "SleepImage", "SleepLockPanel");
+
+        if (sleepLockImageObject != null)
+        {
+            sleepLockImageObject.SetActive(visible);
+
+            if (showDebugLogs)
+                Debug.Log($"[ChildUdpReceiver] Sleep lock image {(visible ? "shown" : "hidden")}.");
+        }
+        else if (showDebugLogs && visible)
+        {
+            Debug.LogWarning(
+                $"[ChildUdpReceiver] Sleep lock image not found. " +
+                $"Assign it in Inspector or create a GameObject named '{sleepLockImageObjectName}'.");
+        }
+    }
+
+    private IEnumerator RefreshSleepLockImageNextFrame()
+    {
+        // Canvas/UIがシーンロード直後に生成される場合に備えて1フレーム待つ。
+        yield return null;
+
+        sleepLockImageObject = FindGameObject(null, sleepLockImageObjectName,
+            "SleepLockImage", "SleepLockUI", "SleepImage", "SleepLockPanel");
+        SetSleepLockImageVisible(isSleepInputLocked);
+    }
+
     private void LoadGameScene()
     {
         if (gameSceneLoaded) return;
