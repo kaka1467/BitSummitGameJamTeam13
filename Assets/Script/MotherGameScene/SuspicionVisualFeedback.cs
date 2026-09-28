@@ -35,6 +35,10 @@ public class SuspicionVisualFeedback : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float lowMidVignetteMultiplier = 0.45f;
     [SerializeField, Range(0f, 1f)] private float lowMidMeterMultiplier = 1f;
 
+    [Header("Heartbeat Link")]
+    [Tooltip("設定すると、鼓動中は赤い点滅が心音の拍に同期する。未設定ならStart時に自動検索（無ければ従来のサイン波）。")]
+    [SerializeField] private SuspicionHeartbeat heartbeat;
+
     [Header("Red Pulse")]
     [SerializeField, Range(0f, 1f)] private float redVignetteMinAlpha = 0.12f;
     [SerializeField, Range(0f, 1f)] private float redVignetteMaxAlpha = 0.35f;
@@ -58,6 +62,11 @@ public class SuspicionVisualFeedback : MonoBehaviour
 
     private void Start()
     {
+        if (heartbeat == null)
+        {
+            heartbeat = Object.FindFirstObjectByType<SuspicionHeartbeat>();
+        }
+
         EnsureMotherGauge();
         InitializeGaugeTracking();
         UpdateVisuals();
@@ -213,9 +222,19 @@ public class SuspicionVisualFeedback : MonoBehaviour
             return;
         }
 
-        float pulse = redPulseSpeed <= 0f
-            ? 1f
-            : (Mathf.Sin(Time.time * redPulseSpeed * Mathf.PI * 2f) + 1f) * 0.5f;
+        float pulse;
+        if (heartbeat != null && heartbeat.IsBeating)
+        {
+            // 鼓動中は心音の拍に同期（拍の瞬間に最大、次の拍に向けて減衰）
+            pulse = heartbeat.BeatPulse;
+        }
+        else
+        {
+            pulse = redPulseSpeed <= 0f
+                ? 1f
+                : (Mathf.Sin(Time.time * redPulseSpeed * Mathf.PI * 2f) + 1f) * 0.5f;
+        }
+
         SetAlpha(frameRed, Mathf.Lerp(redVignetteMinAlpha, redVignetteMaxAlpha, pulse));
         SetAlpha(meterRed, Mathf.Lerp(redMeterMinAlpha, redMeterMaxAlpha, pulse));
     }
