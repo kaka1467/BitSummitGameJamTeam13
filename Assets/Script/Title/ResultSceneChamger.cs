@@ -19,6 +19,10 @@ public class ResultSceneChamger : MonoBehaviour
     public float inputIgnoreDuration = 5.0f; // 最初の入力無視時間（秒）
     public float autoChangeDelay = 30.0f; // 自動遷移までの時間（秒）
     
+    [Header("効果音")]
+    [Tooltip("タイトルへ戻る演出（フェード）が始まった瞬間に1回鳴らすAudioSource。未設定なら鳴らさない。シーンごとに設定できる。")]
+    public AudioSource returnToTitleSe;
+
     [Header("遷移先シーン名")]
     public string titleSceneName = "Mini Title"; 
 
@@ -80,6 +84,11 @@ public class ResultSceneChamger : MonoBehaviour
     {
         if (!isFading)
         {
+            if (returnToTitleSe != null)
+            {
+                returnToTitleSe.Play();
+            }
+
             StartCoroutine(FadeSequence());
         }
     }

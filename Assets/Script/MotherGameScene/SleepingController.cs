@@ -22,6 +22,10 @@ public class SleepingController : MonoBehaviour
     [Tooltip("親機が起きている間にSLEEP_UNLOCKを再送する間隔（秒）。")]
     [SerializeField] private float awakeHeartbeatInterval = 1.0f;
 
+    [Header("オーディオ")]
+    [Tooltip("起きている状態から寝たふりに切り替わった瞬間に1回鳴らすAudioSource。未設定なら鳴らさない。")]
+    [SerializeField] private AudioSource sleepStartAudioSource;
+
     [Header("デバッグ")]
     [SerializeField] private bool showDebugLogs;
     [Tooltip("trueの場合、枕センサーを無視し、Space／GamepadのみでisSleepingを制御します。デバッグ時にセンサーが不安定な場合に便利です。")]
@@ -96,6 +100,8 @@ public class SleepingController : MonoBehaviour
         {
             // 起床 -> 睡眠の遷移
             Debug.Log("[SleepingController] State changed: AWAKE -> SLEEPING. Sending SLEEP_LOCK.");
+            if (sleepStartAudioSource != null)
+                sleepStartAudioSource.Play();
             ParentUdpSender sender = GetUdpSender();
             if (sender != null)
             {
