@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 /// 責務の境界：
 ///   ParentApproachController  — 移動とルート演出
 ///   ParentWarningSystem       — シーケンス調整
-///   ParentWarningScheduler    — タイミングとN/Mデバッグキー
+///   ParentWarningScheduler    — タイミングと自動警告スケジュール（1キーの母親ドア確認起動を含む）
 ///   ParentDetectionV2（本クラス）— 親機のドア到着／通過に反応し、
 ///                               分岐、ドア状態、サイクルリセット、大きな音を処理する
 ///
@@ -19,7 +19,7 @@ using UnityEngine.InputSystem;
 ///   ContinuousRoomSuspicionCoroutine — ドアが開き、プレイヤーが睡眠中でない間の時間制AddGauge()
 /// 現在のルートの覗き見時間はpeekDurationBase + motherGauge.currentGauge。
 /// ルート分岐（本チェックか覗き見か）はwarningSystem.ActiveRouteで決まる。
-/// dummyProbabilityはActiveRouteがNoneの場合（例：Pキーのデバッグ）のみ予備として使用する。
+/// dummyProbabilityはActiveRouteがNoneの場合のフォールバック確率として使用する。
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
@@ -72,7 +72,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
     // ── 大きな音のアイテム ────────────────────────────────────────────────────
     [Header("大きな音のアイテム機能")]
-    [Tooltip("無効にすると、Lキーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")]
+    [Tooltip("無効にすると、0キーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")]
     [SerializeField] private bool enableLoudItemFeature = true;
     [Tooltip("trueの場合、大きな音のアイテムが進行中の警告を中断し、突入を強制する。")]
     [SerializeField] private bool forceLoudItemDuringWarning = false;
@@ -226,21 +226,9 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (Keyboard.current == null) return;
 
-        if (Keyboard.current.pKey.wasPressedThisFrame)
+        if (Keyboard.current.digit0Key.wasPressedThisFrame)
         {
-            Debug.Log("[PDV2] P key — forcing primary (full) check");
-            TriggerFinalEvent(primary: true);
-        }
-
-        if (Keyboard.current.oKey.wasPressedThisFrame)
-        {
-            Debug.Log("[PDV2] O key — forcing dummy (peek) check");
-            TriggerFinalEvent(primary: false);
-        }
-
-        if (Keyboard.current.lKey.wasPressedThisFrame)
-        {
-            Debug.Log("[PDV2] L key — triggering loud item");
+            Debug.Log("[PDV2] 0 key — triggering loud item (rush-in)");
             OnLoudItemTriggered();
         }
     }
@@ -320,7 +308,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     /// <summary>
-    /// 子機の大きな音のアイテムが発生したとき（またはLキーのデバッグ時）に呼び出される。
+    /// 子機の大きな音のアイテムが発生したとき（または0キーのデバッグ時）に呼び出される。
     /// 突入音を再生し、ゲージを加算してからParentWarningSystem.StartLoudItemRushInSequence()へ引き渡す。
     /// 警告シーケンスがすでに進行中の場合は完全に抑制する。
     /// </summary>
