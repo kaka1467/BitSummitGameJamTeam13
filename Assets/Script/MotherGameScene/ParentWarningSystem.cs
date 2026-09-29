@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// ParentWarningSystem：
@@ -8,8 +9,9 @@ using UnityEngine;
 ///
 /// 公開エントリーポイント：
 ///   StartWarningSequence()             — 通常の自動フロー（スケジューラーから呼び出し）
-///   StartManualPassByWarningSequence() — Nキーのデバッグ：完全な予告、PassByを強制
-///   StartManualDoorWarningSequence()   — Mキーのデバッグ：完全な予告、DoorPeekを強制
+///   StartManualPassByWarningSequence() — デバッグキーなし（自動抽選専用の公開API）
+///   StartManualDoorWarningSequence()   — 1キーのデバッグ：完全な予告、DoorPeekを強制
+///   StartManualHallwayPassByWarningSequence() — 2キーのデバッグ：完全な予告、フェイントA（ドア前を停止せず通過）を強制
 ///   TriggerInstantPassBy()             — 即時デバッグ通過、灯りと遅延なし
 ///   TriggerInstantDoor()               — 即時デバッグDoorPeek、灯りと遅延なし
 ///   StartLoudItemRushInSequence()      — 大きな音による突入：2階の灯りのみ、速度=loudItemRushInMoveSpeed
@@ -122,7 +124,7 @@ public class ParentWarningSystem : MonoBehaviour
 
     // ── 現在のルート状態 ──────────────────────────────────────────────────────
     /// <summary>現在の実行で選択されたルート。移動開始前に設定され、シーケンス終了時に解除される。</summary>
-    public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound }
+    public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound, HallwayPassBy }
     public RouteState ActiveRoute { get; private set; } = RouteState.None;
 
     // ── 非公開 ───────────────────────────────────────────────────────────────
@@ -156,6 +158,20 @@ public class ParentWarningSystem : MonoBehaviour
     private void OnDisable()
     {
         UnsubscribeApproachEvents();
+    }
+
+    private void Update()
+    {
+        // デバッグ：2キーでフェイントA（HallwayPassBy）を手動起動する。
+        // 親機デバッグキーは 1（母親ドア確認：ParentWarningScheduler）／2（本キー）／
+        // 0（RushIn：ParentDetectionV2）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
+        if (Keyboard.current == null) return;
+
+        if (Keyboard.current.digit2Key.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningSystem] 2キー押下 — フェイントA（HallwayPassBy）を手動起動");
+            StartManualHallwayPassByWarningSequence();
+        }
     }
 
     public void StartWarningSequence()
@@ -207,6 +223,29 @@ public class ParentWarningSystem : MonoBehaviour
 
         if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
         _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.Door, true));
+    }
+
+    /// <summary>
+    /// フェイントA（HallwayPassBy）の手動テスト起動：完全な予告（灯り2段階）の後に、
+    /// ドアで停止せず通り過ぎるルートを強制する。2キーからも呼び出される。
+    /// 通常抽選（ChooseRoute）ではHallwayPassByを選ばない（自動発生なし・重み0）。
+    /// hallwayPassByPointが未設定の場合は警告を1回出して中止する。
+    /// </summary>
+    public void StartManualHallwayPassByWarningSequence()
+    {
+        if (isWarningActive)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualHallwayPassByWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (!ValidateController()) return;
+
+        isWarningActive = true;
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: FEINT-A — HALLWAY PASS-BY");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.HallwayPassBy, true));
     }
 
     public void TriggerInstantPassBy()
@@ -302,10 +341,21 @@ public class ParentWarningSystem : MonoBehaviour
             approachController.ResetApproach();
     }
 
-    private enum RouteOverride { None, PassBy, Door }
+    private enum RouteOverride { None, PassBy, Door, HallwayPassBy }
 
     private IEnumerator ForeshadowAndApproachCoroutine(RouteOverride routeOverride, bool isManual = false)
     {
+        // フェイントA（HallwayPassBy）は hallwayPassByPoint の割当が前提。
+        // 未設定の場合は警告を1回出し、灯り・移動を一切始めずにサイクルを即終了する。
+        if (routeOverride == RouteOverride.HallwayPassBy &&
+            (approachController == null || approachController.hallwayPassByPoint == null))
+        {
+            Debug.LogWarning("[ParentWarningSystem] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。", this);
+            _foreshadowCoroutine = null;
+            EndWarningSequence();
+            yield break;
+        }
+
         float suspicionFraction = GetSuspicionFraction();
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
@@ -355,6 +405,10 @@ public class ParentWarningSystem : MonoBehaviour
         {
             chosenRoute = RouteState.DoorPeek;
         }
+        else if (routeOverride == RouteOverride.HallwayPassBy)
+        {
+            chosenRoute = RouteState.HallwayPassBy;
+        }
         else
         {
             chosenRoute = ChooseRoute();
@@ -373,11 +427,16 @@ public class ParentWarningSystem : MonoBehaviour
             case RouteState.PassByThenDoorSound:
                 approachController.StartApproachPassByOnly();
                 break;
+
+            case RouteState.HallwayPassBy:
+                approachController.StartApproachHallwayPassBy();
+                break;
         }
 
         _foreshadowCoroutine = null;
     }
 
+    // 自動抽選：HallwayPassBy（フェイントA）は含まれない（重み0・手動テスト専用ルート）。
     private RouteState ChooseRoute()
     {
         float suspicionFraction = GetSuspicionFraction();
