@@ -9,6 +9,9 @@ using UnityEngine.Serialization;
 ///   ドア確認（通常）：startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint → hallwayPoint3 → doorPoint（停止）
 ///             →（PDV2が入室を要求した場合のみ）roomEntryPoints[]へ入室 → doorPointへ復帰（退室）
 ///   フェイント：startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint → hallwayPoint2 → hallwayPoint1 → startPoint（帰還）
+///   フェイントA（HallwayPassBy）：startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint → hallwayPoint3
+///             → doorPoint（停止せず通過・ドア操作なし）→ hallwayPassByPoint（画面外で停止）
+///             → onPassedByDoor（既存のPDV2.OnApproachPassedBy経由でサイクル終了・怪しさなし）
 ///
 /// 部屋入室（任意）：
 ///   PDV2がOnStoppedAtDoorの処理中にRequestRoomEntry()を呼んだときのみ、ドア停止後にroomEntryPoints[]へ進む。
@@ -52,6 +55,9 @@ public class ParentApproachController : MonoBehaviour
 
     [Tooltip("ドア前の位置。到着時にこのTransform.rotationのY角へ回転する。")]
     public Transform doorPoint;
+
+    [Tooltip("フェイントA（HallwayPassBy）用の画面外到達点。doorPointを停止せず通過した後に進む。未設定の場合はHallwayPassByを開始しない。")]
+    public Transform hallwayPassByPoint;
 
     // ── 部屋内部（入室） ──────────────────────────────────────────────────────
     [Header("部屋内部（入室）")]
@@ -241,6 +247,32 @@ public class ParentApproachController : MonoBehaviour
     }
 
     /// <summary>
+    /// フェイントA（HallwayPassBy）を開始する：TurnPointからドア方向へ進み、
+    /// doorPointでは停止せずに通り過ぎてhallwayPassByPoint（画面外）へ到達する。
+    /// onReachedDoor／onStoppedAtDoorは発生させず、DoorControllerは操作しない。
+    /// 終了時は既存のonPassedByDoorを発生させる（PDV2.OnApproachPassedBy → ResetCycle → EndWarningSequence）。
+    /// hallwayPassByPointが未設定の場合は警告を1回出して開始しない。
+    /// </summary>
+    public void StartApproachHallwayPassBy()
+    {
+        if (IsApproaching)
+        {
+            Debug.Log("[ParentApproachController] すでに接近中 — StartApproachHallwayPassByを無視");
+            return;
+        }
+
+        if (hallwayPassByPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。", this);
+            return;
+        }
+
+        if (!ValidateWaypoints(requirePassBy: false)) return;
+
+        BeginApproach(passByRoute: true, hallwayPassBy: true);
+    }
+
+    /// <summary>
     /// 親機を部屋内部へ入室させる要求。OnStoppedAtDoorの処理中（＝ドア停止ルート実行中）にPDV2から呼ばれる。
     /// 受理した場合は、ドア停止後にroomEntryPoints[]へ移動し、入室完了でonEnteredRoomを発生する。
     /// 次のいずれかに該当する場合はfalseを返し、呼び出し側は従来どおりの即時処理を行う：
@@ -260,9 +292,10 @@ public class ParentApproachController : MonoBehaviour
             return false;
         }
 
-        if (roomEntryPoints == null || roomEntryPoints.Length == 0)
+        if (CountValidRoomEntryPoints() == 0)
         {
-            // 未設定時はログを出さず、従来どおりdoorPointで停止する挙動へフォールバックする。
+            // 未設定／全要素Noneの場合はログを出さず、従来どおりdoorPointで停止する挙動へフォールバックする。
+            // 有効なTransformが1個以上あるときだけ入室を受理する。
             return false;
         }
 
@@ -321,7 +354,7 @@ public class ParentApproachController : MonoBehaviour
     //  内部開始ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void BeginApproach(bool passByRoute)
+    private void BeginApproach(bool passByRoute, bool hallwayPassBy = false)
     {
         // 「このサイクルは突入（大きな音）として開始されたか」を記録する。
         // ParentWarningSystemはIsRushIn=trueを設定してから本メソッドを呼ぶため、
@@ -352,8 +385,12 @@ public class ParentApproachController : MonoBehaviour
         IsApproaching = true;
         onApproachStarted?.Invoke();
 
-        Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1} | targetVolume={farVolume}");
-        _approachCoroutine = StartCoroutine(passByRoute ? PassByRoutine() : DoorRoutine());
+        Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | hallwayPassBy={hallwayPassBy} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1} | targetVolume={farVolume}");
+
+        if (hallwayPassBy)
+            _approachCoroutine = StartCoroutine(HallwayPassByRoutine());
+        else
+            _approachCoroutine = StartCoroutine(passByRoute ? PassByRoutine() : DoorRoutine());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -420,6 +457,49 @@ public class ParentApproachController : MonoBehaviour
         // IsInHallwayPhaseはResetStateFlags()でのみ解除する — DoorRoutineと同じ動作。
 
         Debug.Log("[ParentApproachController] フェイント完了 — OnPassedByDoorを発生");
+        onPassedByDoor?.Invoke();
+    }
+
+    /// <summary>
+    /// フェイントA（HallwayPassBy）の移動ルーチン：
+    ///   startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint（旋回）
+    ///   → hallwayPoint3 → doorPoint（停止せず通過・ドア操作なし）
+    ///   → hallwayPassByPoint（画面外で停止）
+    /// onReachedDoor／onStoppedAtDoorは一切発生させないため、ParentDetectionV2の
+    /// ドア分岐（primary=固定でドア全開になる経路）には到達しない。
+    /// 到達後に既存のonPassedByDoorを発生させ、
+    /// PDV2.OnApproachPassedBy → ResetCycle → EndWarningSequence → ResetApproach（StartPointへ即時復帰）
+    /// の既存フローで怪しさ・捕獲なしのままサイクルを終える。
+    /// </summary>
+    private IEnumerator HallwayPassByRoutine()
+    {
+        Debug.Log("[ParentApproachController] HallwayPassByRoutine（フェイントA：ドア前を停止せず通り過ぎる）：開始");
+
+        // 廊下フェーズ：既存のMoveToTurnPointを再利用（hallwayPoint1 → hallwayPoint2 → turnPoint旋回）。
+        yield return MoveToTurnPoint();
+
+        // ドア方向へ進む。hallwayPoint3は未設定なら既存仕様どおりスキップされる。
+        // ドアに近づくため、既存DoorRoutineと同じくドア前音量へ引き上げる（音量機構自体は変更しない）。
+        _targetAudioVolume = nearDoorVolume;
+
+        yield return MoveToPoint(hallwayPoint3);
+
+        // doorPointは停止せず通過する。ドアは操作せず、onReachedDoor／onStoppedAtDoorも発生させない。
+        if (doorPoint != null)
+        {
+            Debug.Log("[ParentApproachController]   doorPointを通過（停止なし・ドア操作なし）");
+            yield return MoveToPoint(doorPoint);
+        }
+
+        // 画面外の到達点まで進み、到達したら停止する。
+        yield return MoveToPoint(hallwayPassByPoint);
+
+        StopMovementAudio();
+        PassedByDoor  = true;
+        IsApproaching = false;
+        // IsInHallwayPhaseは既存DoorRoutine／PassByRoutineと同じくResetStateFlags()でのみ解除する。
+
+        Debug.Log("[ParentApproachController] フェイントA完了 — 画面外で停止しOnPassedByDoorを発生");
         onPassedByDoor?.Invoke();
     }
 
@@ -721,6 +801,25 @@ public class ParentApproachController : MonoBehaviour
             Gizmos.DrawLine(hallwayPoint2.position, hallwayPoint1.position);
         if (hallwayPoint1 != null && startPoint != null)
             Gizmos.DrawLine(hallwayPoint1.position, startPoint.position);
+
+        // フェイントA（HallwayPassBy）— シアン（TurnPoint → H3 → doorPoint通過 → hallwayPassByPoint）
+        Gizmos.color = Color.cyan;
+        if (hallwayPassByPoint != null)
+        {
+            Gizmos.DrawSphere(hallwayPassByPoint.position, 0.09f);
+            Transform passPrev = (turnPoint != null) ? turnPoint : ((hallwayPoint2 != null) ? hallwayPoint2 : startPoint);
+            if (hallwayPoint3 != null)
+            {
+                Gizmos.DrawLine(passPrev.position, hallwayPoint3.position);
+                passPrev = hallwayPoint3;
+            }
+            if (doorPoint != null)
+            {
+                Gizmos.DrawLine(passPrev.position, doorPoint.position);
+                passPrev = doorPoint;
+            }
+            Gizmos.DrawLine(passPrev.position, hallwayPassByPoint.position);
+        }
 
         // roomEntryPoints — 橙（doorPointからの入室ルート）
         if (roomEntryPoints != null && doorPoint != null)
