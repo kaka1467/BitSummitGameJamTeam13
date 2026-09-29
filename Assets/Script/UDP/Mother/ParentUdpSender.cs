@@ -49,7 +49,13 @@ public class ParentUdpSender : MonoBehaviour
     public Button             connectButton;
     public TextMeshProUGUI    connectButtonLabel;
     public GameObject         startButtonObject;
+
+    [Header("Solo Start（子機接続なしで開始）")]
+    [Tooltip("子機の接続・START_GAME受信を待たずに、親機だけでゲームを開始するボタン。未設定でも動作するが、割り当てると押した瞬間に自動で非表示になる。")]
+    public GameObject         soloStartButtonObject;
     public string             gameSceneName    = "GameScene";
+    [Tooltip("Solo Start（子機接続なし）の遷移先シーン。MotherLoadは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
+    public string             soloGameSceneName = "GameScene";
     public string             titleSceneName   = "Mini Title";
     public string             gameOverSceneName = "GameOverResult";
     public string             timeUpSceneName   = "TimeUpResult";
@@ -131,24 +137,79 @@ public class ParentUdpSender : MonoBehaviour
     public void OnCancelButtonClicked()   { currentState = ConnectionState.Disconnected; }
     public void OnStartButtonClicked()    { StartCoroutine(StartGameRoutine()); }
 
+    /// <summary>
+    /// 子機の接続状態に関係なく、親機だけでゲームを開始する。
+    /// Connect Button の隣などに置く専用ボタンの OnClick から呼ぶ想定。
+    /// タイトルBGMのフェードアウトなど、子機起点の開始（START_GAME受信）と同じ後処理を通る。
+    /// </summary>
+    public void OnSoloStartButtonClicked()
+    {
+        if (gameStarted)
+        {
+            return;
+        }
+        gameStarted = true;
+
+        Debug.Log("[ParentUdpSender] OnSoloStartButtonClicked — starting without waiting for child connection.");
+
+        // 子機がたまたま接続済みなら合わせて開始通知を送る（未接続時はSendState内で無視される）
+        SendState(CMD_START);
+
+        if (soloStartButtonObject != null)
+        {
+            soloStartButtonObject.SetActive(false);
+        }
+
+        // MotherLoad（子機を無期限に待つ）は経由せず、直接ゲームシーンへ遷移する
+        StartCoroutine(LoadSceneAfterBgmFade(soloGameSceneName));
+    }
+
     private IEnumerator StartGameRoutine()
     {
         SendState(CMD_START);
         Debug.Log($"[ParentUdpSender] Sent START_GAME to child at {targetIP}:{normalPort}");
         yield return new WaitForSeconds(0.1f);
-        SceneManager.LoadScene(gameSceneName);
+        yield return LoadSceneAfterBgmFade(gameSceneName);
     }
 
-    // タイトルBGMがあればフェードアウトし、その時間だけ待ってからゲームシーンへ遷移する
-    private IEnumerator LoadGameSceneAfterBgmFade()
+    // タイトルBGMのフェードアウトと画面の暗転フェードを両方走らせ、
+    // 長い方の時間だけ待ってから指定シーンへ遷移する
+    private IEnumerator LoadSceneAfterBgmFade(string sceneName)
     {
-        TitleBgmFader fader = FindFirstObjectByType<TitleBgmFader>();
-        if (fader != null && fader.FadeOut(allowResume: false))
+        TitleBgmFader bgmFader = FindFirstObjectByType<TitleBgmFader>();
+        TitleScreenFader screenFader = FindFirstObjectByType<TitleScreenFader>();
+
+        float waitSeconds = 0f;
+
+        if (bgmFader == null)
         {
-            yield return new WaitForSecondsRealtime(fader.FadeOutSeconds);
+            Debug.LogWarning("[ParentUdpSender] LoadSceneAfterBgmFade: TitleBgmFader が見つかりません（BGMはフェードせず遷移します）。");
+        }
+        else if (bgmFader.FadeOut(allowResume: false))
+        {
+            waitSeconds = Mathf.Max(waitSeconds, bgmFader.FadeOutSeconds);
+        }
+        else
+        {
+            Debug.LogWarning("[ParentUdpSender] LoadSceneAfterBgmFade: BGM FadeOut() が false（BGM未再生の可能性）。");
         }
 
-        SceneManager.LoadScene(gameSceneName);
+        if (screenFader == null)
+        {
+            Debug.LogWarning("[ParentUdpSender] LoadSceneAfterBgmFade: TitleScreenFader が見つかりません（画面フェードなしで遷移します）。");
+        }
+        else if (screenFader.FadeOut())
+        {
+            waitSeconds = Mathf.Max(waitSeconds, screenFader.FadeOutSeconds);
+        }
+
+        if (waitSeconds > 0f)
+        {
+            Debug.Log($"[ParentUdpSender] LoadSceneAfterBgmFade: {waitSeconds}秒待ってから '{sceneName}' へ遷移します。");
+            yield return new WaitForSecondsRealtime(waitSeconds);
+        }
+
+        SceneManager.LoadScene(sceneName);
     }
 
     // ── Unity lifecycle ───────────────────────────────────────────────────────
@@ -304,7 +365,7 @@ public class ParentUdpSender : MonoBehaviour
         }
 
         // Reset result guard for new game session
-        if (scene.name == gameSceneName)
+        if (scene.name == gameSceneName || scene.name == soloGameSceneName)
         {
             resultProcessed = false;
             _shouldTriggerLoudItem = false;
@@ -547,7 +608,7 @@ public class ParentUdpSender : MonoBehaviour
                 gameStarted = true;
                 if (showDebugLogs)
                     Debug.Log("[ParentUdpSender] Received START_GAME from child — loading game scene.");
-                StartCoroutine(LoadGameSceneAfterBgmFade());
+                StartCoroutine(LoadSceneAfterBgmFade(gameSceneName));
             }
             return;
         }
