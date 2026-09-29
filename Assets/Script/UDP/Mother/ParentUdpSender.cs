@@ -240,26 +240,10 @@ public class ParentUdpSender : MonoBehaviour
         // UI
         UpdateUI();
 
-        // Debug / hardware input: I key sends CAUGHT (Space and Gamepad A reserved for SleepingController)
-        if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
-            NotifyGameOverFromParentCatch();
-
-        // Debug keys: Y = SLEEP_LOCK, U = SLEEP_UNLOCK
-        // (O/P/L are reserved by ParentDetectionV2)
-        var keyboard = Keyboard.current;
-        if (keyboard != null)
-        {
-            if (keyboard.yKey.wasPressedThisFrame)
-            {
-                Debug.Log("[ParentUdpSender] Debug key Y pressed — sending SLEEP_LOCK.");
-                SendStateSLEEP_LOCK();
-            }
-            if (keyboard.uKey.wasPressedThisFrame)
-            {
-                Debug.Log("[ParentUdpSender] Debug key U pressed — sending SLEEP_UNLOCK.");
-                SendStateSLEEP_UNLOCK();
-            }
-        }
+        // 親機デバッグキー（I／Y／U）は親機デバッグキー整理により削除した。
+        // NotifyGameOverFromParentCatch / SendStateSLEEP_LOCK / SendStateSLEEP_UNLOCK の
+        // 各メソッドは本編（CaughtReactionController／SleepingController）から引き続き
+        // 呼び出されるため保持している。UDP通信処理には変更を加えていない。
     }
 
     void OnDestroy()
