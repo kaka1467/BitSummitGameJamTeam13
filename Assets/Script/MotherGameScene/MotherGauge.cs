@@ -9,7 +9,7 @@ using UnityEngine.UI;
 ///   疑惑値（0～maxGauge）は警告サイクルをまたいで保持される。
 ///   増加：ParentDetectionV2からのAddGauge()呼び出し（大きな音、チェックイベント）。
 ///   減少：HandleAutoDecrease() — decreaseIntervalSecondsごとに1段階（本番動作）。
-///   矢印キー入力はエディターデバッグ専用。
+///   I／Oキー入力はエディターデバッグ専用。
 /// </summary>
 public class MotherGauge : MonoBehaviour
 {
@@ -35,7 +35,7 @@ public class MotherGauge : MonoBehaviour
     public Sprite frameOnSprite;
 
     [Header("入力設定（エディターデバッグ専用）")]
-    [Tooltip("デバッグ専用。エディターで矢印キーを1回押したときの変化量。HandleInputを削除した本番環境では効果なし。")]
+    [Tooltip("デバッグ専用。現在のキー入力（I／O）では未使用（旧矢印キー処理の名残）。値はシーンで保持するため削除はしていない。")]
     public int gaugeStep = 1;
 
     [Header("自動減少設定")]
@@ -110,15 +110,15 @@ public class MotherGauge : MonoBehaviour
 
     private void HandleInput()
     {
-        if (Keyboard.current != null && Keyboard.current.rightArrowKey.isPressed)
+        if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
         {
-            Debug.Log($"[MotherGauge-Input] 右矢印キーを押下 | gaugeStep={gaugeStep}を加算 | currentGauge BEFORE={currentGauge}");
-            AddGauge(gaugeStep);
+            Debug.Log($"[MotherGauge-Input] Iキー押下 | 疑惑をちょうど+1 | currentGauge BEFORE={currentGauge}");
+            AddGauge(1);
         }
-        if (Keyboard.current != null && Keyboard.current.leftArrowKey.isPressed)
+        if (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame)
         {
-            Debug.Log($"[MotherGauge-Input] 左矢印キーを押下 | gaugeStep={gaugeStep}を減算 | currentGauge BEFORE={currentGauge}");
-            AddGauge(-gaugeStep);
+            Debug.Log($"[MotherGauge-Input] Oキー押下 | 疑惑をちょうど-1 | currentGauge BEFORE={currentGauge}");
+            AddGauge(-1);
         }
     }
 

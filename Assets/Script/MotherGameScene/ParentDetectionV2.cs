@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 /// 責務の境界：
 ///   ParentApproachController  — 移動とルート演出
 ///   ParentWarningSystem       — シーケンス調整
-///   ParentWarningScheduler    — タイミングとN/Mデバッグキー
+///   ParentWarningScheduler    — タイミングと自動警告スケジュール（1キーの母親ドア確認起動を含む）
 ///   ParentDetectionV2（本クラス）— 親機のドア到着／通過に反応し、
 ///                               分岐、ドア状態、サイクルリセット、大きな音を処理する
 ///
@@ -19,7 +19,7 @@ using UnityEngine.InputSystem;
 ///   ContinuousRoomSuspicionCoroutine — ドアが開き、プレイヤーが睡眠中でない間の時間制AddGauge()
 /// 現在のルートの覗き見時間はpeekDurationBase + motherGauge.currentGauge。
 /// ルート分岐（本チェックか覗き見か）はwarningSystem.ActiveRouteで決まる。
-/// dummyProbabilityはActiveRouteがNoneの場合（例：Pキーのデバッグ）のみ予備として使用する。
+/// dummyProbabilityはActiveRouteがNoneの場合のフォールバック確率として使用する。
 /// </summary>
 public class ParentDetectionV2 : MonoBehaviour
 {
@@ -51,6 +51,13 @@ public class ParentDetectionV2 : MonoBehaviour
     [Tooltip("ParentWarningSystemからルート状態を取得できない場合のダミー（覗き見）チェック確率（例：Pキーのデバッグ）。")]
     [SerializeField, Range(0f, 1f)] private float dummyProbability = 0.3f;
 
+    // ── 猫フェイント（3キー専用） ─────────────────────────────────────────────
+    [Header("猫フェイント")]
+    [Tooltip("猫フェイントで猫の表示を管理するCatFeintController。未設定の場合は猫フェイントを開始しない。")]
+    [SerializeField] private CatFeintController catFeintController;
+
+    private Coroutine _catFeintCoroutine;
+
     // ── 覗き見／部屋チェックのタイミング ─────────────────────────────────────
     [Header("部屋チェックのタイミング")]
     [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")]
@@ -72,7 +79,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
     // ── 大きな音のアイテム ────────────────────────────────────────────────────
     [Header("大きな音のアイテム機能")]
-    [Tooltip("無効にすると、Lキーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")]
+    [Tooltip("無効にすると、0キーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")]
     [SerializeField] private bool enableLoudItemFeature = true;
     [Tooltip("trueの場合、大きな音のアイテムが進行中の警告を中断し、突入を強制する。")]
     [SerializeField] private bool forceLoudItemDuringWarning = false;
@@ -80,6 +87,13 @@ public class ParentDetectionV2 : MonoBehaviour
     [SerializeField] private int loudItemGaugeAmount = 3;
 
     // ── 部屋内の継続疑惑 ──────────────────────────────────────────────────────
+    // ── 庭覗き中の継続疑惑 ────────────────────────────────────────────────────
+    [Header("庭覗き中の継続疑惑")]
+    [Tooltip("庭覗き中の加算間隔=ドア側の継続疑惑間隔(continuousRoomSuspicionTickInterval)×この倍率。0以下で庭覗き中の疑惑加算を無効化する。")]
+    [SerializeField] private float gardenPeekSuspicionIntervalMultiplier = 1.5f;
+
+    private Coroutine _gardenPeekSuspicionCoroutine;
+
     [Header("部屋内の継続疑惑")]
     [Tooltip("親機の本チェックドアイベント中、疑惑を継続的に増加させる。")]
     [SerializeField] private bool enableContinuousRoomSuspicion = true;
@@ -154,9 +168,10 @@ public class ParentDetectionV2 : MonoBehaviour
 
         approachController.onEnteredRoom.AddListener(HandleEnteredRoom);
         approachController.onExitedRoom.AddListener(HandleExitedRoom);
+        approachController.onGardenPeekStarted.AddListener(HandleGardenPeekStarted);
 
         _approachEventsSubscribed = true;
-        Debug.Log("[PDV2] Subscribed to ParentApproachController room events (OnEnteredRoom/OnExitedRoom)");
+        Debug.Log("[PDV2] Subscribed to ParentApproachController events (OnEnteredRoom/OnExitedRoom/OnGardenPeekStarted)");
     }
 
     private void UnsubscribeApproachEvents()
@@ -165,6 +180,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
         approachController.onEnteredRoom.RemoveListener(HandleEnteredRoom);
         approachController.onExitedRoom.RemoveListener(HandleExitedRoom);
+        approachController.onGardenPeekStarted.RemoveListener(HandleGardenPeekStarted);
 
         _approachEventsSubscribed = false;
     }
@@ -226,21 +242,9 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (Keyboard.current == null) return;
 
-        if (Keyboard.current.pKey.wasPressedThisFrame)
+        if (Keyboard.current.digit0Key.wasPressedThisFrame)
         {
-            Debug.Log("[PDV2] P key — forcing primary (full) check");
-            TriggerFinalEvent(primary: true);
-        }
-
-        if (Keyboard.current.oKey.wasPressedThisFrame)
-        {
-            Debug.Log("[PDV2] O key — forcing dummy (peek) check");
-            TriggerFinalEvent(primary: false);
-        }
-
-        if (Keyboard.current.lKey.wasPressedThisFrame)
-        {
-            Debug.Log("[PDV2] L key — triggering loud item");
+            Debug.Log("[PDV2] 0 key — triggering loud item (rush-in)");
             OnLoudItemTriggered();
         }
     }
@@ -320,7 +324,7 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     /// <summary>
-    /// 子機の大きな音のアイテムが発生したとき（またはLキーのデバッグ時）に呼び出される。
+    /// 子機の大きな音のアイテムが発生したとき（または0キーのデバッグ時）に呼び出される。
     /// 突入音を再生し、ゲージを加算してからParentWarningSystem.StartLoudItemRushInSequence()へ引き渡す。
     /// 警告シーケンスがすでに進行中の場合は完全に抑制する。
     /// </summary>
@@ -623,6 +627,104 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  猫フェイント（3キー専用・母親は移動しない）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 猫フェイント：猫だけを母親のドア側と同じwaypoint順でStartPoint→DoorPointへ移動させ、
+    /// DoorPoint到着後にドアを隙間だけ開け（既存DoorController APIを再利用）、猫を見せて鳴き声を再生する。
+    /// 母親は移動せず、母親のドア到着イベント・本チェック・疑惑加算・捕獲判定は発生しない。
+    /// 鳴き声は猫専用のAudioSource（CatFeintController）から再生し、既存の親の音源やUDPには触れない。
+    /// 覗き時間はドア覗き（ダミー）と同じ式 peekDurationBase+currentGauge。
+    /// </summary>
+    public void TriggerCatFeintEvent()
+    {
+        if (_catFeintCoroutine != null)
+        {
+            Debug.Log("[PDV2] TriggerCatFeintEvent: 猫フェイント中のため無視");
+            return;
+        }
+
+        if (isCaught || _hasPermanentGameOver) return;
+
+        if (catFeintController == null)
+        {
+            Debug.LogWarning("[PDV2] catFeintControllerが未設定のため猫フェイントを開始しません。SceneでCatFeintControllerを割り当ててください。", this);
+            return;
+        }
+
+        int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+        float duration = Mathf.Max(0f, peekDurationBase) + gauge;
+
+        Debug.Log($"[PDV2] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door PEEK open for {duration:F1}s（母親は登場しない）");
+        _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence(duration));
+    }
+
+    /// <summary>
+    /// 猫フェイントの本体。猫の移動 → ドア隙間開け＋鳴き声 → 待機 → 猫を隠す → ドアを閉める → 猫を開始状態へ戻す。
+    /// 終了・中断（警告終了）どちらでも猫・ドア・警告状態を必ず戻す。
+    /// </summary>
+    private IEnumerator HandleCatFeintSequence(float duration)
+    {
+        // 2. 猫オブジェクトだけを母親と同じwaypoint順で移動させる（母親・母親イベントは発火しない）。
+        yield return catFeintController.MoveAlongDoorRoute(
+            () => warningSystem != null && warningSystem.isWarningActive);
+
+        // 移動中に中断された場合は猫とドアを戻して終了する（警告状態は既に解除済み）。
+        if (warningSystem == null || !warningSystem.isWarningActive)
+        {
+            Debug.Log("[PDV2] HandleCatFeintSequence: 中断検出 — 猫とドアを戻す");
+            catFeintController.HideCat();
+            catFeintController.ReturnToStartPosition();
+            if (targetDoorController != null)
+                targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+            _catFeintCoroutine = null;
+            yield break;
+        }
+
+        // 3. DoorPoint到着後：ドアを隙間開け、猫を見せて鳴き声を再生する。
+        if (targetDoorController != null)
+            targetDoorController.SetDoorState(DoorController.DoorState.Peek);
+
+        catFeintController.PlayMeow();
+
+        if (dummyDoorAudioSource != null)
+            dummyDoorAudioSource.Play();
+
+        // 4. 所定時間後に猫を隠し、ドアを閉める。中断があればループを抜けて後始末する。
+        float catVisibleDuration = Mathf.Max(0f, duration - catFeintController.HideBeforeCloseSeconds);
+        float elapsed = 0f;
+        while (elapsed < catVisibleDuration && warningSystem != null && warningSystem.isWarningActive)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        catFeintController.HideCat();
+
+        float hideBeforeClose = catFeintController.HideBeforeCloseSeconds;
+        if (hideBeforeClose > 0f)
+            yield return new WaitForSeconds(hideBeforeClose);
+
+        if (mainDoorCloseAudioSource != null)
+            mainDoorCloseAudioSource.Play();
+
+        if (targetDoorController != null)
+            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+
+        // 5. 次回用に猫を開始状態へ戻す（ホーム位置へ戻して非表示）。
+        catFeintController.ReturnToStartPosition();
+
+        _catFeintCoroutine = null;
+
+        // 既存の終了経路：ResetCycle（ドア状態・疑惑状態のリセット）→ EndWarningSequence（全灯消灯・状態リセット）。
+        ResetCycle();
+
+        if (warningSystem != null)
+            warningSystem.EndWarningSequence();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  部屋侵入時の疑惑バースト
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -699,6 +801,103 @@ public class ParentDetectionV2 : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  庭覗き中の継続疑惑（GardenPeek専用）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 庭覗きの待機開始（ParentApproachController.onGardenPeekStarted）で継続疑惑を開始する。
+    /// 加算量はドア側の継続疑惑と同じ（continuousRoomSuspicionAmount）。
+    /// 加算間隔はドア側の間隔×gardenPeekSuspicionIntervalMultiplier（初期値1.5）。
+    /// 倍率やドア側間隔が0以下の場合は異常な高速加算を避けるため、警告を出して無効化する。
+    /// isMotherLookingNowは変更しない（ドア側の本チェック・他ルートに副作用を出さない）。
+    /// </summary>
+    private void HandleGardenPeekStarted()
+    {
+        if (_gardenPeekSuspicionCoroutine != null)
+        {
+            StopCoroutine(_gardenPeekSuspicionCoroutine);
+            _gardenPeekSuspicionCoroutine = null;
+        }
+
+        if (_hasPermanentGameOver || isCaught) return;
+
+        if (gardenPeekSuspicionIntervalMultiplier <= 0f || continuousRoomSuspicionTickInterval <= 0f)
+        {
+            Debug.LogWarning($"[PDV2] 庭覗き中の継続疑惑を無効化 | gardenPeekSuspicionIntervalMultiplier={gardenPeekSuspicionIntervalMultiplier:F2} | continuousRoomSuspicionTickInterval={continuousRoomSuspicionTickInterval:F2}（0以下のため異常な高速加算を避ける）", this);
+            return;
+        }
+
+        if (motherGauge == null)
+        {
+            Debug.LogWarning("[PDV2] 庭覗き中の継続疑惑を開始しません — motherGauge is NULL", this);
+            return;
+        }
+
+        _gardenPeekSuspicionCoroutine = StartCoroutine(ContinuousGardenPeekSuspicionCoroutine());
+    }
+
+    /// <summary>
+    /// 庭覗き中の継続疑惑。ドア側ContinuousRoomSuspicionCoroutineと同じ型：
+    ///   tickごとに寝たふり中はスキップ、疑惑ゲージにcontinuousRoomSuspicionAmountを加算、
+    ///   ゲージ最大で既存のOnPlayerCaught()（捕獲処理）を呼ぶ。
+    /// 停止条件（いずれかを満たしたtickで、加算前に抜ける）：
+    ///   覗き待機終了（IsGardenPeeking=false）／警告終了・中断（isWarningActive=false）／
+    ///   ゲームオーバー・捕獲（isCaught/_hasPermanentGameOver）。
+    /// isMotherLookingNowは一切変更しない。
+    /// </summary>
+    private IEnumerator ContinuousGardenPeekSuspicionCoroutine()
+    {
+        float tickInterval = continuousRoomSuspicionTickInterval * gardenPeekSuspicionIntervalMultiplier;
+        Debug.Log($"[PDV2] 庭覗き中の継続疑惑 開始 | tickInterval={tickInterval:F2}s | amount={continuousRoomSuspicionAmount}（ドア側{continuousRoomSuspicionTickInterval:F2}s×{gardenPeekSuspicionIntervalMultiplier:F2}）");
+
+        while (true)
+        {
+            yield return new WaitForSeconds(tickInterval);
+
+            // 停止条件は加算の前に判定する（覗き終了・中断・ゲームオーバー後に加算が残らない）。
+            if (_hasPermanentGameOver || isCaught)
+            {
+                Debug.Log("[PDV2] 庭覗き中の継続疑惑 停止 — game over or caught");
+                yield break;
+            }
+            if (warningSystem == null || !warningSystem.isWarningActive)
+            {
+                Debug.Log("[PDV2] 庭覗き中の継続疑惑 停止 — warning not active");
+                yield break;
+            }
+            if (approachController == null || !approachController.IsGardenPeeking)
+            {
+                Debug.Log("[PDV2] 庭覗き中の継続疑惑 停止 — garden peek ended");
+                yield break;
+            }
+            if (motherGauge == null)
+            {
+                Debug.Log("[PDV2] 庭覗き中の継続疑惑 停止 — motherGauge is null");
+                yield break;
+            }
+
+            bool peekSleeping = (sleepingController != null) && sleepingController.IsSleeping;
+            Debug.Log($"[PDV2] 庭覗き中の継続疑惑 state | playerSleeping={peekSleeping} | gaugeBefore={motherGauge.currentGauge}");
+
+            if (peekSleeping)
+            {
+                Debug.Log("[PDV2] 庭覗き中の継続疑惑 スキップ — player is sleeping（ドア側と同じ）");
+                continue;
+            }
+
+            motherGauge.AddGauge(continuousRoomSuspicionAmount);
+            Debug.Log($"[PDV2] 庭覗き中の継続疑惑 tick +{continuousRoomSuspicionAmount} | gauge now {motherGauge.currentGauge}");
+
+            if (motherGauge.currentGauge >= motherGauge.maxGauge)
+            {
+                Debug.Log("[PDV2] 庭覗き中の継続疑惑 停止 — gauge reached max（既存の捕獲処理へ）");
+                OnPlayerCaught();
+                yield break;
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  廊下からの覗き見疑惑
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -718,6 +917,7 @@ public class ParentDetectionV2 : MonoBehaviour
         if (_dummyResetCoroutine != null)      { StopCoroutine(_dummyResetCoroutine);      _dummyResetCoroutine      = null; }
         if (_primaryResetCoroutine != null)    { StopCoroutine(_primaryResetCoroutine);    _primaryResetCoroutine    = null; }
         if (_continuousRoomCoroutine != null)  { StopCoroutine(_continuousRoomCoroutine);  _continuousRoomCoroutine  = null; Debug.Log("[PDV2] Continuous room suspicion stopped — ResetCycle"); }
+        if (_gardenPeekSuspicionCoroutine != null) { StopCoroutine(_gardenPeekSuspicionCoroutine); _gardenPeekSuspicionCoroutine = null; Debug.Log("[PDV2] 庭覗き中の継続疑惑 stopped — ResetCycle"); }
 
         isMotherLookingNow    = false;
         _activePeekDuration   = peekDurationBase;

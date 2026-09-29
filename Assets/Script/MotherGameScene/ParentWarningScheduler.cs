@@ -65,15 +65,9 @@ public class ParentWarningScheduler : MonoBehaviour
     {
         if (Keyboard.current == null) return;
 
-        if (Keyboard.current.nKey.wasPressedThisFrame)
+        if (Keyboard.current.digit1Key.wasPressedThisFrame)
         {
-            Debug.Log("[ParentWarningScheduler] Nキーを押下 - 手動通過トリガー");
-            TriggerPassByNow();
-        }
-
-        if (Keyboard.current.mKey.wasPressedThisFrame)
-        {
-            Debug.Log("[ParentWarningScheduler] Mキーを押下 - 手動ドアトリガー");
+            Debug.Log("[ParentWarningScheduler] 1キーを押下 - 母親ドア確認トリガー");
             TriggerDoorNow();
         }
     }
@@ -111,28 +105,7 @@ public class ParentWarningScheduler : MonoBehaviour
     }
 
     /// <summary>
-    /// 手動デバッグトリガー（Nキー）— 通過ルートを強制する。
-    /// </summary>
-    private void TriggerPassByNow()
-    {
-        if (warningSystem == null)
-        {
-            Debug.LogWarning("[ParentWarningScheduler] TriggerPassByNow: warningSystem is NULL - cannot trigger");
-            return;
-        }
-
-        if (warningSystem.isWarningActive)
-        {
-            Debug.Log("[ParentWarningScheduler] TriggerPassByNow: BLOCKED - warning sequence is already active");
-            return;
-        }
-
-        Debug.Log("[ParentWarningScheduler] TriggerPassByNow: MANUAL PASS-BY TRIGGER");
-        warningSystem.StartManualPassByWarningSequence();
-    }
-
-    /// <summary>
-    /// 手動デバッグトリガー（Mキー）— ドアルートを強制する。
+    /// 手動デバッグトリガー（1キー）— ドアルートを強制する。
     /// </summary>
     private void TriggerDoorNow()
     {

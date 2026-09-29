@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// DoorController：Lerpアニメーションでドアの回転を管理する。
-/// 新しい入力システムによる手動切り替え（Eキー）と、ParentDetectionV2からの外部命令に対応する。
+/// 新しい入力システムによる手動切り替え（Pキー）と、ParentDetectionV2からの外部命令に対応する。
 /// </summary>
 public class DoorController : MonoBehaviour
 {
@@ -49,11 +49,11 @@ public class DoorController : MonoBehaviour
 
     private void Update()
     {
-        // Eキーによる手動切り替え（新しい入力システム）
-        if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
+        // Pキーによる手動切り替え（新しい入力システム）。ドアのClosed↔Full切替のみで、怪しさへの加算は行わない。
+        if (Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
         {
             if (showDebugLogs)
-                Debug.Log("?? Eキーを押しました：ドアを切り替えます");
+                Debug.Log("?? Pキーを押しました：ドアを切り替えます");
 
             // ClosedとFullを切り替える
             if (_targetDoorState == DoorState.Closed)

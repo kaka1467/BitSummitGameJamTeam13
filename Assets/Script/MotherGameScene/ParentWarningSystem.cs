@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// ParentWarningSystem：
@@ -8,8 +9,12 @@ using UnityEngine;
 ///
 /// 公開エントリーポイント：
 ///   StartWarningSequence()             — 通常の自動フロー（スケジューラーから呼び出し）
-///   StartManualPassByWarningSequence() — Nキーのデバッグ：完全な予告、PassByを強制
-///   StartManualDoorWarningSequence()   — Mキーのデバッグ：完全な予告、DoorPeekを強制
+///   StartManualPassByWarningSequence() — デバッグキーなし（自動抽選専用の公開API）
+///   StartManualDoorWarningSequence()   — 1キーのデバッグ：完全な予告、DoorPeekを強制
+///   StartManualHallwayPassByWarningSequence() — 2キーのデバッグ：完全な予告、フェイントA（ドア前を停止せず通過）を強制
+///   StartManualGardenPassByWarningSequence() — 5キーのデバッグ：廊下灯1/2の予告後、庭側を通過
+///   StartManualGardenPeekWarningSequence()   — 4キーのデバッグ：廊下灯1/2と庭灯の予告後、GardenPeekPointで庭を覗き、所定時間後に帰還
+///   StartManualCatFeintWarningSequence()     — 3キーのデバッグ：ドア側の既存予告の後、猫だけが母親と同じ経路で歩きドアから覗く
 ///   TriggerInstantPassBy()             — 即時デバッグ通過、灯りと遅延なし
 ///   TriggerInstantDoor()               — 即時デバッグDoorPeek、灯りと遅延なし
 ///   StartLoudItemRushInSequence()      — 大きな音による突入：2階の灯りのみ、速度=loudItemRushInMoveSpeed
@@ -43,6 +48,7 @@ public class ParentWarningSystem : MonoBehaviour
     [SerializeField] private GameObject hallwayLight2;   // Lights_Hallway 2
     [SerializeField] private GameObject hallwayLight3;   // Lights_Hallway 3
     [SerializeField] private GameObject frontLight;      // Lights_Front
+    [SerializeField] private GameObject outsideLight;    // Lights_Outside
 
     [SerializeField] private AudioSource lightSwitchAudioSource;
 
@@ -122,7 +128,7 @@ public class ParentWarningSystem : MonoBehaviour
 
     // ── 現在のルート状態 ──────────────────────────────────────────────────────
     /// <summary>現在の実行で選択されたルート。移動開始前に設定され、シーケンス終了時に解除される。</summary>
-    public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound }
+    public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound, HallwayPassBy, GardenPassBy, GardenPeek, CatFeint }
     public RouteState ActiveRoute { get; private set; } = RouteState.None;
 
     // ── 非公開 ───────────────────────────────────────────────────────────────
@@ -156,6 +162,38 @@ public class ParentWarningSystem : MonoBehaviour
     private void OnDisable()
     {
         UnsubscribeApproachEvents();
+    }
+
+    private void Update()
+    {
+        // デバッグ：2キーでフェイントA（HallwayPassBy）を手動起動する。
+        // 親機デバッグキーは 1（母親ドア確認：ParentWarningScheduler）／2（本キー）／
+        // 0（RushIn：ParentDetectionV2）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
+        if (Keyboard.current == null) return;
+
+        if (Keyboard.current.digit2Key.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningSystem] 2キー押下 — フェイントA（HallwayPassBy）を手動起動");
+            StartManualHallwayPassByWarningSequence();
+        }
+
+        if (Keyboard.current.digit3Key.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningSystem] 3キー押下 — 猫フェイント（CatFeint）を手動起動");
+            StartManualCatFeintWarningSequence();
+        }
+
+        if (Keyboard.current.digit4Key.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningSystem] 4キー押下 — 庭側覗き（GardenPeek）を手動起動");
+            StartManualGardenPeekWarningSequence();
+        }
+
+        if (Keyboard.current.digit5Key.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningSystem] 5キー押下 — 庭側素通り（GardenPassBy）を手動起動");
+            StartManualGardenPassByWarningSequence();
+        }
     }
 
     public void StartWarningSequence()
@@ -207,6 +245,121 @@ public class ParentWarningSystem : MonoBehaviour
 
         if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
         _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.Door, true));
+    }
+
+    /// <summary>
+    /// フェイントA（HallwayPassBy）の手動テスト起動：完全な予告（灯り2段階）の後に、
+    /// ドアで停止せず通り過ぎるルートを強制する。2キーからも呼び出される。
+    /// 通常抽選（ChooseRoute）ではHallwayPassByを選ばない（自動発生なし・重み0）。
+    /// hallwayPassByPointが未設定の場合は警告を1回出して中止する。
+    /// </summary>
+    public void StartManualHallwayPassByWarningSequence()
+    {
+        if (isWarningActive)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualHallwayPassByWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (!ValidateController()) return;
+
+        isWarningActive = true;
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: FEINT-A — HALLWAY PASS-BY");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.HallwayPassBy, true));
+    }
+
+    /// <summary>
+    /// 猫フェイントの手動テスト起動：ドア側の既存予告（灯り2段階）の後、猫だけが母親と同じ経路で
+    /// DoorPointまで歩き、ドアが隙間だけ開いて猫が覗く。母親は移動せず、庭灯・庭waypointは使わない。
+    /// 疑惑加算・捕獲判定・本チェックは発生しない。自動抽選には含まれない。
+    /// </summary>
+    public void StartManualCatFeintWarningSequence()
+    {
+        if (isWarningActive)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualCatFeintWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (!ValidateController()) return;
+
+        isWarningActive = true;
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: CAT FEINT");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(CatFeintForeshadowCoroutine());
+    }
+
+    private IEnumerator CatFeintForeshadowCoroutine()
+    {
+        // ドア側と同じ既存予告：灯り1段階 → 遅延 → 灯り2段階 → 遅延。庭灯・庭waypointは使わない。
+        TurnOnFirstStageLights();
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[ParentWarningSystem] CAT FEINT: HALLWAY LIGHTS 1/2 ON");
+
+        float secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
+        yield return new WaitForSeconds(secondFloorDelay);
+
+        TurnOnSecondStageLights();
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[ParentWarningSystem] CAT FEINT: SECOND FLOOR LIGHTS ON");
+
+        float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
+        yield return new WaitForSeconds(approachDelay);
+
+        // 母親は移動させない。ドアの猫覗きイベントへ引き渡す（ドア開閉はPDV2が既存APIで行う）。
+        ActiveRoute = RouteState.CatFeint;
+        if (parentDetection != null)
+            parentDetection.TriggerCatFeintEvent();
+        else
+            Debug.LogWarning("[ParentWarningSystem] parentDetection is NULL — TriggerCatFeintEventを呼べません", this);
+
+        _foreshadowCoroutine = null;
+    }
+
+    /// <summary>
+    /// 庭側素通りの手動テスト起動：廊下灯1/2の予告後に庭側を通過する。
+    /// ドア停止イベントを発生させないため、疑惑・捕獲・ドア分岐は実行されない。
+    /// </summary>
+    public void StartManualGardenPassByWarningSequence()
+    {
+        if (isWarningActive)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualGardenPassByWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (!ValidateController()) return;
+
+        isWarningActive = true;
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: GARDEN PASS-BY");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(GardenPassByForeshadowCoroutine());
+    }
+
+    /// <summary>
+    /// 庭側覗きの手動テスト起動：廊下灯1/2と庭灯の予告後に、GardenPeekPointで停止して庭を覗く。
+    /// ドア停止イベント・ドア開閉は発生させず、覗き中の疑惑加算・捕獲判定はPDV2側で行う。
+    /// 覗き時間は gardenPeekDurationBase+GardenPeekPoint到着時のゲージ値（controller側で到着時に一度だけ決定）。
+    /// </summary>
+    public void StartManualGardenPeekWarningSequence()
+    {
+        if (isWarningActive)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualGardenPeekWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (!ValidateController()) return;
+
+        isWarningActive = true;
+        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: GARDEN PEEK");
+
+        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
+        _foreshadowCoroutine = StartCoroutine(GardenPeekForeshadowCoroutine());
     }
 
     public void TriggerInstantPassBy()
@@ -302,10 +455,88 @@ public class ParentWarningSystem : MonoBehaviour
             approachController.ResetApproach();
     }
 
-    private enum RouteOverride { None, PassBy, Door }
+    private enum RouteOverride { None, PassBy, Door, HallwayPassBy }
+
+    private IEnumerator GardenPassByForeshadowCoroutine()
+    {
+        // 灯りを点ける前に参照を検証する。未設定なら灯り・移動を一切始めず警告のみで終了する。
+        if (approachController == null || approachController.gardenPassByPoint == null ||
+            approachController.gardenRoutePoints == null || approachController.gardenRoutePoints.Length == 0)
+        {
+            Debug.LogWarning("[ParentWarningSystem] gardenPassByPoint／gardenRoutePointsが未設定のためGardenPassByを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。", this);
+            _foreshadowCoroutine = null;
+            EndWarningSequence();
+            yield break;
+        }
+
+        TurnOnFirstStageLights();
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[ParentWarningSystem] GARDEN PASS-BY: HALLWAY LIGHTS 1/2 ON");
+
+        float secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
+        yield return new WaitForSeconds(secondFloorDelay);
+
+        SetLightActive(outsideLight, true);
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[ParentWarningSystem] GARDEN PASS-BY: OUTSIDE LIGHT ON");
+
+        float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
+        yield return new WaitForSeconds(approachDelay);
+
+        ApplyApproachSpeed(true, 0f);
+        ActiveRoute = RouteState.GardenPassBy;
+        approachController.StartApproachGardenPassBy();
+        _foreshadowCoroutine = null;
+    }
+
+    private IEnumerator GardenPeekForeshadowCoroutine()
+    {
+        // 灯りを点ける前に参照を検証する。未設定なら灯り・移動を一切始めず警告のみで終了する。
+        if (approachController == null || approachController.gardenPeekPoint == null ||
+            approachController.gardenRoutePoints == null || approachController.gardenRoutePoints.Length == 0)
+        {
+            Debug.LogWarning("[ParentWarningSystem] gardenPeekPoint／gardenRoutePointsが未設定のためGardenPeekを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。", this);
+            _foreshadowCoroutine = null;
+            EndWarningSequence();
+            yield break;
+        }
+
+        TurnOnFirstStageLights();
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[ParentWarningSystem] GARDEN PEEK: HALLWAY LIGHTS 1/2 ON");
+
+        float secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
+        yield return new WaitForSeconds(secondFloorDelay);
+
+        SetLightActive(outsideLight, true);
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[ParentWarningSystem] GARDEN PEEK: OUTSIDE LIGHT ON");
+
+        float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
+        yield return new WaitForSeconds(approachDelay);
+
+        ApplyApproachSpeed(true, 0f);
+
+        // 覗き時間（gardenPeekDurationBase+GardenPeekPoint到着時のゲージ値）は
+        // ParentApproachController側で覗き開始時に一度だけ決定するため、ここでは移動開始のみを行う。
+        ActiveRoute = RouteState.GardenPeek;
+        approachController.StartApproachGardenPeek();
+        _foreshadowCoroutine = null;
+    }
 
     private IEnumerator ForeshadowAndApproachCoroutine(RouteOverride routeOverride, bool isManual = false)
     {
+        // フェイントA（HallwayPassBy）は hallwayPassByPoint の割当が前提。
+        // 未設定の場合は警告を1回出し、灯り・移動を一切始めずにサイクルを即終了する。
+        if (routeOverride == RouteOverride.HallwayPassBy &&
+            (approachController == null || approachController.hallwayPassByPoint == null))
+        {
+            Debug.LogWarning("[ParentWarningSystem] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。", this);
+            _foreshadowCoroutine = null;
+            EndWarningSequence();
+            yield break;
+        }
+
         float suspicionFraction = GetSuspicionFraction();
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
@@ -355,6 +586,10 @@ public class ParentWarningSystem : MonoBehaviour
         {
             chosenRoute = RouteState.DoorPeek;
         }
+        else if (routeOverride == RouteOverride.HallwayPassBy)
+        {
+            chosenRoute = RouteState.HallwayPassBy;
+        }
         else
         {
             chosenRoute = ChooseRoute();
@@ -373,11 +608,20 @@ public class ParentWarningSystem : MonoBehaviour
             case RouteState.PassByThenDoorSound:
                 approachController.StartApproachPassByOnly();
                 break;
+
+            case RouteState.HallwayPassBy:
+                approachController.StartApproachHallwayPassBy();
+                break;
+
+            case RouteState.GardenPassBy:
+                approachController.StartApproachGardenPassBy();
+                break;
         }
 
         _foreshadowCoroutine = null;
     }
 
+    // 自動抽選：HallwayPassBy（フェイントA）は含まれない（重み0・手動テスト専用ルート）。
     private RouteState ChooseRoute()
     {
         float suspicionFraction = GetSuspicionFraction();
@@ -479,6 +723,7 @@ public class ParentWarningSystem : MonoBehaviour
         SetLightActive(hallwayLight2, false);
         SetLightActive(hallwayLight3, false);
         SetLightActive(frontLight, false);
+        SetLightActive(outsideLight, false);
     }
 
     private void SubscribeApproachEvents()
