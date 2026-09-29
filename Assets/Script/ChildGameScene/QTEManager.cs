@@ -10,16 +10,33 @@ public class QTEManager : MonoBehaviour
     public static QTEManager Instance { get; private set; }
     public static event Action<bool> HugeQteFinished;
 
-    [SerializeField] private TextMeshProUGUI qteText;
+    // 「画像＋テキスト」1セット分
+    [Serializable]
+    private class QteSlot
+    {
+        public Image image;             // ボタン画像
+        public TextMeshProUGUI label;   // A/B/X/Y の文字
+    }
+
+    [Header("QTE UI（シーン上に配置したものを割り当てる）")]
+    [SerializeField] private GameObject qteBack;               // 背景画像（QTEBack）
+    [SerializeField] private TextMeshProUGUI titleText;        // 「PUSH BUTTON!」
+    [SerializeField] private TextMeshProUGUI timerText;        // 残り秒数
+    [SerializeField] private QteSlot[] slots = new QteSlot[7]; // 画像＋テキストのセット（要素数＝QTEの文字数）
+
+    [Header("ボタン画像")]
+    [SerializeField] private Sprite slotNormalSprite;          // 押す前
+    [SerializeField] private Sprite slotPressedSprite;         // 押した後
+
     [SerializeField] private PlayerAnimator playerAnimator;
     [SerializeField] private Animator playerAnimatorComponent;
-    [Header("QTEの文字数の設定")] 
-    [SerializeField] private int sequenceLength = 7;
-    
+
     [Header("QTEの時間設定")]
     [SerializeField] private float timeLimitSeconds = 5f;
+
+    [Header("文字色の設定")]
     [SerializeField] private Color enteredColor = Color.green;
-    [SerializeField] private Color remainingColor = Color.white;
+    [SerializeField] private Color remainingColor = Color.black;
 
     private bool isQteActive;
     private string currentSequence = string.Empty;
@@ -42,7 +59,6 @@ public class QTEManager : MonoBehaviour
         Instance = this;
         ResolvePlayerAnimator();
         ResolveAnimatorComponent();
-        EnsureQteText();
         SetQteVisible(false);
     }
 
@@ -69,7 +85,12 @@ public class QTEManager : MonoBehaviour
     {
         if (isQteActive) return false;
 
-        EnsureQteText();
+        if (slots == null || slots.Length == 0)
+        {
+            Debug.LogError("QTEManager: slots が未設定です。Inspectorで画像＋テキストのセットを割り当ててください。");
+            return false;
+        }
+
         RegenerateSequence();
         onFinished = finishedCallback;
         isQteActive = true;
@@ -125,7 +146,8 @@ public class QTEManager : MonoBehaviour
 
     private void RegenerateSequence()
     {
-        currentSequence = GenerateSequence(sequenceLength);
+        // 文字数は配置したスロットの数に合わせる
+        currentSequence = GenerateSequence(slots.Length);
         currentIndex = 0;
         remainingTime = timeLimitSeconds;
         UpdateQteText();
@@ -258,57 +280,53 @@ public class QTEManager : MonoBehaviour
 
     private void UpdateQteText()
     {
-        if (qteText == null) return;
+        if (string.IsNullOrEmpty(currentSequence)) return;
 
-        string entered = currentIndex > 0 ? currentSequence.Substring(0, currentIndex) : string.Empty;
-        string remain = currentSequence.Substring(currentIndex);
-        string enteredHex = ColorUtility.ToHtmlStringRGB(enteredColor);
-        string remainHex = ColorUtility.ToHtmlStringRGB(remainingColor);
-        string displaySequence = $"<color=#{enteredHex}>{entered}</color><color=#{remainHex}>{remain}</color>";
+        if (titleText != null) titleText.text = "PUSH BUTTON!";
 
-        if (timeLimitSeconds > 0f)
+        if (timerText != null)
         {
-            qteText.text = $"Push Button! {remainingTime:0.0}s\n{displaySequence}";
+            bool showTimer = timeLimitSeconds > 0f;
+            timerText.gameObject.SetActive(showTimer);
+            if (showTimer) timerText.text = $"{Mathf.Max(0f, remainingTime):0.00}s";
         }
-        else
+
+        for (int i = 0; i < slots.Length && i < currentSequence.Length; i++)
         {
-            qteText.text = $"QTE\n{displaySequence}";
+            QteSlot slot = slots[i];
+            if (slot == null) continue;
+
+            bool pressed = i < currentIndex;
+
+            if (slot.label != null)
+            {
+                slot.label.text = currentSequence[i].ToString();
+                slot.label.color = pressed ? enteredColor : remainingColor;
+            }
+
+            // 押す前/押した後で画像を切り替える（未設定なら差し替えない）
+            Sprite sprite = pressed ? slotPressedSprite : slotNormalSprite;
+            if (slot.image != null && sprite != null)
+            {
+                slot.image.sprite = sprite;
+            }
         }
     }
 
     private void SetQteVisible(bool visible)
     {
-        if (qteText == null) return;
-        qteText.gameObject.SetActive(visible);
-    }
+        // QTE関連のオブジェクトはまとめる親が無いので、1つずつ表示/非表示を切り替える
+        if (qteBack != null) qteBack.SetActive(visible);
+        if (titleText != null) titleText.gameObject.SetActive(visible);
+        if (timerText != null) timerText.gameObject.SetActive(visible);
 
-    private void EnsureQteText()
-    {
-        if (qteText != null) return;
-
-        Canvas canvas = FindFirstObjectByType<Canvas>();
-        if (canvas == null)
+        if (slots == null) return;
+        foreach (QteSlot slot in slots)
         {
-            GameObject canvasObject = new GameObject("QTECanvas");
-            canvas = canvasObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 1000;
-            canvasObject.AddComponent<CanvasScaler>();
-            canvasObject.AddComponent<GraphicRaycaster>();
+            if (slot != null && slot.image != null)
+            {
+                slot.image.gameObject.SetActive(visible);
+            }
         }
-
-        GameObject textObject = new GameObject("QTEText");
-        textObject.transform.SetParent(canvas.transform, false);
-
-        RectTransform rectTransform = textObject.AddComponent<RectTransform>();
-        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = new Vector2(1200f, 300f);
-
-        qteText = textObject.AddComponent<TextMeshProUGUI>();
-        qteText.fontSize = 72f;
-        qteText.alignment = TextAlignmentOptions.Center;
     }
 }
