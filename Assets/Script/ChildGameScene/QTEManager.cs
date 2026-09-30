@@ -78,6 +78,7 @@ public class QTEManager : MonoBehaviour
         }
 
         HandleQteInput();
+        if (!isQteActive) return;
         UpdateQteText();
     }
 
@@ -280,9 +281,8 @@ public class QTEManager : MonoBehaviour
 
     private void UpdateQteText()
     {
+        if (!isQteActive) return;
         if (string.IsNullOrEmpty(currentSequence)) return;
-
-        if (titleText != null) titleText.text = "PUSH BUTTON!";
 
         if (timerText != null)
         {

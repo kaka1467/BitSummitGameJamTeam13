@@ -4938,8 +4938,8 @@ MonoBehaviour:
   playerAnimator: {fileID: 1865325551}
   playerAnimatorComponent: {fileID: 1865325552}
   timeLimitSeconds: 5
-  enteredColor: {r: 0, g: 0, b: 0, a: 1}
-  remainingColor: {r: 0.4666667, g: 0.5333334, b: 0.6, a: 1}
+  enteredColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
+  remainingColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!4 &1671829137
 Transform:
   m_ObjectHideFlags: 0
@@ -5648,7 +5648,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 5.00s
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2ab0b31a20f0244a081da6e022e2ce90, type: 2}
   m_sharedMaterial: {fileID: -4867459677708758340, guid: 2ab0b31a20f0244a081da6e022e2ce90, type: 2}
