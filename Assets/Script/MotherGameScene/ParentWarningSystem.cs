@@ -116,8 +116,6 @@ public class ParentWarningSystem : MonoBehaviour
 
     // ── 第3ルートのオーディオ ─────────────────────────────────────────────────
     [Header("通過後ドア音ルート")]
-    [Tooltip("PassByThenDoorSoundルートで通過完了後に再生するAudioSource。")]
-    [SerializeField] private AudioSource passByThenDoorSoundAudioSource;
     [Tooltip("通過完了から遠くのドア音が再生されるまでの秒数。")]
     [SerializeField] private float passByThenDoorSoundDelay = 1f;
 
@@ -429,7 +427,6 @@ public class ParentWarningSystem : MonoBehaviour
             StopCoroutine(_foreshadowCoroutine);
             _foreshadowCoroutine = null;
         }
-
         if (_passByThenDoorSoundCoroutine != null)
         {
             StopCoroutine(_passByThenDoorSoundCoroutine);
@@ -790,13 +787,8 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
-        if (ActiveRoute == RouteState.PassByThenDoorSound)
-        {
-            if (_passByThenDoorSoundCoroutine != null)
-                StopCoroutine(_passByThenDoorSoundCoroutine);
-
+        if (ActiveRoute == RouteState.PassByThenDoorSound && approachController != null)
             _passByThenDoorSoundCoroutine = StartCoroutine(PlayPassByThenDoorSoundCoroutine());
-        }
 
         if (parentDetection != null)
             parentDetection.OnApproachPassedBy();
@@ -811,15 +803,8 @@ public class ParentWarningSystem : MonoBehaviour
 
         yield return new WaitForSeconds(delay);
 
-        if (passByThenDoorSoundAudioSource != null)
-        {
-            Debug.Log("[ParentWarningSystem] PassByThenDoorSound: PLAY");
-            passByThenDoorSoundAudioSource.Play();
-        }
-        else
-        {
-            Debug.LogWarning("[ParentWarningSystem] PassByThenDoorSound: AudioSource is NULL");
-        }
+        Debug.Log("[ParentWarningSystem] PassByThenDoorSound: PLAY");
+        approachController.PlayPassBySound();
 
         _passByThenDoorSoundCoroutine = null;
     }

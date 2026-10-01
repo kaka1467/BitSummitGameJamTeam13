@@ -18,6 +18,17 @@ public class CatFeintController : MonoBehaviour
     [Tooltip("猫の鳴き声を再生する専用のAudioSource。既存の親の音源とは別に割り当てる。")]
     [SerializeField] private AudioSource meowAudioSource;
 
+    [Header("猫の足音")]
+    [Tooltip("猫が移動中に使う専用の足音AudioSource。")]
+    [SerializeField] private AudioSource catFootstepAudioSource;
+
+    [Tooltip("母親と同じ足音クリップ。")]
+    [SerializeField] private AudioClip footstepClip;
+
+    [Range(0f, 1f)]
+    [Tooltip("猫の足音の音量。")]
+    [SerializeField] private float footstepVolume = 0.35f;
+
     [Header("経路（母親と同じwaypoint参照を再利用）")]
     [Tooltip("母親のドア側経路を持つParentApproachController。startPoint〜doorPointの公開参照をそのまま使う。")]
     [SerializeField] private ParentApproachController routeController;
@@ -93,6 +104,7 @@ public class CatFeintController : MonoBehaviour
         if (startPoint != null)
             catObject.transform.SetPositionAndRotation(CatGoalPosition(startPoint.position), startPoint.rotation);
         catObject.SetActive(true);
+        StartCatFootsteps();
 
         // 母親のDoorRoutineと同じ順序：H1 → H2 → TurnPoint（旋回）→ H3 → DoorPoint（旋回）。
         // 未設定のwaypointは母親側と同じくスキップする。
@@ -121,6 +133,7 @@ public class CatFeintController : MonoBehaviour
             if (_walkAborted) yield break;
         }
 
+        StopCatFootsteps();
         SetWalking(false);
     }
 
@@ -163,6 +176,7 @@ public class CatFeintController : MonoBehaviour
             StopCoroutine(_meowCoroutine);
             _meowCoroutine = null;
         }
+        StopCatFootsteps();
         ResetAnimationState();
         if (catObject != null && catObject.activeSelf)
             catObject.SetActive(false);
@@ -172,6 +186,7 @@ public class CatFeintController : MonoBehaviour
     public void ReturnToStartPosition()
     {
         if (catObject == null) return;
+        StopCatFootsteps();
         ResetAnimationState();
         catObject.transform.SetPositionAndRotation(CatGoalPosition(_homePosition), _homeRotation);
         catObject.SetActive(false);
@@ -232,6 +247,8 @@ public class CatFeintController : MonoBehaviour
 
     private IEnumerator PlayMeowCoroutine()
     {
+        StopCatFootsteps();
+
         if (meowDelaySeconds > 0f)
             yield return new WaitForSeconds(meowDelaySeconds);
 
@@ -239,6 +256,27 @@ public class CatFeintController : MonoBehaviour
             meowAudioSource.Play();
 
         _meowCoroutine = null;
+    }
+
+    private void StartCatFootsteps()
+    {
+        if (catFootstepAudioSource == null || footstepClip == null)
+            return;
+
+        catFootstepAudioSource.clip = footstepClip;
+        catFootstepAudioSource.loop = true;
+        catFootstepAudioSource.volume = footstepVolume;
+        if (!catFootstepAudioSource.isPlaying)
+            catFootstepAudioSource.Play();
+    }
+
+    private void StopCatFootsteps()
+    {
+        if (catFootstepAudioSource == null)
+            return;
+
+        if (catFootstepAudioSource.isPlaying)
+            catFootstepAudioSource.Stop();
     }
 
     private static float NormalizeAngle(float angle)
@@ -290,6 +328,7 @@ public class CatFeintController : MonoBehaviour
 
     private void ResetAnimationState()
     {
+        StopCatFootsteps();
         SetWalking(false);
 
         if (_animator != null && _hasJumpParameter)
