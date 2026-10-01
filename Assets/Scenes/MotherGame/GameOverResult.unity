@@ -1893,7 +1893,7 @@ MonoBehaviour:
   inputIgnoreDuration: 5
   autoChangeDelay: 20
   returnToTitleSe: {fileID: 1930587511}
-  titleSceneName: Mother Title
+  titleSceneName: MotherTitle
 --- !u!4 &1403950298
 Transform:
   m_ObjectHideFlags: 0

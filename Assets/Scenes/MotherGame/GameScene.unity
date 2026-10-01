@@ -1189,9 +1189,6 @@ MonoBehaviour:
   loudItemRushInMoveSpeed: 140
   useFixedDebugApproachSpeed: 0
   fixedDebugApproachSpeed: 30
-  doorChanceAtMinSuspicion: 0.5
-  doorChanceAtMaxSuspicion: 0.95
-  basePassByThenDoorSoundChance: 0.33
   passByThenDoorSoundDelay: 1
   isWarningActive: 0
 --- !u!1 &434492880
@@ -1317,11 +1314,11 @@ MonoBehaviour:
   baudRate: 115200
   readTimeout: 50
   threshold: 85000
-  onThreshold: 80000
-  offThreshold: 60000
+  onThreshold: 300000
+  offThreshold: 250000
   calibrationSamples: 50
   calibrationSampleDelay: 0.02
-  showDebugLogs: 1
+  showDebugLogs: 0
   isSleeping: 0
 --- !u!4 &479984878
 Transform:
@@ -3922,7 +3919,7 @@ MonoBehaviour:
   footstepClip: {fileID: 0}
   footstepVolume: 0.305
   routeController: {fileID: 2053139200}
-  catMoveSpeed: 4
+  catMoveSpeed: 15
   catTurnSpeed: 90
   stopDistance: 0.05
   catHeightOffset: -3
@@ -5036,12 +5033,12 @@ Transform:
   - {fileID: 395735890}
   - {fileID: 1951468136}
   - {fileID: 1418577573}
+  - {fileID: 1474122165}
   - {fileID: 1372611142}
   - {fileID: 2121813539}
   - {fileID: 479984878}
   - {fileID: 472387658}
   - {fileID: 1385247219}
-  - {fileID: 1474122165}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1856311163
@@ -5662,6 +5659,7 @@ MonoBehaviour:
   dummyProbability: 0.3
   catFeintController: {fileID: 1393430533}
   peekDurationBase: 3
+  rushInPeekDurationSeconds: 6
   roomCheckSafetyTimeout: 30
   leaveAfterSleepDelay: 2
   leaveAfterSleepDelayMax: 6
@@ -5995,7 +5993,7 @@ MonoBehaviour:
   roomEntryPoints: []
   roomExitYaw: -90
   roomStayTimeoutSeconds: 20
-  moveSpeed: 15
+  moveSpeed: 25
   stopDistance: 0.05
   motherHeightOffset: 13
   stairTurnRotationSpeed: 200

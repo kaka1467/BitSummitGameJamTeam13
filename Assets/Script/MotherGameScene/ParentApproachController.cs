@@ -289,30 +289,18 @@ public class ParentApproachController : MonoBehaviour
         StartApproachDoorOnly();
     }
 
-    /// <summary>フェイントルートを開始する：turnPointで方向転換し、通ってきた廊下を戻ってstartPointへ帰還する。</summary>
-    public void StartApproachPassByOnly()
-    {
-        if (IsApproaching)
-        {
-            Debug.Log("[ParentApproachController] すでに接近中 — StartApproachPassByOnlyを無視");
-            return;
-        }
-        if (!ValidateWaypoints(requirePassBy: true)) return;
-
-        BeginApproach(passByRoute: true);
-    }
-
     /// <summary>ドア停止ルートを開始する：親機がdoorPointまで歩き、部屋の方向を向いて停止する。突入ルートでも使用する。</summary>
-    public void StartApproachDoorOnly()
+    public bool StartApproachDoorOnly()
     {
         if (IsApproaching)
         {
             Debug.Log("[ParentApproachController] すでに接近中 — StartApproachDoorOnlyを無視");
-            return;
+            return false;
         }
-        if (!ValidateWaypoints(requirePassBy: false)) return;
+        if (!ValidateWaypoints(requirePassBy: false)) return false;
 
-        BeginApproach(passByRoute: false);
+        BeginApproach();
+        return true;
     }
 
     /// <summary>
@@ -322,51 +310,53 @@ public class ParentApproachController : MonoBehaviour
     /// 終了時は既存のonPassedByDoorを発生させる（PDV2.OnApproachPassedBy → ResetCycle → EndWarningSequence）。
     /// hallwayPassByPointが未設定の場合は警告を1回出して開始しない。
     /// </summary>
-    public void StartApproachHallwayPassBy()
+    public bool StartApproachHallwayPassBy()
     {
         if (IsApproaching)
         {
             Debug.Log("[ParentApproachController] すでに接近中 — StartApproachHallwayPassByを無視");
-            return;
+            return false;
         }
 
         if (hallwayPassByPoint == null)
         {
             Debug.LogWarning("[ParentApproachController] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。", this);
-            return;
+            return false;
         }
 
-        if (!ValidateWaypoints(requirePassBy: false)) return;
+        if (!ValidateWaypoints(requirePassBy: false)) return false;
 
-        BeginApproach(passByRoute: true, hallwayPassBy: true);
+        BeginApproach(hallwayPassBy: true);
+        return true;
     }
 
     /// <summary>
     /// 庭側素通りを開始する。ドア停止イベントを発生させず、庭側到達点でonPassedByDoorを発生させる。
     /// </summary>
-    public void StartApproachGardenPassBy()
+    public bool StartApproachGardenPassBy()
     {
         if (IsApproaching)
         {
             Debug.Log("[ParentApproachController] すでに接近中 — StartApproachGardenPassByを無視");
-            return;
+            return false;
         }
 
         if (gardenPassByPoint == null)
         {
             Debug.LogWarning("[ParentApproachController] gardenPassByPointが未設定のためGardenPassByを開始しません。SceneでTransformを割り当ててください。", this);
-            return;
+            return false;
         }
 
         if (!HasValidGardenRoutePoints())
         {
             Debug.LogWarning("[ParentApproachController] gardenRoutePointsが未設定のためGardenPassByを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。", this);
-            return;
+            return false;
         }
 
-        if (!ValidateWaypoints(requirePassBy: false)) return;
+        if (!ValidateWaypoints(requirePassBy: false)) return false;
 
-        BeginApproach(passByRoute: true, gardenPassBy: true);
+        BeginApproach(gardenPassBy: true);
+        return true;
     }
 
     /// <summary>
@@ -387,29 +377,30 @@ public class ParentApproachController : MonoBehaviour
     /// 覗き時間（gardenPeekDurationBase+GardenPeekPoint到着時のゲージ値。到着時に一度だけ取得）経過後、
     /// GardenPassByPointまで進み、onPassedByDoorを一度だけ発生させて既存の終了処理でStartPointへ復帰する。
     /// </summary>
-    public void StartApproachGardenPeek()
+    public bool StartApproachGardenPeek()
     {
         if (IsApproaching)
         {
             Debug.Log("[ParentApproachController] すでに接近中 — StartApproachGardenPeekを無視");
-            return;
+            return false;
         }
 
         if (gardenPeekPoint == null)
         {
             Debug.LogWarning("[ParentApproachController] gardenPeekPointが未設定のためGardenPeekを開始しません。SceneでTransformを割り当ててください。", this);
-            return;
+            return false;
         }
 
         if (!HasValidGardenRoutePoints())
         {
             Debug.LogWarning("[ParentApproachController] gardenRoutePointsが未設定のためGardenPeekを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。", this);
-            return;
+            return false;
         }
 
-        if (!ValidateWaypoints(requirePassBy: false)) return;
+        if (!ValidateWaypoints(requirePassBy: false)) return false;
 
-        BeginApproach(passByRoute: true, gardenPeek: true);
+        BeginApproach(gardenPeek: true);
+        return true;
     }
 
     /// <summary>
@@ -494,7 +485,7 @@ public class ParentApproachController : MonoBehaviour
     //  内部開始ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void BeginApproach(bool passByRoute, bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false)
+    private void BeginApproach(bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false)
     {
         EnsureMotherAnimator();
         _isGrassFootstepRoute = false;
@@ -505,9 +496,7 @@ public class ParentApproachController : MonoBehaviour
                 ? "GardenPassBy"
                 : hallwayPassBy
                     ? "HallwayPassBy"
-                    : passByRoute
-                        ? "PassBy"
-                        : "Door";
+                    : "Door";
         // 「このサイクルは突入（大きな音）として開始されたか」を記録する。
         // ParentWarningSystemはIsRushIn=trueを設定してから本メソッドを呼ぶため、
         // ResetStateFlags()でIsRushInが消える前にここで捕捉する（入室可否の判定に使用する）。
@@ -536,7 +525,7 @@ public class ParentApproachController : MonoBehaviour
         IsApproaching = true;
         onApproachStarted?.Invoke();
 
-        Debug.Log($"[ParentApproachController] BeginApproach | passByRoute={passByRoute} | hallwayPassBy={hallwayPassBy} | gardenPassBy={gardenPassBy} | gardenPeek={gardenPeek} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1} | targetVolume={farVolume}");
+        Debug.Log($"[ParentApproachController] BeginApproach | hallwayPassBy={hallwayPassBy} | gardenPassBy={gardenPassBy} | gardenPeek={gardenPeek} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1} | targetVolume={farVolume}");
 
         if (gardenPeek)
             _approachCoroutine = StartCoroutine(GardenPeekRoutine());
@@ -545,7 +534,7 @@ public class ParentApproachController : MonoBehaviour
         else if (hallwayPassBy)
             _approachCoroutine = StartCoroutine(HallwayPassByRoutine());
         else
-            _approachCoroutine = StartCoroutine(passByRoute ? PassByRoutine() : DoorRoutine());
+            _approachCoroutine = StartCoroutine(DoorRoutine());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -599,26 +588,6 @@ public class ParentApproachController : MonoBehaviour
         _doorRoutineActive = false;
     }
 
-    private IEnumerator PassByRoutine()
-    {
-        Debug.Log("[ParentApproachController] PassByRoutine（フェイント）：開始");
-
-        yield return MoveToTurnPoint();
-
-        // TurnPointで方向転換したあとは、通ってきた廊下を逆順に戻ってstartPointへ帰還する。
-        yield return MoveToPoint(hallwayPoint2);
-        yield return MoveToPoint(hallwayPoint1);
-        yield return MoveToPoint(startPoint);
-
-        StopMovementAudio();
-        PassedByDoor  = true;
-        IsApproaching = false;
-        // IsInHallwayPhaseはResetStateFlags()でのみ解除する — DoorRoutineと同じ動作。
-
-        Debug.Log("[ParentApproachController] フェイント完了 — OnPassedByDoorを発生");
-        onPassedByDoor?.Invoke();
-    }
-
     /// <summary>
     /// フェイントA（HallwayPassBy）の移動ルーチン：
     ///   startPoint → hallwayPoint1 → hallwayPoint2 → turnPoint（旋回）
@@ -652,12 +621,11 @@ public class ParentApproachController : MonoBehaviour
 
         // 画面外の到達点まで進み、到達したら停止する。
         yield return MoveToPoint(hallwayPassByPoint);
-        PlayPassBySound();
 
         StopMovementAudio();
         PassedByDoor  = true;
         IsApproaching = false;
-        // IsInHallwayPhaseは既存DoorRoutine／PassByRoutineと同じくResetStateFlags()でのみ解除する。
+        // IsInHallwayPhaseは既存DoorRoutineと同じくResetStateFlags()でのみ解除する。
 
         Debug.Log("[ParentApproachController] フェイントA完了 — 画面外で停止しOnPassedByDoorを発生");
         onPassedByDoor?.Invoke();
@@ -912,7 +880,7 @@ public class ParentApproachController : MonoBehaviour
     /// 庭ルート専用の移動ヘルパー。移動中、進行方向（現在位置から目標へのXZ方向）へ滑らかに向きを変えながら進む。
     /// 向きは移動方向から求めるため、中間ウェイポイントのTransform.rotationは読まない。
     /// X/Z回転は_fixedPitch/_fixedRollで固定し、Y角のみを変える（既存RotateToYawと同じ規則）。
-    /// ドア側ルート（DoorRoutine／HallwayPassByRoutine／PassByRoutine）は既存のMoveToPointを使い続けるため影響しない。
+    /// ドア側ルート（DoorRoutine／HallwayPassByRoutine）は既存のMoveToPointを使い続けるため影響しない。
     /// </summary>
     private IEnumerator MoveToPointFacingMovement(Transform target)
     {
