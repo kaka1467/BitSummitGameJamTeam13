@@ -155,10 +155,8 @@ public class ParentUdpSender : MonoBehaviour
         // 子機がたまたま接続済みなら合わせて開始通知を送る（未接続時はSendState内で無視される）
         SendState(CMD_START);
 
-        if (soloStartButtonObject != null)
-        {
-            soloStartButtonObject.SetActive(false);
-        }
+        // soloStartButtonObject の非表示は TitleMenuHighlight.FlashAndDeactivate 側が
+        // フラッシュ演出の完了後に行う（ここで即座に隠すと演出が表示されないため、外してある）。
 
         // MotherLoad（子機を無期限に待つ）は経由せず、直接ゲームシーンへ遷移する
         StartCoroutine(LoadSceneAfterBgmFade(soloGameSceneName));
