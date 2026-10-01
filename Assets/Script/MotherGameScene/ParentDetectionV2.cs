@@ -62,6 +62,8 @@ public class ParentDetectionV2 : MonoBehaviour
     [Header("部屋チェックのタイミング")]
     [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")]
     [SerializeField] private float peekDurationBase = 3f;
+    [Tooltip("RushInでドアに到着してから覗き続ける秒数。通常の本チェック時間とは別管理。")]
+    [SerializeField] private float rushInPeekDurationSeconds = 6f;
     [Tooltip("本チェック（全開）イベントで、プレイヤーが枕で眠るまで親機が部屋に留まる時間。 " +
              "一度も眠らない場合は、安全タイムアウトとしてこの秒数後に親機が退出する。")]
     [SerializeField] private float roomCheckSafetyTimeout = 30f;
@@ -110,6 +112,7 @@ public class ParentDetectionV2 : MonoBehaviour
     private Coroutine    _dummyResetCoroutine;
     private Coroutine    _primaryResetCoroutine;
     private Coroutine    _continuousRoomCoroutine;
+    private Coroutine    _rushInPeekCoroutine;
     private bool         _hasPermanentGameOver;
     private float        _activePeekDuration        = 3f;
 
@@ -195,6 +198,12 @@ public class ParentDetectionV2 : MonoBehaviour
 
         if (isCaught || _hasPermanentGameOver) return;
 
+        if (approachController != null && approachController.IsRushIn)
+        {
+            StartRushInPeek();
+            return;
+        }
+
         // 入室が受理されていないサイクル（ダミー／覗き／通過／突入など）では疑惑を開始しない。
         if (!_roomEntryAccepted)
         {
@@ -275,7 +284,7 @@ public class ParentDetectionV2 : MonoBehaviour
             primary = true;
             Debug.Log("[PDV2] Branch: PRIMARY — from ActiveRoute=DoorPeek");
         }
-        else if (route == ParentWarningSystem.RouteState.PassBy || route == ParentWarningSystem.RouteState.PassByThenDoorSound)
+        else if (route == ParentWarningSystem.RouteState.HallwayPassBy)
         {
             primary = false;
             Debug.LogWarning("[PDV2] WARNING: OnApproachReachedDoor was called on a non-door route");
@@ -321,6 +330,59 @@ public class ParentDetectionV2 : MonoBehaviour
     public void NotifyGameOver()
     {
         _hasPermanentGameOver = true;
+        if (warningSystem != null)
+            warningSystem.NotifyGameOver();
+    }
+
+    private void StartRushInPeek()
+    {
+        Debug.Log($"[PDV2] RushIn reached door — starting dedicated peek for {rushInPeekDurationSeconds:F1}s");
+
+        _roomCycleId++;
+        _roomEntryAccepted = false;
+        _roomEntryStarted = false;
+        _roomExitCompleted = false;
+        isMotherLookingNow = true;
+
+        if (targetDoorController != null)
+            targetDoorController.SetDoorState(DoorController.DoorState.Peek);
+        if (approachController != null)
+            approachController.TriggerDoorPeekAnimation();
+        if (mainDoorOpenAudioSource != null)
+            mainDoorOpenAudioSource.Play();
+        if (caughtReactionController != null)
+            caughtReactionController.OnMotherCheck(isFullCheck: false);
+
+        bool sleeping = sleepingController != null && sleepingController.IsSleeping;
+        if (!sleeping && motherGauge != null)
+            StartCoroutine(RoomEntryBurstSuspicionCoroutine());
+        else
+            Debug.Log("[PDV2] RushIn suspicion burst skipped — player is sleeping or gauge is unavailable");
+
+        if (_rushInPeekCoroutine != null)
+            StopCoroutine(_rushInPeekCoroutine);
+        _rushInPeekCoroutine = StartCoroutine(RushInPeekCoroutine());
+    }
+
+    private IEnumerator RushInPeekCoroutine()
+    {
+        yield return new WaitForSeconds(Mathf.Max(0f, rushInPeekDurationSeconds));
+
+        if (_hasPermanentGameOver || isCaught)
+        {
+            _rushInPeekCoroutine = null;
+            yield break;
+        }
+
+        if (mainDoorCloseAudioSource != null)
+            mainDoorCloseAudioSource.Play();
+        if (targetDoorController != null)
+            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+
+        ResetCycle();
+        if (warningSystem != null)
+            warningSystem.EndWarningSequence();
+        _rushInPeekCoroutine = null;
     }
 
     /// <summary>
@@ -643,20 +705,20 @@ public class ParentDetectionV2 : MonoBehaviour
     /// 鳴き声は猫専用のAudioSource（CatFeintController）から再生し、既存の親の音源やUDPには触れない。
     /// 覗き時間はドア覗き（ダミー）と同じ式 peekDurationBase+currentGauge。
     /// </summary>
-    public void TriggerCatFeintEvent()
+    public bool TriggerCatFeintEvent()
     {
         if (_catFeintCoroutine != null)
         {
             Debug.Log("[PDV2] TriggerCatFeintEvent: 猫フェイント中のため無視");
-            return;
+            return false;
         }
 
-        if (isCaught || _hasPermanentGameOver) return;
+        if (isCaught || _hasPermanentGameOver) return false;
 
         if (catFeintController == null)
         {
             Debug.LogWarning("[PDV2] catFeintControllerが未設定のため猫フェイントを開始しません。SceneでCatFeintControllerを割り当ててください。", this);
-            return;
+            return false;
         }
 
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
@@ -664,6 +726,7 @@ public class ParentDetectionV2 : MonoBehaviour
 
         Debug.Log($"[PDV2] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door PEEK open for {duration:F1}s（母親は登場しない）");
         _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence(duration));
+        return true;
     }
 
     /// <summary>
@@ -925,6 +988,7 @@ public class ParentDetectionV2 : MonoBehaviour
         if (_primaryResetCoroutine != null)    { StopCoroutine(_primaryResetCoroutine);    _primaryResetCoroutine    = null; }
         if (_continuousRoomCoroutine != null)  { StopCoroutine(_continuousRoomCoroutine);  _continuousRoomCoroutine  = null; Debug.Log("[PDV2] Continuous room suspicion stopped — ResetCycle"); }
         if (_gardenPeekSuspicionCoroutine != null) { StopCoroutine(_gardenPeekSuspicionCoroutine); _gardenPeekSuspicionCoroutine = null; Debug.Log("[PDV2] 庭覗き中の継続疑惑 stopped — ResetCycle"); }
+        if (_rushInPeekCoroutine != null) { StopCoroutine(_rushInPeekCoroutine); _rushInPeekCoroutine = null; }
 
         isMotherLookingNow    = false;
         _activePeekDuration   = peekDurationBase;

@@ -9,7 +9,6 @@ using UnityEngine.InputSystem;
 ///
 /// 公開エントリーポイント：
 ///   StartWarningSequence()             — 通常の自動フロー（スケジューラーから呼び出し）
-///   StartManualPassByWarningSequence() — デバッグキーなし（自動抽選専用の公開API）
 ///   StartManualDoorWarningSequence()   — 1キーのデバッグ：完全な予告、DoorPeekを強制
 ///   StartManualHallwayPassByWarningSequence() — 2キーのデバッグ：完全な予告、フェイントA（ドア前を停止せず通過）を強制
 ///   StartManualGardenPassByWarningSequence() — 5キーのデバッグ：廊下灯1/2の予告後、庭側を通過
@@ -104,18 +103,8 @@ public class ParentWarningSystem : MonoBehaviour
 
     // ── ルート確率 ────────────────────────────────────────────────────────────
     [Header("ルート確率")]
-    [Tooltip("疑惑0（gauge=0）でのDoorPeek確率。")]
-    [Range(0f, 1f)]
-    public float doorChanceAtMinSuspicion = 0.2f;
-    [Tooltip("最大疑惑（gauge=maxGauge）でのDoorPeek確率。危険度を高く感じさせるため1に近い値を推奨。")]
-    [Range(0f, 1f)]
-    public float doorChanceAtMaxSuspicion = 0.95f;
-    [Tooltip("ドア以外の結果のうち、PassByではなくPassByThenDoorSoundを選ぶ割合。")]
-    [Range(0f, 1f)]
-    public float basePassByThenDoorSoundChance = 0.33f;
-
-    // ── 第3ルートのオーディオ ─────────────────────────────────────────────────
-    [Header("通過後ドア音ルート")]
+    // ── 通過後ドア音 ──────────────────────────────────────────────────────────
+    [Header("廊下通過後のドア音")]
     [Tooltip("通過完了から遠くのドア音が再生されるまでの秒数。")]
     [SerializeField] private float passByThenDoorSoundDelay = 1f;
 
@@ -126,16 +115,23 @@ public class ParentWarningSystem : MonoBehaviour
 
     // ── 現在のルート状態 ──────────────────────────────────────────────────────
     /// <summary>現在の実行で選択されたルート。移動開始前に設定され、シーケンス終了時に解除される。</summary>
-    public enum RouteState { None, PassBy, DoorPeek, PassByThenDoorSound, HallwayPassBy, GardenPassBy, GardenPeek, CatFeint }
+    public enum RouteState { None, DoorPeek, HallwayPassBy, GardenPassBy, GardenPeek, CatFeint }
     public RouteState ActiveRoute { get; private set; } = RouteState.None;
 
     // ── 非公開 ───────────────────────────────────────────────────────────────
     private bool      _eventsSubscribed;
     private Coroutine _foreshadowCoroutine;
-    private Coroutine _passByThenDoorSoundCoroutine;
+    private Coroutine _hallwayPassBySoundCoroutine;
+    private float     _gameplayElapsedSeconds;
+    private bool      _gameplayClockActive;
+    private int       _consecutiveAutomaticFeints;
 
     private void Start()
     {
+        _gameplayElapsedSeconds = 0f;
+        _gameplayClockActive = true;
+        _consecutiveAutomaticFeints = 0;
+
         if (approachController == null)
             approachController = Object.FindFirstObjectByType<ParentApproachController>();
 
@@ -164,6 +160,9 @@ public class ParentWarningSystem : MonoBehaviour
 
     private void Update()
     {
+        if (_gameplayClockActive)
+            _gameplayElapsedSeconds += Time.deltaTime;
+
         // デバッグ：2キーでフェイントA（HallwayPassBy）を手動起動する。
         // 親機デバッグキーは 1（母親ドア確認：ParentWarningScheduler）／2（本キー）／
         // 0（RushIn：ParentDetectionV2）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
@@ -211,23 +210,6 @@ public class ParentWarningSystem : MonoBehaviour
         _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.None));
     }
 
-    public void StartManualPassByWarningSequence()
-    {
-        if (isWarningActive)
-        {
-            Debug.Log("[ParentWarningSystem] StartManualPassByWarningSequence: BLOCKED — sequence already active");
-            return;
-        }
-
-        if (!ValidateController()) return;
-
-        isWarningActive = true;
-        Debug.Log("[ParentWarningSystem] MANUAL ROUTE: N — PASS-BY");
-
-        if (_foreshadowCoroutine != null) StopCoroutine(_foreshadowCoroutine);
-        _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.PassBy, true));
-    }
-
     public void StartManualDoorWarningSequence()
     {
         if (isWarningActive)
@@ -248,7 +230,7 @@ public class ParentWarningSystem : MonoBehaviour
     /// <summary>
     /// フェイントA（HallwayPassBy）の手動テスト起動：完全な予告（灯り2段階）の後に、
     /// ドアで停止せず通り過ぎるルートを強制する。2キーからも呼び出される。
-    /// 通常抽選（ChooseRoute）ではHallwayPassByを選ばない（自動発生なし・重み0）。
+    /// 通常抽選でも使用するHallwayPassByの手動確認。
     /// hallwayPassByPointが未設定の場合は警告を1回出して中止する。
     /// </summary>
     public void StartManualHallwayPassByWarningSequence()
@@ -366,11 +348,11 @@ public class ParentWarningSystem : MonoBehaviour
         if (!ValidateController()) return;
 
         isWarningActive = true;
-        ActiveRoute = RouteState.PassBy;
-        Debug.Log("[ParentWarningSystem] INSTANT DEBUG: PASS-BY");
+        ActiveRoute = RouteState.HallwayPassBy;
+        Debug.Log("[ParentWarningSystem] INSTANT DEBUG: HALLWAY PASS-BY");
 
         ApplyApproachSpeed(true, 0f);
-        approachController.StartApproachPassByOnly();
+        approachController.StartApproachHallwayPassBy();
     }
 
     public void TriggerInstantDoor()
@@ -427,15 +409,20 @@ public class ParentWarningSystem : MonoBehaviour
             StopCoroutine(_foreshadowCoroutine);
             _foreshadowCoroutine = null;
         }
-        if (_passByThenDoorSoundCoroutine != null)
+        if (_hallwayPassBySoundCoroutine != null)
         {
-            StopCoroutine(_passByThenDoorSoundCoroutine);
-            _passByThenDoorSoundCoroutine = null;
+            StopCoroutine(_hallwayPassBySoundCoroutine);
+            _hallwayPassBySoundCoroutine = null;
         }
 
         Debug.Log("[ParentWarningSystem] WARNING STOPPED");
         TurnOffAllLights();
         EndWarningSequence();
+    }
+
+    public void NotifyGameOver()
+    {
+        _gameplayClockActive = false;
     }
 
     public void EndWarningSequence()
@@ -452,7 +439,7 @@ public class ParentWarningSystem : MonoBehaviour
             approachController.ResetApproach();
     }
 
-    private enum RouteOverride { None, PassBy, Door, HallwayPassBy }
+    private enum RouteOverride { None, Door, HallwayPassBy }
 
     private IEnumerator GardenPassByForeshadowCoroutine()
     {
@@ -575,11 +562,7 @@ public class ParentWarningSystem : MonoBehaviour
         ApplyApproachSpeed(isManual, suspicionFraction);
 
         RouteState chosenRoute;
-        if (routeOverride == RouteOverride.PassBy)
-        {
-            chosenRoute = RouteState.PassBy;
-        }
-        else if (routeOverride == RouteOverride.Door)
+        if (routeOverride == RouteOverride.Door)
         {
             chosenRoute = RouteState.DoorPeek;
         }
@@ -593,51 +576,105 @@ public class ParentWarningSystem : MonoBehaviour
         }
 
         ActiveRoute = chosenRoute;
-        Debug.Log($"[ParentWarningSystem] ROUTE CHOSEN: {ActiveRoute}");
+        bool isAutomatic = !isManual && routeOverride == RouteOverride.None;
+        Debug.Log($"[ParentWarningSystem] ROUTE CHOSEN | mode={(isAutomatic ? "Automatic" : "Manual")} | " +
+                  $"route={ActiveRoute} | consecutiveFeints={_consecutiveAutomaticFeints}");
 
+        bool started;
         switch (ActiveRoute)
         {
             case RouteState.DoorPeek:
-                approachController.StartApproachDoorOnly();
-                break;
-
-            case RouteState.PassBy:
-            case RouteState.PassByThenDoorSound:
-                approachController.StartApproachPassByOnly();
+                started = approachController.StartApproachDoorOnly();
                 break;
 
             case RouteState.HallwayPassBy:
-                approachController.StartApproachHallwayPassBy();
+                started = approachController.StartApproachHallwayPassBy();
                 break;
 
             case RouteState.GardenPassBy:
-                approachController.StartApproachGardenPassBy();
+                started = approachController.StartApproachGardenPassBy();
                 break;
+
+            case RouteState.GardenPeek:
+                started = approachController.StartApproachGardenPeek();
+                break;
+
+            case RouteState.CatFeint:
+                if (parentDetection != null)
+                    started = parentDetection.TriggerCatFeintEvent();
+                else
+                {
+                    started = false;
+                    EndWarningSequence();
+                }
+                break;
+
+            default:
+                started = false;
+                break;
+        }
+
+        if (started && isAutomatic)
+        {
+            bool isFeint = ActiveRoute == RouteState.HallwayPassBy ||
+                           ActiveRoute == RouteState.GardenPassBy ||
+                           ActiveRoute == RouteState.CatFeint;
+            _consecutiveAutomaticFeints = isFeint
+                ? _consecutiveAutomaticFeints + 1
+                : 0;
+            Debug.Log($"[ParentWarningSystem] AUTOMATIC ROUTE COMMITTED | route={ActiveRoute} | " +
+                      $"group={(isFeint ? "Feint" : "Peek")} | consecutiveFeints={_consecutiveAutomaticFeints}");
+        }
+        else if (!started)
+        {
+            Debug.LogWarning($"[ParentWarningSystem] {(isAutomatic ? "AUTOMATIC" : "MANUAL")} ROUTE NOT STARTED | " +
+                             $"route={ActiveRoute} — counter unchanged");
+            EndWarningSequence();
         }
 
         _foreshadowCoroutine = null;
     }
 
-    // 自動抽選：HallwayPassBy（フェイントA）は含まれない（重み0・手動テスト専用ルート）。
+    // 通常抽選は、経過時間でフェイント／覗きのグループ比率を変え、
+    // グループ内は均等に選ぶ。RushInと手動起動はここを通らない。
     private RouteState ChooseRoute()
     {
-        float suspicionFraction = GetSuspicionFraction();
-        float doorChance = Mathf.Lerp(doorChanceAtMinSuspicion, doorChanceAtMaxSuspicion, suspicionFraction);
-        float roll = Random.value;
-
-        if (roll < doorChance)
+        float feintProbability = _gameplayElapsedSeconds < 60f
+            ? 0.50f
+            : _gameplayElapsedSeconds < 120f
+                ? 0.40f
+                : 0.25f;
+        if (_consecutiveAutomaticFeints >= 2)
         {
-            Debug.Log($"[ParentWarningSystem] ChooseRoute | suspicion={suspicionFraction:F2} | doorChance={doorChance:F2} | result=DoorPeek");
-            return RouteState.DoorPeek;
+            RouteState forcedPeek = Random.Range(0, 2) == 0
+                ? RouteState.DoorPeek
+                : RouteState.GardenPeek;
+            Debug.Log($"[ParentWarningSystem] ChooseRoute | forcedPeek=true | consecutiveFeints={_consecutiveAutomaticFeints} | result={forcedPeek}");
+            return forcedPeek;
         }
 
-        float nonDoorRoll = Random.value;
-        RouteState result = nonDoorRoll < basePassByThenDoorSoundChance
-            ? RouteState.PassByThenDoorSound
-            : RouteState.PassBy;
+        bool chooseFeint = Random.value < feintProbability;
+        RouteState result;
+
+        if (chooseFeint)
+        {
+            int index = Random.Range(0, 3);
+            result = index == 0
+                ? RouteState.HallwayPassBy
+                : index == 1
+                    ? RouteState.GardenPassBy
+                    : RouteState.CatFeint;
+        }
+        else
+        {
+            result = Random.Range(0, 2) == 0
+                ? RouteState.DoorPeek
+                : RouteState.GardenPeek;
+        }
 
         Debug.Log(
-            $"[ParentWarningSystem] ChooseRoute | suspicion={suspicionFraction:F2} | doorChance={doorChance:F2} | nonDoorRoll={nonDoorRoll:F2} | result={result}"
+            $"[ParentWarningSystem] ChooseRoute | elapsed={_gameplayElapsedSeconds:F2}s | " +
+            $"feintProbability={feintProbability:F2} | group={(chooseFeint ? "Feint" : "Peek")} | result={result}"
         );
 
         return result;
@@ -787,8 +824,8 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
-        if (ActiveRoute == RouteState.PassByThenDoorSound && approachController != null)
-            _passByThenDoorSoundCoroutine = StartCoroutine(PlayPassByThenDoorSoundCoroutine());
+        if (ActiveRoute == RouteState.HallwayPassBy && approachController != null)
+            _hallwayPassBySoundCoroutine = StartCoroutine(PlayHallwayPassBySoundCoroutine());
 
         if (parentDetection != null)
             parentDetection.OnApproachPassedBy();
@@ -796,17 +833,17 @@ public class ParentWarningSystem : MonoBehaviour
             Debug.LogWarning("[ParentWarningSystem] HandlePassedByDoor: parentDetection is NULL");
     }
 
-    private IEnumerator PlayPassByThenDoorSoundCoroutine()
+    private IEnumerator PlayHallwayPassBySoundCoroutine()
     {
         float delay = Mathf.Max(0f, passByThenDoorSoundDelay);
-        Debug.Log($"[ParentWarningSystem] PassByThenDoorSound: waiting {delay:F1}s");
+        Debug.Log($"[ParentWarningSystem] HallwayPassBy sound: waiting {delay:F1}s");
 
         yield return new WaitForSeconds(delay);
 
-        Debug.Log("[ParentWarningSystem] PassByThenDoorSound: PLAY");
+        Debug.Log("[ParentWarningSystem] HallwayPassBy sound: PLAY");
         approachController.PlayPassBySound();
 
-        _passByThenDoorSoundCoroutine = null;
+        _hallwayPassBySoundCoroutine = null;
     }
 
     private bool ValidateController()

@@ -585,7 +585,7 @@ MonoBehaviour:
   textDuration: 1.5
   inputIgnoreDuration: 5
   autoChangeDelay: 20
-  titleSceneName: Mother Title
+  titleSceneName: MotherTitle
 --- !u!1 &575331549
 GameObject:
   m_ObjectHideFlags: 0

@@ -21,7 +21,7 @@ MonoBehaviour:
   m_OverrideGlobalSceneList: 1
   m_Scenes:
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/Mother Title.unity
+    m_path: Assets/Scenes/MotherGame/MotherTitle.unity
   - m_enabled: 1
     m_path: Assets/Scenes/MotherGame/MotherLoad.unity
   - m_enabled: 1
