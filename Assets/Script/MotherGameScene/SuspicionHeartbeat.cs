@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// 寝たふり中、心臓の音を鳴らす（ゲージ値による発動条件はなし）。
-/// 怪しさゲージが高いほど鼓動が速くなる。ゲージの値は読み取るだけで変更しない。
+/// 寝たふり中だけ心臓の音を鳴らす。
+/// 怪しさゲージの段階に応じて鼓動間隔を切り替える。ゲージの値は読み取るだけで変更しない。
 /// - 心音の音源は heartbeatAudioSource の Audio Clip（1拍ぶんの短い音）に設定する。
 /// - 鼓動のタイミングは IsBeating / BeatPulse として公開し、SuspicionVisualFeedback の赤い点滅が同期に使う。
 ///   （Clipが未設定でも鼓動の計時は動くので、点滅だけの確認もできる）
@@ -19,15 +19,13 @@ public class SuspicionHeartbeat : MonoBehaviour
     [Tooltip("1拍ぶんの心音のClipを設定したAudioSource。Play On Awakeはオフ、Loopもオフにしてください。")]
     [SerializeField] private AudioSource heartbeatAudioSource;
 
-    [Header("鳴らす条件")]
-    [Tooltip("trueなら寝たふり中だけ鼓動する。falseなら常に鼓動する。")]
-    [SerializeField] private bool requireSleeping = true;
-
-    [Header("鼓動の速さ（1分あたりの拍数）")]
-    [Tooltip("ゲージが0のときの速さ。")]
-    [SerializeField, Min(1f)] private float bpmAtStart = 70f;
-    [Tooltip("ゲージが最大（maxGauge）のときの速さ。")]
-    [SerializeField, Min(1f)] private float bpmAtMax = 160f;
+    [Header("鼓動の間隔（秒）")]
+    [Tooltip("青（安全・低）の鼓動間隔。")]
+    [SerializeField, Min(0.01f)] private float blueBeatInterval = 1.35f;
+    [Tooltip("紫（警戒・中）の鼓動間隔。")]
+    [SerializeField, Min(0.01f)] private float purpleBeatInterval = 0.9f;
+    [Tooltip("赤（危険・高）の鼓動間隔。")]
+    [SerializeField, Min(0.01f)] private float redBeatInterval = 0.45f;
 
     [Header("音量")]
     [SerializeField, Range(0f, 1f)] private float volume = 1f;
@@ -61,13 +59,13 @@ public class SuspicionHeartbeat : MonoBehaviour
 
     private void Update()
     {
-        if (requireSleeping && sleepingController == null && !_missingSleepingWarningShown)
+        if (sleepingController == null && !_missingSleepingWarningShown)
         {
             _missingSleepingWarningShown = true;
             Debug.LogWarning($"[{nameof(SuspicionHeartbeat)}] SleepingControllerが見つかりません。寝たふり判定ができないため鼓動しません。", this);
         }
 
-        bool active = !requireSleeping || (sleepingController != null && sleepingController.IsSleeping);
+        bool active = sleepingController != null && sleepingController.IsSleeping;
 
         if (!active)
         {
@@ -75,7 +73,7 @@ public class SuspicionHeartbeat : MonoBehaviour
             return;
         }
 
-        float interval = 60f / GetBpm();
+        float interval = GetBeatInterval();
 
         // 条件を満たした瞬間に1拍目をすぐ鳴らす
         if (!_wasActive)
@@ -87,7 +85,7 @@ public class SuspicionHeartbeat : MonoBehaviour
         _timer += Time.deltaTime;
         if (_timer >= interval)
         {
-            _timer = 0f;
+            _timer -= interval;
             PlayBeat();
         }
 
@@ -99,8 +97,12 @@ public class SuspicionHeartbeat : MonoBehaviour
     private void SetIdle()
     {
         _wasActive = false;
+        _timer = 0f;
         IsBeating = false;
         BeatPulse = 0f;
+
+        if (heartbeatAudioSource != null)
+            heartbeatAudioSource.Stop();
     }
 
     private void PlayBeat()
@@ -114,15 +116,18 @@ public class SuspicionHeartbeat : MonoBehaviour
         heartbeatAudioSource.PlayOneShot(heartbeatAudioSource.clip, volume);
     }
 
-    // ゲージ 0 → maxGauge で bpmAtStart → bpmAtMax に線形補間する（ゲージ未取得なら bpmAtStart）
-    private float GetBpm()
+    // 既存の疑惑UIと同じく、ゲージを青（0～3）、紫（4～6）、赤（7以上）に分ける。
+    private float GetBeatInterval()
     {
-        if (motherGauge == null || motherGauge.maxGauge <= 0)
-        {
-            return bpmAtStart;
-        }
+        if (motherGauge == null)
+            return blueBeatInterval;
 
-        float t = Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge);
-        return Mathf.Lerp(bpmAtStart, bpmAtMax, t);
+        if (motherGauge.currentGauge <= 3)
+            return blueBeatInterval;
+
+        if (motherGauge.currentGauge <= 6)
+            return purpleBeatInterval;
+
+        return redBeatInterval;
     }
 }

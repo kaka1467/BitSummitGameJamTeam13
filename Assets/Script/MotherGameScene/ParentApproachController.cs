@@ -117,10 +117,31 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("母親モデルのAnimator。未設定の場合はMotherRouteRoot配下から自動取得する。")]
     [SerializeField] private Animator motherAnimator;
 
+    // ── 演出 ──────────────────────────────────────────────────────────────────
+    [Header("演出")]
+    [Tooltip("母親の覗き見・捕獲突入時に点灯する目のオブジェクト。")]
+    [SerializeField] private GameObject glowingEyesObject;
+
+    [Header("目の発光マテリアル/カラー")]
+    [Tooltip("左目の発光用Renderer。")]
+    [SerializeField] private Renderer eyeRendererL;
+    [Tooltip("右目の発光用Renderer。")]
+    [SerializeField] private Renderer eyeRendererR;
+    [ColorUsage(true, true)]
+    [SerializeField] private Color normalGlowColor = new Color(1f, 0.8f, 0.2f, 1f);
+    [ColorUsage(true, true)]
+    [SerializeField] private Color dangerGlowColor = new Color(1f, 0f, 0f, 1f);
+    [Tooltip("怪しさゲージ参照。未設定の場合はシーンから自動取得する。")]
+    [SerializeField] private MotherGauge motherGauge;
+
     // ── オーディオ ─────────────────────────────────────────────────────────────
-    [Header("オーディオ")]
-    [Tooltip("接近中にループ再生するAudioSource。UpdateMovementLoopAudio()で毎フレーム制御する。突入ルートでは再生しない。")]
-    public AudioSource movementLoopAudioSource;
+    [Header("移動音 (AudioSource)")]
+    [Tooltip("廊下の移動中に再生するAudioSource。")]
+    [SerializeField] private AudioSource hallwayFootstepAudioSource;
+    [Tooltip("庭（草むら）の移動中に再生するAudioSource。")]
+    [SerializeField] private AudioSource gardenFootstepAudioSource;
+    [Tooltip("廊下通過フェイント完了時に再生する偽ドア音。")]
+    [SerializeField] private AudioSource passBySoundAudioSource;
 
     [Header("足音音量（段階的制御）")]
     [Tooltip("開始地点付近（遠い段階）での足音音量。")]
@@ -175,6 +196,13 @@ public class ParentApproachController : MonoBehaviour
     /// <summary>GardenPeekPointで覗き待機中か。庭覗き専用の状態で、isMotherLookingNow（ドア側の本チェック）には影響しない。</summary>
     public bool IsGardenPeeking => _isGardenPeeking;
 
+    /// <summary>通過完了時の偽ドア音を再生する。</summary>
+    public void PlayPassBySound()
+    {
+        if (passBySoundAudioSource != null)
+            passBySoundAudioSource.Play();
+    }
+
     // ── 実行モード ────────────────────────────────────────────────────────────
     /// <summary>大きな音による突入開始前にParentWarningSystemが設定する。移動ループ音を抑制し、rushInPauseAtDoorSecondsを使用する。</summary>
     public bool IsRushIn { get; set; }
@@ -186,7 +214,6 @@ public class ParentApproachController : MonoBehaviour
     private float _currentAudioVolume;
     private float _targetAudioVolume;
     private float _gardenPeekDuration;   // GardenPeekの覗き時間（秒）。GardenPeekPoint到着時に一度だけ決定する。
-    private MotherGauge _motherGauge;    // 覗き時間の計算に使う疑惑ゲージ。Start()で検索・キャッシュする。
     private bool _isGardenPeeking;       // GardenPeekPointで覗き待機中か。isMotherLookingNowには影響しない。
 
     // 部屋入室（案B）の状態
@@ -198,6 +225,7 @@ public class ParentApproachController : MonoBehaviour
     private bool _animatorWarningLogged;
     private string _diagnosticRouteName = "<none>";
     private int _diagnosticLastStateHash;
+    private bool _isGrassFootstepRoute;
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
@@ -205,50 +233,49 @@ public class ParentApproachController : MonoBehaviour
 
     private void Start()
     {
+        SetGlowingEyes(false);
         _currentAudioVolume = farVolume;
         _targetAudioVolume = farVolume;
-        if (movementLoopAudioSource != null)
-        {
-            movementLoopAudioSource.volume = farVolume;
-        }
+        InitializeFootstepAudioSource(hallwayFootstepAudioSource);
+        InitializeFootstepAudioSource(gardenFootstepAudioSource);
 
         // 覗き時間の計算に使う疑惑ゲージをキャッシュする（見つからない場合は覗き開始時に再試行する）。
-        if (_motherGauge == null)
-            _motherGauge = Object.FindFirstObjectByType<MotherGauge>();
+        if (motherGauge == null)
+            motherGauge = Object.FindFirstObjectByType<MotherGauge>();
     }
 
     private void Update()
     {
         UpdateMovementLoopAudio();
+        UpdateEyeColor();
         LogDiagnosticPeekStateEntry();
     }
 
     private void UpdateMovementLoopAudio()
     {
-        if (movementLoopAudioSource == null) return;
         // 覗き機能削除に伴い、通常ルートの接近中は常に移動ループを再生する。
         bool shouldPlay = !IsRushIn && IsApproaching;
-        if (shouldPlay)
+        AudioSource activeSource = GetActiveFootstepAudioSource();
+        if (shouldPlay && activeSource != null)
         {
-            if (!movementLoopAudioSource.isPlaying)
+            StopInactiveFootstepAudioSources(activeSource);
+            if (!activeSource.isPlaying)
             {
-                movementLoopAudioSource.loop = true;
-                movementLoopAudioSource.volume = _currentAudioVolume;
-                movementLoopAudioSource.Play();
+                activeSource.loop = true;
+                activeSource.volume = _currentAudioVolume;
+                activeSource.Play();
                 Debug.Log("[ParentApproachController] 移動ループを開始（接近中）");
             }
 
             // 現在の音量から目標音量へ滑らかに変化させる
             _currentAudioVolume = Mathf.MoveTowards(_currentAudioVolume, _targetAudioVolume, volumeChangeSpeed * Time.deltaTime);
-            movementLoopAudioSource.volume = _currentAudioVolume;
+            activeSource.volume = _currentAudioVolume;
         }
-        else if (movementLoopAudioSource.isPlaying)
+        else
         {
-            movementLoopAudioSource.Stop();
+            StopFootstepAudioSources();
             _targetAudioVolume = farVolume;
             _currentAudioVolume = farVolume;
-            movementLoopAudioSource.volume = farVolume;
-            Debug.Log("[ParentApproachController] 移動ループを停止（接近終了、または突入中）");
         }
     }
 
@@ -470,6 +497,8 @@ public class ParentApproachController : MonoBehaviour
     private void BeginApproach(bool passByRoute, bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false)
     {
         EnsureMotherAnimator();
+        _isGrassFootstepRoute = false;
+        StopFootstepAudioSources();
         _diagnosticRouteName = gardenPeek
             ? "GardenPeek"
             : gardenPassBy
@@ -489,10 +518,7 @@ public class ParentApproachController : MonoBehaviour
         // 接近開始時は遠い段階の音量から初期化
         _targetAudioVolume = farVolume;
         _currentAudioVolume = farVolume;
-        if (movementLoopAudioSource != null)
-        {
-            movementLoopAudioSource.volume = farVolume;
-        }
+        SetFootstepAudioSourceVolume(farVolume);
 
         // startPoint.rotationからピッチ／ロールを取得し、キャンセルされたサイクル後に
         // 実行途中の古いTransformが誤った値を引き継がないようにする。
@@ -504,6 +530,7 @@ public class ParentApproachController : MonoBehaviour
         transform.rotation = startPoint.rotation;
 
         ShowMotherModel();
+        SetGlowingEyes(_cycleStartedAsRushIn);
         SetWalkingAnimation(true);
 
         IsApproaching = true;
@@ -541,6 +568,7 @@ public class ParentApproachController : MonoBehaviour
         yield return RotateToTransformYaw(doorPoint, doorTurnRotationSpeed);
         SetWalkingAnimation(false);
         LogDiagnosticWaypoint("DoorPoint arrival and rotation complete", doorPoint);
+        SetGlowingEyes(true);
 
         ReachedDoor = true;
         Debug.Log("[ParentApproachController] ドアに到着 — OnReachedDoorを発生");
@@ -567,6 +595,7 @@ public class ParentApproachController : MonoBehaviour
             yield return RoomPhaseCoroutine();
         }
 
+        SetGlowingEyes(false);
         _doorRoutineActive = false;
     }
 
@@ -623,6 +652,7 @@ public class ParentApproachController : MonoBehaviour
 
         // 画面外の到達点まで進み、到達したら停止する。
         yield return MoveToPoint(hallwayPassByPoint);
+        PlayPassBySound();
 
         StopMovementAudio();
         PassedByDoor  = true;
@@ -695,12 +725,13 @@ public class ParentApproachController : MonoBehaviour
         yield return RotateToTransformYaw(gardenPeekPoint, doorTurnRotationSpeed);
         SetWalkingAnimation(false);
         LogDiagnosticWaypoint("GardenPeekPoint arrival and rotation complete", gardenPeekPoint);
+        SetGlowingEyes(true);
         TriggerWindowPeekAnimation();
 
         // 覗き時間は「GardenPeekPoint到着時のゲージ値」を一度だけ取得して決定する（覗き中のゲージ変化では延長しない）。
-        if (_motherGauge == null)
-            _motherGauge = Object.FindFirstObjectByType<MotherGauge>();
-        int gaugeAtPeekStart = (_motherGauge != null) ? _motherGauge.currentGauge : 0;
+        if (motherGauge == null)
+            motherGauge = Object.FindFirstObjectByType<MotherGauge>();
+        int gaugeAtPeekStart = (motherGauge != null) ? motherGauge.currentGauge : 0;
         _gardenPeekDuration = Mathf.Max(0f, gardenPeekDurationBase) + gaugeAtPeekStart;
         Debug.Log($"[ParentApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={gardenPeekDurationBase:F1} + gauge={gaugeAtPeekStart})");
 
@@ -712,6 +743,7 @@ public class ParentApproachController : MonoBehaviour
 
         // 覗き待機終了：継続疑惑が次tick以内に確実に停止するよう、フラグを先に解除する。
         _isGardenPeeking = false;
+        SetGlowingEyes(false);
 
         // 覗き終了：GardenPassByPointまで進み、到着後に既存の終了処理へ引き渡す。
         // 途中で警告終了・灯り消灯は行わない（通知はGardenPassByPoint到着後の1回だけ）。
@@ -873,6 +905,7 @@ public class ParentApproachController : MonoBehaviour
             yield return null;
         }
         transform.position = goal;
+        UpdateGardenFootstepClip(target);
     }
 
     /// <summary>
@@ -909,6 +942,60 @@ public class ParentApproachController : MonoBehaviour
             yield return null;
         }
         transform.position = goal;
+        UpdateGardenFootstepClip(target);
+    }
+
+    private void UpdateGardenFootstepClip(Transform target)
+    {
+        if (!_isGrassFootstepRoute &&
+            (target.name == "GardenPoint_1" ||
+             (gardenRoutePoints != null && gardenRoutePoints.Length > 0 && target == gardenRoutePoints[0])))
+        {
+            _isGrassFootstepRoute = true;
+            StopFootstepAudioSources();
+        }
+    }
+
+    private AudioSource GetActiveFootstepAudioSource()
+    {
+        return _isGrassFootstepRoute
+            ? gardenFootstepAudioSource
+            : hallwayFootstepAudioSource;
+    }
+
+    private void InitializeFootstepAudioSource(AudioSource source)
+    {
+        if (source == null)
+            return;
+
+        source.loop = true;
+        source.Stop();
+        source.volume = farVolume;
+    }
+
+    private void StopInactiveFootstepAudioSources(AudioSource activeSource)
+    {
+        AudioSource inactiveSource = activeSource == hallwayFootstepAudioSource
+            ? gardenFootstepAudioSource
+            : hallwayFootstepAudioSource;
+        if (inactiveSource != null && inactiveSource.isPlaying)
+            inactiveSource.Stop();
+    }
+
+    private void StopFootstepAudioSources()
+    {
+        if (hallwayFootstepAudioSource != null)
+            hallwayFootstepAudioSource.Stop();
+        if (gardenFootstepAudioSource != null)
+            gardenFootstepAudioSource.Stop();
+    }
+
+    private void SetFootstepAudioSourceVolume(float volume)
+    {
+        if (hallwayFootstepAudioSource != null)
+            hallwayFootstepAudioSource.volume = volume;
+        if (gardenFootstepAudioSource != null)
+            gardenFootstepAudioSource.volume = volume;
     }
 
     private IEnumerator RotateToTransformYaw(Transform target, float speed)
@@ -1136,17 +1223,45 @@ public class ParentApproachController : MonoBehaviour
 
     private void StopMovementAudio()
     {
-        if (movementLoopAudioSource != null)
-        {
-            if (movementLoopAudioSource.isPlaying)
-            {
-                movementLoopAudioSource.Stop();
-                Debug.Log("[ParentApproachController] 移動音を停止");
-            }
-            movementLoopAudioSource.volume = farVolume;
-        }
+        StopFootstepAudioSources();
+        SetFootstepAudioSourceVolume(farVolume);
+        _isGrassFootstepRoute = false;
         _targetAudioVolume = farVolume;
         _currentAudioVolume = farVolume;
+    }
+
+    private void SetGlowingEyes(bool isEnabled)
+    {
+        if (glowingEyesObject != null)
+            glowingEyesObject.SetActive(isEnabled);
+
+        if (isEnabled)
+            UpdateEyeColor();
+    }
+
+    private void UpdateEyeColor()
+    {
+        if (glowingEyesObject == null || !glowingEyesObject.activeSelf)
+            return;
+
+        int gauge = motherGauge != null ? motherGauge.currentGauge : 0;
+        Color glowColor = gauge >= 7 ? dangerGlowColor : normalGlowColor;
+        Color hdrGlowColor = glowColor * Mathf.Pow(2f, 3f);
+        SetEyeEmissionColor(eyeRendererL, hdrGlowColor);
+        SetEyeEmissionColor(eyeRendererR, hdrGlowColor);
+    }
+
+    private static void SetEyeEmissionColor(Renderer eyeRenderer, Color glowColor)
+    {
+        if (eyeRenderer == null)
+            return;
+
+        Material eyeMaterial = eyeRenderer.material;
+        if (!eyeMaterial.HasProperty("_EmissionColor"))
+            return;
+
+        eyeMaterial.EnableKeyword("_EMISSION");
+        eyeMaterial.SetColor("_EmissionColor", glowColor);
     }
 
     private void ShowMotherModel()
@@ -1177,6 +1292,7 @@ public class ParentApproachController : MonoBehaviour
         IsInHallwayPhase = false;
         IsRushIn         = false;
         _isGardenPeeking = false;
+        SetGlowingEyes(false);
 
         // 部屋入室（案B）の状態を初期化する。_cycleStartedAsRushInはBeginApproach()で
         // ResetStateFlags()より前に設定されるため、ここではクリアしない。
