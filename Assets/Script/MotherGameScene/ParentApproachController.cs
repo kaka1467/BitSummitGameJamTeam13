@@ -97,6 +97,9 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("到着と判定するウェイポイントまでの距離（単位）。")]
     public float stopDistance = 0.05f;
 
+    [Tooltip("母親の足元が床に埋まる／浮く場合に調整。ワールドYに加算")]
+    [SerializeField] private float motherHeightOffset = 0f;
+
     // ── 回転速度 ──────────────────────────────────────────────────────────────
     [Header("回転速度")]
     [Tooltip("階段の角で旋回するときの速度（度／秒）。")]
@@ -111,6 +114,8 @@ public class ParentApproachController : MonoBehaviour
     public GameObject motherModelRoot;
     [Tooltip("任意：motherModelRootだけでは不十分な場合に有効／無効にする子Renderer（例：LODの子）。")]
     public Renderer[] motherModelRenderers;
+    [Tooltip("母親モデルのAnimator。未設定の場合はMotherRouteRoot配下から自動取得する。")]
+    [SerializeField] private Animator motherAnimator;
 
     // ── オーディオ ─────────────────────────────────────────────────────────────
     [Header("オーディオ")]
@@ -190,6 +195,9 @@ public class ParentApproachController : MonoBehaviour
     private bool _roomEntryRequested;     // OnStoppedAtDoor中にPDV2から入室要求を受けたか
     private bool _roomPhaseActive;        // 入室フェーズ（部屋内部への移動〜doorPoint復帰）が進行中か
     private bool _leaveRoomRequested;     // 部屋内部からの退室要求を受けたか
+    private bool _animatorWarningLogged;
+    private string _diagnosticRouteName = "<none>";
+    private int _diagnosticLastStateHash;
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
@@ -212,6 +220,7 @@ public class ParentApproachController : MonoBehaviour
     private void Update()
     {
         UpdateMovementLoopAudio();
+        LogDiagnosticPeekStateEntry();
     }
 
     private void UpdateMovementLoopAudio()
@@ -445,7 +454,7 @@ public class ParentApproachController : MonoBehaviour
 
         if (startPoint != null)
         {
-            transform.position = startPoint.position;
+            transform.position = OffsetGoalPosition(startPoint.position);
             transform.rotation = startPoint.rotation;
         }
         else
@@ -460,6 +469,16 @@ public class ParentApproachController : MonoBehaviour
 
     private void BeginApproach(bool passByRoute, bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false)
     {
+        EnsureMotherAnimator();
+        _diagnosticRouteName = gardenPeek
+            ? "GardenPeek"
+            : gardenPassBy
+                ? "GardenPassBy"
+                : hallwayPassBy
+                    ? "HallwayPassBy"
+                    : passByRoute
+                        ? "PassBy"
+                        : "Door";
         // 「このサイクルは突入（大きな音）として開始されたか」を記録する。
         // ParentWarningSystemはIsRushIn=trueを設定してから本メソッドを呼ぶため、
         // ResetStateFlags()でIsRushInが消える前にここで捕捉する（入室可否の判定に使用する）。
@@ -481,10 +500,11 @@ public class ParentApproachController : MonoBehaviour
         _fixedPitch = startEuler.x;
         _fixedRoll  = startEuler.z;
 
-        transform.position = startPoint.position;
+        transform.position = OffsetGoalPosition(startPoint.position);
         transform.rotation = startPoint.rotation;
 
         ShowMotherModel();
+        SetWalkingAnimation(true);
 
         IsApproaching = true;
         onApproachStarted?.Invoke();
@@ -519,6 +539,8 @@ public class ParentApproachController : MonoBehaviour
         Debug.Log($"[ParentApproachController] Phase: DOOR | moving to '{doorPoint.name}' then rotate to doorPoint's yaw | targetVolume={nearDoorVolume}");
         yield return MoveToPoint(doorPoint);
         yield return RotateToTransformYaw(doorPoint, doorTurnRotationSpeed);
+        SetWalkingAnimation(false);
+        LogDiagnosticWaypoint("DoorPoint arrival and rotation complete", doorPoint);
 
         ReachedDoor = true;
         Debug.Log("[ParentApproachController] ドアに到着 — OnReachedDoorを発生");
@@ -671,6 +693,9 @@ public class ParentApproachController : MonoBehaviour
         // GardenPeekPointで停止し、設定された覗き方向（GardenPeekPoint.rotationのY角）へ回転する。
         yield return MoveToPointFacingMovement(gardenPeekPoint);
         yield return RotateToTransformYaw(gardenPeekPoint, doorTurnRotationSpeed);
+        SetWalkingAnimation(false);
+        LogDiagnosticWaypoint("GardenPeekPoint arrival and rotation complete", gardenPeekPoint);
+        TriggerWindowPeekAnimation();
 
         // 覗き時間は「GardenPeekPoint到着時のゲージ値」を一度だけ取得して決定する（覗き中のゲージ変化では延長しない）。
         if (_motherGauge == null)
@@ -808,12 +833,23 @@ public class ParentApproachController : MonoBehaviour
             yield return MoveToPoint(turnPoint);
             yield return RotateToTransformYaw(turnPoint, stairTurnRotationSpeed);
             Debug.Log("[ParentApproachController]   方向転換完了");
+            LogDiagnosticWaypoint("TurnPoint arrival and rotation complete", turnPoint);
         }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
     //  移動／回転ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 目標位置へmotherHeightOffset（ワールドY）を1回だけ加算した到達点を返す。
+    /// 常にwaypoint（またはstartPoint）の生座標から再計算するため、フレーム間・waypoint間で
+    /// オフセットは累積しない。X/Zは元のwaypoint座標をそのまま使う。
+    /// </summary>
+    private Vector3 OffsetGoalPosition(Vector3 targetPosition)
+    {
+        return new Vector3(targetPosition.x, targetPosition.y + motherHeightOffset, targetPosition.z);
+    }
 
     private IEnumerator MoveToPoint(Transform target)
     {
@@ -823,13 +859,20 @@ public class ParentApproachController : MonoBehaviour
             yield break;
         }
 
-        while (Vector3.Distance(transform.position, target.position) > stopDistance)
+        // 到達点は「waypoint位置＋motherHeightOffset」を1回だけ計算する。
+        // 現在位置へオフセットを加算しないため、フレーム間・waypoint間で高さが累積しない。
+        Vector3 goal = OffsetGoalPosition(target.position);
+
+        if (Vector3.Distance(transform.position, goal) > stopDistance)
+            SetWalkingAnimation(true);
+
+        while (Vector3.Distance(transform.position, goal) > stopDistance)
         {
             transform.position = Vector3.MoveTowards(
-                transform.position, target.position, moveSpeed * Time.deltaTime);
+                transform.position, goal, moveSpeed * Time.deltaTime);
             yield return null;
         }
-        transform.position = target.position;
+        transform.position = goal;
     }
 
     /// <summary>
@@ -842,9 +885,16 @@ public class ParentApproachController : MonoBehaviour
     {
         if (target == null) yield break;
 
-        while (Vector3.Distance(transform.position, target.position) > stopDistance)
+        // MoveToPointと同じく、到達点はwaypointの生座標＋motherHeightOffsetを1回だけ適用する。
+        Vector3 goal = OffsetGoalPosition(target.position);
+
+        if (Vector3.Distance(transform.position, goal) > stopDistance)
+            SetWalkingAnimation(true);
+
+        while (Vector3.Distance(transform.position, goal) > stopDistance)
         {
-            Vector3 delta = target.position - transform.position;
+            // 向きはXZのみで決める（delta.y=0）ため、高さ補正は旋回に影響しない。
+            Vector3 delta = goal - transform.position;
             delta.y = 0f;
             if (delta.sqrMagnitude > 0.0001f)
             {
@@ -855,10 +905,10 @@ public class ParentApproachController : MonoBehaviour
             }
 
             transform.position = Vector3.MoveTowards(
-                transform.position, target.position, moveSpeed * Time.deltaTime);
+                transform.position, goal, moveSpeed * Time.deltaTime);
             yield return null;
         }
-        transform.position = target.position;
+        transform.position = goal;
     }
 
     private IEnumerator RotateToTransformYaw(Transform target, float speed)
@@ -887,6 +937,193 @@ public class ParentApproachController : MonoBehaviour
     private void SetYaw(float yaw)
     {
         transform.rotation = Quaternion.Euler(_fixedPitch, yaw, _fixedRoll);
+    }
+
+    public void TriggerDoorPeekAnimation()
+    {
+        EnsureMotherAnimator();
+        if (motherAnimator == null)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        if (!HasAnimatorParameter("Peek_Door", AnimatorControllerParameterType.Trigger))
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        LogDiagnosticPeekTrigger("Peek_Door", doorPoint);
+        motherAnimator.SetTrigger("Peek_Door");
+    }
+
+    private void TriggerWindowPeekAnimation()
+    {
+        EnsureMotherAnimator();
+        if (motherAnimator == null)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        if (!HasAnimatorParameter("Peek_Windows", AnimatorControllerParameterType.Trigger))
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        LogDiagnosticPeekTrigger("Peek_Windows", gardenPeekPoint);
+        motherAnimator.SetTrigger("Peek_Windows");
+    }
+
+    private void SetWalkingAnimation(bool isWalking)
+    {
+        EnsureMotherAnimator();
+        if (motherAnimator == null)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        if (!HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool))
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        motherAnimator.SetBool("Walk", isWalking);
+    }
+
+    private void EnsureMotherAnimator()
+    {
+        if (motherAnimator == null)
+            motherAnimator = GetComponentInChildren<Animator>(true);
+    }
+
+    private bool HasAnimatorParameter(string parameterName, AnimatorControllerParameterType parameterType)
+    {
+        foreach (AnimatorControllerParameter parameter in motherAnimator.parameters)
+        {
+            if (parameter.name == parameterName && parameter.type == parameterType)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void LogAnimatorWarning()
+    {
+        if (_animatorWarningLogged)
+            return;
+
+        _animatorWarningLogged = true;
+        Debug.LogWarning(
+            "[ParentApproachController] 母親AnimatorまたはWalk/Peekパラメータが未設定のため、アニメーション制御をスキップします。",
+            this);
+    }
+
+    private void LogDiagnosticWaypoint(string eventName, Transform target)
+    {
+        Debug.Log(
+            $"[MotherAnimationDiagnostic] event={eventName} frame={Time.frameCount} time={Time.time:F3} " +
+            $"route={_diagnosticRouteName} rootPosition={transform.position} " +
+            $"target={target.name} targetPosition={target.position} distance={Vector3.Distance(transform.position, target.position):F4} " +
+            $"walk={GetDiagnosticWalkValue()} animator={GetDiagnosticAnimatorName()} controller={GetDiagnosticControllerName()} " +
+            $"state={GetDiagnosticStateName()} inTransition={GetDiagnosticTransitionState()}",
+            this);
+    }
+
+    private void LogDiagnosticPeekTrigger(string triggerName, Transform target)
+    {
+        Debug.Log(
+            $"[MotherAnimationDiagnostic] event=before {triggerName} frame={Time.frameCount} time={Time.time:F3} " +
+            $"route={_diagnosticRouteName} rootPosition={transform.position} " +
+            $"target={GetDiagnosticTargetName(target)} targetPosition={GetDiagnosticTargetPosition(target)} distance={GetDiagnosticTargetDistance(target):F4} " +
+            $"walk={GetDiagnosticWalkValue()} animator={GetDiagnosticAnimatorName()} controller={GetDiagnosticControllerName()} " +
+            $"state={GetDiagnosticStateName()} inTransition={GetDiagnosticTransitionState()}",
+            this);
+    }
+
+    private void LogDiagnosticPeekStateEntry()
+    {
+        if (motherAnimator == null || !motherAnimator.isActiveAndEnabled)
+            return;
+
+        AnimatorStateInfo state = motherAnimator.GetCurrentAnimatorStateInfo(0);
+        if (state.fullPathHash == _diagnosticLastStateHash)
+            return;
+
+        _diagnosticLastStateHash = state.fullPathHash;
+        string stateName = state.IsName("Base Layer.Door Peek") ? "Door Peek" :
+            state.IsName("Base Layer.window peek") ? "window peek" : null;
+        if (stateName == null)
+            return;
+
+        Transform target = stateName == "Door Peek" ? doorPoint : gardenPeekPoint;
+        Debug.Log(
+            $"[MotherAnimationDiagnostic] event=entered {stateName} state frame={Time.frameCount} time={Time.time:F3} " +
+            $"route={_diagnosticRouteName} rootPosition={transform.position} " +
+            $"target={GetDiagnosticTargetName(target)} targetPosition={GetDiagnosticTargetPosition(target)} distance={GetDiagnosticTargetDistance(target):F4} " +
+            $"walk={GetDiagnosticWalkValue()} animator={GetDiagnosticAnimatorName()} controller={GetDiagnosticControllerName()} " +
+            $"state={stateName} inTransition={GetDiagnosticTransitionState()}",
+            this);
+    }
+
+    private string GetDiagnosticWalkValue()
+    {
+        return motherAnimator != null && HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool)
+            ? motherAnimator.GetBool("Walk").ToString()
+            : "<unavailable>";
+    }
+
+    private string GetDiagnosticAnimatorName()
+    {
+        return motherAnimator != null ? motherAnimator.gameObject.name : "<unavailable>";
+    }
+
+    private string GetDiagnosticControllerName()
+    {
+        return motherAnimator != null && motherAnimator.runtimeAnimatorController != null
+            ? motherAnimator.runtimeAnimatorController.name
+            : "<unavailable>";
+    }
+
+    private string GetDiagnosticStateName()
+    {
+        return motherAnimator != null && motherAnimator.isActiveAndEnabled
+            ? motherAnimator.GetCurrentAnimatorStateInfo(0).IsName("Base Layer.Idle")
+                ? "Idle"
+                : motherAnimator.GetCurrentAnimatorStateInfo(0).IsName("Base Layer.Walk")
+                    ? "Walk"
+                    : motherAnimator.GetCurrentAnimatorStateInfo(0).IsName("Base Layer.Door Peek")
+                        ? "Door Peek"
+                        : motherAnimator.GetCurrentAnimatorStateInfo(0).IsName("Base Layer.window peek")
+                            ? "window peek"
+                            : "<unknown>"
+            : "<unavailable>";
+    }
+
+    private string GetDiagnosticTransitionState()
+    {
+        return motherAnimator != null && motherAnimator.isActiveAndEnabled
+            ? motherAnimator.IsInTransition(0).ToString()
+            : "<unavailable>";
+    }
+
+    private string GetDiagnosticTargetName(Transform target)
+    {
+        return target != null ? target.name : "<unavailable>";
+    }
+
+    private string GetDiagnosticTargetPosition(Transform target)
+    {
+        return target != null ? target.position.ToString() : "<unavailable>";
+    }
+
+    private float GetDiagnosticTargetDistance(Transform target)
+    {
+        return target != null ? Vector3.Distance(transform.position, target.position) : -1f;
     }
 
     private static float NormalizeAngle(float angle)
@@ -948,6 +1185,7 @@ public class ParentApproachController : MonoBehaviour
         _roomPhaseActive    = false;
         _leaveRoomRequested = false;
 
+        SetWalkingAnimation(false);
         StopMovementAudio();
     }
 

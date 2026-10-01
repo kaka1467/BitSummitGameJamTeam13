@@ -7,7 +7,7 @@ using UnityEngine;
 /// DoorPoint到着後にドアから覗く猫として見せるためのコンポーネント。
 /// 経路はParentApproachControllerの公開waypoint参照（startPoint〜doorPoint）をそのまま再利用し、
 /// 猫本体（catObject）だけを移動させる（母親モデル・母親のイベントは一切動かさない）。
-/// 移動アニメーションは未導入（位置とY回転のみ）。鳴き声は専用meowAudioSourceから再生する。
+/// 移動アニメーションは猫の実移動中だけ再生する。鳴き声は専用meowAudioSourceから再生する。
 /// </summary>
 public class CatFeintController : MonoBehaviour
 {
@@ -46,6 +46,15 @@ public class CatFeintController : MonoBehaviour
     private Quaternion _homeRotation;
     private Coroutine _meowCoroutine;
     private bool _walkAborted;
+    private Animator _animator;
+    private bool _hasWalkParameter;
+    private bool _hasJumpParameter;
+    private bool _hasIdleState;
+    private bool _animatorWarningLogged;
+
+    private const string WalkParameter = "Walk";
+    private const string JumpParameter = "Jump";
+    private const string IdleState = "Idle";
 
     private void Start()
     {
@@ -53,6 +62,9 @@ public class CatFeintController : MonoBehaviour
         {
             _homePosition = catObject.transform.position;
             _homeRotation = catObject.transform.rotation;
+            _animator = catObject.GetComponentInChildren<Animator>(true);
+            CacheAnimatorParameters();
+            ResetAnimationState();
             // 通常プレイ中は猫を出しておかない（3キー開始時にStartPointへ出現させる）。
             catObject.SetActive(false);
         }
@@ -68,6 +80,7 @@ public class CatFeintController : MonoBehaviour
     public IEnumerator MoveAlongDoorRoute(Func<bool> shouldContinue)
     {
         _walkAborted = false;
+        ResetAnimationState();
 
         if (routeController == null || catObject == null)
         {
@@ -107,6 +120,28 @@ public class CatFeintController : MonoBehaviour
             yield return RotateCatToYaw(routeController.doorPoint.rotation.eulerAngles.y, shouldContinue);
             if (_walkAborted) yield break;
         }
+
+        SetWalking(false);
+    }
+
+    /// <summary>ドアをPeek状態にした直後にJumpを1回だけ再生する。</summary>
+    public void TriggerJump()
+    {
+        if (_animator == null)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        if (!_hasJumpParameter)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        SetWalking(false);
+        _animator.ResetTrigger(JumpParameter);
+        _animator.SetTrigger(JumpParameter);
     }
 
     /// <summary>ドアが開いたタイミングで鳴き声を再生する（meowDelaySecondsだけ遅らせられる）。</summary>
@@ -128,6 +163,7 @@ public class CatFeintController : MonoBehaviour
             StopCoroutine(_meowCoroutine);
             _meowCoroutine = null;
         }
+        ResetAnimationState();
         if (catObject != null && catObject.activeSelf)
             catObject.SetActive(false);
     }
@@ -136,6 +172,7 @@ public class CatFeintController : MonoBehaviour
     public void ReturnToStartPosition()
     {
         if (catObject == null) return;
+        ResetAnimationState();
         catObject.transform.SetPositionAndRotation(CatGoalPosition(_homePosition), _homeRotation);
         catObject.SetActive(false);
     }
@@ -153,6 +190,8 @@ public class CatFeintController : MonoBehaviour
     {
         if (target == null) yield break; // 母親側と同じnull安全スキップ
 
+        SetWalking(true);
+
         // 到達点は「waypoint位置＋catHeightOffset」を毎回waypointの生座標から再計算する。
         // 現在位置へオフセットを加算しないため、フレーム間・waypoint間で猫が浮き上がり続けたり
         // 加算が累積したりしない（Yは常にwaypoint＋offsetの一定高さを保つ）。
@@ -163,6 +202,7 @@ public class CatFeintController : MonoBehaviour
             if (shouldContinue != null && !shouldContinue())
             {
                 _walkAborted = true;
+                ResetAnimationState();
                 yield break;
             }
             catObject.transform.position = Vector3.MoveTowards(
@@ -180,6 +220,7 @@ public class CatFeintController : MonoBehaviour
             if (shouldContinue != null && !shouldContinue())
             {
                 _walkAborted = true;
+                ResetAnimationState();
                 yield break;
             }
             float newYaw = Mathf.MoveTowardsAngle(
@@ -206,5 +247,66 @@ public class CatFeintController : MonoBehaviour
         if (angle > 180f) angle -= 360f;
         if (angle < -180f) angle += 360f;
         return angle;
+    }
+
+    private void CacheAnimatorParameters()
+    {
+        _hasWalkParameter = false;
+        _hasJumpParameter = false;
+        _hasIdleState = false;
+
+        if (_animator == null)
+            return;
+
+        _hasIdleState = _animator.HasState(0, Animator.StringToHash(IdleState));
+        foreach (AnimatorControllerParameter parameter in _animator.parameters)
+        {
+            if (parameter.name == WalkParameter && parameter.type == AnimatorControllerParameterType.Bool)
+                _hasWalkParameter = true;
+            else if (parameter.name == JumpParameter && parameter.type == AnimatorControllerParameterType.Trigger)
+                _hasJumpParameter = true;
+        }
+
+        if (!_hasWalkParameter || !_hasJumpParameter || !_hasIdleState)
+            LogAnimatorWarning();
+    }
+
+    private void SetWalking(bool isWalking)
+    {
+        if (_animator == null)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        if (!_hasWalkParameter)
+        {
+            LogAnimatorWarning();
+            return;
+        }
+
+        _animator.SetBool(WalkParameter, isWalking);
+    }
+
+    private void ResetAnimationState()
+    {
+        SetWalking(false);
+
+        if (_animator != null && _hasJumpParameter)
+            _animator.ResetTrigger(JumpParameter);
+
+        if (_animator != null && _hasIdleState)
+            _animator.Play(IdleState, 0, 0f);
+    }
+
+    private void LogAnimatorWarning()
+    {
+        if (_animatorWarningLogged)
+            return;
+
+        _animatorWarningLogged = true;
+        Debug.LogWarning(
+            "[CatFeint] AnimatorまたはIdle State/Walk(bool)/Jump(trigger)が未設定のため、アニメーション制御をスキップします。猫フェイントは継続します。",
+            this);
     }
 }

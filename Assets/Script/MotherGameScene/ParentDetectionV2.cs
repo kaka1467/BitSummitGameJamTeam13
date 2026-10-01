@@ -386,7 +386,10 @@ public class ParentDetectionV2 : MonoBehaviour
         isMotherLookingNow = true;
 
         if (targetDoorController != null)
-            targetDoorController.SetDoorState(DoorController.DoorState.Full);
+            targetDoorController.SetDoorState(DoorController.DoorState.Peek);
+
+        if (approachController != null)
+            approachController.TriggerDoorPeekAnimation();
 
         if (mainDoorOpenAudioSource != null)
             mainDoorOpenAudioSource.Play();
@@ -599,6 +602,9 @@ public class ParentDetectionV2 : MonoBehaviour
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Peek);
 
+        if (approachController != null)
+            approachController.TriggerDoorPeekAnimation();
+
         if (dummyDoorAudioSource != null) dummyDoorAudioSource.Play();
 
         if (caughtReactionController != null)
@@ -682,10 +688,11 @@ public class ParentDetectionV2 : MonoBehaviour
             yield break;
         }
 
-        // 3. DoorPoint到着後：ドアを隙間開け、猫を見せて鳴き声を再生する。
+        // 3. DoorPoint到着後：ドアを全開にし、猫を見せて鳴き声を再生する。
         if (targetDoorController != null)
-            targetDoorController.SetDoorState(DoorController.DoorState.Peek);
+            targetDoorController.SetDoorState(DoorController.DoorState.Full);
 
+        catFeintController.TriggerJump();
         catFeintController.PlayMeow();
 
         if (dummyDoorAudioSource != null)
