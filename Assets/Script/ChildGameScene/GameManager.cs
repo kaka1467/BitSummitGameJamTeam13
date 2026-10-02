@@ -295,8 +295,9 @@ public class GameManager : MonoBehaviour
         EnsureUdpReceiver();
         if (udpReceiver != null)
         {
-            udpReceiver.SendState(udpMessage);
-            Debug.Log($"[GameManager] Sent UDP: '{udpMessage}'");
+            // リザルト通知は取りこぼすと親機にリザルトが出ないため、再送付きで送る。
+            udpReceiver.SendStateRepeated(udpMessage);
+            Debug.Log($"[GameManager] Sent UDP (with retries): '{udpMessage}'");
         }
         else
         {

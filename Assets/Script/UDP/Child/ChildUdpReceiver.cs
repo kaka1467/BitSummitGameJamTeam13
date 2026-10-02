@@ -211,6 +211,31 @@ public class ChildUdpReceiver : MonoBehaviour
     }
 
     /// <summary>
+    /// リザルト通知など、取りこぼすと困る重要メッセージ用。UDP のパケットロス対策として、
+    /// 即時に1回送ったあと extraSends 回を interval 秒間隔で再送する。
+    /// このオブジェクトは DontDestroyOnLoad なので、シーン遷移後も再送が続く。
+    /// 受信側（親機）は重複メッセージを無視する前提。
+    /// </summary>
+    public void SendStateRepeated(string message, int extraSends = 3, float interval = 0.15f)
+    {
+        SendState(message);
+
+        if (extraSends > 0)
+        {
+            StartCoroutine(ResendRoutine(message, extraSends, interval));
+        }
+    }
+
+    private IEnumerator ResendRoutine(string message, int count, float interval)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            yield return new WaitForSecondsRealtime(interval);
+            SendState(message);
+        }
+    }
+
+    /// <summary>
     /// ラウドアイテムを取得したことを親機に送信する
     /// </summary>
     public void SendLoudItem()
@@ -704,7 +729,11 @@ public class ChildUdpReceiver : MonoBehaviour
                 sendClient.Send(data, data.Length, targetIP, parentReceivePort);
             }
             catch (Exception e) { Debug.LogError($"[ChildUdpReceiver] Heartbeat error: {e.Message}"); }
-            yield return new WaitForSeconds(pingInterval);
+
+            // QTE中などで Time.timeScale が 0 になっても PING を止めないよう、実時間で待つ。
+            // （scaled time だと PING が途絶え、親機が接続切れと誤判定して
+            //   SLEEP_LOCK / SLEEP_UNLOCK などを以後すべて送らなくなる）
+            yield return new WaitForSecondsRealtime(pingInterval);
         }
     }
 
