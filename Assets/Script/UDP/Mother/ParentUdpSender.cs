@@ -56,6 +56,18 @@ public class ParentUdpSender : MonoBehaviour
     public string             gameSceneName    = "GameScene";
     [Tooltip("Solo Start（子機接続なし）の遷移先シーン。MotherLoadは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
     public string             soloGameSceneName = "GameScene";
+    [Tooltip("実際にゲームプレイが行われるシーン名。LOUD_ITEM（ラッシュイン）の処理や ParentDetectionV2 の参照検索はこのシーンでだけ行う。" +
+             "gameSceneName は『ゲーム開始時に最初に読み込むシーン（MotherLoad）』で、プレイ中のシーンとは別物。")]
+    public string             gameplaySceneName = "GameScene";
+
+    [Header("タイトルへ戻る（親機のキーボード）")]
+    [Tooltip("ゲーム中などに、キーを長押しして親機をタイトル画面へ戻す。タイトル画面では無効。")]
+    public bool               enableReturnToTitleKey = true;
+    public Key                returnToTitleKey = Key.Escape;
+    [Tooltip("誤操作防止のため、このキーをこの秒数だけ押し続けるとタイトルへ戻る。")]
+    public float              returnToTitleHoldSeconds = 1.5f;
+    [Tooltip("戻る先の親機タイトルシーン名。")]
+    public string             motherTitleSceneName = "MotherTitle";
     public string             titleSceneName   = "Mini Title";
     public string             gameOverSceneName = "GameOverResult";
     public string             timeUpSceneName   = "TimeUpResult";
@@ -110,6 +122,9 @@ public class ParentUdpSender : MonoBehaviour
     private float     timeoutLimit  = 3.0f;
     private bool      gameStarted        = false;
     private bool      resultProcessed    = false; // GAME_OVER wins race
+    private float     _returnToTitleHeld = 0f;
+    private bool      _returningToTitle  = false;
+    private bool      gameOverScoreHandled = false; // 子機からの CHILD_SCORE:GAME_OVER の再送（重複）を無視するため
     public  bool      ChildLoadingComplete { get; set; } = false;
     private bool      _shouldTriggerLoudItem = false;
 
@@ -246,10 +261,12 @@ public class ParentUdpSender : MonoBehaviour
 
         ProcessLogQueue();
 
+        HandleReturnToTitleKey();
+
         if (_shouldTriggerLoudItem)
         {
             string activeScene = SceneManager.GetActiveScene().name;
-            if (activeScene != gameSceneName)
+            if (!IsGameplayScene(activeScene))
             {
                 // GameScene以外ではLOUD_ITEM処理を行わずリセット
                 _shouldTriggerLoudItem = false;
@@ -332,6 +349,9 @@ public class ParentUdpSender : MonoBehaviour
     // ── Scene reference refresh ──────────────────────────────────────────────
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        _returningToTitle = false;
+        _returnToTitleHeld = 0f;
+
         if (showDebugLogs)
             Debug.Log($"[ParentUdpSender] Scene loaded: '{scene.name}' — refreshing scene references.");
         RefreshSceneReferences();
@@ -350,6 +370,7 @@ public class ParentUdpSender : MonoBehaviour
         if (scene.name == gameSceneName || scene.name == soloGameSceneName)
         {
             resultProcessed = false;
+            gameOverScoreHandled = false;
             _shouldTriggerLoudItem = false;
             if (caughtRetryCoroutine != null)
             {
@@ -364,6 +385,56 @@ public class ParentUdpSender : MonoBehaviour
             // GameScene 以外へ遷移したときは _shouldTriggerLoudItem を安全に初期化
             _shouldTriggerLoudItem = false;
         }
+    }
+
+    // ゲーム中（タイトル以外のシーン）で returnToTitleKey を returnToTitleHoldSeconds 秒押し続けると、
+    // 親機をタイトル画面へ戻す。誤操作防止のため長押し式。
+    private void HandleReturnToTitleKey()
+    {
+        if (!enableReturnToTitleKey || _returningToTitle) return;
+
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null || IsTitleScene(SceneManager.GetActiveScene().name))
+        {
+            _returnToTitleHeld = 0f;
+            return;
+        }
+
+        if (!keyboard[returnToTitleKey].isPressed)
+        {
+            _returnToTitleHeld = 0f;
+            return;
+        }
+
+        _returnToTitleHeld += Time.unscaledDeltaTime;
+        if (_returnToTitleHeld >= returnToTitleHoldSeconds)
+        {
+            ReturnToTitle();
+        }
+    }
+
+    /// <summary>
+    /// 親機をタイトル画面へ戻す。タイトルに入ると OnSceneLoaded → ResetForNewSession が走り、
+    /// 接続状態・リザルト判定などのセッション状態がすべて初期化される。
+    /// （子機側には「タイトルへ戻る」通知は無いため、子機は別途終了／再起動が必要）
+    /// </summary>
+    public void ReturnToTitle()
+    {
+        if (_returningToTitle) return;
+        _returningToTitle = true;
+        _returnToTitleHeld = 0f;
+
+        Debug.Log($"[ParentUdpSender] ReturnToTitle — '{SceneManager.GetActiveScene().name}' から '{motherTitleSceneName}' へ戻ります。");
+
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneNameResolver.Resolve(motherTitleSceneName));
+    }
+
+    // 実際のゲームプレイシーンか。gameSceneName は最初に読み込む MotherLoad を指すため、
+    // プレイ中の判定には使えない（使うと LOUD_ITEM が常に無視され、ラッシュインが起きない）。
+    private bool IsGameplayScene(string sceneName)
+    {
+        return sceneName == gameplaySceneName;
     }
 
     private bool IsTitleScene(string sceneName)
@@ -397,6 +468,7 @@ public class ParentUdpSender : MonoBehaviour
         lastReceiveTime = 0f;
         gameStarted = false;
         resultProcessed = false;
+        gameOverScoreHandled = false;
         ChildLoadingComplete = false;
         _shouldTriggerLoudItem = false;
 
@@ -418,7 +490,7 @@ public class ParentUdpSender : MonoBehaviour
     private void RefreshSceneReferences()
     {
         string currentScene = SceneManager.GetActiveScene().name;
-        if (currentScene == gameSceneName)
+        if (IsGameplayScene(currentScene))
         {
             parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetectionV2>();
             if (parentDetection != null)
@@ -563,6 +635,18 @@ public class ParentUdpSender : MonoBehaviour
         }
     }
 
+    // ゲーム中に子機側の一時的なフリーズ等で PING が途絶えると、親機は Timeout で Disconnected になり、
+    // 以後 SendState（SLEEP_LOCK / SLEEP_UNLOCK など）が全て無視されてしまう。
+    // PING が再開した場合は接続を復帰する。タイトル画面での Cancel（意図的な切断）は復帰させない。
+    private void TryRecoverConnectionFromPing()
+    {
+        if (currentState != ConnectionState.Disconnected) return;
+        if (IsTitleScene(SceneManager.GetActiveScene().name)) return;
+
+        currentState = ConnectionState.Connected;
+        Debug.LogWarning("[ParentUdpSender] PING resumed after timeout — connection restored.");
+    }
+
     // ── Incoming message dispatch (main thread) ───────────────────────────────
     private void HandleIncoming(string raw)
     {
@@ -577,9 +661,12 @@ public class ParentUdpSender : MonoBehaviour
         if (message.Type != ParentMessageType.Ping && showDebugLogs)
             Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | resultProcessed={resultProcessed}");
 
+        // 子機から何か届いた＝子機は生きている。PING 以外のメッセージでも生存時刻を更新する。
+        lastReceiveTime = Time.time;
+
         if (message.Type == ParentMessageType.Ping)
         {
-            lastReceiveTime = Time.time;
+            TryRecoverConnectionFromPing();
             return;
         }
 
@@ -616,6 +703,16 @@ public class ParentUdpSender : MonoBehaviour
         {
             if (message.ResultType == ChildGameResultType.GameOver)
             {
+                // 子機はパケットロス対策で同じリザルトを複数回送ってくる。2回目以降は無視する
+                // （無視しないとランキングに同じスコアが重複登録されてしまう）。
+                if (gameOverScoreHandled)
+                {
+                    if (showDebugLogs)
+                        Debug.Log("[ParentUdpSender] CHILD_SCORE GAME_OVER ignored — already handled (retransmission).");
+                    return;
+                }
+                gameOverScoreHandled = true;
+
                 // GAME_OVER wins the race unconditionally
                 resultProcessed = true;
                 Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {message.Score} — saving and loading {ResultGameOverScene}.");
@@ -657,10 +754,10 @@ public class ParentUdpSender : MonoBehaviour
                 Debug.Log("[ParentUdpSender] Received LOUD_ITEM network packet from Child.");
 
             string activeScene = SceneManager.GetActiveScene().name;
-            if (activeScene != gameSceneName)
+            if (!IsGameplayScene(activeScene))
             {
                 if (showDebugLogs)
-                    Debug.Log("[ParentUdpSender] LOUD_ITEM received outside GameScene — ignored.");
+                    Debug.Log($"[ParentUdpSender] LOUD_ITEM received outside gameplay scene (active='{activeScene}', expected='{gameplaySceneName}') — ignored.");
                 return;
             }
 
@@ -692,7 +789,7 @@ public class ParentUdpSender : MonoBehaviour
                 udpClient.Send(data, data.Length, targetIP, normalPort);
             }
             catch (Exception e) { Debug.LogError($"[ParentUdpSender] Heartbeat error: {e.Message}"); }
-            yield return new WaitForSeconds(pingInterval);
+            yield return new WaitForSecondsRealtime(pingInterval);
         }
     }
 

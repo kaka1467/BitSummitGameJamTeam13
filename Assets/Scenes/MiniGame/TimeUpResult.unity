@@ -1875,7 +1875,7 @@ MonoBehaviour:
   inputIgnoreDuration: 5
   autoChangeDelay: 20
   returnToTitleSe: {fileID: 0}
-  titleSceneName: Mini Title
+  titleSceneName: MiniTitle
 --- !u!4 &1247413874
 Transform:
   m_ObjectHideFlags: 0

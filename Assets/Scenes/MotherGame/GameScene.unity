@@ -419,6 +419,133 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!1 &109284104
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 109284105}
+  - component: {fileID: 109284107}
+  - component: {fileID: 109284106}
+  m_Layer: 0
+  m_Name: Spot Light
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &109284105
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 109284104}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7959427, y: 0.00006222098, z: -0.000044162745, w: 0.60537195}
+  m_LocalPosition: {x: -0, y: -0.089, z: 0.203}
+  m_LocalScale: {x: 0.062499993, y: 0.0625, z: 0.06250001}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 172111187}
+  m_LocalEulerAnglesHint: {x: -105.489, y: -0.03100586, z: 0.03300476}
+--- !u!114 &109284106
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 109284104}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
+--- !u!108 &109284107
+Light:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 109284104}
+  m_Enabled: 1
+  serializedVersion: 12
+  m_Type: 0
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Intensity: 10
+  m_Range: 10
+  m_SpotAngle: 99.55305
+  m_InnerSpotAngle: 30
+  m_CookieSize2D: {x: 0.5, y: 0.5}
+  m_Shadows:
+    m_Type: 0
+    m_Resolution: -1
+    m_CustomResolution: -1
+    m_Strength: 1
+    m_Bias: 0.05
+    m_NormalBias: 0.4
+    m_NearPlane: 0.2
+    m_CullingMatrixOverride:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_UseCullingMatrixOverride: 0
+  m_Cookie: {fileID: 0}
+  m_DrawHalo: 0
+  m_Flare: {fileID: 0}
+  m_RenderMode: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingLayerMask: 1
+  m_Lightmapping: 4
+  m_LightShadowCasterMode: 0
+  m_AreaSize: {x: 1, y: 1}
+  m_BounceIntensity: 1
+  m_ColorTemperature: 6570
+  m_UseColorTemperature: 0
+  m_BoundingSphereOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_UseBoundingSphereOverride: 0
+  m_UseViewFrustumForShadowCasterCull: 1
+  m_ForceVisible: 0
+  m_ShadowRadius: 0
+  m_ShadowAngle: 0
+  m_LightUnit: 1
+  m_LuxAtDistance: 1
+  m_EnableSpotReflector: 1
 --- !u!1 &118555309
 GameObject:
   m_ObjectHideFlags: 0
@@ -572,6 +699,9 @@ PrefabInstance:
     - {fileID: 65702495048144492, guid: 5e7402c2291754a57a1c694930eafcdc, type: 3}
     - {fileID: -516098083770646512, guid: 5e7402c2291754a57a1c694930eafcdc, type: 3}
     m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 7208261743932278219, guid: 5e7402c2291754a57a1c694930eafcdc, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 109284105}
     - targetCorrespondingSourceObject: {fileID: 6039136598254185236, guid: 5e7402c2291754a57a1c694930eafcdc, type: 3}
       insertIndex: 0
       addedObject: {fileID: 356326210}
@@ -610,6 +740,11 @@ Transform:
   - {fileID: 1990856876}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!4 &172111187 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7208261743932278219, guid: 5e7402c2291754a57a1c694930eafcdc, type: 3}
+  m_PrefabInstance: {fileID: 148084842}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &181271881
 GameObject:
   m_ObjectHideFlags: 0
@@ -3339,10 +3474,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.CanvasScaler
-  m_UiScaleMode: 0
+  m_UiScaleMode: 1
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
-  m_ReferenceResolution: {x: 800, y: 600}
+  m_ReferenceResolution: {x: 1920, y: 1080}
   m_ScreenMatchMode: 0
   m_MatchWidthOrHeight: 0
   m_PhysicalUnit: 3
@@ -3761,6 +3896,11 @@ MonoBehaviour:
   soloStartButtonObject: {fileID: 0}
   gameSceneName: GameOverResult
   soloGameSceneName: GameScene
+  gameplaySceneName: GameScene
+  enableReturnToTitleKey: 1
+  returnToTitleKey: 60
+  returnToTitleHoldSeconds: 1.5
+  motherTitleSceneName: MotherTitle
   titleSceneName: Mini Title
   gameOverSceneName: GameOverResult
   timeUpSceneName: TimeUpResult
@@ -6002,6 +6142,8 @@ MonoBehaviour:
   motherModelRenderers: []
   motherAnimator: {fileID: 0}
   glowingEyesObject: {fileID: 356326209}
+  windowPeekFaceLight: {fileID: 109284107}
+  windowPeekFaceLightFadeSeconds: 0.4
   eyeRendererL: {fileID: 1536173007}
   eyeRendererR: {fileID: 456530186}
   normalGlowColor: {r: 1, g: 0.8, b: 0.2, a: 1}
@@ -6725,6 +6867,7 @@ MonoBehaviour:
   pillowSensor: {fileID: 479984877}
   udpSender: {fileID: 1385247218}
   awakeHeartbeatInterval: 1
+  sleepHeartbeatInterval: 1
   sleepStartAudioSource: {fileID: 835640660}
   showDebugLogs: 0
   ignoreSensorForDebug: 0

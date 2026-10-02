@@ -122,6 +122,13 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("母親の覗き見・捕獲突入時に点灯する目のオブジェクト。")]
     [SerializeField] private GameObject glowingEyesObject;
 
+    [Header("窓覗き時の顔ライト")]
+    [Tooltip("庭側の窓から覗くとき（GardenPeek）だけ母親の顔を照らすライト。母親モデルの子（顔の前）に置く。" +
+             "覗き待機の開始でフェードイン、終了・リセットでフェードアウトする。未設定なら何もしない。")]
+    [SerializeField] private Light windowPeekFaceLight;
+    [Tooltip("顔ライトが点灯／消灯するまでの秒数。0で即時。")]
+    [SerializeField, Min(0f)] private float windowPeekFaceLightFadeSeconds = 0.4f;
+
     [Header("目の発光マテリアル/カラー")]
     [Tooltip("左目の発光用Renderer。")]
     [SerializeField] private Renderer eyeRendererL;
@@ -215,6 +222,8 @@ public class ParentApproachController : MonoBehaviour
     private float _targetAudioVolume;
     private float _gardenPeekDuration;   // GardenPeekの覗き時間（秒）。GardenPeekPoint到着時に一度だけ決定する。
     private bool _isGardenPeeking;       // GardenPeekPointで覗き待機中か。isMotherLookingNowには影響しない。
+    private float _faceLightBaseIntensity = 1f; // 顔ライトの「点灯時の明るさ」（Inspectorで設定された値）
+    private Coroutine _faceLightRoutine;
 
     // 部屋入室（案B）の状態
     private bool _cycleStartedAsRushIn;   // このサイクルが突入（大きな音）として開始されたか — BeginApproach()で捕捉する
@@ -233,6 +242,8 @@ public class ParentApproachController : MonoBehaviour
 
     private void Start()
     {
+        CacheFaceLightIntensity();
+        SetWindowPeekFaceLight(false, instant: true);
         SetGlowingEyes(false);
         _currentAudioVolume = farVolume;
         _targetAudioVolume = farVolume;
@@ -694,6 +705,7 @@ public class ParentApproachController : MonoBehaviour
         SetWalkingAnimation(false);
         LogDiagnosticWaypoint("GardenPeekPoint arrival and rotation complete", gardenPeekPoint);
         SetGlowingEyes(true);
+        SetWindowPeekFaceLight(true);
         TriggerWindowPeekAnimation();
 
         // 覗き時間は「GardenPeekPoint到着時のゲージ値」を一度だけ取得して決定する（覗き中のゲージ変化では延長しない）。
@@ -712,6 +724,7 @@ public class ParentApproachController : MonoBehaviour
         // 覗き待機終了：継続疑惑が次tick以内に確実に停止するよう、フラグを先に解除する。
         _isGardenPeeking = false;
         SetGlowingEyes(false);
+        SetWindowPeekFaceLight(false);
 
         // 覗き終了：GardenPassByPointまで進み、到着後に既存の終了処理へ引き渡す。
         // 途中で警告終了・灯り消灯は行わない（通知はGardenPassByPoint到着後の1回だけ）。
@@ -1198,6 +1211,58 @@ public class ParentApproachController : MonoBehaviour
         _currentAudioVolume = farVolume;
     }
 
+    // ── 窓覗き時の顔ライト ────────────────────────────────────────────────────
+
+    // シーンに置いたライトの明るさを「点灯時の明るさ」として覚えておく。
+    // （消灯中は intensity を 0 にするため、Start 時点の値を基準にする）
+    private void CacheFaceLightIntensity()
+    {
+        if (windowPeekFaceLight != null)
+            _faceLightBaseIntensity = windowPeekFaceLight.intensity;
+    }
+
+    // 顔ライトを点灯／消灯する。instant=false の間は intensity を fade 秒数かけて変化させる。
+    private void SetWindowPeekFaceLight(bool on, bool instant = false)
+    {
+        if (windowPeekFaceLight == null)
+            return;
+
+        if (_faceLightRoutine != null)
+        {
+            StopCoroutine(_faceLightRoutine);
+            _faceLightRoutine = null;
+        }
+
+        float target = on ? _faceLightBaseIntensity : 0f;
+
+        if (instant || windowPeekFaceLightFadeSeconds <= 0f || !isActiveAndEnabled)
+        {
+            windowPeekFaceLight.intensity = target;
+            windowPeekFaceLight.enabled = on;
+            return;
+        }
+
+        _faceLightRoutine = StartCoroutine(FadeFaceLightRoutine(target, on));
+    }
+
+    private IEnumerator FadeFaceLightRoutine(float target, bool on)
+    {
+        windowPeekFaceLight.enabled = true;
+
+        float from = windowPeekFaceLight.intensity;
+        float elapsed = 0f;
+        while (elapsed < windowPeekFaceLightFadeSeconds)
+        {
+            elapsed += Time.deltaTime;
+            windowPeekFaceLight.intensity = Mathf.Lerp(from, target, Mathf.Clamp01(elapsed / windowPeekFaceLightFadeSeconds));
+            yield return null;
+        }
+
+        windowPeekFaceLight.intensity = target;
+        windowPeekFaceLight.enabled = on;
+        _faceLightRoutine = null;
+    }
+
     private void SetGlowingEyes(bool isEnabled)
     {
         if (glowingEyesObject != null)
@@ -1261,6 +1326,7 @@ public class ParentApproachController : MonoBehaviour
         IsRushIn         = false;
         _isGardenPeeking = false;
         SetGlowingEyes(false);
+        SetWindowPeekFaceLight(false, instant: true);
 
         // 部屋入室（案B）の状態を初期化する。_cycleStartedAsRushInはBeginApproach()で
         // ResetStateFlags()より前に設定されるため、ここではクリアしない。

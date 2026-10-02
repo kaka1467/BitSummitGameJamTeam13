@@ -7,6 +7,6 @@ public class TitleManager : MonoBehaviour
     public void OnStartButtonClick()
     {
         // "GameScene" という名前のシーンを読み込む
-        SceneManager.LoadScene(SceneName);
+        SceneManager.LoadScene(SceneNameResolver.Resolve(SceneName));
     }
 }
