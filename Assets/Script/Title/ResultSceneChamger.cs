@@ -24,7 +24,7 @@ public class ResultSceneChamger : MonoBehaviour
     public AudioSource returnToTitleSe;
 
     [Header("遷移先シーン名")]
-    public string titleSceneName = "Mini Title"; 
+    public string titleSceneName = "MiniTitle"; 
 
     private bool isFading = false;
     private float elapsed = 0f;
@@ -36,7 +36,7 @@ public class ResultSceneChamger : MonoBehaviour
             return;
         }
 
-        elapsed += Time.deltaTime;
+        elapsed += Time.unscaledDeltaTime;
 
         if (elapsed >= autoChangeDelay)
         {
@@ -103,7 +103,7 @@ public class ResultSceneChamger : MonoBehaviour
 
         while (elapsedTime < fadeDuration)
         {
-            elapsedTime += Time.deltaTime;
+            elapsedTime += Time.unscaledDeltaTime;
             imgColor.a = Mathf.Clamp01(elapsedTime / fadeDuration);
             fadeImage.color = imgColor;
             yield return null;
@@ -119,7 +119,7 @@ public class ResultSceneChamger : MonoBehaviour
 
         while (elapsedTime < 1.0f) // 1秒かけて文字を表示
         {
-            elapsedTime += Time.deltaTime;
+            elapsedTime += Time.unscaledDeltaTime;
             textColor.a = Mathf.Clamp01(elapsedTime / 1.0f);
             fadeText.color = textColor;
             yield return null;
@@ -128,9 +128,9 @@ public class ResultSceneChamger : MonoBehaviour
         fadeText.color = textColor;
 
         // 3. テキストが表示された状態で少し待つ
-        yield return new WaitForSeconds(textDuration);
+        yield return new WaitForSecondsRealtime(textDuration);
 
         // 4. タイトルシーンへ遷移
-        SceneManager.LoadScene(titleSceneName);
+        SceneManager.LoadScene(SceneNameResolver.Resolve(titleSceneName));
     }
 }

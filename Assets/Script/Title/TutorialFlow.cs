@@ -4,6 +4,7 @@ using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 
 public class TutorialFlow : MonoBehaviour
 {
@@ -51,9 +52,13 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField, Min(0f)] private float autoCollectCenterRange = 0.8f;
 
     [Header("Skip (prototype)")]
-    [Tooltip("skipKey を holdToSkipSeconds 秒ホールドすると演示フェーズをスキップする。")]
+    [Tooltip("skipKey（キーボード）またはゲームパッドの skipGamepadButton を holdToSkipSeconds 秒ホールドすると演示フェーズをスキップする。")]
     [SerializeField] private bool enableHoldToSkip = true;
     [SerializeField] private Key skipKey = Key.K;
+    [Tooltip("子機の実機はゲームパッド操作のため、キーボードに加えてゲームパッドのボタンでもスキップできるようにする。")]
+    [SerializeField] private bool allowGamepadSkip = true;
+    [Tooltip("スキップに使うゲームパッドのボタン。South = Xbox系のA（QTEの'A'と同じボタン）。")]
+    [SerializeField] private GamepadButton skipGamepadButton = GamepadButton.South;
     [SerializeField, Min(0.05f)] private float holdToSkipSeconds = 1f;
 
     [Header("Skip UI")]
@@ -269,7 +274,7 @@ public class TutorialFlow : MonoBehaviour
         while (!skipRequested)
         {
             float held = 0f;
-            while (!skipRequested && Keyboard.current != null && Keyboard.current[skipKey].isPressed)
+            while (!skipRequested && IsSkipInputHeld())
             {
                 held += Time.unscaledDeltaTime;
                 if (held >= holdToSkipSeconds)
@@ -282,6 +287,31 @@ public class TutorialFlow : MonoBehaviour
             }
             yield return null;
         }
+    }
+
+    // キーボードの skipKey、またはゲームパッドの skipGamepadButton が押されているか。
+    // 実機（子機）はコントローラー操作でキーボードが無いことがあるため、両方を見る。
+    // Gamepad.current（最後に操作した1台）ではなく、接続中の全ゲームパッドを見る。
+    private bool IsSkipInputHeld()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null && keyboard[skipKey].isPressed)
+        {
+            return true;
+        }
+
+        if (allowGamepadSkip)
+        {
+            foreach (Gamepad pad in Gamepad.all)
+            {
+                if (pad[skipGamepadButton].isPressed)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // スキップ確定時の後始末。演示用コルーチンは skipRequested チェックで自然終了するため

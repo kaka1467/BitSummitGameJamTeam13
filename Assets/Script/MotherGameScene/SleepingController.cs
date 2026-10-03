@@ -21,6 +21,8 @@ public class SleepingController : MonoBehaviour
     [Header("安全用ハートビート")]
     [Tooltip("親機が起きている間にSLEEP_UNLOCKを再送する間隔（秒）。")]
     [SerializeField] private float awakeHeartbeatInterval = 1.0f;
+    [Tooltip("親機が寝たふりをしている間にSLEEP_LOCKを再送する間隔（秒）。UDPの取りこぼしで子機が操作可能なままになるのを防ぐ。")]
+    [SerializeField] private float sleepHeartbeatInterval = 1.0f;
 
     [Header("オーディオ")]
     [Tooltip("起きている状態から寝たふりに切り替わった瞬間に1回鳴らすAudioSource。未設定なら鳴らさない。")]
@@ -37,6 +39,7 @@ public class SleepingController : MonoBehaviour
 
     // 安全用ハートビートタイマー
     private float _awakeHeartbeatTimer;
+    private float _sleepHeartbeatTimer;
 
     // 毎フレーム大量に出力せず、Spaceの有効化を記録するための前回デバッグ入力状態
     private bool _wasDebugInputActive;
@@ -113,6 +116,7 @@ public class SleepingController : MonoBehaviour
                 Debug.LogWarning("[SC-DIAG] *** ParentUdpSender not found - SLEEP_LOCK NOT sent! Is ParentUdpSender in the scene and enabled? ***");
             }
             _awakeHeartbeatTimer = 0f;
+            _sleepHeartbeatTimer = 0f;
         }
         else if (!_isSleeping && _wasSleeping)
         {
@@ -129,6 +133,7 @@ public class SleepingController : MonoBehaviour
                 Debug.LogWarning("[SC-DIAG] *** ParentUdpSender not found - SLEEP_UNLOCK NOT sent! Is ParentUdpSender in the scene and enabled? ***");
             }
             _awakeHeartbeatTimer = 0f;
+            _sleepHeartbeatTimer = 0f;
         }
 
         // --- 安全用ハートビート：起きている間、SLEEP_UNLOCKを定期的に再送する ---
@@ -152,6 +157,27 @@ public class SleepingController : MonoBehaviour
             {
                 // 切断中はタイマーをインターバル値に保持し、接続復帰時に速やかに再送できるようにする
                 _awakeHeartbeatTimer = awakeHeartbeatInterval;
+            }
+        }
+        else
+        {
+            // --- 安全用ハートビート：寝たふり中、SLEEP_LOCKを定期的に再送する ---
+            // LOCK は状態遷移時に1回しか送っていないため、UDP で取りこぼすと子機が
+            // 「親が寝ているのに操作できる」状態のままになる。子機側は既にロック済みの
+            // LOCK を無視するので、再送しても副作用はない。
+            ParentUdpSender sender = GetUdpSender();
+            bool isConnected = sender != null && sender.currentState == ParentUdpSender.ConnectionState.Connected;
+
+            if (isConnected)
+            {
+                _sleepHeartbeatTimer += Time.deltaTime;
+                if (_sleepHeartbeatTimer >= sleepHeartbeatInterval)
+                {
+                    _sleepHeartbeatTimer = 0f;
+                    if (showDebugLogs)
+                        Debug.Log("[SleepingController] Sleep heartbeat: sending SLEEP_LOCK.");
+                    sender.SendStateSLEEP_LOCK();
+                }
             }
         }
 

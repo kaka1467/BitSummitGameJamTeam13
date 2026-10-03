@@ -421,7 +421,7 @@ MonoBehaviour:
   inputIgnoreDuration: 5
   autoChangeDelay: 20
   returnToTitleSe: {fileID: 0}
-  titleSceneName: Mini Title
+  titleSceneName: MiniTitle
 --- !u!4 &93066374
 Transform:
   m_ObjectHideFlags: 0
@@ -2241,7 +2241,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ac7acb294437c4a9586cfe8d9dfc3ebf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitleManager
-  SceneName: Mini Title
+  SceneName: MiniTitle
 --- !u!4 &1258786320
 Transform:
   m_ObjectHideFlags: 0
@@ -3335,7 +3335,7 @@ MonoBehaviour:
   inputIgnoreDuration: 5
   autoChangeDelay: 30
   returnToTitleSe: {fileID: 32344634}
-  titleSceneName: Mini Title
+  titleSceneName: MiniTitle
 --- !u!4 &1678620864
 Transform:
   m_ObjectHideFlags: 0
