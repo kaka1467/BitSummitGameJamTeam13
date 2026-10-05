@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// DoorController：Lerpアニメーションでドアの回転を管理する。
-/// 新しい入力システムによる手動切り替え（Pキー）と、ParentDetectionV2からの外部命令に対応する。
+/// 新しい入力システムによる手動切り替え（Pキー）と、ParentDetectionからの外部命令に対応する。
 /// </summary>
 public class DoorController : MonoBehaviour
 {
@@ -105,7 +105,7 @@ public class DoorController : MonoBehaviour
     }
 
     /// <summary>
-    /// ドアを指定した状態にする（ParentDetectionV2および手動入力から呼び出される）
+    /// ドアを指定した状態にする（ParentDetectionおよび手動入力から呼び出される）
     /// </summary>
     public void SetDoorState(DoorState newState)
     {

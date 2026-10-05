@@ -51,16 +51,27 @@ public static class MotherHeightOffsetVerifier
             peekGo.transform.position  = new Vector3(6f, 3f, 6f);
 
             var controller = controllerGo.AddComponent<ParentApproachController>();
+            var parentDetection = controllerGo.GetComponent<ParentDetection>();
+            if (parentDetection == null)
+                parentDetection = controllerGo.AddComponent<ParentDetection>();
+            if (parentDetection == null)
+                parentDetection = Object.FindFirstObjectByType<ParentDetection>();
+
+            if (parentDetection == null)
+            {
+                Debug.LogWarning("[検証] ParentDetectionが見つからないため、移動速度を取得できず検証を中止します。");
+                return;
+            }
+
             controller.startPoint       = startGo.transform;
             controller.turnPoint        = turnGo.transform;
-            controller.doorPoint        = doorGo.transform;
+            controller.doorPoint       = doorGo.transform;
             controller.gardenPeekPoint  = peekGo.transform;
-            // 最終到達点は毎フレームスナップされるため移動速度は結果に影響しないが、
-            // EditModeのTime.deltaTimeが小さい値でも数イテレーションで到達するよう大きめにしておく。
-            controller.moveSpeed = 1000f;
 
             var offsetField = typeof(ParentApproachController).GetField(
                 "motherHeightOffset", BindingFlags.NonPublic | BindingFlags.Instance);
+            var parentDetectionField = typeof(ParentApproachController).GetField(
+                "parentDetection", BindingFlags.NonPublic | BindingFlags.Instance);
             var offsetGoalMethod = typeof(ParentApproachController).GetMethod(
                 "OffsetGoalPosition", BindingFlags.NonPublic | BindingFlags.Instance);
             var moveToPointMethod = typeof(ParentApproachController).GetMethod(
@@ -69,11 +80,15 @@ public static class MotherHeightOffsetVerifier
                 "MoveToPointFacingMovement", BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (offsetField == null || offsetGoalMethod == null ||
-                moveToPointMethod == null || moveFacingMethod == null)
+                moveToPointMethod == null || moveFacingMethod == null ||
+                parentDetectionField == null)
             {
                 Debug.LogError("[検証] リフレクション対象のメンバが見つからない（実装が変わっていないか確認してください）。");
                 return;
             }
+
+            parentDetectionField.SetValue(controller, parentDetection);
+            Debug.Log($"[検証] ParentDetection.CurrentApproachSpeed={parentDetection.CurrentApproachSpeed:F2}");
 
             Transform mother = controllerGo.transform;
 

@@ -18,31 +18,23 @@ using UnityEngine.InputSystem;
 ///   TriggerInstantDoor()               — 即時デバッグDoorPeek、灯りと遅延なし
 ///   StartLoudItemRushInSequence()      — 大きな音による突入：2階の灯りのみ、速度=loudItemRushInMoveSpeed
 ///   StopWarningSequence()              — 強制停止してリセット（ゲームオーバー、シーンアンロードなど）
-///   EndWarningSequence()               — サイクル完了後にParentDetectionV2が呼ぶ正常終了
+///   EndWarningSequence()               — サイクル完了後にParentDetectionが呼ぶ正常終了
 ///
 /// 責務の境界：
 ///   ParentWarningSystem     — 灯り、遅延、速度、ルート確率、突入設定
 ///   ParentApproachController— 経路移動と向き
-///   ParentDetectionV2       — ドア分岐、疑惑、部屋チェックの結果、捕獲
+///   ParentDetection       — ドア分岐、疑惑、部屋チェックの結果、捕獲
 /// </summary>
 public class ParentWarningSystem : MonoBehaviour
 {
     // ── 主要な参照 ────────────────────────────────────────────────────────────
     [Header("参照")]
     [SerializeField] public ParentApproachController approachController;
-    [SerializeField] public ParentDetectionV2        parentDetection;
+    [SerializeField] public ParentDetection        parentDetection;
     [SerializeField] public MotherGauge              motherGauge;
 
     // ── 予告灯 ────────────────────────────────────────────────────────────────
     [Header("予告灯")]
-    [SerializeField] private GameObject firstFloorLight;
-    [SerializeField] private GameObject secondFloorLight1;
-    [SerializeField] private GameObject secondFloorLight2;
-    [SerializeField] private GameObject secondFloorLight3;
-
-    // 新部屋（Lights_Base配下）の予告灯。
-    // 旧部屋の参照（firstFloorLight / secondFloorLight1〜3）がNoneでも例外を出さないよう、
-    // 点灯・消灯はSetLightActive()経由で行う。
     [SerializeField] private GameObject hallwayLight1;   // Lights_Hallway
     [SerializeField] private GameObject hallwayLight2;   // Lights_Hallway 2
     [SerializeField] private GameObject hallwayLight3;   // Lights_Hallway 3
@@ -74,40 +66,8 @@ public class ParentWarningSystem : MonoBehaviour
     [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最大秒数。")]
     public float highSuspicionApproachDelayMax = 1f;
 
-    // ── 移動速度 ──────────────────────────────────────────────────────────────
-    [Header("接近速度")]
-    [Tooltip("自動ルートに設定するmoveSpeedの最小値。")]
-    public float approachMoveSpeedMin = 5f;
-    [Tooltip("自動ルートに設定するmoveSpeedの最大値。")]
-    public float approachMoveSpeedMax = 15f;
-    [Tooltip("自動ルートで最大疑惑時に線形加算するmoveSpeed。")]
-    public float approachSpeedSuspicionBonus;
-    [Tooltip("現在のゲージがこの閾値を超えた場合、以下の高疑惑速度範囲を使用する。")]
-    public int highSuspicionSpeedGaugeThreshold = 5;
-    [Tooltip("ゲージが閾値を超えたときに設定するmoveSpeedの最小値。")]
-    public float highSuspicionApproachMoveSpeedMin = 25f;
-    [Tooltip("ゲージが閾値を超えたときに設定するmoveSpeedの最大値。")]
-    public float highSuspicionApproachMoveSpeedMax = 30f;
-
-    // ── 突入速度 ──────────────────────────────────────────────────────────────
-    [Header("大きな音による突入")]
-    [Tooltip("大きな音による突入時に接近コントローラーへ設定するmoveSpeed。通常の高疑惑速度より明らかに速くする。")]
-    public float loudItemRushInMoveSpeed = 40f;
-
-    // ── デバッグ速度の上書き ──────────────────────────────────────────────────
-    [Header("デバッグ速度上書き（N／M手動ルート）")]
-    [Tooltip("trueの場合、N／M手動ルートはランダム範囲の代わりにfixedDebugApproachSpeedを使用する。")]
-    public bool useFixedDebugApproachSpeed;
-    [Tooltip("useFixedDebugApproachSpeedがtrueのときにN／M手動ルートで使う固定moveSpeed。")]
-    public float fixedDebugApproachSpeed = 4f;
-
     // ── ルート確率 ────────────────────────────────────────────────────────────
     [Header("ルート確率")]
-    // ── 通過後ドア音 ──────────────────────────────────────────────────────────
-    [Header("廊下通過後のドア音")]
-    [Tooltip("通過完了から遠くのドア音が再生されるまでの秒数。")]
-    [SerializeField] private float passByThenDoorSoundDelay = 1f;
-
     // ── 状態 ──────────────────────────────────────────────────────────────────
     [Header("状態")]
     [Tooltip("警告／接近シーケンス中はtrue。")]
@@ -121,7 +81,6 @@ public class ParentWarningSystem : MonoBehaviour
     // ── 非公開 ───────────────────────────────────────────────────────────────
     private bool      _eventsSubscribed;
     private Coroutine _foreshadowCoroutine;
-    private Coroutine _hallwayPassBySoundCoroutine;
     private float     _gameplayElapsedSeconds;
     private bool      _gameplayClockActive;
     private int       _consecutiveAutomaticFeints;
@@ -136,7 +95,7 @@ public class ParentWarningSystem : MonoBehaviour
             approachController = Object.FindFirstObjectByType<ParentApproachController>();
 
         if (parentDetection == null)
-            parentDetection = Object.FindFirstObjectByType<ParentDetectionV2>();
+            parentDetection = Object.FindFirstObjectByType<ParentDetection>();
 
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
@@ -165,7 +124,7 @@ public class ParentWarningSystem : MonoBehaviour
 
         // デバッグ：2キーでフェイントA（HallwayPassBy）を手動起動する。
         // 親機デバッグキーは 1（母親ドア確認：ParentWarningScheduler）／2（本キー）／
-        // 0（RushIn：ParentDetectionV2）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
+        // 0（RushIn：ParentDetection）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
         if (Keyboard.current == null) return;
 
         if (Keyboard.current.digit2Key.wasPressedThisFrame)
@@ -289,7 +248,7 @@ public class ParentWarningSystem : MonoBehaviour
         float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
         yield return new WaitForSeconds(approachDelay);
 
-        // 母親は移動させない。ドアの猫覗きイベントへ引き渡す（ドア開閉はPDV2が既存APIで行う）。
+        // 母親は移動させない。ドアの猫覗きイベントへ引き渡す（ドア開閉はPDが既存APIで行う）。
         ActiveRoute = RouteState.CatFeint;
         if (parentDetection != null)
             parentDetection.TriggerCatFeintEvent();
@@ -322,7 +281,7 @@ public class ParentWarningSystem : MonoBehaviour
 
     /// <summary>
     /// 庭側覗きの手動テスト起動：廊下灯1/2と庭灯の予告後に、GardenPeekPointで停止して庭を覗く。
-    /// ドア停止イベント・ドア開閉は発生させず、覗き中の疑惑加算・捕獲判定はPDV2側で行う。
+    /// ドア停止イベント・ドア開閉は発生させず、覗き中の疑惑加算・捕獲判定はPD側で行う。
     /// 覗き時間は gardenPeekDurationBase+GardenPeekPoint到着時のゲージ値（controller側で到着時に一度だけ決定）。
     /// </summary>
     public void StartManualGardenPeekWarningSequence()
@@ -351,7 +310,7 @@ public class ParentWarningSystem : MonoBehaviour
         ActiveRoute = RouteState.HallwayPassBy;
         Debug.Log("[ParentWarningSystem] INSTANT DEBUG: HALLWAY PASS-BY");
 
-        ApplyApproachSpeed(true, 0f);
+        parentDetection?.ApplyApproachSpeed(true);
         approachController.StartApproachHallwayPassBy();
     }
 
@@ -364,14 +323,14 @@ public class ParentWarningSystem : MonoBehaviour
         ActiveRoute = RouteState.DoorPeek;
         Debug.Log("[ParentWarningSystem] INSTANT DEBUG: DOOR/PEEK");
 
-        ApplyApproachSpeed(true, 0f);
+        parentDetection?.ApplyApproachSpeed(true);
         approachController.StartApproachDoorOnly();
     }
 
     /// <summary>
     /// 大きな音による突入：1階の灯りと予告遅延を省略する。
     /// 2階の灯りだけを点灯し、速度をloudItemRushInMoveSpeedに設定してDoorPeekルートを強制する。
-    /// 音声とゲージの処理後にParentDetectionV2.OnLoudItemTriggered()から呼び出される。
+    /// 音声とゲージの処理後にParentDetection.OnLoudItemTriggered()から呼び出される。
     /// 警告シーケンスがすでに進行中の場合は何もしない。
     /// </summary>
     public void StartLoudItemRushInSequence()
@@ -394,14 +353,14 @@ public class ParentWarningSystem : MonoBehaviour
         TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
 
-        if (approachController != null)
-            approachController.moveSpeed = loudItemRushInMoveSpeed;
+        if (parentDetection != null)
+            parentDetection.SetLoudItemRushInSpeed(parentDetection.loudItemRushInMoveSpeed);
 
-        Debug.Log($"[ParentWarningSystem] LOUD-ITEM RUSH-IN | speed={loudItemRushInMoveSpeed} | route=DoorPeek");
+        Debug.Log($"[ParentWarningSystem] LOUD-ITEM RUSH-IN | speed={parentDetection.loudItemRushInMoveSpeed} | route=DoorPeek");
         approachController.StartApproachDoorOnly();
     }
 
-    /// <summary>実行中の予告または通過後ドア音のコルーチンを強制停止し、EndWarningSequence()を呼び出す。</summary>
+    /// <summary>実行中の予告を強制停止し、EndWarningSequence()を呼び出す。</summary>
     public void StopWarningSequence()
     {
         if (_foreshadowCoroutine != null)
@@ -409,11 +368,7 @@ public class ParentWarningSystem : MonoBehaviour
             StopCoroutine(_foreshadowCoroutine);
             _foreshadowCoroutine = null;
         }
-        if (_hallwayPassBySoundCoroutine != null)
-        {
-            StopCoroutine(_hallwayPassBySoundCoroutine);
-            _hallwayPassBySoundCoroutine = null;
-        }
+        parentDetection?.CancelPassByDoorSound();
 
         Debug.Log("[ParentWarningSystem] WARNING STOPPED");
         TurnOffAllLights();
@@ -467,7 +422,7 @@ public class ParentWarningSystem : MonoBehaviour
         float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
         yield return new WaitForSeconds(approachDelay);
 
-        ApplyApproachSpeed(true, 0f);
+        parentDetection?.ApplyApproachSpeed(true);
         ActiveRoute = RouteState.GardenPassBy;
         approachController.StartApproachGardenPassBy();
         _foreshadowCoroutine = null;
@@ -499,7 +454,7 @@ public class ParentWarningSystem : MonoBehaviour
         float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
         yield return new WaitForSeconds(approachDelay);
 
-        ApplyApproachSpeed(true, 0f);
+        parentDetection?.ApplyApproachSpeed(true);
 
         // 覗き時間（gardenPeekDurationBase+GardenPeekPoint到着時のゲージ値）は
         // ParentApproachController側で覗き開始時に一度だけ決定するため、ここでは移動開始のみを行う。
@@ -521,7 +476,6 @@ public class ParentWarningSystem : MonoBehaviour
             yield break;
         }
 
-        float suspicionFraction = GetSuspicionFraction();
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
 
@@ -559,7 +513,7 @@ public class ParentWarningSystem : MonoBehaviour
         }
         yield return new WaitForSeconds(approachDelay);
 
-        ApplyApproachSpeed(isManual, suspicionFraction);
+        parentDetection?.ApplyApproachSpeed(isManual);
 
         RouteState chosenRoute;
         if (routeOverride == RouteOverride.Door)
@@ -680,58 +634,14 @@ public class ParentWarningSystem : MonoBehaviour
         return result;
     }
 
-    private void ApplyApproachSpeed(bool isManual, float suspicionFraction = 0f)
-    {
-        if (approachController == null) return;
-
-        float speed;
-
-        if (isManual && useFixedDebugApproachSpeed)
-        {
-            speed = fixedDebugApproachSpeed;
-            Debug.Log($"[ParentWarningSystem] APPROACH SPEED: {speed:F2} units/sec (FIXED DEBUG)");
-        }
-        else
-        {
-            int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
-
-            if (!isManual && gauge > highSuspicionSpeedGaugeThreshold)
-            {
-                speed = Random.Range(highSuspicionApproachMoveSpeedMin, highSuspicionApproachMoveSpeedMax);
-                Debug.Log($"[ParentWarningSystem] APPROACH SPEED: {speed:F2} units/sec (HIGH SUSPICION RANGE)");
-            }
-            else
-            {
-                speed = Random.Range(approachMoveSpeedMin, approachMoveSpeedMax);
-
-                if (!isManual && approachSpeedSuspicionBonus > 0f)
-                    speed += approachSpeedSuspicionBonus * suspicionFraction;
-
-                Debug.Log($"[ParentWarningSystem] APPROACH SPEED: {speed:F2} units/sec (RANDOMISED, suspicion={suspicionFraction:F2})");
-            }
-        }
-
-        approachController.moveSpeed = speed;
-    }
-
-    private float GetSuspicionFraction()
-    {
-        if (motherGauge == null || motherGauge.maxGauge <= 0)
-            return 0f;
-
-        return Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge);
-    }
-
     private void SetLightActive(GameObject lightObject, bool active)
     {
         if (lightObject != null) lightObject.SetActive(active);
     }
 
     // 予告 第1段階：新部屋の Lights_Hallway / Lights_Hallway 2 を点灯する。
-    // 旧部屋の1階灯り（firstFloorLight）がNoneの場合は何もしない。
     private void TurnOnFirstStageLights()
     {
-        SetLightActive(firstFloorLight, true);
         SetLightActive(hallwayLight1, true);
         SetLightActive(hallwayLight2, true);
     }
@@ -740,19 +650,12 @@ public class ParentWarningSystem : MonoBehaviour
     // 第1段階の灯りは消さない（積み上げ演出）。旧部屋の2階灯りがNoneの場合は何もしない。
     private void TurnOnSecondStageLights()
     {
-        SetLightActive(secondFloorLight1, true);
-        SetLightActive(secondFloorLight2, true);
-        SetLightActive(secondFloorLight3, true);
         SetLightActive(hallwayLight3, true);
         SetLightActive(frontLight, true);
     }
 
     private void TurnOffAllLights()
     {
-        SetLightActive(firstFloorLight, false);
-        SetLightActive(secondFloorLight1, false);
-        SetLightActive(secondFloorLight2, false);
-        SetLightActive(secondFloorLight3, false);
         SetLightActive(hallwayLight1, false);
         SetLightActive(hallwayLight2, false);
         SetLightActive(hallwayLight3, false);
@@ -800,7 +703,7 @@ public class ParentWarningSystem : MonoBehaviour
 
     private void HandleStoppedAtDoor()
     {
-        Debug.Log("[ParentWarningSystem] EVENT: Stopped at door — forwarding to ParentDetectionV2.OnApproachReachedDoor()");
+        Debug.Log("[ParentWarningSystem] EVENT: Stopped at door — forwarding to ParentDetection.OnApproachReachedDoor()");
 
         if (!isWarningActive)
         {
@@ -824,26 +727,16 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
-        if (ActiveRoute == RouteState.HallwayPassBy && approachController != null)
-            _hallwayPassBySoundCoroutine = StartCoroutine(PlayHallwayPassBySoundCoroutine());
+        bool shouldPlayPassByDoorSound = ActiveRoute == RouteState.HallwayPassBy;
 
         if (parentDetection != null)
+        {
             parentDetection.OnApproachPassedBy();
+            if (shouldPlayPassByDoorSound)
+                parentDetection.PlayPassByDoorSound();
+        }
         else
             Debug.LogWarning("[ParentWarningSystem] HandlePassedByDoor: parentDetection is NULL");
-    }
-
-    private IEnumerator PlayHallwayPassBySoundCoroutine()
-    {
-        float delay = Mathf.Max(0f, passByThenDoorSoundDelay);
-        Debug.Log($"[ParentWarningSystem] HallwayPassBy sound: waiting {delay:F1}s");
-
-        yield return new WaitForSeconds(delay);
-
-        Debug.Log("[ParentWarningSystem] HallwayPassBy sound: PLAY");
-        approachController.PlayPassBySound();
-
-        _hallwayPassBySoundCoroutine = null;
     }
 
     private bool ValidateController()

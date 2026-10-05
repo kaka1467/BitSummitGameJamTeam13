@@ -51,7 +51,7 @@ public class SleepingController : MonoBehaviour
     private bool _diagLastWasSleeping;
 
     /// <summary>
-    /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（ParentDetectionV2とCaughtReactionControllerが使用）
+    /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（ParentDetectionとCaughtReactionControllerが使用）
     /// </summary>
     public bool IsSleeping => _isSleeping;
 
@@ -238,7 +238,7 @@ public class SleepingController : MonoBehaviour
     /// <summary>
     /// 送信に使用するParentUdpSenderを、3段階のフォールバックで取得する：
     ///   1. インスペクター設定済みのudpSenderフィールド（最速、推奨）
-    ///   2. ParentUdpSender.instance（ParentUdpSender自身が設定する静的シングルトン）
+    ///   2. ParentUdpSender.Instance（ParentUdpSender自身が設定する静的シングルトン）
     ///   3. FindFirstObjectByType（シーン検索、最も遅いので最後の手段のみ）
     /// フォールバックで見つけた結果は、次回のためudpSenderにキャッシュする。
     /// </summary>
@@ -249,10 +249,10 @@ public class SleepingController : MonoBehaviour
             return udpSender;
 
         // レベル2：静的シングルトン
-        if (ParentUdpSender.instance != null)
+        if (ParentUdpSender.Instance != null)
         {
-            udpSender = ParentUdpSender.instance;
-            Debug.Log($"[SC-DIAG] GetUdpSender: found via ParentUdpSender.instance ('{udpSender.gameObject.name}') - caching.");
+            udpSender = ParentUdpSender.Instance;
+            Debug.Log($"[SC-DIAG] GetUdpSender: found via ParentUdpSender.Instance ('{udpSender.gameObject.name}') - caching.");
             return udpSender;
         }
 
