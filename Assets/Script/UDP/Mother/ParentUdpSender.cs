@@ -27,13 +27,13 @@ using UnityEngine.UI;
 ///   TEAM13_START_GAME        — child requests game start
 ///   TEAM13_TIME_UP           — child timer expired → parent game over
 ///   TEAM13_CHILD_DEAD        — child died → parent game over
-///   TEAM13_CHILD_SCORE:<val> — child final score, write to PlayerPrefs for ranking
+///   TEAM13_CHILD_SCORE:&lt;val&gt; — child final score, write to PlayerPrefs for ranking
 ///   TEAM13_LOUD_ITEM         — child picked up loud item → trigger rush-in
 /// </summary>
 public class ParentUdpSender : MonoBehaviour
 {
-    private const string MAGIC_NUMBER = "TEAM13_";
-    private const string CMD_START    = "START_GAME";
+    private const string MagicNumber = "TEAM13_";
+    private const string CmdStart    = "START_GAME";
     private const string ResultGameOverScene = "GameOverResult";
     private const string ResultTimeUpScene   = "TimeUpResult";
 
@@ -56,7 +56,7 @@ public class ParentUdpSender : MonoBehaviour
     public string             gameSceneName    = "GameScene";
     [Tooltip("Solo Start（子機接続なし）の遷移先シーン。MotherLoadは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
     public string             soloGameSceneName = "GameScene";
-    [Tooltip("実際にゲームプレイが行われるシーン名。LOUD_ITEM（ラッシュイン）の処理や ParentDetectionV2 の参照検索はこのシーンでだけ行う。" +
+    [Tooltip("実際にゲームプレイが行われるシーン名。LOUD_ITEM（ラッシュイン）の処理や ParentDetection の参照検索はこのシーンでだけ行う。" +
              "gameSceneName は『ゲーム開始時に最初に読み込むシーン（MotherLoad）』で、プレイ中のシーンとは別物。")]
     public string             gameplaySceneName = "GameScene";
 
@@ -84,62 +84,62 @@ public class ParentUdpSender : MonoBehaviour
 
     [Header("Game References")]
     [Tooltip("Auto-found at Start if not assigned. Used to trigger rush-in on LOUD_ITEM.")]
-    public ParentDetectionV2 parentDetection;
+    public ParentDetection parentDetection;
 
     [Header("Debug")]
     [Tooltip("通信ログなどの詳細出力を有効にする")]
     [SerializeField] private bool showDebugLogs = true;
 
     // ── Private networking ────────────────────────────────────────────────────
-    private UdpClient udpClient;
-    private UdpClient receiveClient;
-    private UdpClient normalReceiveClient;
-    private Thread    receiveThread;
-    private Thread    normalReceiveThread;
-    private volatile bool isRunning = false;
+    private UdpClient _udpClient;
+    private UdpClient _receiveClient;
+    private UdpClient _normalReceiveClient;
+    private Thread    _receiveThread;
+    private Thread    _normalReceiveThread;
+    private volatile bool _isRunning = false;
 
     // ログ用のエントリ構造体
     private struct LogEntry
     {
-        public LogType type;
-        public string message;
+        public LogType Type;
+        public string Message;
 
         public LogEntry(LogType type, string message)
         {
-            this.type = type;
-            this.message = message;
+            Type = type;
+            Message = message;
         }
     }
 
-    private readonly ConcurrentQueue<Action> actionQueue  = new ConcurrentQueue<Action>();
-    private readonly ConcurrentQueue<string> receiveQueue = new ConcurrentQueue<string>();
-    private readonly ConcurrentQueue<LogEntry> logQueue   = new ConcurrentQueue<LogEntry>();
+    private readonly ConcurrentQueue<Action> _actionQueue  = new ConcurrentQueue<Action>();
+    private readonly ConcurrentQueue<string> _receiveQueue = new ConcurrentQueue<string>();
+    private readonly ConcurrentQueue<LogEntry> _logQueue   = new ConcurrentQueue<LogEntry>();
 
-    private Coroutine heartbeatCoroutine;
-    private Coroutine caughtRetryCoroutine;
-    private float     lastReceiveTime;
-    private float     pingInterval  = 1.0f;
-    private float     timeoutLimit  = 3.0f;
-    private bool      gameStarted        = false;
-    private bool      resultProcessed    = false; // GAME_OVER wins race
+    private Coroutine _heartbeatCoroutine;
+    private Coroutine _caughtRetryCoroutine;
+    private float     _lastReceiveTime;
+    private float     _pingInterval  = 1.0f;
+    private float     _timeoutLimit  = 3.0f;
+    private bool      _gameStarted        = false;
+    private bool      _resultProcessed    = false; // GAME_OVER wins race
     private float     _returnToTitleHeld = 0f;
     private bool      _returningToTitle  = false;
-    private bool      gameOverScoreHandled = false; // 子機からの CHILD_SCORE:GAME_OVER の再送（重複）を無視するため
+    private bool      _gameOverScoreHandled = false; // 子機からの CHILD_SCORE:GAME_OVER の再送（重複）を無視するため
     public  bool      ChildLoadingComplete { get; set; } = false;
     private bool      _shouldTriggerLoudItem = false;
 
-    public static ParentUdpSender instance { get; private set; }
+    public static ParentUdpSender Instance { get; private set; }
 
     // ── Singleton / DontDestroyOnLoad ──────────────────────────────────────────
     void Awake()
     {
-        if (instance != null && instance != this)
+        if (Instance != null && Instance != this)
         {
             Debug.Log("[ParentUdpSender] Duplicate detected — destroying self.");
             Destroy(gameObject);
             return;
         }
-        instance = this;
+        Instance = this;
         DontDestroyOnLoad(gameObject);
     }
 
@@ -159,16 +159,16 @@ public class ParentUdpSender : MonoBehaviour
     /// </summary>
     public void OnSoloStartButtonClicked()
     {
-        if (gameStarted)
+        if (_gameStarted)
         {
             return;
         }
-        gameStarted = true;
+        _gameStarted = true;
 
         Debug.Log("[ParentUdpSender] OnSoloStartButtonClicked — starting without waiting for child connection.");
 
         // 子機がたまたま接続済みなら合わせて開始通知を送る（未接続時はSendState内で無視される）
-        SendState(CMD_START);
+        SendState(CmdStart);
 
         // soloStartButtonObject の非表示は TitleMenuHighlight.FlashAndDeactivate 側が
         // フラッシュ演出の完了後に行う（ここで即座に隠すと演出が表示されないため、外してある）。
@@ -179,7 +179,7 @@ public class ParentUdpSender : MonoBehaviour
 
     private IEnumerator StartGameRoutine()
     {
-        SendState(CMD_START);
+        SendState(CmdStart);
         Debug.Log($"[ParentUdpSender] Sent START_GAME to child at {targetIP}:{normalPort}");
         yield return new WaitForSeconds(0.1f);
         yield return LoadSceneAfterBgmFade(gameSceneName);
@@ -237,26 +237,26 @@ public class ParentUdpSender : MonoBehaviour
         RefreshUiReferences();
         AttachUiListeners();
 
-        isRunning = true;
+        _isRunning = true;
 
-        udpClient           = new UdpClient();
-        receiveClient       = new UdpClient(broadcastPort);
-        normalReceiveClient = new UdpClient(parentReceivePort);
+        _udpClient           = new UdpClient();
+        _receiveClient       = new UdpClient(broadcastPort);
+        _normalReceiveClient = new UdpClient(parentReceivePort);
         Debug.Log($"[ParentUdpSender] Sockets open — listening for discovery on :{broadcastPort}, normal data on :{parentReceivePort}. Initial targetIP='{targetIP}'");
 
-        receiveThread = new Thread(ReceiveDiscovery) { IsBackground = true };
-        receiveThread.Start();
+        _receiveThread = new Thread(ReceiveDiscovery) { IsBackground = true };
+        _receiveThread.Start();
 
-        normalReceiveThread = new Thread(ReceiveNormalData) { IsBackground = true };
-        normalReceiveThread.Start();
+        _normalReceiveThread = new Thread(ReceiveNormalData) { IsBackground = true };
+        _normalReceiveThread.Start();
     }
 
     void Update()
     {
-        while (actionQueue.TryDequeue(out Action action))
+        while (_actionQueue.TryDequeue(out Action action))
             action();
 
-        while (receiveQueue.TryDequeue(out string raw))
+        while (_receiveQueue.TryDequeue(out string raw))
             HandleIncoming(raw);
 
         ProcessLogQueue();
@@ -289,13 +289,13 @@ public class ParentUdpSender : MonoBehaviour
 
         // Timeout check
         if (currentState == ConnectionState.Connected &&
-            Time.time - lastReceiveTime > timeoutLimit)
+            Time.time - _lastReceiveTime > _timeoutLimit)
         {
             string sceneName = SceneManager.GetActiveScene().name;
             if (sceneName == "MotherLoad")
             {
                 // Keep connection alive during loading to avoid false timeouts.
-                lastReceiveTime = Time.time;
+                _lastReceiveTime = Time.time;
             }
             else
             {
@@ -305,12 +305,12 @@ public class ParentUdpSender : MonoBehaviour
         }
 
         // Heartbeat coroutine lifecycle
-        if (currentState == ConnectionState.Connected && heartbeatCoroutine == null)
-            heartbeatCoroutine = StartCoroutine(HeartbeatCoroutine());
-        else if (currentState != ConnectionState.Connected && heartbeatCoroutine != null)
+        if (currentState == ConnectionState.Connected && _heartbeatCoroutine == null)
+            _heartbeatCoroutine = StartCoroutine(HeartbeatCoroutine());
+        else if (currentState != ConnectionState.Connected && _heartbeatCoroutine != null)
         {
-            StopCoroutine(heartbeatCoroutine);
-            heartbeatCoroutine = null;
+            StopCoroutine(_heartbeatCoroutine);
+            _heartbeatCoroutine = null;
         }
 
         // UI
@@ -325,25 +325,25 @@ public class ParentUdpSender : MonoBehaviour
     void OnDestroy()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
-        if (instance == this) instance = null;
-        isRunning = false;
+        if (Instance == this) Instance = null;
+        _isRunning = false;
 
-        if (heartbeatCoroutine != null)
+        if (_heartbeatCoroutine != null)
         {
-            StopCoroutine(heartbeatCoroutine);
-            heartbeatCoroutine = null;
+            StopCoroutine(_heartbeatCoroutine);
+            _heartbeatCoroutine = null;
         }
 
-        if (caughtRetryCoroutine != null)
+        if (_caughtRetryCoroutine != null)
         {
-            StopCoroutine(caughtRetryCoroutine);
-            caughtRetryCoroutine = null;
+            StopCoroutine(_caughtRetryCoroutine);
+            _caughtRetryCoroutine = null;
         }
 
         // Close sockets — this unblocks the blocking Receive() calls so threads exit naturally.
-        CloseClient(ref udpClient,           "udpClient");
-        CloseClient(ref receiveClient,       "receiveClient");
-        CloseClient(ref normalReceiveClient, "normalReceiveClient");
+        CloseClient(ref _udpClient,           "_udpClient");
+        CloseClient(ref _receiveClient,       "_receiveClient");
+        CloseClient(ref _normalReceiveClient, "_normalReceiveClient");
     }
 
     // ── Scene reference refresh ──────────────────────────────────────────────
@@ -369,16 +369,16 @@ public class ParentUdpSender : MonoBehaviour
         // Reset result guard for new game session
         if (scene.name == gameSceneName || scene.name == soloGameSceneName)
         {
-            resultProcessed = false;
-            gameOverScoreHandled = false;
+            _resultProcessed = false;
+            _gameOverScoreHandled = false;
             _shouldTriggerLoudItem = false;
-            if (caughtRetryCoroutine != null)
+            if (_caughtRetryCoroutine != null)
             {
-                StopCoroutine(caughtRetryCoroutine);
-                caughtRetryCoroutine = null;
+                StopCoroutine(_caughtRetryCoroutine);
+                _caughtRetryCoroutine = null;
             }
             if (showDebugLogs)
-                Debug.Log("[ParentUdpSender] resultProcessed reset for new game session.");
+                Debug.Log("[ParentUdpSender] _resultProcessed reset for new game session.");
         }
         else
         {
@@ -465,23 +465,23 @@ public class ParentUdpSender : MonoBehaviour
     {
         currentState = ConnectionState.Disconnected;
         targetIP = "127.0.0.1";
-        lastReceiveTime = 0f;
-        gameStarted = false;
-        resultProcessed = false;
-        gameOverScoreHandled = false;
+        _lastReceiveTime = 0f;
+        _gameStarted = false;
+        _resultProcessed = false;
+        _gameOverScoreHandled = false;
         ChildLoadingComplete = false;
         _shouldTriggerLoudItem = false;
 
-        if (heartbeatCoroutine != null)
+        if (_heartbeatCoroutine != null)
         {
-            StopCoroutine(heartbeatCoroutine);
-            heartbeatCoroutine = null;
+            StopCoroutine(_heartbeatCoroutine);
+            _heartbeatCoroutine = null;
         }
 
-        if (caughtRetryCoroutine != null)
+        if (_caughtRetryCoroutine != null)
         {
-            StopCoroutine(caughtRetryCoroutine);
-            caughtRetryCoroutine = null;
+            StopCoroutine(_caughtRetryCoroutine);
+            _caughtRetryCoroutine = null;
         }
 
         Debug.Log("[ParentUdpSender] ResetForNewSession: session flags cleared.");
@@ -492,7 +492,7 @@ public class ParentUdpSender : MonoBehaviour
         string currentScene = SceneManager.GetActiveScene().name;
         if (IsGameplayScene(currentScene))
         {
-            parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetectionV2>();
+            parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetection>();
             if (parentDetection != null)
             {
                 if (showDebugLogs)
@@ -540,8 +540,8 @@ public class ParentUdpSender : MonoBehaviour
 
         try
         {
-            byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
-            udpClient.Send(data, data.Length, targetIP, normalPort);
+            byte[] data = Encoding.UTF8.GetBytes(MagicNumber + message);
+            _udpClient.Send(data, data.Length, targetIP, normalPort);
         }
         catch (Exception e)
         {
@@ -561,14 +561,14 @@ public class ParentUdpSender : MonoBehaviour
 
     /// <summary>
     /// 親機の捕獲によるGame Over確定を通知する。
-    /// 初回呼び出し時のみ resultProcessed を true にし、CAUGHT を即時送信および短時間再送する。
+    /// 初回呼び出し時のみ _resultProcessed を true にし、CAUGHT を即時送信および短時間再送する。
     /// </summary>
     public void NotifyGameOverFromParentCatch()
     {
-        if (resultProcessed && caughtRetryCoroutine != null)
+        if (_resultProcessed && _caughtRetryCoroutine != null)
             return;
 
-        resultProcessed = true;
+        _resultProcessed = true;
 
         if (showDebugLogs)
             Debug.Log($"[ParentUdpSender] NotifyGameOverFromParentCatch: 親機の捕獲によるゲームオーバー確定。CAUGHT送信・再送を開始します。targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='TEAM13_CAUGHT'");
@@ -577,11 +577,11 @@ public class ParentUdpSender : MonoBehaviour
         SendCaughtNotification();
 
         // 短時間再送コルーチン（DontDestroyOnLoadのParentUdpSender上で実行）
-        if (caughtRetryCoroutine != null)
+        if (_caughtRetryCoroutine != null)
         {
-            StopCoroutine(caughtRetryCoroutine);
+            StopCoroutine(_caughtRetryCoroutine);
         }
-        caughtRetryCoroutine = StartCoroutine(CaughtRetryRoutine());
+        _caughtRetryCoroutine = StartCoroutine(CaughtRetryRoutine());
     }
 
     /// <summary>
@@ -601,7 +601,7 @@ public class ParentUdpSender : MonoBehaviour
             SendCaughtNotification();
         }
 
-        caughtRetryCoroutine = null;
+        _caughtRetryCoroutine = null;
     }
 
     private void SendCaughtNotification()
@@ -615,9 +615,9 @@ public class ParentUdpSender : MonoBehaviour
             return;
         }
 
-        if (udpClient == null)
+        if (_udpClient == null)
         {
-            Debug.LogError($"[ParentUdpSender] CAUGHT send failed: udpClient is null, targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
+            Debug.LogError($"[ParentUdpSender] CAUGHT send failed: _udpClient is null, targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
             return;
         }
 
@@ -626,7 +626,7 @@ public class ParentUdpSender : MonoBehaviour
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(message);
-            udpClient.Send(data, data.Length, targetIP, normalPort);
+            _udpClient.Send(data, data.Length, targetIP, normalPort);
             Debug.Log($"[ParentUdpSender] CAUGHT send succeeded: targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='{message}'");
         }
         catch (Exception e)
@@ -659,10 +659,10 @@ public class ParentUdpSender : MonoBehaviour
         }
 
         if (message.Type != ParentMessageType.Ping && showDebugLogs)
-            Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | resultProcessed={resultProcessed}");
+            Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | _resultProcessed={_resultProcessed}");
 
         // 子機から何か届いた＝子機は生きている。PING 以外のメッセージでも生存時刻を更新する。
-        lastReceiveTime = Time.time;
+        _lastReceiveTime = Time.time;
 
         if (message.Type == ParentMessageType.Ping)
         {
@@ -672,9 +672,9 @@ public class ParentUdpSender : MonoBehaviour
 
         if (message.Type == ParentMessageType.StartGame)
         {
-            if (!gameStarted && currentState == ConnectionState.Connected)
+            if (!_gameStarted && currentState == ConnectionState.Connected)
             {
-                gameStarted = true;
+                _gameStarted = true;
                 if (showDebugLogs)
                     Debug.Log("[ParentUdpSender] Received START_GAME from child — loading game scene.");
                 StartCoroutine(LoadSceneAfterBgmFade(gameSceneName));
@@ -685,9 +685,9 @@ public class ParentUdpSender : MonoBehaviour
         if (message.Type == ParentMessageType.TimeUp || message.Type == ParentMessageType.ChildDead)
         {
             // Legacy bare TIME_UP / CHILD_DEAD — treat as TIME_UP result
-            if (!resultProcessed)
+            if (!_resultProcessed)
             {
-                resultProcessed = true;
+                _resultProcessed = true;
                 Debug.Log($"[ParentUdpSender] Received {message.RawPayload} — TIME_UP result. Loading {timeUpSceneName}.");
                 SceneManager.LoadScene(timeUpSceneName);
             }
@@ -705,16 +705,16 @@ public class ParentUdpSender : MonoBehaviour
             {
                 // 子機はパケットロス対策で同じリザルトを複数回送ってくる。2回目以降は無視する
                 // （無視しないとランキングに同じスコアが重複登録されてしまう）。
-                if (gameOverScoreHandled)
+                if (_gameOverScoreHandled)
                 {
                     if (showDebugLogs)
                         Debug.Log("[ParentUdpSender] CHILD_SCORE GAME_OVER ignored — already handled (retransmission).");
                     return;
                 }
-                gameOverScoreHandled = true;
+                _gameOverScoreHandled = true;
 
                 // GAME_OVER wins the race unconditionally
-                resultProcessed = true;
+                _resultProcessed = true;
                 Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {message.Score} — saving and loading {ResultGameOverScene}.");
                 PlayerPrefs.SetInt(KeyGameOverScore, message.Score);
                 UpdateRanking(KeyGameOverRank, message.Score);
@@ -726,12 +726,12 @@ public class ParentUdpSender : MonoBehaviour
             }
             else // TIME_UP
             {
-                if (resultProcessed)
+                if (_resultProcessed)
                 {
                     Debug.Log("[ParentUdpSender] TIME_UP result ignored — result (e.g. GAME_OVER) already processed.");
                     return;
                 }
-                resultProcessed = true;
+                _resultProcessed = true;
                 Debug.Log($"[ParentUdpSender] CHILD_SCORE TIME_UP {message.Score} — saving and loading {ResultTimeUpScene}.");
                 PlayerPrefs.SetInt(KeyTimeUpScore, message.Score);
                 UpdateRanking(KeyTimeUpRank, message.Score);
@@ -785,11 +785,11 @@ public class ParentUdpSender : MonoBehaviour
         {
             try
             {
-                byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + "PING");
-                udpClient.Send(data, data.Length, targetIP, normalPort);
+                byte[] data = Encoding.UTF8.GetBytes(MagicNumber + "PING");
+                _udpClient.Send(data, data.Length, targetIP, normalPort);
             }
             catch (Exception e) { Debug.LogError($"[ParentUdpSender] Heartbeat error: {e.Message}"); }
-            yield return new WaitForSecondsRealtime(pingInterval);
+            yield return new WaitForSecondsRealtime(_pingInterval);
         }
     }
 
@@ -799,7 +799,7 @@ public class ParentUdpSender : MonoBehaviour
     /// </summary>
     private void EnqueueLog(LogType type, string message)
     {
-        logQueue.Enqueue(new LogEntry(type, message));
+        _logQueue.Enqueue(new LogEntry(type, message));
     }
 
     /// <summary>
@@ -807,20 +807,20 @@ public class ParentUdpSender : MonoBehaviour
     /// </summary>
     private void ProcessLogQueue()
     {
-        while (logQueue.TryDequeue(out LogEntry log))
+        while (_logQueue.TryDequeue(out LogEntry log))
         {
-            switch (log.type)
+            switch (log.Type)
             {
                 case LogType.Log:
                     if (showDebugLogs)
-                        Debug.Log(log.message);
+                        Debug.Log(log.Message);
                     break;
                 case LogType.Warning:
                     if (showDebugLogs)
-                        Debug.LogWarning(log.message);
+                        Debug.LogWarning(log.Message);
                     break;
                 case LogType.Error:
-                    Debug.LogError(log.message);
+                    Debug.LogError(log.Message);
                     break;
             }
         }
@@ -829,12 +829,12 @@ public class ParentUdpSender : MonoBehaviour
     // ── Background receive threads ────────────────────────────────────────────
     private void ReceiveDiscovery()
     {
-        while (isRunning)
+        while (_isRunning)
         {
             try
             {
                 IPEndPoint ep   = new IPEndPoint(IPAddress.Any, broadcastPort);
-                byte[]     data = receiveClient.Receive(ref ep);
+                byte[]     data = _receiveClient.Receive(ref ep);
                 string     msg  = Encoding.UTF8.GetString(data);
                 EnqueueLog(LogType.Log, $"[ParentUdpSender] Broadcast received: '{msg}' from {ep.Address}");
 
@@ -843,13 +843,13 @@ public class ParentUdpSender : MonoBehaviour
                 {
                     string senderIP = ep.Address.ToString();
                     EnqueueLog(LogType.Log, $"[ParentUdpSender] DISCOVERY_REQUEST from {senderIP} — queuing targetIP update and DISCOVERY_ACCEPT.");
-                    actionQueue.Enqueue(() =>
+                    _actionQueue.Enqueue(() =>
                     {
                         string oldIP = targetIP;
                         targetIP         = senderIP;
                         currentState     = ConnectionState.Connected;
-                        lastReceiveTime  = Time.time;
-                        gameStarted      = false;
+                        _lastReceiveTime  = Time.time;
+                        _gameStarted      = false;
                         if (showDebugLogs)
                             Debug.Log($"[ParentUdpSender] targetIP updated: '{oldIP}' → '{targetIP}' | state=Connected");
                         SendDiscoveryAccept(senderIP);
@@ -858,7 +858,7 @@ public class ParentUdpSender : MonoBehaviour
             }
             catch (Exception e)
             {
-                if (isRunning)
+                if (_isRunning)
                 {
                     EnqueueLog(LogType.Error, $"[ParentUdpSender] ReceiveDiscovery error: {e.Message}");
                 }
@@ -868,12 +868,12 @@ public class ParentUdpSender : MonoBehaviour
 
     private void ReceiveNormalData()
     {
-        while (isRunning)
+        while (_isRunning)
         {
             try
             {
                 IPEndPoint ep   = new IPEndPoint(IPAddress.Any, parentReceivePort);
-                byte[]     data = normalReceiveClient.Receive(ref ep);
+                byte[]     data = _normalReceiveClient.Receive(ref ep);
                 string     msg  = Encoding.UTF8.GetString(data);
 
                 // PING 以外のメッセージのみログキューへ積む（毎秒のPINGによる文字列生成・ログ出力を抑制）
@@ -882,11 +882,11 @@ public class ParentUdpSender : MonoBehaviour
                     EnqueueLog(LogType.Log, $"[ParentUdpSender] Normal received: '{msg}' from {ep.Address}");
                 }
 
-                receiveQueue.Enqueue(msg);
+                _receiveQueue.Enqueue(msg);
             }
             catch (Exception e)
             {
-                if (isRunning)
+                if (_isRunning)
                 {
                     EnqueueLog(LogType.Error, $"[ParentUdpSender] ReceiveNormalData error: {e.Message}");
                 }
@@ -898,8 +898,8 @@ public class ParentUdpSender : MonoBehaviour
     {
         try
         {
-            byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + "DISCOVERY_ACCEPT");
-            udpClient.Send(data, data.Length, ip, normalPort);
+            byte[] data = Encoding.UTF8.GetBytes(MagicNumber + "DISCOVERY_ACCEPT");
+            _udpClient.Send(data, data.Length, ip, normalPort);
             Debug.Log($"[ParentUdpSender] Sent DISCOVERY_ACCEPT to {ip}:{normalPort}");
         }
         catch (Exception e) { Debug.LogError($"[ParentUdpSender] SendDiscoveryAccept error: {e.Message}"); }

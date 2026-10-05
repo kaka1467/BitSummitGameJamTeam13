@@ -6,30 +6,27 @@ using System.Collections;
 /// CaughtReactionController：
 ///
 /// ゲージ管理 — 厳密な単一書き込みモデル：
-///   MotherGaugeに書き込む唯一のスクリプトはParentDetectionV2
+///   MotherGaugeに書き込む唯一のスクリプトはParentDetection
 ///   （毎フレームのSetGaugeDirectによる増減、大きな音によるAddGauge）。
 ///   このスクリプトはMotherGaugeに一切書き込まない。
 ///
 /// このスクリプトの責務：
 ///   - ゲームオーバー監視：ゲージを監視し、最大値到達時にシーン／UDP遷移を実行
-///   - ParentDetectionV2へNotifyGameOverを転送し、進行を停止
+///   - ParentDetectionへNotifyGameOverを転送し、進行を停止
 ///   - ゲームオーバー時にゲームロジックのコンポーネントを無効化
 /// </summary>
 public class CaughtReactionController : MonoBehaviour
 {
     [Header("システム参照")]
-    [SerializeField] private ParentDetectionV2 parentDetection;
+    [SerializeField] private ParentDetection parentDetection;
     [SerializeField] private SleepingController sleepingController;
     [SerializeField] private DoorController doorController;
     [SerializeField] private ParentUdpSender udpSender;
     [SerializeField] private MotherGauge motherGauge;
-    [SerializeField] private CanvasGroup fadeCanvasGroup;
 
     [Header("シーン設定")]
     [SerializeField] private string gameOverSceneName = "GameOverResult";
 
-    [Header("フェード設定")]
-    [SerializeField, Min(0f)] private float fadeSeconds = 0.5f;
     [SerializeField, Min(0f)] private float sceneChangeDelay;
 
     [Header("デバッグ")]
@@ -42,7 +39,7 @@ public class CaughtReactionController : MonoBehaviour
     private void Start()
     {
         if (parentDetection == null)
-            parentDetection = Object.FindFirstObjectByType<ParentDetectionV2>();
+            parentDetection = Object.FindFirstObjectByType<ParentDetection>();
         if (sleepingController == null)
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
         if (doorController == null)
@@ -53,16 +50,8 @@ public class CaughtReactionController : MonoBehaviour
 
         _hasTriggeredGameOver = false;
 
-        if (fadeCanvasGroup != null)
-        {
-            fadeCanvasGroup.alpha = 0f;
-            fadeCanvasGroup.interactable = false;
-            fadeCanvasGroup.blocksRaycasts = false;
-            fadeCanvasGroup.gameObject.SetActive(false);
-        }
-
         if (showDebugLogs)
-            Debug.Log("[CaughtReactionController] initialized - game-over watchdog only (gauge owned by PDV2)");
+            Debug.Log("[CaughtReactionController] initialized - game-over watchdog only (gauge owned by PD)");
     }
 
     private void EnsureUdpSender()
@@ -70,7 +59,7 @@ public class CaughtReactionController : MonoBehaviour
         if (udpSender == null)
             udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
         if (udpSender == null)
-            udpSender = ParentUdpSender.instance;
+            udpSender = ParentUdpSender.Instance;
     }
 
     private void Update()
@@ -78,8 +67,8 @@ public class CaughtReactionController : MonoBehaviour
         if (_hasTriggeredGameOver) return;
         if (motherGauge == null) return;
 
-        // ゲームオーバー監視：PDV2は毎フレームゲージを書き込み、最大値到達時にOnPlayerCaughtを呼ぶ。
-        // PDV2が自身のゲームオーバー処理を実行する前に無効化された場合に備えた安全網。
+        // ゲームオーバー監視：PDは毎フレームゲージを書き込み、最大値到達時にOnPlayerCaughtを呼ぶ。
+        // PDが自身のゲームオーバー処理を実行する前に無効化された場合に備えた安全網。
         if (motherGauge.currentGauge >= motherGauge.maxGauge)
         {
             TriggerGameOver();
@@ -90,30 +79,30 @@ public class CaughtReactionController : MonoBehaviour
         {
             bool isLooking  = (parentDetection != null) && parentDetection.isMotherLookingNow;
             bool isSleeping = (sleepingController != null) && sleepingController.IsSleeping;
-            Debug.Log($"[CaughtReactionController-Update] isMotherLookingNow={isLooking} | IsSleeping={isSleeping} | gauge={motherGauge.currentGauge}/{motherGauge.maxGauge} | (gauge written exclusively by PDV2)");
+            Debug.Log($"[CaughtReactionController-Update] isMotherLookingNow={isLooking} | IsSleeping={isSleeping} | gauge={motherGauge.currentGauge}/{motherGauge.maxGauge} | (gauge written exclusively by PD)");
         }
     }
 
     /// <summary>
     /// 親機がチェックを行ったことを通知する。
-    /// このスクリプトはゲージを変更しない（すべての書き込みはPDV2が管理）。
+    /// このスクリプトはゲージを変更しない（すべての書き込みはPDが管理）。
     /// 既存のUnityEvent接続を壊さないためスタブとして残す。
     /// </summary>
     public void OnMotherCheck(bool isFullCheck)
     {
         if (showDebugLogs)
-            Debug.Log($"[CaughtReactionController] OnMotherCheck ({(isFullCheck ? "FULL" : "PEEK")})を受信 - ゲージ書き込みはPDV2の責務のため、ここでは何もしません");
+            Debug.Log($"[CaughtReactionController] OnMotherCheck ({(isFullCheck ? "FULL" : "PEEK")})を受信 - ゲージ書き込みはPDの責務のため、ここでは何もしません");
     }
 
     /// <summary>
     /// 大きな音を出すアイテムが発生したことを通知する。
-    /// このスクリプトはゲージを変更しない（書き込みはPDV2.OnLoudItemTriggeredが管理）。
+    /// このスクリプトはゲージを変更しない（書き込みはPD.OnLoudItemTriggeredが管理）。
     /// 既存の接続を壊さないためスタブとして残す。
     /// </summary>
     public void OnLoudItemTriggered()
     {
         if (showDebugLogs)
-            Debug.Log("[CaughtReactionController] OnLoudItemTriggeredを受信 - ゲージ書き込みはPDV2の責務のため、ここでは何もしません");
+            Debug.Log("[CaughtReactionController] OnLoudItemTriggeredを受信 - ゲージ書き込みはPDの責務のため、ここでは何もしません");
     }
 
     /// <summary>
@@ -156,7 +145,7 @@ public class CaughtReactionController : MonoBehaviour
         // ゲームロジックのコンポーネントを無効化
         DisableGameLogic();
 
-        // ゲームオーバー処理（フェードとシーンロード）を開始
+        // ゲームオーバー処理（シーンロード）を開始
         if (_gameOverRoutine != null) StopCoroutine(_gameOverRoutine);
         _gameOverRoutine = StartCoroutine(GameOverSequence());
     }
@@ -170,27 +159,14 @@ public class CaughtReactionController : MonoBehaviour
 
     private IEnumerator GameOverSequence()
     {
-        // 1. 必要に応じて画面をフェードアウト
-        if (fadeCanvasGroup != null)
-        {
-            if (!fadeCanvasGroup.gameObject.activeSelf)
-            {
-                fadeCanvasGroup.gameObject.SetActive(true);
-            }
-
-            fadeCanvasGroup.interactable = false;
-            fadeCanvasGroup.blocksRaycasts = true;
-            yield return StartCoroutine(FadeOutRoutine());
-        }
-
-        // 2. 設定された遅延時間を待機（タイムスケールに依存しないRealtime）
+        // 設定された遅延時間を待機（タイムスケールに依存しないRealtime）
         float delay = Mathf.Max(0f, sceneChangeDelay);
         if (delay > 0f)
         {
             yield return new WaitForSecondsRealtime(delay);
         }
 
-        // 3. 親機側のゲームオーバーシーン（GameOverResult）をロード
+        // 親機側のゲームオーバーシーン（GameOverResult）をロード
         if (showDebugLogs) Debug.Log($"[CaughtReactionController] {gameOverSceneName}シーンをロード中...");
 
         if (!string.IsNullOrEmpty(gameOverSceneName))
@@ -204,33 +180,6 @@ public class CaughtReactionController : MonoBehaviour
         _gameOverRoutine = null;
     }
 
-    private IEnumerator FadeOutRoutine()
-    {
-        if (fadeCanvasGroup == null)
-        {
-            yield break;
-        }
-
-        float duration = Mathf.Max(0f, fadeSeconds);
-        if (duration <= 0f)
-        {
-            fadeCanvasGroup.alpha = 1f;
-            yield break;
-        }
-
-        float startAlpha = fadeCanvasGroup.alpha;
-        float elapsed = 0f;
-        while (elapsed < duration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            float t = Mathf.Clamp01(elapsed / duration);
-            fadeCanvasGroup.alpha = Mathf.Lerp(startAlpha, 1f, t);
-            yield return null;
-        }
-
-        fadeCanvasGroup.alpha = 1f;
-    }
-
     public void ForceGameOver()
     {
         if (!_hasTriggeredGameOver) TriggerGameOver();
@@ -238,7 +187,7 @@ public class CaughtReactionController : MonoBehaviour
 
     /// <summary>
     /// インスペクターまたはテストコードからゲージを0に戻すデバッグ専用ヘルパー。
-    /// 通常のゲームプレイではParentDetectionV2.ResetCycle()がゲージをリセットする。
+    /// 通常のゲームプレイではParentDetection.ResetCycle()がゲージをリセットする。
     /// </summary>
     public void DebugResetSuspicionGauge()
     {

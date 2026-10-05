@@ -7,7 +7,7 @@ using UnityEngine.UI;
 ///
 /// ゲージの管理：
 ///   疑惑値（0～maxGauge）は警告サイクルをまたいで保持される。
-///   増加：ParentDetectionV2からのAddGauge()呼び出し（大きな音、チェックイベント）。
+///   増加：ParentDetectionからのAddGauge()呼び出し（大きな音、チェックイベント）。
 ///   減少：HandleAutoDecrease() — decreaseIntervalSecondsごとに1段階（本番動作）。
 ///   I／Oキー入力はエディターデバッグ専用。
 /// </summary>

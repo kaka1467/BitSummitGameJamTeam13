@@ -22,9 +22,6 @@ public class CatFeintController : MonoBehaviour
     [Tooltip("猫が移動中に使う専用の足音AudioSource。")]
     [SerializeField] private AudioSource catFootstepAudioSource;
 
-    [Tooltip("母親と同じ足音クリップ。")]
-    [SerializeField] private AudioClip footstepClip;
-
     [Range(0f, 1f)]
     [Tooltip("猫の足音の音量。")]
     [SerializeField] private float footstepVolume = 0.35f;
@@ -44,14 +41,14 @@ public class CatFeintController : MonoBehaviour
     [SerializeField] private float stopDistance = 0.05f;
 
     [Tooltip("猫の足が床に埋まる場合に、ワールドY方向へ持ち上げるオフセット（単位）。StartPointへの出現・各waypoint移動・DoorPoint到着・帰位のすべてに同じ値が1回だけ適用される（累積しない）。Playで猫の足元を見ながら調整する（初期値0=持ち上げなし）。")]
-    [SerializeField] private float catHeightOffset = 0f;
+    [SerializeField] private float catHeightOffset;
 
     [Header("表示タイミング")]
     [Tooltip("ドアが開いてから鳴き声を再生するまでの秒数。")]
-    [SerializeField] private float meowDelaySeconds = 0f;
+    [SerializeField] private float meowDelaySeconds;
 
     [Tooltip("ドアを閉じる前に猫を非表示にしておく秒数（ドアを閉じるX秒前に消す）。")]
-    [SerializeField] private float catHideBeforeCloseSeconds = 0f;
+    [SerializeField] private float catHideBeforeCloseSeconds;
 
     private Vector3 _homePosition;
     private Quaternion _homeRotation;
@@ -81,7 +78,7 @@ public class CatFeintController : MonoBehaviour
         }
     }
 
-    /// <summary>ドアを閉じる前に猫を隠しておく秒数（ParentDetectionV2のドア閉鎖タイミング計算に使う）。</summary>
+    /// <summary>ドアを閉じる前に猫を隠しておく秒数（ParentDetectionのドア閉鎖タイミング計算に使う）。</summary>
     public float HideBeforeCloseSeconds => Mathf.Max(0f, catHideBeforeCloseSeconds);
 
     /// <summary>
@@ -260,10 +257,9 @@ public class CatFeintController : MonoBehaviour
 
     private void StartCatFootsteps()
     {
-        if (catFootstepAudioSource == null || footstepClip == null)
+        if (catFootstepAudioSource == null)
             return;
 
-        catFootstepAudioSource.clip = footstepClip;
         catFootstepAudioSource.loop = true;
         catFootstepAudioSource.volume = footstepVolume;
         if (!catFootstepAudioSource.isPlaying)
