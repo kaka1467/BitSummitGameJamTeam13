@@ -23,6 +23,7 @@ using UnityEngine.UI;
 ///   TEAM13_CHILD_SCORE:<val> — child final score for parent ranking
 ///   TEAM13_LOUD_ITEM         — child picked up loud item
 ///   TEAM13_PING              — heartbeat
+///   TEAM13_RETURN_TO_TITLE   — child returned to title → parent also returns
 ///
 /// Inbound messages (parent → child, port 8000):
 ///   TEAM13_START_GAME   — load game scene
@@ -30,6 +31,7 @@ using UnityEngine.UI;
 ///   TEAM13_SLEEP_LOCK   — disable child player input
 ///   TEAM13_SLEEP_UNLOCK — re-enable child player input
 ///   TEAM13_PING         — heartbeat from parent
+///   TEAM13_RETURN_TO_TITLE — parent returned to title → child also returns
 /// </summary>
 public class ChildUdpReceiver : MonoBehaviour
 {
@@ -84,6 +86,19 @@ public class ChildUdpReceiver : MonoBehaviour
     // 子機が現在適用している睡眠ロック状態（重複パケット処理の抑制用）
     private bool isSleepInputLocked = false;
     private bool caughtHandled = false;
+
+    // ── RETURN_TO_TITLE のプレイ識別（古い再送・遅延パケットの無視用） ─────────────────────
+    // 連番だけでは「前回プレイの、まだ届いていない番号の通知」を区別できない。
+    // また片端末の再起動で連番が1に戻ると大小比較が破綻する。
+    // そのため「プレイ識別子（両端末で共有）」＋「そのプレイ内の連番」の2段で判定する。
+    // 子機はゲーム開始時に新しい識別子を発行し、START_GAME:<sid> で親機へ伝える。
+    private string _playSessionId = "";
+
+    // 子機（このプロセス）が RETURN_TO_TITLE を送るたびに単調増加する連番。アプリ実行中は決してリセットしない。
+    // 同じプレイ内での重複・再送を弾くために使う（プレイ識別子が一致する場合のみ意味を持つ）。
+    private int _returnToTitleSendSeq = 0;
+    private int _lastPeerReturnToTitleSeq = 0;
+
     [SerializeField] private GameObject creditsPanel;
     [SerializeField] private GameObject settingsPanel;
     [SerializeField] private GameObject[] animatedSpriteObjects;
@@ -181,9 +196,22 @@ public class ChildUdpReceiver : MonoBehaviour
 
     public void OnStartButtonClicked()
     {
-        SendState(CMD_START);
-        Debug.Log($"[ChildUdpReceiver] Sent START_GAME to parent at {targetIP}:{parentReceivePort}");
+        // このプレイの識別子を新しく発行し、開始通知に載せて親機と共有する。
+        // 以降の RETURN_TO_TITLE はこの識別子で「どのプレイの通知か」を判定する。
+        _playSessionId = CreatePlaySessionId();
+        _lastPeerReturnToTitleSeq = 0;
+
+        SendState($"{CMD_START}:{_playSessionId}");
+        Debug.Log($"[ChildUdpReceiver] Sent START_GAME (playSessionId={_playSessionId}) to parent at {targetIP}:{parentReceivePort}");
         LoadGameScene();
+    }
+
+    /// <summary>
+    /// 新しいプレイ識別子を発行する（再起動・再接続をまたいでも衝突しない一意トークン）。
+    /// </summary>
+    private static string CreatePlaySessionId()
+    {
+        return $"{System.Guid.NewGuid():N}";
     }
 
     // ── Public send API ───────────────────────────────────────────────────────
@@ -243,6 +271,18 @@ public class ChildUdpReceiver : MonoBehaviour
         // MAGIC_NUMBER ("TEAM13_") + "LOUD_ITEM" で送信
         SendState("LOUD_ITEM");
         Debug.Log("[ChildUdpReceiver] Sent LOUD_ITEM packet to Parent.");
+    }
+
+    /// <summary>
+    /// 子機側で「タイトルへ戻る」処理を開始したことを親機へ通知する。
+    /// 完全なメッセージは "TEAM13_RETURN_TO_TITLE:&lt;プレイ識別子&gt;:&lt;連番&gt;"（SendState が MAGIC_NUMBER を前置する）。
+    /// 取りこぼすと親機がリザルト画面に取り残されるため、再送付きで送る。識別子・連番は再送でも同じ値を送る。
+    /// </summary>
+    public void notifyReturnToTitle()
+    {
+        _returnToTitleSendSeq++;
+        SendStateRepeated($"RETURN_TO_TITLE:{_playSessionId}:{_returnToTitleSendSeq}");
+        Debug.Log($"[ChildUdpReceiver] Sent RETURN_TO_TITLE (playSessionId={_playSessionId}, seq={_returnToTitleSendSeq}) with retries to parent.");
     }
 
     // ── Unity lifecycle ───────────────────────────────────────────────────────
@@ -475,6 +515,12 @@ public class ChildUdpReceiver : MonoBehaviour
         gameSceneLoaded = false;
         caughtHandled = false;
         isSleepInputLocked = false;
+
+        // プレイ識別子をクリアする。タイトルに戻った時点で前のプレイは終了しているため、
+        // 以降に届く前回プレイの RETURN_TO_TITLE は識別子不一致で無視される
+        // （次プレイ開始時に OnStartButtonClicked で新しい識別子を必ず発行する）。
+        _playSessionId = "";
+        _lastPeerReturnToTitleSeq = 0;
         PlayerInputLock.SetLocked(false);
         SetSleepLockImageVisible(false);
 
@@ -581,10 +627,22 @@ public class ChildUdpReceiver : MonoBehaviour
             return;
         }
 
-        if (msg == CMD_START)
+        if (msg == CMD_START || msg.StartsWith(CMD_START + ":", StringComparison.Ordinal))
         {
+            // 親機が起点で開始した場合、親機が発行したプレイ識別子を採用する
+            // （子機起点の場合は OnStartButtonClicked で既に発行済み）。
+            if (msg.StartsWith(CMD_START + ":", StringComparison.Ordinal))
+            {
+                string sid = msg.Substring(CMD_START.Length + 1);
+                if (!string.IsNullOrEmpty(sid))
+                {
+                    _playSessionId = sid;
+                    _lastPeerReturnToTitleSeq = 0;
+                }
+            }
+
             if (showDebugLogs)
-                Debug.Log("[ChildUdpReceiver] Received START_GAME from parent — loading game scene.");
+                Debug.Log($"[ChildUdpReceiver] Received START_GAME from parent — loading game scene. playSessionId={_playSessionId}");
             LoadGameScene();
             return;
         }
@@ -622,7 +680,14 @@ public class ChildUdpReceiver : MonoBehaviour
                 {
                     if (showDebugLogs)
                         Debug.Log($"[ChildUdpReceiver] CAUGHT fallback executed — scene='{activeScene}', loading 'GameOverResult'.");
+                    // GameManager.instance が未設定でも、シーン内に実体があればそこから実スコアを取得する。
+                    // それも見つからない場合のみ 0 点として扱う（最終手段）。
                     int finalScore = 0;
+                    GameManager gm = GameManager.instance != null ? GameManager.instance : FindFirstObjectByType<GameManager>();
+                    if (gm != null)
+                    {
+                        finalScore = gm.score;
+                    }
                     PlayerPrefs.SetInt("LastGameOverScore", finalScore);
                     PlayerPrefs.Save();
                     SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
@@ -634,6 +699,27 @@ public class ChildUdpReceiver : MonoBehaviour
                 }
             }
 
+            return;
+        }
+        if (msg.StartsWith("RETURN_TO_TITLE:", StringComparison.Ordinal))
+        {
+            // RETURN_TO_TITLE:<playSessionId>:<seq>（旧: RETURN_TO_TITLE:<seq> / RETURN_TO_TITLE）
+            string rest = msg.Substring("RETURN_TO_TITLE:".Length);
+            string sid = "";
+            string seqText = rest;
+
+            int sep = rest.IndexOf(':');
+            if (sep >= 0)
+            {
+                sid = rest.Substring(0, sep);
+                seqText = rest.Substring(sep + 1);
+            }
+
+            int seq = 0;
+            if (!int.TryParse(seqText, out seq))
+                seq = 0;
+
+            HandleTeamReturnToTitle(sid, seq);
             return;
         }
 
@@ -701,6 +787,64 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log($"[ChildUdpReceiver] Unhandled message: '{msg}'");
+    }
+
+    /// <summary>
+    /// 親機からの「タイトルへ戻る」通知（TEAM13_RETURN_TO_TITLE:&lt;識別子&gt;:&lt;連番&gt;）を受信したときの処理。
+    /// 親機に合わせて子機もタイトル画面へ戻る。
+    /// ・識別子が現在のプレイと異なる → 別プレイ（前回の再送・遅延、再起動前の通知）として無視する。
+    /// ・識別子が一致し、連番が「最後に処理した連番」以下 → 同プレイ内の重複として無視する。
+    /// リザルト画面にいる場合は ResultSceneChamger のフェード演出を流用し、
+    /// ゲームプレイ中などの演出がない場合は即座に遷移する。
+    /// </summary>
+    private void HandleTeamReturnToTitle(string playSessionId, int seq)
+    {
+        // 旧フォーマット（識別子なし）は、こちらに識別子が無い場合のみ受け付ける（後方互換）。
+        bool sessionMatches = !string.IsNullOrEmpty(playSessionId)
+            ? playSessionId == _playSessionId
+            : string.IsNullOrEmpty(_playSessionId);
+
+        if (!sessionMatches)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ChildUdpReceiver] RETURN_TO_TITLE ignored — different play session (recv='{playSessionId}', current='{_playSessionId}').");
+            return;
+        }
+
+        if (seq <= _lastPeerReturnToTitleSeq)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ChildUdpReceiver] RETURN_TO_TITLE ignored — stale/duplicate seq={seq} (last processed={_lastPeerReturnToTitleSeq}).");
+            return;
+        }
+        _lastPeerReturnToTitleSeq = seq;
+
+        string activeScene = SceneManager.GetActiveScene().name;
+        if (IsTitleScene(activeScene))
+        {
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] RETURN_TO_TITLE ignored — already on title scene.");
+            return;
+        }
+
+        ResultSceneChamger changer = FindFirstObjectByType<ResultSceneChamger>();
+        if (changer != null)
+        {
+            if (changer.IsReturningToTitle)
+            {
+                if (showDebugLogs)
+                    Debug.Log("[ChildUdpReceiver] RETURN_TO_TITLE ignored — already returning to title (fade in progress).");
+                return;
+            }
+
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] RETURN_TO_TITLE received — starting result fade to title.");
+            changer.StartFadeToTitle(notifyPeer: false);
+            return;
+        }
+
+        Debug.Log($"[ChildUdpReceiver] RETURN_TO_TITLE received — returning to title from scene={activeScene}.");
+        SceneManager.LoadScene(SceneNameResolver.Resolve(titleSceneName));
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────

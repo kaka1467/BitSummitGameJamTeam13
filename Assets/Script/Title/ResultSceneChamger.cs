@@ -79,11 +79,46 @@ public class ResultSceneChamger : MonoBehaviour
         }
     }
 
-    // 外部（ボタン入力など）からこの関数を呼び出す
-    public void StartFadeToTitle()
+    /// <summary>
+    /// 「タイトルへ戻る」演出の開始を相手側へ通知する（親機・子機の画面同期用）。
+    /// 子機 → 親機: TEAM13_RETURN_TO_TITLE（再送付き）。親機 → 子機: 同メッセージ（再送付き）。
+    /// 子機・親機のどちらのリザルト画面でもこのスクリプトを共用しているため、
+    /// シーン内に存在する側の UDP コンポーネントへ処理を委譲する。
+    /// </summary>
+    private void NotifyReturnToTitle()
+    {
+        if (ChildUdpReceiver.instance != null)
+        {
+            ChildUdpReceiver.instance.notifyReturnToTitle();
+        }
+        else if (ParentUdpSender.Instance != null)
+        {
+            ParentUdpSender.Instance.NotifyReturnToTitleToChild();
+        }
+    }
+
+    /// <summary>
+    /// 現在「タイトルへ戻る」フェード演出中かどうか（UDP の戻り通知の重複実行防止に使用）。
+    /// </summary>
+    public bool IsReturningToTitle => isFading;
+
+    /// <summary>
+    /// 「タイトルへ戻る」演出を開始する。
+    /// notifyPeer=true（ユーザー操作・自動遷移など、この端末が起点の場合）は相手端末へ RETURN_TO_TITLE を通知する。
+    /// notifyPeer=false（相手端末からの RETURN_TO_TITLE 受信が起点の場合）は通知を送り返さない。
+    /// 復帰要求（RETURN_TO_TITLE）と確認応答を区別するため、相手起起源の復帰では同じ要求を再送しない。
+    /// </summary>
+    public void StartFadeToTitle(bool notifyPeer = true)
     {
         if (!isFading)
         {
+            // 「タイトルへ戻る」演出の開始を相手側へ通知する（親機・子機の画面同期用）。
+            // 相手からの受信が起点の場合は送り返さない（無限往復の防止）。
+            if (notifyPeer)
+            {
+                NotifyReturnToTitle();
+            }
+
             if (returnToTitleSe != null)
             {
                 returnToTitleSe.Play();

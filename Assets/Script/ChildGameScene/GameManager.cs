@@ -31,6 +31,13 @@ public class GameManager : MonoBehaviour
 
     public static GameManager instance;
 
+    /// <summary>
+    /// 結果データ（LastGameOverScore / LastTimeUpScore / ResultTypePending / ランキング）への書き込みが完了したときに発火する静的イベント。
+    /// 結果シーンの表示（ResultScoreUI など）はシーン読み込み時の表示リフレッシュに加え、このイベントでも表示を再読み込みして同期する。
+    /// （データ書き込みがシーン読み込み後の表示リフレッシュより後に行われるケースに対応するため）
+    /// </summary>
+    public static event System.Action ResultDataCommitted;
+
     public int score = 0;
     public float time = 180f;
     public float maxTime = 180f;
@@ -210,6 +217,9 @@ public class GameManager : MonoBehaviour
         PlayerPrefs.Save();
         Debug.Log($"[GameManager] Result={resultType} score={score} saved to '{scoreKey}'");
 
+        // 書き込み完了を通知（結果シーンの表示がシーン読み込み後でも最新データに同期する）
+        ResultDataCommitted?.Invoke();
+
         // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
         Time.timeScale = 0f;
 
@@ -221,25 +231,16 @@ public class GameManager : MonoBehaviour
     }
 
     // 【追加】PlayerPrefsを用いたランキング保存メソッド
+    // 挿入ロジック本体は RankingUtil に集約（親機と共有・単体テスト可能）。挙動は従来と同一。
     private static void UpdateRanking(string keyPrefix, int newScore)
     {
-        int[] ranking = new int[RankingSize];
-        for (int i = 0; i < RankingSize; i++)
-            ranking[i] = PlayerPrefs.GetInt(keyPrefix + i, 0);
+        // 保存前の全順位（2位がどこで0になるかの追跡用）
+        int[] before = RankingUtil.ReadFromPlayerPrefs(keyPrefix, RankingSize);
+        RankingUtil.InsertScoreToPlayerPrefs(keyPrefix, newScore, RankingSize);
+        int[] after = RankingUtil.ReadFromPlayerPrefs(keyPrefix, RankingSize);
 
-        for (int i = 0; i < RankingSize; i++)
-        {
-            if (newScore > ranking[i])
-            {
-                for (int j = RankingSize - 1; j > i; j--)
-                    ranking[j] = ranking[j - 1];
-                ranking[i] = newScore;
-                break;
-            }
-        }
-
-        for (int i = 0; i < RankingSize; i++)
-            PlayerPrefs.SetInt(keyPrefix + i, ranking[i]);
+        Debug.Log($"[GameManager] UpdateRanking key='{keyPrefix}', before=[{string.Join(", ", before)}], " +
+                  $"newScore={newScore}, after=[{string.Join(", ", after)}]");
     }
 
     private void ActivateFeverEffects()

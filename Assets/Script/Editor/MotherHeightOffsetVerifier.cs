@@ -15,7 +15,7 @@ using UnityEngine;
 ///      補正がそれぞれ1回だけ適用される（地点をまたいだ合算・同じ地点の再訪での二重加算がない）
 ///
 /// 本体コードは一切変更しない。privateメンバ（motherHeightOffset／OffsetGoalPosition／
-/// MoveToPoint／MoveToPointFacingMovement）はリフレクションで操作する。
+/// MovePositionOnly）はリフレクションで操作する。
 /// 確認が終わればこのファイルごと削除してよい（Editorフォルダなのでビルドには含まれない）。
 /// </summary>
 public static class MotherHeightOffsetVerifier
@@ -74,13 +74,12 @@ public static class MotherHeightOffsetVerifier
                 "parentDetection", BindingFlags.NonPublic | BindingFlags.Instance);
             var offsetGoalMethod = typeof(ParentApproachController).GetMethod(
                 "OffsetGoalPosition", BindingFlags.NonPublic | BindingFlags.Instance);
+            // 位置移動は MovePositionOnly に統一された（旧 MoveToPoint／MoveToPointFacingMovement は廃止）。
             var moveToPointMethod = typeof(ParentApproachController).GetMethod(
-                "MoveToPoint", BindingFlags.NonPublic | BindingFlags.Instance);
-            var moveFacingMethod = typeof(ParentApproachController).GetMethod(
-                "MoveToPointFacingMovement", BindingFlags.NonPublic | BindingFlags.Instance);
+                "MovePositionOnly", BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (offsetField == null || offsetGoalMethod == null ||
-                moveToPointMethod == null || moveFacingMethod == null ||
+                moveToPointMethod == null ||
                 parentDetectionField == null)
             {
                 Debug.LogError("[検証] リフレクション対象のメンバが見つからない（実装が変わっていないか確認してください）。");
@@ -144,7 +143,7 @@ public static class MotherHeightOffsetVerifier
             Check("③ 同じドア地点を再訪しても累積しない",
                   mother.position, expectedDoor);
 
-            DriveCoroutine(moveFacingMethod, controller, peekGo.transform);
+            DriveCoroutine(moveToPointMethod, controller, peekGo.transform);
             Vector3 expectedPeek = new Vector3(peekGo.transform.position.x,
                                                peekGo.transform.position.y + TestOffset,
                                                peekGo.transform.position.z);

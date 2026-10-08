@@ -21,6 +21,7 @@ using UnityEngine.UI;
 ///   TEAM13_SLEEP_LOCK   — parent sleeping; disable child input
 ///   TEAM13_SLEEP_UNLOCK — parent awake; re-enable child input
 ///   TEAM13_PING         — heartbeat
+///   TEAM13_RETURN_TO_TITLE — return-to-title sync → child also returns
 ///
 /// Inbound messages (child → parent, port 8002):
 ///   TEAM13_PING              — heartbeat from child
@@ -29,11 +30,19 @@ using UnityEngine.UI;
 ///   TEAM13_CHILD_DEAD        — child died → parent game over
 ///   TEAM13_CHILD_SCORE:&lt;val&gt; — child final score, write to PlayerPrefs for ranking
 ///   TEAM13_LOUD_ITEM         — child picked up loud item → trigger rush-in
+///   TEAM13_RETURN_TO_TITLE   — child returned to title → parent also returns
 /// </summary>
 public class ParentUdpSender : MonoBehaviour
 {
     private const string MagicNumber = "TEAM13_";
     private const string CmdStart    = "START_GAME";
+
+    /// <summary>
+    /// 「タイトルへ戻る」同期通知。親機⇄子機の双方向で同じメッセージを使用する。
+    /// 完全なメッセージは "TEAM13_RETURN_TO_TITLE"。SendState は MAGIC_NUMBER("TEAM13_") を
+    /// 前置するため、ここでは payload 部分の "RETURN_TO_TITLE" のみを保持する。
+    /// </summary>
+    private const string parentReturnToTitle = "RETURN_TO_TITLE";
     private const string ResultGameOverScene = "GameOverResult";
     private const string ResultTimeUpScene   = "TimeUpResult";
 
@@ -117,9 +126,42 @@ public class ParentUdpSender : MonoBehaviour
 
     private Coroutine _heartbeatCoroutine;
     private Coroutine _caughtRetryCoroutine;
+    private Coroutine _returnToTitleNotifyCoroutine;
     private float     _lastReceiveTime;
     private float     _pingInterval  = 1.0f;
     private float     _timeoutLimit  = 3.0f;
+
+    // ── RETURN_TO_TITLE のプレイ識別（古い再送・遅延パケットの無視用） ─────────────────────
+    // 連番だけでは「前回プレイの、まだ届いていない番号の通知」を区別できない
+    // （例: 最後に受信した番号が7 → 前回の8は未受信 → 次プレイ中に古い8が届くと 8>7 で誤受理）。
+    // また片端末の再起動で連番が1に戻ると大小比較が破綻する。
+    // そのため「プレイ識別子（両端末で共有）」＋「そのプレイ内の連番」の2段で判定する。
+    //
+    // プレイ識別子は、開始処理（子機 START_GAME / 親機 Solo Start）で必ず新しく作り、
+    // 子機→親機は START_GAME:<sid> で伝える。これにより既存の開始フローと整合する。
+    private string _currentPlaySessionId = "";
+
+    // 親機（このプロセス）が RETURN_TO_TITLE を送るたびに単調増加する連番。アプリ実行中は決してリセットしない。
+    // 同じプレイ内での重複・再送を弾くために使う（プレイ識別子が一致する場合のみ意味を持つ）。
+    private int _returnToTitleSendSeq = 0;
+    private int _lastPeerReturnToTitleSeq = 0;
+
+    /// <summary>
+    /// 新しいプレイ識別子を発行する。再起動・再接続をまたいでも衝突しないよう、
+    /// プロセス起動ごとの一意トークンと実行時カウンタを組み合わせる。
+    /// </summary>
+    private static string CreatePlaySessionId()
+    {
+        return $"{System.Guid.NewGuid():N}";
+    }
+
+    /// <summary>
+    /// 親機が子機から受信した最終スコア（CHILD_SCORE）を PlayerPrefs へ保存し、
+    /// ランキング更新まで完了したときに発火する静的イベント。
+    /// 結果シーンの表示（ResultScoreUI など）は、このイベントで表示を再読み込みして
+    /// 親機のUDP受信・保存完了と結果UIを同期する（子機GameManagerのイベントには依存しない）。
+    /// </summary>
+    public static event System.Action ResultDataCommitted;
     private bool      _gameStarted        = false;
     private bool      _resultProcessed    = false; // GAME_OVER wins race
     private float     _returnToTitleHeld = 0f;
@@ -146,11 +188,23 @@ public class ParentUdpSender : MonoBehaviour
     // ── Button callbacks ──────────────────────────────────────────────────────
     public void OnConnectButtonClicked()
     {
+        ConnectionState before = currentState;
         currentState = ConnectionState.Connecting;
-        Debug.Log($"[ParentUdpSender] OnConnectButtonClicked — state=Connecting, listening on broadcastPort={broadcastPort}. Waiting for child DISCOVERY_REQUEST.");
+        Debug.Log($"[ParentUdpSender][Diag] OnConnectButtonClicked called — scene='{SceneManager.GetActiveScene().name}', " +
+                  $"state {before} → Connecting, _gameStarted={_gameStarted}, listening on broadcastPort={broadcastPort}.");
     }
-    public void OnCancelButtonClicked()   { currentState = ConnectionState.Disconnected; }
-    public void OnStartButtonClicked()    { StartCoroutine(StartGameRoutine()); }
+    public void OnCancelButtonClicked()
+    {
+        Debug.Log($"[ParentUdpSender][Diag] OnCancelButtonClicked called — scene='{SceneManager.GetActiveScene().name}', state {currentState} → Disconnected.");
+        currentState = ConnectionState.Disconnected;
+    }
+    public void OnStartButtonClicked()
+    {
+        // 二重開始防止: すでに開始済みなら何もしない（Start/SoloStart を連打しても遷移は1回だけ）。
+        if (_gameStarted) return;
+        _gameStarted = true;
+        StartCoroutine(StartGameRoutine());
+    }
 
     /// <summary>
     /// 子機の接続状態に関係なく、親機だけでゲームを開始する。
@@ -159,16 +213,26 @@ public class ParentUdpSender : MonoBehaviour
     /// </summary>
     public void OnSoloStartButtonClicked()
     {
+        // 単体開始が押されたことと、その時点の状態を必ず記録する（「Connecting表示」診断用）。
+        Debug.Log($"[ParentUdpSender][Diag] OnSoloStartButtonClicked called — scene='{SceneManager.GetActiveScene().name}', " +
+                  $"state={currentState}, _gameStarted={_gameStarted}, " +
+                  $"soloStartButtonObject={(soloStartButtonObject != null ? soloStartButtonObject.activeSelf.ToString() : "null")}.");
+
         if (_gameStarted)
         {
+            Debug.Log("[ParentUdpSender][Diag] OnSoloStartButtonClicked ignored — already started (_gameStarted=true).");
             return;
         }
         _gameStarted = true;
 
-        Debug.Log("[ParentUdpSender] OnSoloStartButtonClicked — starting without waiting for child connection.");
+        // 単体開始は親機が起点なので、親機が新しいプレイ識別子を発行する。
+        // （子機接続済みで START_GAME を送る場合も、この識別子を共有させる）
+        _currentPlaySessionId = CreatePlaySessionId();
+
+        Debug.Log($"[ParentUdpSender] OnSoloStartButtonClicked — starting without waiting for child connection. playSessionId={_currentPlaySessionId}");
 
         // 子機がたまたま接続済みなら合わせて開始通知を送る（未接続時はSendState内で無視される）
-        SendState(CmdStart);
+        SendState($"{CmdStart}:{_currentPlaySessionId}");
 
         // soloStartButtonObject の非表示は TitleMenuHighlight.FlashAndDeactivate 側が
         // フラッシュ演出の完了後に行う（ここで即座に隠すと演出が表示されないため、外してある）。
@@ -179,46 +243,54 @@ public class ParentUdpSender : MonoBehaviour
 
     private IEnumerator StartGameRoutine()
     {
-        SendState(CmdStart);
-        Debug.Log($"[ParentUdpSender] Sent START_GAME to child at {targetIP}:{normalPort}");
+        // 親機が起点の開始でも、プレイ識別子を親機が発行して子機と共有する。
+        _currentPlaySessionId = CreatePlaySessionId();
+        SendState($"{CmdStart}:{_currentPlaySessionId}");
+        Debug.Log($"[ParentUdpSender] Sent START_GAME (playSessionId={_currentPlaySessionId}) to child at {targetIP}:{normalPort}");
         yield return new WaitForSeconds(0.1f);
         yield return LoadSceneAfterBgmFade(gameSceneName);
     }
 
-    // タイトルBGMのフェードアウトと画面の暗転フェードを両方走らせ、
-    // 長い方の時間だけ待ってから指定シーンへ遷移する
+    // タイトルBGMのフェードアウトと画面の暗転フェードを両方走らせる。
+    //
+    // 重要（ロード画面表示の遅延対策）:
+    //   以前は「BGMフェード完了」と「画面フェード完了」の長い方（= BGMの3秒）まで待ってから
+    //   遷移していたため、子機が開始しても親機のロード画面（MotherLoad）が出るまで3秒かかっていた。
+    //   BGMフェードは音の演出であり、ロード画面の表示を待たせる必要はない。
+    //   そのため待機時間は「画面フェード（暗転）の完了」だけを基準にし、BGMフェードは待たない。
+    //
+    //   TitleBgmFader の AudioSource はタイトルシーン内のオブジェクトにあり、DontDestroyOnLoad ではない。
+    //   そのためシーン遷移時に AudioSource ごと破棄され、フェード途中でも安全に終了する（音源リークや例外は無い）。
+    //   暗転が完了してから遷移するので、フェード途中で切れるBGMは画面が黒い状態で途切れ、耳障りになりにくい。
     private IEnumerator LoadSceneAfterBgmFade(string sceneName)
     {
         TitleBgmFader bgmFader = FindFirstObjectByType<TitleBgmFader>();
         TitleScreenFader screenFader = FindFirstObjectByType<TitleScreenFader>();
 
-        float waitSeconds = 0f;
-
+        // BGMフェードは開始するだけ（待たない）。シーン遷移で AudioSource ごと破棄される。
         if (bgmFader == null)
         {
             Debug.LogWarning("[ParentUdpSender] LoadSceneAfterBgmFade: TitleBgmFader が見つかりません（BGMはフェードせず遷移します）。");
         }
-        else if (bgmFader.FadeOut(allowResume: false))
-        {
-            waitSeconds = Mathf.Max(waitSeconds, bgmFader.FadeOutSeconds);
-        }
-        else
+        else if (!bgmFader.FadeOut(allowResume: false))
         {
             Debug.LogWarning("[ParentUdpSender] LoadSceneAfterBgmFade: BGM FadeOut() が false（BGM未再生の可能性）。");
         }
 
+        // 待機は「画面の暗転フェード」の完了のみを基準にする。
+        float waitSeconds = 0f;
         if (screenFader == null)
         {
             Debug.LogWarning("[ParentUdpSender] LoadSceneAfterBgmFade: TitleScreenFader が見つかりません（画面フェードなしで遷移します）。");
         }
         else if (screenFader.FadeOut())
         {
-            waitSeconds = Mathf.Max(waitSeconds, screenFader.FadeOutSeconds);
+            waitSeconds = screenFader.FadeOutSeconds;
         }
 
         if (waitSeconds > 0f)
         {
-            Debug.Log($"[ParentUdpSender] LoadSceneAfterBgmFade: {waitSeconds}秒待ってから '{sceneName}' へ遷移します。");
+            Debug.Log($"[ParentUdpSender] LoadSceneAfterBgmFade: 画面フェード {waitSeconds}秒で '{sceneName}' へ遷移します（BGMフェードは待ちません）。");
             yield return new WaitForSecondsRealtime(waitSeconds);
         }
 
@@ -340,6 +412,12 @@ public class ParentUdpSender : MonoBehaviour
             _caughtRetryCoroutine = null;
         }
 
+        if (_returnToTitleNotifyCoroutine != null)
+        {
+            StopCoroutine(_returnToTitleNotifyCoroutine);
+            _returnToTitleNotifyCoroutine = null;
+        }
+
         // Close sockets — this unblocks the blocking Receive() calls so threads exit naturally.
         CloseClient(ref _udpClient,           "_udpClient");
         CloseClient(ref _receiveClient,       "_receiveClient");
@@ -416,9 +494,10 @@ public class ParentUdpSender : MonoBehaviour
     /// <summary>
     /// 親機をタイトル画面へ戻す。タイトルに入ると OnSceneLoaded → ResetForNewSession が走り、
     /// 接続状態・リザルト判定などのセッション状態がすべて初期化される。
-    /// （子機側には「タイトルへ戻る」通知は無いため、子機は別途終了／再起動が必要）
+    /// notifyPeer=true（ユーザー操作・長押し復帰など、この端末が起点の場合）は子機へも TEAM13_RETURN_TO_TITLE を送信する。
+    /// notifyPeer=false（子機からの RETURN_TO_TITLE 受信が起点の場合）は送り返さない（無限往復の防止）。
     /// </summary>
-    public void ReturnToTitle()
+    public void ReturnToTitle(bool notifyPeer = true)
     {
         if (_returningToTitle) return;
         _returningToTitle = true;
@@ -427,7 +506,111 @@ public class ParentUdpSender : MonoBehaviour
         Debug.Log($"[ParentUdpSender] ReturnToTitle — '{SceneManager.GetActiveScene().name}' から '{motherTitleSceneName}' へ戻ります。");
 
         Time.timeScale = 1f;
+
+        // 子機にも「タイトルへ戻る」ことを通知する（子機側で受信して追従する）。
+        // 相手からの受信が起点の場合は送り返さない。
+        if (notifyPeer)
+        {
+            NotifyReturnToTitleToChild();
+        }
         SceneManager.LoadScene(SceneNameResolver.Resolve(motherTitleSceneName));
+    }
+
+    /// <summary>
+    /// 親機起点で「タイトルへ戻る」ことを子機へ通知する（TEAM13_RETURN_TO_TITLE、再送付き）。
+    /// 親機のリザルト画面（ResultSceneChamger）とキーボードのタイトル復帰（ReturnToTitle）から呼ばれる。
+    /// </summary>
+    public void NotifyReturnToTitleToChild()
+    {
+        NotifyReturnToTitle();
+
+        if (_returnToTitleNotifyCoroutine != null)
+        {
+            StopCoroutine(_returnToTitleNotifyCoroutine);
+        }
+        _returnToTitleNotifyCoroutine = StartCoroutine(ReturnToTitleNotifyRoutine());
+    }
+
+    /// <summary>
+    /// RETURN_TO_TITLE の再送処理（パケットロス対策）。
+    /// 0.15秒間隔で計3回再送（即時送信と合わせて計4回送信）。
+    /// 再送は同じ連番（直近の _returnToTitleSendSeq）で行うため、受信側は2回目以降を重複として正しく無視できる。
+    /// </summary>
+    private IEnumerator ReturnToTitleNotifyRoutine()
+    {
+        const int retryCount = 3;
+        const float retryInterval = 0.15f;
+
+        // 再送は「同じ識別子・同じ番号」で送る（受信側は2回目以降を重複として無視できる）。
+        int seq = _returnToTitleSendSeq;
+        string sid = _currentPlaySessionId;
+        for (int i = 0; i < retryCount; i++)
+        {
+            yield return new WaitForSecondsRealtime(retryInterval);
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] Sending RETURN_TO_TITLE retry ({i + 1}/{retryCount}) sid={sid} seq={seq}...");
+            SendState($"{parentReturnToTitle}:{sid}:{seq}");
+        }
+
+        _returnToTitleNotifyCoroutine = null;
+    }
+
+    /// <summary>
+    /// 子機からの「タイトルへ戻る」通知（TEAM13_RETURN_TO_TITLE:&lt;識別子&gt;:&lt;連番&gt;）を受信したときの処理。
+    /// 子機に合わせて親機もタイトル画面へ戻る。
+    /// ・識別子が現在のプレイと異なる → 別プレイ（前回の再送・遅延、再起動前の通知）として無視する。
+    /// ・識別子が一致し、連番が「最後に処理した連番」以下 → 同プレイ内の重複として無視する。
+    /// リザルト画面にいる場合は ResultSceneChamger のフェード演出を流用し、
+    /// ゲームプレイ中などの演出がない場合は即座に遷移する。
+    /// </summary>
+    private void HandleTeamReturnToTitle(string playSessionId, int seq)
+    {
+        // 旧フォーマット（識別子なし）は、こちらに識別子が無い場合のみ受け付ける（後方互換）。
+        bool sessionMatches = !string.IsNullOrEmpty(playSessionId)
+            ? playSessionId == _currentPlaySessionId
+            : string.IsNullOrEmpty(_currentPlaySessionId);
+
+        if (!sessionMatches)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] RETURN_TO_TITLE ignored — different play session (recv='{playSessionId}', current='{_currentPlaySessionId}').");
+            return;
+        }
+
+        if (seq <= _lastPeerReturnToTitleSeq)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] RETURN_TO_TITLE ignored — stale/duplicate seq={seq} (last processed={_lastPeerReturnToTitleSeq}).");
+            return;
+        }
+        _lastPeerReturnToTitleSeq = seq;
+
+        string currentScene = SceneManager.GetActiveScene().name;
+        if (IsTitleScene(currentScene))
+        {
+            if (showDebugLogs)
+                Debug.Log("[ParentUdpSender] RETURN_TO_TITLE ignored — already on title scene.");
+            return;
+        }
+
+        ResultSceneChamger changer = FindFirstObjectByType<ResultSceneChamger>();
+        if (changer != null)
+        {
+            if (changer.IsReturningToTitle)
+            {
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] RETURN_TO_TITLE ignored — already returning to title (fade in progress).");
+                return;
+            }
+
+            if (showDebugLogs)
+                Debug.Log("[ParentUdpSender] RETURN_TO_TITLE received — starting result fade to title.");
+            changer.StartFadeToTitle(notifyPeer: false);
+            return;
+        }
+
+        Debug.Log("[ParentUdpSender] RETURN_TO_TITLE received — returning to title immediately.");
+        ReturnToTitle(notifyPeer: false);
     }
 
     // 実際のゲームプレイシーンか。gameSceneName は最初に読み込む MotherLoad を指すため、
@@ -472,6 +655,12 @@ public class ParentUdpSender : MonoBehaviour
         ChildLoadingComplete = false;
         _shouldTriggerLoudItem = false;
 
+        // プレイ識別子をクリアする。タイトルに戻った時点で前のプレイは終了しているため、
+        // 以降に届く前回プレイの RETURN_TO_TITLE は識別子不一致で無視される
+        // （次プレイ開始時に START_GAME / Solo Start で新しい識別子を必ず発行する）。
+        _currentPlaySessionId = "";
+        _lastPeerReturnToTitleSeq = 0;
+
         if (_heartbeatCoroutine != null)
         {
             StopCoroutine(_heartbeatCoroutine);
@@ -482,6 +671,12 @@ public class ParentUdpSender : MonoBehaviour
         {
             StopCoroutine(_caughtRetryCoroutine);
             _caughtRetryCoroutine = null;
+        }
+
+        if (_returnToTitleNotifyCoroutine != null)
+        {
+            StopCoroutine(_returnToTitleNotifyCoroutine);
+            _returnToTitleNotifyCoroutine = null;
         }
 
         Debug.Log("[ParentUdpSender] ResetForNewSession: session flags cleared.");
@@ -557,6 +752,18 @@ public class ParentUdpSender : MonoBehaviour
     public void SendStateSLEEP_UNLOCK()
     {
         SendState("SLEEP_UNLOCK");
+    }
+
+    /// <summary>
+    /// 親機側で「タイトルへ戻る」ことを子機へ通知する（TEAM13_RETURN_TO_TITLE:<連番>）。
+    /// 子機のリザルト画面（ResultSceneChamger）や親機のキーボード復帰から呼ばれる。
+    /// 連番はこのプロセス起動後ただただ単調増加し、前回プレイの再送・遅延パケットの識別に使う。
+    /// </summary>
+    public void NotifyReturnToTitle()
+    {
+        _returnToTitleSendSeq++;
+        SendState($"{parentReturnToTitle}:{_currentPlaySessionId}:{_returnToTitleSendSeq}");
+        Debug.Log($"[ParentUdpSender] Sent RETURN_TO_TITLE (playSessionId={_currentPlaySessionId}, seq={_returnToTitleSendSeq}) to child.");
     }
 
     /// <summary>
@@ -675,8 +882,15 @@ public class ParentUdpSender : MonoBehaviour
             if (!_gameStarted && currentState == ConnectionState.Connected)
             {
                 _gameStarted = true;
+
+                // 子機が発行したプレイ識別子を採用する（旧フォーマットで未付与なら親機側で発行）。
+                // これで両端末が同じ識別子を共有し、次プレイの RETURN_TO_TITLE と区別できる。
+                _currentPlaySessionId = string.IsNullOrEmpty(message.PlaySessionId)
+                    ? CreatePlaySessionId()
+                    : message.PlaySessionId;
+
                 if (showDebugLogs)
-                    Debug.Log("[ParentUdpSender] Received START_GAME from child — loading game scene.");
+                    Debug.Log($"[ParentUdpSender] Received START_GAME from child — loading game scene. playSessionId={_currentPlaySessionId}");
                 StartCoroutine(LoadSceneAfterBgmFade(gameSceneName));
             }
             return;
@@ -719,6 +933,7 @@ public class ParentUdpSender : MonoBehaviour
                 PlayerPrefs.SetInt(KeyGameOverScore, message.Score);
                 UpdateRanking(KeyGameOverRank, message.Score);
                 PlayerPrefs.Save();
+                ResultDataCommitted?.Invoke();
                 if (SceneManager.GetActiveScene().name != ResultGameOverScene)
                 {
                     SceneManager.LoadScene(ResultGameOverScene);
@@ -736,8 +951,15 @@ public class ParentUdpSender : MonoBehaviour
                 PlayerPrefs.SetInt(KeyTimeUpScore, message.Score);
                 UpdateRanking(KeyTimeUpRank, message.Score);
                 PlayerPrefs.Save();
+                ResultDataCommitted?.Invoke();
                 SceneManager.LoadScene(ResultTimeUpScene);
             }
+            return;
+        }
+
+        if (message.Type == ParentMessageType.TeamReturnToTitle)
+        {
+            HandleTeamReturnToTitle(message.PlaySessionId, message.Score);
             return;
         }
 
@@ -846,12 +1068,13 @@ public class ParentUdpSender : MonoBehaviour
                     _actionQueue.Enqueue(() =>
                     {
                         string oldIP = targetIP;
+                        ConnectionState oldState = currentState;
                         targetIP         = senderIP;
                         currentState     = ConnectionState.Connected;
                         _lastReceiveTime  = Time.time;
                         _gameStarted      = false;
                         if (showDebugLogs)
-                            Debug.Log($"[ParentUdpSender] targetIP updated: '{oldIP}' → '{targetIP}' | state=Connected");
+                            Debug.Log($"[ParentUdpSender][Diag] DISCOVERY_REQUEST受信により state {oldState} → Connected, targetIP '{oldIP}' → '{targetIP}'");
                         SendDiscoveryAccept(senderIP);
                     });
                 }
@@ -906,16 +1129,33 @@ public class ParentUdpSender : MonoBehaviour
     }
 
     // ── UI ────────────────────────────────────────────────────────────────────
+    // 診断用: 直前に connectButtonLabel へ書き込んだ文字列。変化時のみログを出す（毎フレームの出力を防ぐ）。
+    private string _lastAppliedConnectLabel = null;
+
     private void UpdateUI()
     {
         if (connectButtonLabel != null)
         {
+            string newLabel;
             switch (currentState)
             {
-                case ConnectionState.Disconnected: connectButtonLabel.text = "Connect";     break;
-                case ConnectionState.Connecting:   connectButtonLabel.text = "Connecting..."; break;
-                case ConnectionState.Connected:    connectButtonLabel.text = "STARTING...";  break;
+                case ConnectionState.Disconnected: newLabel = "Connect";     break;
+                case ConnectionState.Connecting:   newLabel = "Connecting..."; break;
+                case ConnectionState.Connected:    newLabel = "STARTING...";  break;
+                default:                           newLabel = connectButtonLabel.text; break;
             }
+
+            // 「Connecting...」がどのタイミングで表示されたかを追えるようにする（単体開始の診断用）。
+            if (newLabel != _lastAppliedConnectLabel)
+            {
+                Debug.Log($"[ParentUdpSender][Diag] connectButtonLabel: '{_lastAppliedConnectLabel}' → '{newLabel}' " +
+                          $"| state={currentState} | scene='{SceneManager.GetActiveScene().name}' " +
+                          $"| soloStartButtonObject={(soloStartButtonObject != null ? soloStartButtonObject.activeSelf.ToString() : "null")} " +
+                          $"| _gameStarted={_gameStarted}");
+                _lastAppliedConnectLabel = newLabel;
+            }
+
+            connectButtonLabel.text = newLabel;
         }
 
         if (connectButton   != null) connectButton.gameObject.SetActive(true);
@@ -924,25 +1164,15 @@ public class ParentUdpSender : MonoBehaviour
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+    // 挿入ロジック本体は RankingUtil に集約（子機と共有・単体テスト可能）。挙動は従来と同一。
     private static void UpdateRanking(string keyPrefix, int newScore)
     {
-        int[] ranking = new int[RankingSize];
-        for (int i = 0; i < RankingSize; i++)
-            ranking[i] = PlayerPrefs.GetInt(keyPrefix + i, 0);
+        int[] before = RankingUtil.ReadFromPlayerPrefs(keyPrefix, RankingSize);
+        RankingUtil.InsertScoreToPlayerPrefs(keyPrefix, newScore, RankingSize);
+        int[] after = RankingUtil.ReadFromPlayerPrefs(keyPrefix, RankingSize);
 
-        for (int i = 0; i < RankingSize; i++)
-        {
-            if (newScore > ranking[i])
-            {
-                for (int j = RankingSize - 1; j > i; j--)
-                    ranking[j] = ranking[j - 1];
-                ranking[i] = newScore;
-                break;
-            }
-        }
-
-        for (int i = 0; i < RankingSize; i++)
-            PlayerPrefs.SetInt(keyPrefix + i, ranking[i]);
+        Debug.Log($"[ParentUdpSender] UpdateRanking key='{keyPrefix}', before=[{string.Join(", ", before)}], " +
+                  $"newScore={newScore}, after=[{string.Join(", ", after)}]");
     }
 
     private static void CloseClient(ref UdpClient client, string label)

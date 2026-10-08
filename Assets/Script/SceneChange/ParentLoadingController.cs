@@ -59,7 +59,14 @@ public class ParentLoadingController : MonoBehaviour
 
         Debug.Log("[ParentLoadingController] Minimum display time reached — waiting for child LOADING_COMPLETE.");
 
-        // Phase 2: 子機からの LOADING_COMPLETE を無限に待つ（タイムアウトは削除）
+        // Phase 2: 子機からの LOADING_COMPLETE を待つ。
+        // LOADING_COMPLETE は「子機のチュートリアル（カウントダウンまで）が完了した」ことを意味するため、
+        // これを待たずに親機だけゲームを開始すると子機と進行がずれる。よって自動タイムアウトでの
+        // 「親機だけ開始」は行わない（ゲーム開始条件は変更しない）。従来どおり無期限に待つが、
+        // 原因切り分けのため一定間隔で警告ログを出す（固まっているのか遅いだけかを判別できるようにする）。
+        const float stallWarningIntervalSeconds = 10f;
+        float waitElapsed = 0f;
+        float nextWarningAt = stallWarningIntervalSeconds;
         while (true)
         {
             bool childReady = (_udpSender != null) && _udpSender.ChildLoadingComplete;
@@ -67,6 +74,14 @@ public class ParentLoadingController : MonoBehaviour
             {
                 Debug.Log("[ParentLoadingController] Child LOADING_COMPLETE received — transitioning.");
                 break;
+            }
+
+            waitElapsed += Time.unscaledDeltaTime;
+            if (waitElapsed >= nextWarningAt)
+            {
+                Debug.LogWarning($"[ParentLoadingController] Still waiting for child LOADING_COMPLETE ({waitElapsed:F1}s). " +
+                                 "子機がチュートリアル中の可能性があります。親機だけでは開始しません（進行同期のため）。");
+                nextWarningAt += stallWarningIntervalSeconds;
             }
 
             yield return null;
