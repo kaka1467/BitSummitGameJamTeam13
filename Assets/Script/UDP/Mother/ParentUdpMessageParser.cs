@@ -11,7 +11,8 @@ public enum ParentMessageType
     ChildDead,
     ChildScore,
     LoadingComplete,
-    LoudItem
+    LoudItem,
+    TeamReturnToTitle
 }
 
 public enum ChildGameResultType
@@ -30,13 +31,21 @@ public readonly struct ParentUdpMessage
     public string InvalidValue { get; }
     public string ParseError { get; }
 
+    /// <summary>
+    /// プレイ識別子。START_GAME / RETURN_TO_TITLE に付与される。
+    /// 「どのプレイ（試行）のメッセージか」を両端末で共有するために使う。
+    /// 旧フォーマット（識別子なし）では空文字。
+    /// </summary>
+    public string PlaySessionId { get; }
+
     public ParentUdpMessage(
         ParentMessageType type,
         ChildGameResultType resultType = ChildGameResultType.Unknown,
         int score = 0,
         string rawPayload = null,
         string invalidValue = null,
-        string parseError = null)
+        string parseError = null,
+        string playSessionId = "")
     {
         Type = type;
         ResultType = resultType;
@@ -44,6 +53,7 @@ public readonly struct ParentUdpMessage
         RawPayload = rawPayload;
         InvalidValue = invalidValue;
         ParseError = parseError;
+        PlaySessionId = playSessionId ?? "";
     }
 }
 
@@ -74,6 +84,37 @@ public static class ParentUdpMessageParser
                 return new ParentUdpMessage(ParentMessageType.LoadingComplete, rawPayload: payload);
             case "LOUD_ITEM":
                 return new ParentUdpMessage(ParentMessageType.LoudItem, rawPayload: payload);
+        }
+
+        // START_GAME:<playSessionId> — プレイ識別子付きの開始通知（旧: 引数なしの "START_GAME"）
+        const string startGamePrefix = "START_GAME:";
+        if (payload.StartsWith(startGamePrefix, StringComparison.Ordinal))
+        {
+            string sid = payload.Substring(startGamePrefix.Length);
+            return new ParentUdpMessage(ParentMessageType.StartGame, rawPayload: payload, playSessionId: sid);
+        }
+
+        // RETURN_TO_TITLE:<playSessionId>:<seq> — プレイ識別子とそのプレイ内の連番。
+        // 旧フォーマット "RETURN_TO_TITLE:<seq>" / "RETURN_TO_TITLE" も受け付ける（識別子なし扱い）。
+        const string returnToTitlePrefix = "RETURN_TO_TITLE:";
+        if (payload.StartsWith(returnToTitlePrefix, StringComparison.Ordinal))
+        {
+            string rest = payload.Substring(returnToTitlePrefix.Length);
+            string sid = "";
+            string seqText = rest;
+
+            int sep = rest.IndexOf(':');
+            if (sep >= 0)
+            {
+                sid = rest.Substring(0, sep);
+                seqText = rest.Substring(sep + 1);
+            }
+
+            int seq = 0;
+            if (!int.TryParse(seqText, out seq))
+                seq = 0;
+
+            return new ParentUdpMessage(ParentMessageType.TeamReturnToTitle, rawPayload: payload, score: seq, playSessionId: sid);
         }
 
         const string scorePrefix = "CHILD_SCORE:";

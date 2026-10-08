@@ -37,7 +37,41 @@ public class ResultScoreUI : MonoBehaviour
     private const string KeyTimeUpRank    = "TimeUpRank_";
     private const int    RankingSize      = 5;
 
+    private void OnEnable()
+    {
+        // 結果データへの書き込み（GameManager.TriggerResult など）が
+        // シーン読み込み後に完了したときに、表示を自動で再読み込みする。
+        // （データ書き込みがシーン読み込み後の表示リフレッシュより後に行われるケースに対応するため）
+        GameManager.ResultDataCommitted += RefreshResultData;
+        // 親機側: 子機からUDP受信した最終スコアの保存・ランキング更新完了でも表示を再読み込みする。
+        // 子機GameManagerのイベントだけに依存せず、親機のUDP受信・保存経路とも同期する。
+        ParentUdpSender.ResultDataCommitted += RefreshResultData;
+        RefreshResultData();
+    }
+
+    private void OnDisable()
+    {
+        GameManager.ResultDataCommitted -= RefreshResultData;
+        ParentUdpSender.ResultDataCommitted -= RefreshResultData;
+    }
+
     private void Start()
+    {
+        RefreshResultData();
+
+        // 書き込み側（GameManager.Start / Awake）が Start の後に走るケースに備え、
+        // 1フレーム後に同じ表示処理をもう一度実行する安全網。
+        // 同一の読み出し・同一の書き込みなので、通常ケースでは表示は変化しない。
+        StartCoroutine(RefreshResultDataNextFrame());
+    }
+
+    private System.Collections.IEnumerator RefreshResultDataNextFrame()
+    {
+        yield return null;
+        RefreshResultData();
+    }
+
+    private void RefreshResultData()
     {
         string scoreKey   = resultType == DisplayResultType.GameOver ? KeyGameOverScore  : KeyTimeUpScore;
         string rankKey    = resultType == DisplayResultType.GameOver ? KeyGameOverRank   : KeyTimeUpRank;
@@ -51,6 +85,11 @@ public class ResultScoreUI : MonoBehaviour
         int[] ranking = GetRanking(rankKey);
         TextMeshProUGUI[] primaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
         ApplyRankingTexts(primaryTexts, ranking);
+
+        // 2位がどこで0になるかを追えるように、UIへ渡した順位をログに出す。
+        UnityEngine.Debug.Log($"[ResultScoreUI] resultType={resultType}, scoreKey='{scoreKey}', score={score}, " +
+                              $"rankKey='{rankKey}', ranking=[{string.Join(", ", ranking)}], " +
+                              $"rankTextsCount={(primaryTexts != null ? primaryTexts.Length : 0)}");
 
         int[] crossRanking = GetRanking(crossKey);
         TextMeshProUGUI[] otherTexts = ResolveTexts(crossRankTexts, crossRank1Text, crossRank2Text, crossRank3Text);

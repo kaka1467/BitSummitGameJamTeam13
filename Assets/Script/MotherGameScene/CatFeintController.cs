@@ -1,11 +1,12 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// CatFeintController：猫フェイント（3キー）で、猫だけを母親のドア側と同じwaypoint順で移動させ、
 /// DoorPoint到着後にドアから覗く猫として見せるためのコンポーネント。
-/// 経路はParentApproachControllerの公開waypoint参照（startPoint〜doorPoint）をそのまま再利用し、
+/// 経路はParentApproachControllerの公開参照（startPoint／廊下ルートList／turnPoint／doorPoint）をそのまま再利用し、
 /// 猫本体（catObject）だけを移動させる（母親モデル・母親のイベントは一切動かさない）。
 /// 移動アニメーションは猫の実移動中だけ再生する。鳴き声は専用meowAudioSourceから再生する。
 /// </summary>
@@ -103,13 +104,14 @@ public class CatFeintController : MonoBehaviour
         catObject.SetActive(true);
         StartCatFootsteps();
 
-        // 母親のDoorRoutineと同じ順序：H1 → H2 → TurnPoint（旋回）→ H3 → DoorPoint（旋回）。
-        // 未設定のwaypointは母親側と同じくスキップする。
-        yield return MoveCatTo(routeController.hallwayPoint1, shouldContinue);
-        if (_walkAborted) yield break;
-
-        yield return MoveCatTo(routeController.hallwayPoint2, shouldContinue);
-        if (_walkAborted) yield break;
+        // 母親と同じ廊下ルートを辿る：TurnPointより前 → TurnPoint（旋回）→ TurnPointより後 → DoorPoint（旋回）。
+        // 経路は母親側のInspector設定（List）から取得するため、点を増減してもコード変更は不要。
+        List<Transform> beforeTurn = routeController.GetHallwayPointsBeforeTurn();
+        for (int i = 0; i < beforeTurn.Count; i++)
+        {
+            yield return MoveCatTo(beforeTurn[i], shouldContinue);
+            if (_walkAborted) yield break;
+        }
 
         if (routeController.turnPoint != null)
         {
@@ -119,8 +121,12 @@ public class CatFeintController : MonoBehaviour
             if (_walkAborted) yield break;
         }
 
-        yield return MoveCatTo(routeController.hallwayPoint3, shouldContinue);
-        if (_walkAborted) yield break;
+        List<Transform> afterTurn = routeController.GetHallwayPointsAfterTurn();
+        for (int i = 0; i < afterTurn.Count; i++)
+        {
+            yield return MoveCatTo(afterTurn[i], shouldContinue);
+            if (_walkAborted) yield break;
+        }
 
         if (routeController.doorPoint != null)
         {

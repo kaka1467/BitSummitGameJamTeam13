@@ -59,6 +59,40 @@ public class MotherGauge : MonoBehaviour
     private float _decreaseTimer;
     private float _baseSePitch = 1f;
 
+    /// <summary>
+    /// 怪しさメーターの色段階。SuspicionVisualFeedbackのUI色（青／紫／赤）と同じ区分。
+    /// </summary>
+    public enum SuspicionColorState
+    {
+        /// <summary>青：currentGauge 0〜3</summary>
+        Blue = 0,
+        /// <summary>紫：currentGauge 4〜6</summary>
+        Purple = 1,
+        /// <summary>赤：currentGauge 7〜maxGauge</summary>
+        Red = 2,
+    }
+
+    /// <summary>
+    /// 現在の怪しさメーター色段階（青／紫／赤）。
+    ///
+    /// SuspicionVisualFeedback.GetColorIndex と同じ境界をここに一元化し、
+    /// 「UIの色を毎フレーム読む」のではなくゲージ値ひとつから判定できるようにする。
+    /// SuspicionVisualFeedback側もこの結果を使っており、UIと目が必ず一致する。
+    /// 境界を変える場合は SuspicionVisualFeedback.GetColorIndex と合わせること。
+    /// </summary>
+    public SuspicionColorState CurrentColorState
+    {
+        get
+        {
+            if (currentGauge <= 3) return SuspicionColorState.Blue;
+            if (currentGauge <= 6) return SuspicionColorState.Purple;
+            return SuspicionColorState.Red;
+        }
+    }
+
+    /// <summary>怪しさメーターが紫の状態か。</summary>
+    public bool IsPurple => CurrentColorState == SuspicionColorState.Purple;
+
     private void Awake()
     {
         // インスペクターで設定された元のピッチを基準にする

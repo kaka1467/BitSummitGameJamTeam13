@@ -98,6 +98,10 @@ public class ParentDetection : MonoBehaviour
     [Tooltip("本チェック（全開）イベントで、プレイヤーが枕で眠るまで親機が部屋に留まる時間。 " +
              "一度も眠らない場合は、安全タイムアウトとしてこの秒数後に親機が退出する。")]
     [SerializeField] private float roomCheckSafetyTimeout = 30f;
+
+    [Tooltip("帰路（Peek終了後に母親が画面外へ戻る）の完了を待つ上限秒数。\n" +
+             "これを超えたら警告を出してサイクルを終了する（無限待機しない）。")]
+    [SerializeField] private float returnHomeSafetyTimeout = 15f;
     [Tooltip("プレイヤーが眠ってから親機がドアを閉めて退出するまでの秒数（疑惑0の場合）。")]
     [SerializeField] private float leaveAfterSleepDelay = 2f;
     [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")]
@@ -192,8 +196,15 @@ public class ParentDetection : MonoBehaviour
         if (sleepingController == null)
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
 
+        // Animatorの特定は ParentApproachController に一元化する（複数スクリプトが別々に探して
+        // 別のAnimatorを掴むことを防ぐ）。取得できない場合は Controller 側が理由つきで警告する。
         if (motherAnimator == null && approachController != null)
-            motherAnimator = approachController.GetComponentInChildren<Animator>(true);
+            motherAnimator = approachController.MotherAnimator;
+
+        // 廊下ルートの移行判定を、経路を使うどの処理よりも先に確定させる。
+        // 母子で共有するルート設定を、Start実行順に依存させないための前倒し。
+        if (approachController != null)
+            approachController.MigrateLegacyHallwayPoints();
 
         _approachSpeed = initialApproachSpeed;
         _currentFootstepVolume = farVolume;
@@ -307,10 +318,38 @@ public class ParentDetection : MonoBehaviour
             return;
         }
 
-        if (HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool))
-            motherAnimator.SetBool("Walk", isWalking);
-        else
+        if (!HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool))
+        {
             LogAnimatorWarning();
+            return;
+        }
+
+        // 覗き再生中（ドア覗き／庭覗き）は、アニメーションの担当を覗き側に委ねる。
+        // ここで Walk を書き換えると再生直後の覗きが歩行に戻されてしまうため、停止中として扱う。
+        motherAnimator.SetBool("Walk", isWalking && !IsPeekAnimationActive());
+    }
+
+    /// <summary>
+    /// 覗きアニメーションを再生中か（＝歩行アニメーションで上書きしてはいけない状態か）。
+    /// ドア覗き（isMotherLookingNow）と庭覗き（approachController.IsGardenPeeking）の両方を対象にする。
+    /// </summary>
+    private bool IsPeekAnimationActive()
+    {
+        if (isMotherLookingNow) return true;
+        return approachController != null && approachController.IsGardenPeeking;
+    }
+
+    /// <summary>
+    /// 歩行アニメーションの状態を、現在の覗き状態を考慮して今すぐ反映し直す。
+    /// 覗き開始・終了の直後に呼び、Walkの取り違えが残らないようにする。
+    /// </summary>
+    private void RefreshWalkingAnimationState()
+    {
+        if (motherAnimator == null) return;
+        if (!HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool)) return;
+
+        bool isWalking = approachController != null && approachController.IsApproaching;
+        motherAnimator.SetBool("Walk", isWalking && !IsPeekAnimationActive());
     }
 
     private void TriggerPeekAnimation(string triggerName)
@@ -555,6 +594,10 @@ public class ParentDetection : MonoBehaviour
             targetDoorController.SetDoorState(DoorController.DoorState.Peek);
         if (approachController != null)
             TriggerPeekAnimation("Peek_Door");
+
+        // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
+        RefreshWalkingAnimationState();
+
         if (mainDoorOpenAudioSource != null)
             mainDoorOpenAudioSource.Play();
         if (caughtReactionController != null)
@@ -659,6 +702,9 @@ public class ParentDetection : MonoBehaviour
 
         if (approachController != null)
             TriggerPeekAnimation("Peek_Door");
+
+        // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
+        RefreshWalkingAnimationState();
 
         if (mainDoorOpenAudioSource != null)
             mainDoorOpenAudioSource.Play();
@@ -855,12 +901,67 @@ public class ParentDetection : MonoBehaviour
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
 
+        // 【重要】ここで ResetCycle() を呼ばない。
+        // ResetCycle() は _primaryResetCoroutine（＝このコルーチン自身）を StopCoroutine するため、
+        // これを先に呼ぶと以降の帰路要求・待機が実行されずに打ち切られてしまう。
+        // 発見判定の解除だけを先に行い、サイクル全体のリセットは帰路完了後に一度だけ行う。
+
+        // 発見判定の解除（覗き終了）。戻っているだけなのに発見し続けないための最小限の解除。
+        isMotherLookingNow = false;
+
+        // 【帰路】ResetApproach で初期位置へ瞬間復帰させる前に、帰路（Turn Back → 帰路List → 画面外）を
+        // ParentApproachController へ要求し、受付から完了／失敗まで待つ。
+        // 受理されなかった場合（突入・入室・ゲームオーバー等）は従来どおり即時復帰する。
+        if (approachController != null && approachController.RequestReturnHome())
+        {
+            Debug.Log("[PD] ReturnHome requested — waiting for the mother to walk back");
+
+            float returnTimeout = Mathf.Max(1f, returnHomeSafetyTimeout);
+            float returnElapsed = 0f;
+
+            // 受付（Requested）から実行（Running）を経て完了／失敗になるまで待つ。
+            // 開始前の false を完了と誤認しないよう IsReturnHomePending を見る。
+            while (approachController.IsReturnHomePending && returnElapsed < returnTimeout)
+            {
+                if (_hasPermanentGameOver || isCaught)
+                {
+                    Debug.Log("[PD] ReturnHome aborted — game over");
+                    approachController.AbortReturnHome("ゲームオーバー");
+                    break;
+                }
+                returnElapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (returnElapsed >= returnTimeout && approachController.IsReturnHomePending)
+            {
+                // 上限超過：失敗として確定し、停止・非表示・後始末を実施させる。
+                Debug.LogWarning($"[PD] ReturnHome did not finish within {returnTimeout:F1}s — aborting the return trip");
+                approachController.AbortReturnHome("タイムアウト");
+            }
+
+            // 結果を1回だけ取り出す（次サイクルへ結果を持ち越さない）。
+            if (approachController.TryConsumeReturnHomeResult(out bool returnOk))
+                Debug.Log($"[PD] ReturnHome result = {(returnOk ? "Completed" : "Failed")}");
+        }
+
+        // 帰路の完了／失敗を確認した後で、サイクル終了処理を一度だけ行う。
+        //
+        // 【重要】ResetCycle() は _primaryResetCoroutine を StopCoroutine する。
+        // ここを実行しているのはその _primaryResetCoroutine 自身（＝このコルーチン）なので、
+        // 参照を持ったまま呼ぶと自分を停止してしまい、後続の EndWarningSequence() と
+        // 参照解除まで到達しない可能性がある。
+        // そこで「呼ぶ前に自分の参照を手放す」ことで、ResetCycle の停止対象から自分だけを外す。
+        // 他の終了シーケンス（_dummyReset / _continuousRoom / _gardenPeekSuspicion / _rushInPeek）は
+        // 従来どおり ResetCycle() が停止する（外部から呼ぶ場合の機能は維持される）。
+        _primaryResetCoroutine = null;
+
         ResetCycle();
 
         if (warningSystem != null)
             warningSystem.EndWarningSequence();
 
-        _primaryResetCoroutine = null;
+        // 自分の参照は既に手放しているため、ここで触る必要はない。
     }
 
     private void TriggerDummyEvent()
@@ -873,6 +974,9 @@ public class ParentDetection : MonoBehaviour
 
         if (approachController != null)
             TriggerPeekAnimation("Peek_Door");
+
+        // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
+        RefreshWalkingAnimationState();
 
         if (dummyDoorAudioSource != null) dummyDoorAudioSource.Play();
 

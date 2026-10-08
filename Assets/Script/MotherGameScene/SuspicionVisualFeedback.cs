@@ -123,7 +123,7 @@ public class SuspicionVisualFeedback : MonoBehaviour
         int maxGauge = Mathf.Max(0, motherGauge.maxGauge);
         int currentGauge = Mathf.Clamp(motherGauge.currentGauge, 0, maxGauge);
         int filledSegments = Mathf.Clamp(currentGauge, 0, 10);
-        int colorIndex = GetColorIndex(currentGauge);
+        int colorIndex = GetColorIndex(motherGauge, currentGauge);
 
         if (!_hasLastGaugeValue)
         {
@@ -153,18 +153,22 @@ public class SuspicionVisualFeedback : MonoBehaviour
         _lastGaugeValue = currentGauge;
     }
 
-    private static int GetColorIndex(int currentGauge)
+    /// <summary>
+    /// ゲージ値からUI色段階（0=Blue / 1=Purple / 2=Red）を決める。
+    ///
+    /// 判定の定義元は MotherGauge.CurrentColorState ひとつ。
+    /// UIの色Imageを読んで判定するのではなく、同じゲージ値から同じ境界で求める
+    /// （母親の目の色とUIが必ず一致する）。
+    /// </summary>
+    private static int GetColorIndex(MotherGauge gauge, int currentGauge)
     {
-        if (currentGauge <= 3)
-        {
-            return 0;
-        }
+        // MotherGaugeがあれば共通判定を使う（境界の二重定義を避ける）。
+        if (gauge != null)
+            return (int)gauge.CurrentColorState;
 
-        if (currentGauge <= 6)
-        {
-            return 1;
-        }
-
+        // MotherGaugeが無い場合のフォールバック（境界は MotherGauge と同一に保つ）。
+        if (currentGauge <= 3) return 0;
+        if (currentGauge <= 6) return 1;
         return 2;
     }
 
