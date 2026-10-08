@@ -3,14 +3,14 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// ParentDetection:
+/// MotherSuspicionSystem:
 /// ドアイベント／分岐のみを制御する。
 ///
 /// 責務の境界：
 ///   ParentApproachController  — 移動とルート演出
 ///   ParentWarningSystem       — シーケンス調整
 ///   ParentWarningScheduler    — タイミングと自動警告スケジュール（1キーの母親ドア確認起動を含む）
-///   ParentDetection（本クラス）— 親機のドア到着／通過に反応し、
+///   MotherSuspicionSystem（本クラス）— 親機のドア到着／通過に反応し、
 ///                               分岐、ドア状態、サイクルリセット、大きな音を処理する
 ///
 /// ゲージへの書き込みは次の4つの場合に行う：
@@ -21,19 +21,17 @@ using UnityEngine.InputSystem;
 /// ルート分岐（本チェックか覗き見か）はwarningSystem.ActiveRouteで決まる。
 /// dummyProbabilityはActiveRouteがNoneの場合のフォールバック確率として使用する。
 /// </summary>
-public class ParentDetection : MonoBehaviour
+public class MotherSuspicionSystem : MonoBehaviour
 {
     // ── システム参照 ──────────────────────────────────────────────────────────
-    [Header("システム参照")]
-    public ParentWarningSystem       warningSystem;
-    public CaughtReactionController  caughtReactionController;
-    public MotherGauge               motherGauge;
-    public ParentApproachController  approachController;
-    public SleepingController        sleepingController;
+    [Header("システム参照")] public ParentWarningSystem warningSystem;
+    public CaughtReactionController caughtReactionController;
+    public MotherGauge motherGauge;
+    public ParentApproachController approachController;
+    public SleepingController sleepingController;
 
     // ── 親機の速度・足音・Animator ────────────────────────────────────────────
-    [Header("親機の速度")]
-    public float approachMoveSpeedMin = 1.5f;
+    [Header("親機の速度")] public float approachMoveSpeedMin = 1.5f;
     public float approachMoveSpeedMax = 1.5f;
     public float approachSpeedSuspicionBonus;
     public int highSuspicionSpeedGaugeThreshold = 10;
@@ -42,123 +40,193 @@ public class ParentDetection : MonoBehaviour
     public float loudItemRushInMoveSpeed = 140f;
     public bool useFixedDebugApproachSpeed;
     public float fixedDebugApproachSpeed = 30f;
-    [Tooltip("ParentDetectionから直接開始された初回接近で使う既存の速め速度。通常の警告開始時は警告種別の速度で上書きする。")]
+
+    [Tooltip("MotherSuspicionSystemから直接開始された初回接近で使う既存の速め速度。通常の警告開始時は警告種別の速度で上書きする。")]
     public float initialApproachSpeed = 25f;
 
     private Animator motherAnimator;
+    // アニメーション操作の窓口（Animator への書き込みはここに集約する）。
+    [SerializeField] private MotherAnimationPlayer animationPlayer;
 
-    [Header("親機の足音")]
-    [SerializeField] private AudioSource hallwayFootstepAudioSource;
+    [Header("親機の足音")] [SerializeField] private AudioSource hallwayFootstepAudioSource;
     [SerializeField] private AudioSource gardenFootstepAudioSource;
-    [Range(0f, 1f)]
-    [SerializeField] private float farVolume = 0.2f;
-    [Range(0f, 1f)]
-    [SerializeField] private float midVolume = 0.5f;
-    [Range(0f, 1f)]
-    [SerializeField] private float nearDoorVolume = 1f;
+    [Range(0f, 1f)] [SerializeField] private float farVolume = 0.2f;
+    [Range(0f, 1f)] [SerializeField] private float midVolume = 0.5f;
+    [Range(0f, 1f)] [SerializeField] private float nearDoorVolume = 1f;
     [SerializeField] private float volumeChangeSpeed = 1f;
 
     // ── オーディオ ─────────────────────────────────────────────────────────────
-    [Header("オーディオソース")]
-    [Tooltip("ダミー（覗き見）ドアイベント発生時に再生。")]
-    [SerializeField] private AudioSource dummyDoorAudioSource;
-    [Tooltip("本チェック（全開）でドアが開いたときに再生。")]
-    [SerializeField] private AudioSource mainDoorOpenAudioSource;
-    [Tooltip("各イベント終了時にドアが閉じるときに再生。")]
-    [SerializeField] private AudioSource mainDoorCloseAudioSource;
-    [Tooltip("大きな音による突入が発生した直後に再生。")]
-    [SerializeField] private AudioSource rushInAudioSource;
-    [Tooltip("廊下を通過した後に再生する偽ドア音。")]
-    [SerializeField] private AudioSource passByDoorAudioSource;
-    [Tooltip("通過完了から偽ドア音を再生するまでの秒数。")]
-    [SerializeField, Min(0f)] private float passByDoorSoundDelay = 1f;
+    [Header("オーディオソース")] [Tooltip("ダミー（覗き見）ドアイベント発生時に再生。")] [SerializeField]
+    private AudioSource dummyDoorAudioSource;
+
+    [Tooltip("本チェック（全開）でドアが開いたときに再生。")] [SerializeField]
+    private AudioSource mainDoorOpenAudioSource;
+
+    [Tooltip("各イベント終了時にドアが閉じるときに再生。")] [SerializeField]
+    private AudioSource mainDoorCloseAudioSource;
+
+    [Tooltip("大きな音による突入が発生した直後に再生。")] [SerializeField]
+    private AudioSource rushInAudioSource;
+
+    [Tooltip("廊下を通過した後に再生する偽ドア音。")] [SerializeField]
+    private AudioSource passByDoorAudioSource;
+
+    [Tooltip("通過完了から偽ドア音を再生するまでの秒数。")] [SerializeField, Min(0f)]
+    private float passByDoorSoundDelay = 1f;
 
     // ── ドア ──────────────────────────────────────────────────────────────────
-    [Header("ドア制御")]
-    [SerializeField] private DoorController targetDoorController;
+    [Header("ドア制御")] [SerializeField] private DoorController targetDoorController;
 
     // ── 分岐 ──────────────────────────────────────────────────────────────────
     [Header("イベント分岐")]
     [Tooltip("ParentWarningSystemからルート状態を取得できない場合のダミー（覗き見）チェック確率（例：Pキーのデバッグ）。")]
-    [SerializeField, Range(0f, 1f)] private float dummyProbability = 0.3f;
+    [SerializeField, Range(0f, 1f)]
+    private float dummyProbability = 0.3f;
 
     // ── 猫フェイント（3キー専用） ─────────────────────────────────────────────
-    [Header("猫フェイント")]
-    [Tooltip("猫フェイントで猫の表示を管理するCatFeintController。未設定の場合は猫フェイントを開始しない。")]
-    [SerializeField] private CatFeintController catFeintController;
+    [Header("猫フェイント")] [Tooltip("猫フェイントで猫の表示を管理するCatFeintController。未設定の場合は猫フェイントを開始しない。")] [SerializeField]
+    private CatFeintController catFeintController;
 
     private Coroutine _catFeintCoroutine;
 
     // ── 覗き見／部屋チェックのタイミング ─────────────────────────────────────
-    [Header("部屋チェックのタイミング")]
-    [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")]
-    [SerializeField] private float peekDurationBase = 3f;
-    [Tooltip("RushInでドアに到着してから覗き続ける秒数。通常の本チェック時間とは別管理。")]
-    [SerializeField] private float rushInPeekDurationSeconds = 6f;
+    [Header("部屋チェックのタイミング")] [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")] [SerializeField]
+    private float peekDurationBase = 3f;
+
+    [Tooltip("RushInでドアに到着してから覗き続ける秒数。通常の本チェック時間とは別管理。")] [SerializeField]
+    private float rushInPeekDurationSeconds = 6f;
+
     [Tooltip("本チェック（全開）イベントで、プレイヤーが枕で眠るまで親機が部屋に留まる時間。 " +
              "一度も眠らない場合は、安全タイムアウトとしてこの秒数後に親機が退出する。")]
-    [SerializeField] private float roomCheckSafetyTimeout = 30f;
+    [SerializeField]
+    private float roomCheckSafetyTimeout = 30f;
 
     [Tooltip("帰路（Peek終了後に母親が画面外へ戻る）の完了を待つ上限秒数。\n" +
              "これを超えたら警告を出してサイクルを終了する（無限待機しない）。")]
-    [SerializeField] private float returnHomeSafetyTimeout = 15f;
-    [Tooltip("プレイヤーが眠ってから親機がドアを閉めて退出するまでの秒数（疑惑0の場合）。")]
-    [SerializeField] private float leaveAfterSleepDelay = 2f;
-    [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")]
-    [SerializeField] private float leaveAfterSleepDelayMax = 6f;
-    [Tooltip("部屋からの退室を要求してから退室完了（OnExitedRoom）を待つ最大秒数。超過した場合は従来どおりドアを閉じて終了する。")]
-    [SerializeField] private float roomExitSafetyTimeout = 15f;
+    [SerializeField]
+    private float returnHomeSafetyTimeout = 15f;
+
+    [Tooltip("プレイヤーが眠ってから親機がドアを閉めて退出するまでの秒数（疑惑0の場合）。")] [SerializeField]
+    private float leaveAfterSleepDelay = 2f;
+
+    [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")] [SerializeField]
+    private float leaveAfterSleepDelayMax = 6f;
+
+    [Tooltip("部屋からの退室を要求してから退室完了（OnExitedRoom）を待つ最大秒数。超過した場合は従来どおりドアを閉じて終了する。")] [SerializeField]
+    private float roomExitSafetyTimeout = 15f;
 
     // ── 部屋侵入時の疑惑 ──────────────────────────────────────────────────────
-    [Header("部屋侵入時の疑惑")]
-    [Tooltip("親機が部屋に入り、プレイヤーが睡眠中でないときに発生する3回の増加の間隔（秒）。")]
-    [SerializeField] private float roomEntryBurstTickInterval = 0.2f;
+    [Header("部屋侵入時の疑惑")] [Tooltip("親機が部屋に入り、プレイヤーが睡眠中でないときに発生する3回の増加の間隔（秒）。")] [SerializeField]
+    private float roomEntryBurstTickInterval = 0.2f;
 
     // ── 大きな音のアイテム ────────────────────────────────────────────────────
-    [Header("大きな音のアイテム機能")]
-    [Tooltip("無効にすると、0キーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")]
-    [SerializeField] private bool enableLoudItemFeature = true;
-    [Tooltip("trueの場合、大きな音のアイテムが進行中の警告を中断し、突入を強制する。")]
-    [SerializeField] private bool forceLoudItemDuringWarning = false;
-    [Tooltip("大きな音のアイテム発生時にMotherGaugeへ加算する段階数。最大値に達した場合は突入せず即座にゲームオーバーになる。")]
-    [SerializeField] private int loudItemGaugeAmount = 3;
+    [Header("大きな音のアイテム機能")] [Tooltip("無効にすると、0キーおよびゲーム内の大きな音のアイテムトリガーが完全に無効になる。")] [SerializeField]
+    private bool enableLoudItemFeature = true;
+
+    [Tooltip("trueの場合、大きな音のアイテムが進行中の警告を中断し、突入を強制する。")] [SerializeField]
+    private bool forceLoudItemDuringWarning = false;
+
+    [Tooltip("大きな音のアイテム発生時にMotherGaugeへ加算する段階数。最大値に達した場合は突入せず即座にゲームオーバーになる。")] [SerializeField]
+    private int loudItemGaugeAmount = 3;
 
     // ── 部屋内の継続疑惑 ──────────────────────────────────────────────────────
     // ── 庭覗き中の継続疑惑 ────────────────────────────────────────────────────
     [Header("庭覗き中の継続疑惑")]
     [Tooltip("庭覗き中の加算間隔=ドア側の継続疑惑間隔(continuousRoomSuspicionTickInterval)×この倍率。0以下で庭覗き中の疑惑加算を無効化する。")]
-    [SerializeField] private float gardenPeekSuspicionIntervalMultiplier = 1.5f;
+    [SerializeField]
+    private float gardenPeekSuspicionIntervalMultiplier = 1.5f;
 
     private Coroutine _gardenPeekSuspicionCoroutine;
 
-    [Header("部屋内の継続疑惑")]
-    [Tooltip("親機の本チェックドアイベント中、疑惑を継続的に増加させる。")]
-    [SerializeField] private bool enableContinuousRoomSuspicion = true;
-    [Tooltip("部屋チェック継続フェーズで1回ごとに加算するゲージ段階数。")]
-    [SerializeField] private int continuousRoomSuspicionAmount = 1;
-    [Tooltip("部屋内の継続疑惑を加算する間隔（秒）。")]
-    [SerializeField] private float continuousRoomSuspicionTickInterval = 2f;
+    [Header("部屋内の継続疑惑")] [Tooltip("親機の本チェックドアイベント中、疑惑を継続的に増加させる。")] [SerializeField]
+    private bool enableContinuousRoomSuspicion = true;
+
+    [Tooltip("部屋チェック継続フェーズで1回ごとに加算するゲージ段階数。")] [SerializeField]
+    private int continuousRoomSuspicionAmount = 1;
+
+    [Tooltip("部屋内の継続疑惑を加算する間隔（秒）。")] [SerializeField]
+    private float continuousRoomSuspicionTickInterval = 2f;
+
+    // ── 片付け演出（MotherChoreController との連携） ─────────────────────────
+    [Header("片付け演出")] [Tooltip("片付け演出を管理するMotherChoreController。未設定の場合は自動検索する。")] [SerializeField]
+    private MotherChoreController motherChoreController;
+
+    [Tooltip("片付け演出に必要な通知（進行率・悪いアイテム）を受け取る親機側の最大許容レイテンシ（秒）。" +
+             "0以下で無効。既存の親イベント動作は変更しない。")]
+    [SerializeField, Min(0f)]
+    private float choreNotificationTimeout = 5f;
 
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     public bool isCaught;
     public bool isMotherLookingNow;
 
+    /// <summary>片付け演出による視線（MotherChoreController から設定される）。</summary>
+    private bool _choreLooking;
+
+    /// <summary>片付け中フラグ（SetChoreOverride）。true の間は通常の親イベント入口を抑止する。</summary>
+    private bool _choreOverride;
+
+    /// <summary>片付けの「行き」の歩行中に怪しさを加算するコルーチン（既存の継続疑惑と同じ仕組み）。</summary>
+    private Coroutine _choreSuspicionCoroutine;
+    /// <summary>片付けのドア開け（Door_Open）中、歩きアニメーションの上書きを抑止しているか。</summary>
+    private bool _choreWalkingOverrideSuppressed;
+    /// <summary>片付けのドア開け（Door_Open）中、歩行による位置移動を止めているか。</summary>
+    private bool _choreMovementSuppressed;
+
+    // ── テスト用無敵モード（Lキー） ───────────────────────────────────────────
+    //   怪しさ・発見判定・段階別設定をまとめる本クラス（＝怪しさ管理元）が、
+    //   無敵の状態と判定APIも一元管理する。
+    [Header("テスト用無敵モード")]
+    [Tooltip("Lキーによる無敵モード切り替えを有効にする（テスト用デバッグ機能）。")]
+    [SerializeField] private bool enableInvincibleToggle = true;
+
+    [Tooltip("無敵状態を画面隅に表示する。")]
+    [SerializeField] private bool showInvincibleIndicator = true;
+
+    [Tooltip("無敵表示の位置（左上からのピクセル）。")]
+    [SerializeField] private Vector2 invincibleIndicatorPosition = new Vector2(12f, 12f);
+
+    [Tooltip("無敵表示の文字サイズ。")]
+    [SerializeField] private int invincibleIndicatorFontSize = 22;
+
+    /// <summary>無敵モードが有効か（怪しさの加算・母親の捕獲を抑止する）。</summary>
+    public bool IsInvincible { get; private set; }
+
+    /// <summary>ON/OFFが切り替わったときに発火する。</summary>
+    public event System.Action<bool> InvincibleChanged;
+
+    /// <summary>
+    /// このプレイで無敵を一度でもONにしたか。
+    /// CaughtReactionController のゲージ最大監視が「無敵OFF直後の翌フレームに、
+    /// 最大ゲージだけを根拠として捕獲する」ことを防ぐために参照する。
+    /// </summary>
+    public bool WasInvincibleUsedInThisPlay { get; private set; }
+
+    private GUIStyle _invincibleStyle;
+    private bool _invincibleStyleReady;
+
+    /// <summary>子機から届いた進行率（0〜1）。親機側の経過率と併用する。</summary>
+    private float _childProgressRate;
+
+    /// <summary>最後に片付け通知を受け取った時刻（Time.time）。</summary>
+    private float _lastChoreNotificationTime = -9999f;
+
     // ── 非公開状態 ────────────────────────────────────────────────────────────
-    private Coroutine    _dummyResetCoroutine;
-    private Coroutine    _primaryResetCoroutine;
-    private Coroutine    _continuousRoomCoroutine;
-    private Coroutine    _rushInPeekCoroutine;
+    private Coroutine _dummyResetCoroutine;
+    private Coroutine _primaryResetCoroutine;
+    private Coroutine _continuousRoomCoroutine;
+    private Coroutine _rushInPeekCoroutine;
     private Coroutine _passByDoorSoundCoroutine;
-    private bool         _hasPermanentGameOver;
-    private float        _activePeekDuration        = 3f;
+    private bool _hasPermanentGameOver;
+    private float _activePeekDuration = 3f;
 
     // ── 部屋入室（案B）：疑惑開始を「部屋入室完了」にずらすための状態 ────────────
-    private bool         _roomEntryAccepted;        // このサイクルでRequestRoomEntry()が受理されたか
-    private bool         _roomEntryStarted;         // OnEnteredRoom後に疑惑コルーチンを開始済みか
-    private bool         _roomExitCompleted;        // OnExitedRoomを受信済みか
-    private bool         _approachEventsSubscribed; // ParentApproachControllerの入退室イベントを購読中か
-    private int          _roomCycleId;              // OnApproachReachedDoorのたびに増えるサイクル識別子
-    private int          _primaryResetCycleId;      // HandlePrimaryResetSequence開始時点の_roomCycleId
+    private bool _roomEntryAccepted; // このサイクルでRequestRoomEntry()が受理されたか
+    private bool _roomEntryStarted; // OnEnteredRoom後に疑惑コルーチンを開始済みか
+    private bool _roomExitCompleted; // OnExitedRoomを受信済みか
+    private bool _approachEventsSubscribed; // ParentApproachControllerの入退室イベントを購読中か
+    private int _roomCycleId; // OnApproachReachedDoorのたびに増えるサイクル識別子
+    private int _primaryResetCycleId; // HandlePrimaryResetSequence開始時点の_roomCycleId
     private float _approachSpeed = 1.5f;
     private float _currentFootstepVolume;
     private float _targetFootstepVolume;
@@ -172,8 +240,17 @@ public class ParentDetection : MonoBehaviour
 
     private void Start()
     {
-        isCaught           = false;
+        isCaught = false;
         isMotherLookingNow = false;
+        _choreLooking = false;
+        _choreOverride = false;
+
+        // 再プレイ時は無敵モードを必ずOFFに戻す（状態を持ち越さない）。
+        IsInvincible = false;
+        WasInvincibleUsedInThisPlay = false;
+
+        if (motherChoreController == null)
+            motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
 
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
@@ -229,6 +306,7 @@ public class ParentDetection : MonoBehaviour
         {
             approachController.MovementStateChanged -= HandleWalkingStateChanged;
         }
+
         UnsubscribeApproachEvents();
     }
 
@@ -248,14 +326,14 @@ public class ParentDetection : MonoBehaviour
         if (isManual && useFixedDebugApproachSpeed)
         {
             speed = fixedDebugApproachSpeed;
-            Debug.Log($"[ParentDetection] APPROACH SPEED: {speed:F2} units/sec (FIXED DEBUG)");
+            Debug.Log($"[MotherSuspicionSystem] APPROACH SPEED: {speed:F2} units/sec (FIXED DEBUG)");
         }
         else if (!isManual && motherGauge != null &&
                  motherGauge.currentGauge > highSuspicionSpeedGaugeThreshold)
         {
             speed = UnityEngine.Random.Range(
                 highSuspicionApproachMoveSpeedMin, highSuspicionApproachMoveSpeedMax);
-            Debug.Log($"[ParentDetection] APPROACH SPEED: {speed:F2} units/sec (HIGH SUSPICION RANGE)");
+            Debug.Log($"[MotherSuspicionSystem] APPROACH SPEED: {speed:F2} units/sec (HIGH SUSPICION RANGE)");
         }
         else
         {
@@ -265,7 +343,8 @@ public class ParentDetection : MonoBehaviour
                 : Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge);
             if (!isManual && approachSpeedSuspicionBonus > 0f)
                 speed += approachSpeedSuspicionBonus * suspicionFraction;
-            Debug.Log($"[ParentDetection] APPROACH SPEED: {speed:F2} units/sec (NORMAL, suspicion={suspicionFraction:F2})");
+            Debug.Log(
+                $"[MotherSuspicionSystem] APPROACH SPEED: {speed:F2} units/sec (NORMAL, suspicion={suspicionFraction:F2})");
         }
 
         SetApproachSpeed(speed);
@@ -312,13 +391,9 @@ public class ParentDetection : MonoBehaviour
 
     private void HandleWalkingStateChanged(bool isWalking)
     {
-        if (motherAnimator == null)
-        {
-            LogAnimatorWarning();
-            return;
-        }
-
-        if (!HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool))
+        // アニメーション操作は MotherAnimationPlayer に集約する（Animator を直接操作しない）。
+        MotherAnimationPlayer player = ResolveAnimationPlayer();
+        if (player == null)
         {
             LogAnimatorWarning();
             return;
@@ -326,16 +401,24 @@ public class ParentDetection : MonoBehaviour
 
         // 覗き再生中（ドア覗き／庭覗き）は、アニメーションの担当を覗き側に委ねる。
         // ここで Walk を書き換えると再生直後の覗きが歩行に戻されてしまうため、停止中として扱う。
-        motherAnimator.SetBool("Walk", isWalking && !IsPeekAnimationActive());
+        player.SetWalking(isWalking && !IsPeekAnimationActive());
     }
 
     /// <summary>
-    /// 覗きアニメーションを再生中か（＝歩行アニメーションで上書きしてはいけない状態か）。
-    /// ドア覗き（isMotherLookingNow）と庭覗き（approachController.IsGardenPeeking）の両方を対象にする。
+    /// 歩行アニメーションを書き換えてはいけない状態か。
+    /// ドア覗き（isMotherLookingNow）・庭覗き（approachController.IsGardenPeeking）・
+    /// 片付け中（SetChoreOverride）・片付けのドア開け中（Door_Open の上書き抑止）を対象にする。
     /// </summary>
     private bool IsPeekAnimationActive()
     {
         if (isMotherLookingNow) return true;
+
+        // 片付け中は演技／経路がアニメーションを担当する（Walk を書き換えない）。
+        if (_choreOverride) return true;
+
+        // Door_Open 中はモデルの再生を守る（位置移動は経路側が止める）。
+        if (_choreWalkingOverrideSuppressed) return true;
+
         return approachController != null && approachController.IsGardenPeeking;
     }
 
@@ -345,23 +428,25 @@ public class ParentDetection : MonoBehaviour
     /// </summary>
     private void RefreshWalkingAnimationState()
     {
-        if (motherAnimator == null) return;
-        if (!HasAnimatorParameter("Walk", AnimatorControllerParameterType.Bool)) return;
+        // アニメーション操作は MotherAnimationPlayer に集約する（Animator を直接操作しない）。
+        MotherAnimationPlayer player = ResolveAnimationPlayer();
+        if (player == null) return;
 
         bool isWalking = approachController != null && approachController.IsApproaching;
-        motherAnimator.SetBool("Walk", isWalking && !IsPeekAnimationActive());
+        player.SetWalking(isWalking && !IsPeekAnimationActive());
     }
 
     private void TriggerPeekAnimation(string triggerName)
     {
-        if (motherAnimator == null || !HasAnimatorParameter(triggerName, AnimatorControllerParameterType.Trigger))
+        // 通常の覗き（Peek_Door / Peek_Windows）の Trigger 発火もプレイヤー経由にする。
+        MotherAnimationPlayer player = ResolveAnimationPlayer();
+        if (player == null)
         {
             LogAnimatorWarning();
             return;
         }
 
-        motherAnimator.ResetTrigger(triggerName);
-        motherAnimator.SetTrigger(triggerName);
+        player.FirePeekTrigger(triggerName);
     }
 
     private void InitializeFootstepAudioSource(AudioSource source)
@@ -395,7 +480,17 @@ public class ParentDetection : MonoBehaviour
             if (parameter.name == parameterName && parameter.type == parameterType)
                 return true;
         }
+
         return false;
+    }
+
+    private MotherAnimationPlayer ResolveAnimationPlayer()
+    {
+        // 明示参照が最優先。未設定ならシーンから自動検索する（Animator 操作の窓口を1つに保つ）。
+        if (animationPlayer == null)
+            animationPlayer = Object.FindFirstObjectByType<MotherAnimationPlayer>();
+
+        return animationPlayer;
     }
 
     private void LogAnimatorWarning()
@@ -403,7 +498,7 @@ public class ParentDetection : MonoBehaviour
         if (_animatorWarningLogged) return;
         _animatorWarningLogged = true;
         Debug.LogWarning(
-            "[ParentDetection] 母親AnimatorまたはWalk/Peekパラメータが未設定のため、アニメーション制御をスキップします。",
+            "[MotherSuspicionSystem] 母親AnimatorまたはWalk/Peekパラメータが未設定のため、アニメーション制御をスキップします。",
             this);
     }
     // ── 部屋入室（案B）：ParentApproachControllerイベントの購読 ────────────────
@@ -417,7 +512,8 @@ public class ParentDetection : MonoBehaviour
         approachController.onGardenPeekStarted.AddListener(HandleGardenPeekStarted);
 
         _approachEventsSubscribed = true;
-        Debug.Log("[PD] Subscribed to ParentApproachController events (OnEnteredRoom/OnExitedRoom/OnGardenPeekStarted)");
+        Debug.Log(
+            "[PD] Subscribed to ParentApproachController events (OnEnteredRoom/OnExitedRoom/OnGardenPeekStarted)");
     }
 
     private void UnsubscribeApproachEvents()
@@ -437,7 +533,15 @@ public class ParentDetection : MonoBehaviour
     /// </summary>
     private void HandleEnteredRoom()
     {
-        Debug.Log($"[PD] OnEnteredRoom | roomEntryAccepted={_roomEntryAccepted} roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+        Debug.Log(
+            $"[PD] OnEnteredRoom | roomEntryAccepted={_roomEntryAccepted} roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+
+        // 片付け演出のサイクル中は、部屋入室時の疑惑を開始しない（重複防止）。
+        if (IsChoreOverrideActive)
+        {
+            Debug.Log("[PD] OnEnteredRoom: ignored — 片付け演出のサイクル中");
+            return;
+        }
 
         if (isCaught || _hasPermanentGameOver) return;
 
@@ -466,8 +570,16 @@ public class ParentDetection : MonoBehaviour
     /// </summary>
     private void HandleExitedRoom()
     {
-        Debug.Log($"[PD] OnExitedRoom | roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+        Debug.Log(
+            $"[PD] OnExitedRoom | roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
         _roomExitCompleted = true;
+
+        // 片付け演出のサイクル中は、通常のサイクル終了処理を行わない（片付け側が管理する）。
+        if (IsChoreOverrideActive)
+        {
+            Debug.Log("[PD] OnExitedRoom: ignored — 片付け演出のサイクル中");
+            return;
+        }
 
         // ゲームオーバー確定後はドア状態・疑惑状態を変更しない（従来のサイクル終了と同じ扱い）。
         if (isCaught || _hasPermanentGameOver) return;
@@ -487,12 +599,22 @@ public class ParentDetection : MonoBehaviour
     }
 
 
-
     private void Update()
     {
         UpdateFootstepAudio();
 
         // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
+
+        // 子機からの進行率通知がない環境（片付け通知を受けていない）でも、
+        // 親機側の経過率で片付け開始を判断できるようにする。
+        if (motherChoreController == null)
+            motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
+
+        if (motherChoreController != null && warningSystem != null &&
+            Time.time - _lastChoreNotificationTime > choreNotificationTimeout)
+        {
+            motherChoreController.NotifyGameProgress(warningSystem.GameplayProgressRate);
+        }
 
         if (Keyboard.current == null) return;
 
@@ -501,6 +623,9 @@ public class ParentDetection : MonoBehaviour
             Debug.Log("[PD] 0 key — triggering loud item (rush-in)");
             OnLoudItemTriggered();
         }
+
+        // Lキー：テスト用無敵モードのトグル（既存のデバッグ入力に集約）。
+        HandleInvincibleInput();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -515,7 +640,22 @@ public class ParentDetection : MonoBehaviour
     public void OnApproachReachedDoor()
     {
         Debug.Log($"[PD] OnApproachReachedDoor | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+
+        // 片付け演出のサイクル中は通常のドア分岐・疑惑・捕獲を行わない（重複防止）。
+        if (IsChoreOverrideActive)
+        {
+            Debug.Log("[PD] OnApproachReachedDoor: ignored — 片付け演出のサイクル中");
+            return;
+        }
+
         if (isCaught || _hasPermanentGameOver) return;
+
+        // 片付け演出のサイクル中は通常のドア停止フローを開始しない（重複防止）。
+        if (IsChoreOverrideActive)
+        {
+            Debug.Log("[PD] ApproachReachedDoor entry skipped — 片付け演出のサイクル中");
+            return;
+        }
 
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         _activePeekDuration = peekDurationBase + gauge;
@@ -545,7 +685,7 @@ public class ParentDetection : MonoBehaviour
         // 新しいサイクルが始まったことを、進行中のHandlePrimaryResetSequenceにも伝える。
         _roomCycleId++;
         _roomEntryAccepted = false;
-        _roomEntryStarted  = false;
+        _roomEntryStarted = false;
         _roomExitCompleted = false;
 
         // Primaryの場合のみ、親機へ部屋入室を要求する。
@@ -564,6 +704,14 @@ public class ParentDetection : MonoBehaviour
     public void OnApproachPassedBy()
     {
         Debug.Log($"[PD] OnApproachPassedBy | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+
+        // 片付け演出のサイクル中は通常のサイクルリセットを行わない（片付け側が管理する）。
+        if (IsChoreOverrideActive)
+        {
+            Debug.Log("[PD] OnApproachPassedBy: ignored — 片付け演出のサイクル中");
+            return;
+        }
+
         if (isCaught || _hasPermanentGameOver) return;
 
         ResetCycle();
@@ -576,8 +724,14 @@ public class ParentDetection : MonoBehaviour
     {
         CancelPassByDoorSound();
         _hasPermanentGameOver = true;
+        // 片付けの歩行加算も確実に停止する（ゲームオーバー中に加算が残らない）。
+        DisableChoreSuspicion();
         if (warningSystem != null)
             warningSystem.NotifyGameOver();
+
+        // 片付け演出を中断する（既存のゲームオーバー処理には介入しない）。
+        if (motherChoreController != null)
+            motherChoreController.AbortChore("ゲームオーバー");
     }
 
     private void StartRushInPeek()
@@ -689,7 +843,7 @@ public class ParentDetection : MonoBehaviour
     private void TriggerFinalEvent(bool primary)
     {
         if (primary) TriggerPrimaryEvent();
-        else         TriggerDummyEvent();
+        else TriggerDummyEvent();
     }
 
     private void TriggerPrimaryEvent()
@@ -715,7 +869,8 @@ public class ParentDetection : MonoBehaviour
         // 部屋入室（案B）：入室が受理された場合は、入室完了（OnEnteredRoom）まで疑惑を開始しない。
         if (_roomEntryAccepted)
         {
-            Debug.Log("[PD] Room entry accepted — suspicion burst/continuous will start on OnEnteredRoom (mother is walking into the room)");
+            Debug.Log(
+                "[PD] Room entry accepted — suspicion burst/continuous will start on OnEnteredRoom (mother is walking into the room)");
             return;
         }
 
@@ -732,7 +887,8 @@ public class ParentDetection : MonoBehaviour
         // 部屋侵入時の疑惑：プレイヤーが睡眠中でない場合にゲージを増加させる。
         bool playerIsSleeping = (sleepingController != null) && sleepingController.IsSleeping;
         int gaugeBefore = (motherGauge != null) ? motherGauge.currentGauge : 0;
-        Debug.Log($"[PD] Room entry | isMotherLookingNow=true | IsSleeping={playerIsSleeping} | gauge before={gaugeBefore}");
+        Debug.Log(
+            $"[PD] Room entry | isMotherLookingNow=true | IsSleeping={playerIsSleeping} | gauge before={gaugeBefore}");
 
         if (!playerIsSleeping && motherGauge != null)
         {
@@ -788,7 +944,8 @@ public class ParentDetection : MonoBehaviour
             // ドア閉・ResetCycle・EndWarningSequenceはOnExitedRoom側で完了済みなので打ち切る。
             if (_roomExitCompleted)
             {
-                Debug.Log("[PD] HandlePrimaryResetSequence: room exit already completed — aborting (finished by OnExitedRoom)");
+                Debug.Log(
+                    "[PD] HandlePrimaryResetSequence: room exit already completed — aborting (finished by OnExitedRoom)");
                 _primaryResetCoroutine = null;
                 yield break;
             }
@@ -837,7 +994,8 @@ public class ParentDetection : MonoBehaviour
         if (_roomExitCompleted)
         {
             // 滞在タイムアウト等で先に退室が完了している — 終了処理はOnExitedRoom側で完了済み。
-            Debug.Log("[PD] HandlePrimaryResetSequence: room exit already completed — skipping door close (finished by OnExitedRoom)");
+            Debug.Log(
+                "[PD] HandlePrimaryResetSequence: room exit already completed — skipping door close (finished by OnExitedRoom)");
             _primaryResetCoroutine = null;
             yield break;
         }
@@ -861,10 +1019,12 @@ public class ParentDetection : MonoBehaviour
                         exitElapsed += Time.deltaTime;
                         if (exitElapsed >= exitTimeout)
                         {
-                            Debug.LogWarning($"[PD] OnExitedRoom not received within {exitTimeout:F1}s — closing the door anyway");
+                            Debug.LogWarning(
+                                $"[PD] OnExitedRoom not received within {exitTimeout:F1}s — closing the door anyway");
                             break;
                         }
                     }
+
                     yield return null;
                 }
 
@@ -929,6 +1089,7 @@ public class ParentDetection : MonoBehaviour
                     approachController.AbortReturnHome("ゲームオーバー");
                     break;
                 }
+
                 returnElapsed += Time.deltaTime;
                 yield return null;
             }
@@ -936,7 +1097,8 @@ public class ParentDetection : MonoBehaviour
             if (returnElapsed >= returnTimeout && approachController.IsReturnHomePending)
             {
                 // 上限超過：失敗として確定し、停止・非表示・後始末を実施させる。
-                Debug.LogWarning($"[PD] ReturnHome did not finish within {returnTimeout:F1}s — aborting the return trip");
+                Debug.LogWarning(
+                    $"[PD] ReturnHome did not finish within {returnTimeout:F1}s — aborting the return trip");
                 approachController.AbortReturnHome("タイムアウト");
             }
 
@@ -1035,7 +1197,8 @@ public class ParentDetection : MonoBehaviour
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
         float duration = Mathf.Max(0f, peekDurationBase) + gauge;
 
-        Debug.Log($"[PD] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door PEEK open for {duration:F1}s（母親は登場しない）");
+        Debug.Log(
+            $"[PD] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door PEEK open for {duration:F1}s（母親は登場しない）");
         _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence(duration));
         return true;
     }
@@ -1047,8 +1210,8 @@ public class ParentDetection : MonoBehaviour
     private IEnumerator HandleCatFeintSequence(float duration)
     {
         // 2. 猫オブジェクトだけを母親と同じwaypoint順で移動させる（母親・母親イベントは発火しない）。
-        yield return catFeintController.MoveAlongDoorRoute(
-            () => warningSystem != null && warningSystem.isWarningActive);
+        yield return
+            catFeintController.MoveAlongDoorRoute(() => warningSystem != null && warningSystem.isWarningActive);
 
         // 移動中に中断された場合は猫とドアを戻して終了する（警告状態は既に解除済み）。
         if (warningSystem == null || !warningSystem.isWarningActive)
@@ -1143,19 +1306,22 @@ public class ParentDetection : MonoBehaviour
             yield return new WaitForSeconds(continuousRoomSuspicionTickInterval);
 
             bool contSleeping = (sleepingController != null) && sleepingController.IsSleeping;
-            int  contGauge    = (motherGauge != null) ? motherGauge.currentGauge : 0;
-            Debug.Log($"[PD] Continuous room suspicion state | motherLooking={isMotherLookingNow} | playerSleeping={contSleeping} | gaugeBefore={contGauge}");
+            int contGauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+            Debug.Log(
+                $"[PD] Continuous room suspicion state | motherLooking={isMotherLookingNow} | playerSleeping={contSleeping} | gaugeBefore={contGauge}");
 
             if (_hasPermanentGameOver || isCaught)
             {
                 Debug.Log("[PD] Continuous room suspicion stopped — game over or caught");
                 yield break;
             }
+
             if (!isMotherLookingNow)
             {
                 Debug.Log("[PD] Continuous room suspicion stopped — isMotherLookingNow is false");
                 yield break;
             }
+
             if (motherGauge == null)
             {
                 Debug.Log("[PD] Continuous room suspicion stopped — motherGauge is null");
@@ -1170,7 +1336,8 @@ public class ParentDetection : MonoBehaviour
             }
 
             motherGauge.AddGauge(continuousRoomSuspicionAmount);
-            Debug.Log($"[PD] Continuous room suspicion tick +{continuousRoomSuspicionAmount} | gauge now {motherGauge.currentGauge}");
+            Debug.Log(
+                $"[PD] Continuous room suspicion tick +{continuousRoomSuspicionAmount} | gauge now {motherGauge.currentGauge}");
 
             if (motherGauge.currentGauge >= motherGauge.maxGauge)
             {
@@ -1204,7 +1371,9 @@ public class ParentDetection : MonoBehaviour
 
         if (gardenPeekSuspicionIntervalMultiplier <= 0f || continuousRoomSuspicionTickInterval <= 0f)
         {
-            Debug.LogWarning($"[PD] 庭覗き中の継続疑惑を無効化 | gardenPeekSuspicionIntervalMultiplier={gardenPeekSuspicionIntervalMultiplier:F2} | continuousRoomSuspicionTickInterval={continuousRoomSuspicionTickInterval:F2}（0以下のため異常な高速加算を避ける）", this);
+            Debug.LogWarning(
+                $"[PD] 庭覗き中の継続疑惑を無効化 | gardenPeekSuspicionIntervalMultiplier={gardenPeekSuspicionIntervalMultiplier:F2} | continuousRoomSuspicionTickInterval={continuousRoomSuspicionTickInterval:F2}（0以下のため異常な高速加算を避ける）",
+                this);
             return;
         }
 
@@ -1229,7 +1398,8 @@ public class ParentDetection : MonoBehaviour
     private IEnumerator ContinuousGardenPeekSuspicionCoroutine()
     {
         float tickInterval = continuousRoomSuspicionTickInterval * gardenPeekSuspicionIntervalMultiplier;
-        Debug.Log($"[PD] 庭覗き中の継続疑惑 開始 | tickInterval={tickInterval:F2}s | amount={continuousRoomSuspicionAmount}（ドア側{continuousRoomSuspicionTickInterval:F2}s×{gardenPeekSuspicionIntervalMultiplier:F2}）");
+        Debug.Log(
+            $"[PD] 庭覗き中の継続疑惑 開始 | tickInterval={tickInterval:F2}s | amount={continuousRoomSuspicionAmount}（ドア側{continuousRoomSuspicionTickInterval:F2}s×{gardenPeekSuspicionIntervalMultiplier:F2}）");
 
         while (true)
         {
@@ -1241,16 +1411,19 @@ public class ParentDetection : MonoBehaviour
                 Debug.Log("[PD] 庭覗き中の継続疑惑 停止 — game over or caught");
                 yield break;
             }
+
             if (warningSystem == null || !warningSystem.isWarningActive)
             {
                 Debug.Log("[PD] 庭覗き中の継続疑惑 停止 — warning not active");
                 yield break;
             }
+
             if (approachController == null || !approachController.IsGardenPeeking)
             {
                 Debug.Log("[PD] 庭覗き中の継続疑惑 停止 — garden peek ended");
                 yield break;
             }
+
             if (motherGauge == null)
             {
                 Debug.Log("[PD] 庭覗き中の継続疑惑 停止 — motherGauge is null");
@@ -1285,6 +1458,10 @@ public class ParentDetection : MonoBehaviour
     public void OnApproachStarted()
     {
         CancelPassByDoorSound();
+
+        // 片付け演出のサイクル中は通常の接近開始処理を行わない（重複防止）。
+        if (IsChoreOverrideActive)
+            return;
     }
 
     /// <summary>
@@ -1306,16 +1483,330 @@ public class ParentDetection : MonoBehaviour
     private IEnumerator PlayPassByDoorSoundCoroutine()
     {
         float delay = Mathf.Max(0f, passByDoorSoundDelay);
-        Debug.Log($"[ParentDetection] Pass-by door sound: waiting {delay:F1}s");
+        Debug.Log($"[MotherSuspicionSystem] Pass-by door sound: waiting {delay:F1}s");
         yield return new WaitForSeconds(delay);
 
         if (passByDoorAudioSource != null)
         {
-            Debug.Log("[ParentDetection] Pass-by door sound: PLAY");
+            Debug.Log("[MotherSuspicionSystem] Pass-by door sound: PLAY");
             passByDoorAudioSource.Play();
         }
 
         _passByDoorSoundCoroutine = null;
+    }
+
+    // ── 片付け演出（MotherChoreController との連携） ─────────────────────────
+    //   ・SetChoreOverride(true) 中は通常の親イベント入口を止める（片付けと重複させない）。
+    //   ・SetChoreLooking() は視線アニメ中の発見判定を On/Off する（見た目とは別管理）。
+    //   ・OnBadItemCollected() / OnGameProgress() は子機からの通知を片付け側へ渡す。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>通常の親イベントが有効か（片付け演出中は false）。片付け側が判定に使う。</summary>
+    public bool IsNormalEventsEnabled => !_choreOverride;
+
+    /// <summary>片付け演出による抑止が有効か（通常の親イベントを止める期間）。</summary>
+    public bool IsChoreOverrideActive => _choreOverride;
+
+    /// <summary>
+    /// 片付けの「行き」の歩行中に怪しさを加算しているか（読み取り専用）。
+    /// 視線（3）による加算とは排他で、二重に加算しない。
+    /// </summary>
+    public bool IsChoreSuspicionActive => _choreSuspicionCoroutine != null;
+
+    /// <summary>片付け演出の抑止を設定する。母機の片付けサイクル開始／終了時に呼ばれる。</summary>
+    public void SetChoreOverride(bool active)
+    {
+        if (_choreOverride == active) return;
+        _choreOverride = active;
+        Debug.Log($"[PD] SetChoreOverride({active}) — 通常の親イベントを{(active ? "停止" : "再開")}");
+
+        if (!active)
+        {
+            // 抑止解除時に視線・歩行上加算・片付けの歩き/移動抑止が残らないようにする。
+            _choreLooking = false;
+            isMotherLookingNow = false;
+            _choreWalkingOverrideSuppressed = false;
+            _choreMovementSuppressed = false;
+            DisableChoreSuspicion();
+        }
+    }
+
+    /// <summary>
+    /// 片付け中の視線による発見判定を設定する。
+    /// アニメーションの見た目（再生）とは独立に、開始・終了タイミングをここで管理する。
+    /// 【重要】歩行による怪しさ加算（EnableChoreSuspicion 中）と二重に加算しないよう、
+    ///         ここで視線を有効化するときは歩行加算を止める。
+    /// </summary>
+    public void SetChoreLooking(bool looking)
+    {
+        _choreLooking = looking;
+        // 通常イベントの覗き判定と競合しないよう、片付け抑止中だけ反映する。
+        if (_choreOverride)
+            isMotherLookingNow = looking;
+
+        // 視線（3）では既存の視線判定期間だけ加算する。
+        // 歩行加算と二重にならないよう、視線の開始／終了で歩行加算の側を止める。
+        if (looking)
+            DisableChoreSuspicion();
+    }
+
+    /// <summary>
+    /// 片付けのドア開け（Door_Open）中、歩きアニメーションの上書きを抑止する。
+    /// 歩行の位置移動は ParentApproachController 側が止める。ここでは Walk の書き換えだけを止める
+    /// （通常イベントのドア操作へ片付けの再生が遅れて干渉しないようにするため）。
+    /// </summary>
+    public void SetChoreWalkingOverrideSuppressed(bool suppressed)
+    {
+        _choreWalkingOverrideSuppressed = suppressed;
+        Debug.Log($"[PD] 片付けの歩き上書き抑止: {suppressed}");
+    }
+
+    /// <summary>
+    /// 片付けのドア開け（Door_Open）中、歩行による位置移動を止めているか。
+    /// ParentApproachController の移動ループがこれを見て位置更新を止める
+    /// （開け終わる前に母親が通り抜けないようにする）。
+    /// </summary>
+    public bool IsChoreMovementSuppressed => _choreMovementSuppressed;
+
+    /// <summary>
+    /// 片付けのドア開け（Door_Open）中の位置移動抑止を設定する。
+    /// ParentApproachController 側から呼ばれる。
+    /// </summary>
+    public void SetChoreMovementSuppressed(bool suppressed)
+    {
+        _choreMovementSuppressed = suppressed;
+        if (_choreOverride)
+            Debug.Log($"[PD] 片付けの歩行位置移動抑止: {suppressed}");
+    }
+    /// <summary>
+    /// 片付けの「行き」の怪しさ加算を開始する。
+    /// プレイヤーがゲームを触っている（＝寝たふりでない）状態なら、既存の継続疑惑と同じ
+    /// 加算量・加算間隔で怪しさを加算し、最大値で既存の捕獲処理（OnPlayerCaught）へ渡す。
+    /// 歩行が終わったら必ず DisableChoreSuspicion() を呼ぶ。
+    /// </summary>
+    public void EnableChoreSuspicion()
+    {
+        if (_choreSuspicionCoroutine != null) return;
+        _choreSuspicionCoroutine = StartCoroutine(ContinuousChoreSuspicionCoroutine());
+        Debug.Log("[PD] 片付けの行き怪しさ加算を開始（既存の継続疑惑と同じ仕組み）");
+    }
+
+    /// <summary>
+    /// 片付けの「行き」の怪しさ加算を停止する（帰り・演技中・中断・再プレイで呼ぶ）。
+    /// 疑惑の減少は行わない（加算を止めるだけ）。
+    /// </summary>
+    public void DisableChoreSuspicion()
+    {
+        if (_choreSuspicionCoroutine == null) return;
+        StopCoroutine(_choreSuspicionCoroutine);
+        _choreSuspicionCoroutine = null;
+        Debug.Log("[PD] 片付けの行き怪しさ加算を停止（減少処理は行わない）");
+    }
+
+    /// <summary>
+    /// 片付けの「行き」の歩行中だけ加算する継続疑惑。
+    ///   ・判定は既存と同じ（SleepingController.IsSleeping が false＝ゲームを触っている）
+    ///   ・加算量・間隔は既存の継続疑惑と同じフィールド（continuousRoomSuspicionAmount /
+    ///     continuousRoomSuspicionTickInterval）を使う
+    ///   ・最大到達時は既存の捕獲処理 OnPlayerCaught() へ渡す
+    ///   ・視線（3）の再生中（_choreLooking）は加算しない（視線側の期間に任せる＝二重加算しない）
+    /// </summary>
+    private IEnumerator ContinuousChoreSuspicionCoroutine()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(continuousRoomSuspicionTickInterval);
+
+            if (_hasPermanentGameOver || isCaught)
+            {
+                Debug.Log("[PD] 片付けの行き怪しさ加算 停止 — game over or caught");
+                yield break;
+            }
+
+            if (motherGauge == null)
+            {
+                Debug.Log("[PD] 片付けの行き怪しさ加算 停止 — motherGauge is null");
+                yield break;
+            }
+
+            // 視線（3）の期間は視線側の既存加算に任せる（歩行による二重加算をしない）。
+            if (_choreLooking)
+            {
+                Debug.Log("[PD] 片付けの行き怪しさ加算 スキップ — 視線期間中（二重加算を防止）");
+                continue;
+            }
+
+            bool sleeping = (sleepingController != null) && sleepingController.IsSleeping;
+            if (sleeping)
+            {
+                Debug.Log("[PD] 片付けの行き怪しさ加算 スキップ — プレイヤーが寝たふり中");
+                continue;
+            }
+
+            motherGauge.AddGauge(continuousRoomSuspicionAmount);
+            Debug.Log($"[PD] 片付けの行き怪しさ加算 tick +{continuousRoomSuspicionAmount} | gauge now {motherGauge.currentGauge}");
+
+            if (motherGauge.currentGauge >= motherGauge.maxGauge)
+            {
+                Debug.Log("[PD] 片付けの行き怪しさ加算 停止 — gauge reached max（既存の捕獲処理へ）");
+                OnPlayerCaught();
+                yield break;
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  テスト用無敵モード（Lキー）
+    //   ・無敵中は「怪しさの正の加算」と「母親の捕獲・ゲームオーバー」を抑止する。
+    //   ・加算は MotherGauge.AddGauge()、捕獲は OnPlayerCaught() / CaughtReactionController の
+    //     共通入口でガードする（個別演出だけにチェックを足さない）。
+    //   ・自然減少・母親の演出・時間切れクリアは抑止しない。
+    //   ・既に成立したゲームオーバーをLキーで取り消すことはしない。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>無敵状態を設定する。ON/OFFのログと表示を更新する。</summary>
+    public void SetInvincible(bool value, string reason = null)
+    {
+        if (IsInvincible == value) return;
+
+        IsInvincible = value;
+
+        // このプレイで無敵を使ったことを記録する（OFF後もゲージ最大監視を緩和するため）。
+        if (value) WasInvincibleUsedInThisPlay = true;
+
+        string suffix = string.IsNullOrEmpty(reason) ? "" : $"（{reason}）";
+        Debug.Log($"[MotherSuspicion] テスト用無敵モード: {(value ? "ON" : "OFF")}{suffix}" +
+                  (value ? " — 怪しさ加算と捕獲を抑止します" : " — 通常の加算・捕獲判定へ戻します"));
+
+        InvincibleChanged?.Invoke(value);
+    }
+
+    /// <summary>ON/OFFを反転する（Lキーから呼ばれる）。</summary>
+    public void ToggleInvincible()
+    {
+        SetInvincible(!IsInvincible, reason: "Lキー");
+    }
+
+    /// <summary>
+    /// 「無敵を使った」記録をクリアする。ゲージが最大未満に戻った時点で呼ばれ、
+    /// ゲージ最大監視を通常の即時捕獲へ戻す。
+    /// </summary>
+    public void ClearInvincibleUsage()
+    {
+        WasInvincibleUsedInThisPlay = false;
+    }
+
+    /// <summary>
+    /// 無敵中に加算を抑止すべきか。加算の共通入口（MotherGauge.AddGauge）から参照する。
+    /// 正の加算（増加）のみを対象にし、負の加算（自動減少）は抑止しない。
+    /// </summary>
+    public bool ShouldBlockPositiveGaugeChange(int amount)
+    {
+        return IsInvincible && amount > 0;
+    }
+
+    /// <summary>無敵中に捕獲・ゲームオーバーを抑止すべきか。捕獲の共通入口から参照する。</summary>
+    public bool ShouldBlockCapture()
+    {
+        return IsInvincible;
+    }
+
+    /// <summary>
+    /// Lキーで無敵をトグルする。既存のデバッグ入力（Update）から呼ぶ。
+    /// wasPressedThisFrame を使うため、押しっぱなしで毎フレーム切り替わらない。
+    /// </summary>
+    private void HandleInvincibleInput()
+    {
+        if (!enableInvincibleToggle) return;
+        if (Keyboard.current == null) return;
+
+        if (Keyboard.current.lKey.wasPressedThisFrame)
+        {
+            ToggleInvincible();
+        }
+    }
+
+    /// <summary>無敵状態を画面隅に表示する（Consoleだけでなく目視でも確認できるようにする）。</summary>
+    private void OnGUI()
+    {
+        if (!showInvincibleIndicator) return;
+
+        if (!_invincibleStyleReady)
+        {
+            _invincibleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = invincibleIndicatorFontSize,
+                fontStyle = FontStyle.Bold,
+            };
+            _invincibleStyleReady = true;
+        }
+
+        _invincibleStyle.normal.textColor = IsInvincible ? Color.yellow : Color.gray;
+
+        string text = IsInvincible ? "[L] 無敵モード ON" : "[L] 無敵モード OFF";
+        GUI.Label(new Rect(invincibleIndicatorPosition.x, invincibleIndicatorPosition.y, 400f, 40f),
+                  text, _invincibleStyle);
+    }
+
+    /// <summary>
+    /// 6キー（片付け演出の手動テスト開始）の入口。
+    /// 既存の 1〜5 キーと同じ方式で、デバッグ入力から呼ばれる。
+    /// MotherChoreController へ要求を転送し、開始できたかを返す。
+    /// </summary>
+    public bool RequestManualChoreStart()
+    {
+        if (motherChoreController == null)
+            motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
+
+        if (motherChoreController == null)
+        {
+            Debug.LogWarning("[PD] 6キー：MotherChoreController が見つからないため片付けを開始できません");
+            return false;
+        }
+
+        return motherChoreController.RequestManualStart();
+    }
+
+    /// <summary>
+    /// 子機から届いた「悪いアイテム取得」通知。片付け中ループ中の視線抽選に使う。
+    /// 視線抽選はMotherChoreController側（抽選条件・確率）で行う。
+    /// </summary>
+    public void OnBadItemCollected()
+    {
+        _lastChoreNotificationTime = Time.time;
+
+        if (motherChoreController == null)
+            motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
+
+        if (motherChoreController == null)
+        {
+            Debug.Log("[PD] OnBadItemCollected: MotherChoreController が見つからないため無視");
+            return;
+        }
+
+        motherChoreController.NotifyBadItemCollected();
+    }
+
+    /// <summary>
+    /// 子機から届いたゲーム進行率（0〜1）。片付けの開始条件判定に使う。
+    /// 親機側の経過率と併せて、常に大きい方を採用する。
+    /// </summary>
+    public void OnGameProgress(float progressRate)
+    {
+        _childProgressRate = Mathf.Clamp01(progressRate);
+        _lastChoreNotificationTime = Time.time;
+
+        if (motherChoreController == null)
+            motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
+
+        if (motherChoreController == null) return;
+
+        // 親機側の経過率（ParentWarningSystem の _gameplayElapsedSeconds 相当）と併用する。
+        float parentRate = 0f;
+        if (warningSystem != null)
+            parentRate = warningSystem.GameplayProgressRate;
+
+        motherChoreController.NotifyGameProgress(Mathf.Max(_childProgressRate, parentRate));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1327,14 +1818,40 @@ public class ParentDetection : MonoBehaviour
         Debug.Log("[PD] ResetCycle");
         SetApproachSpeed(approachMoveSpeedMin);
 
-        if (_dummyResetCoroutine != null)      { StopCoroutine(_dummyResetCoroutine);      _dummyResetCoroutine      = null; }
-        if (_primaryResetCoroutine != null)    { StopCoroutine(_primaryResetCoroutine);    _primaryResetCoroutine    = null; }
-        if (_continuousRoomCoroutine != null)  { StopCoroutine(_continuousRoomCoroutine);  _continuousRoomCoroutine  = null; Debug.Log("[PD] Continuous room suspicion stopped — ResetCycle"); }
-        if (_gardenPeekSuspicionCoroutine != null) { StopCoroutine(_gardenPeekSuspicionCoroutine); _gardenPeekSuspicionCoroutine = null; Debug.Log("[PD] 庭覗き中の継続疑惑 stopped — ResetCycle"); }
-        if (_rushInPeekCoroutine != null) { StopCoroutine(_rushInPeekCoroutine); _rushInPeekCoroutine = null; }
+        if (_dummyResetCoroutine != null)
+        {
+            StopCoroutine(_dummyResetCoroutine);
+            _dummyResetCoroutine = null;
+        }
 
-        isMotherLookingNow    = false;
-        _activePeekDuration   = peekDurationBase;
+        if (_primaryResetCoroutine != null)
+        {
+            StopCoroutine(_primaryResetCoroutine);
+            _primaryResetCoroutine = null;
+        }
+
+        if (_continuousRoomCoroutine != null)
+        {
+            StopCoroutine(_continuousRoomCoroutine);
+            _continuousRoomCoroutine = null;
+            Debug.Log("[PD] Continuous room suspicion stopped — ResetCycle");
+        }
+
+        if (_gardenPeekSuspicionCoroutine != null)
+        {
+            StopCoroutine(_gardenPeekSuspicionCoroutine);
+            _gardenPeekSuspicionCoroutine = null;
+            Debug.Log("[PD] 庭覗き中の継続疑惑 stopped — ResetCycle");
+        }
+
+        if (_rushInPeekCoroutine != null)
+        {
+            StopCoroutine(_rushInPeekCoroutine);
+            _rushInPeekCoroutine = null;
+        }
+
+        isMotherLookingNow = false;
+        _activePeekDuration = peekDurationBase;
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
@@ -1346,11 +1863,26 @@ public class ParentDetection : MonoBehaviour
 
     private void OnPlayerCaught()
     {
+        // 【無敵モード】テスト用無敵（Lキー）がONの間は捕獲・ゲームオーバーを抑止する。
+        //   最大ゲージ到達から呼ばれる唯一の捕獲入口のため、ここで一括ガードする。
+        //   抑止中でも移動・アニメーション・覗き・片付け・音・照明は止めない。
+        if (ShouldBlockCapture())
+        {
+            Debug.Log("[PD] OnPlayerCaught: 無敵モード中のため捕獲とゲームオーバーを抑止します");
+            return;
+        }
+
         Debug.Log("[PD] OnPlayerCaught — GAME OVER");
         CancelPassByDoorSound();
-        isCaught           = true;
+        // 片付けの歩行加算も確実に停止する（捕獲後に加算が残らない）。
+        DisableChoreSuspicion();
+        isCaught = true;
         isMotherLookingNow = true;
         Debug.LogError("ゲームオーバー：母親に捕まりました！");
+
+        // 片付け演出を中断する（既存の捕獲・ゲームオーバー処理はそのまま実行する）。
+        if (motherChoreController != null)
+            motherChoreController.AbortChore("捕獲");
 
         if (caughtReactionController != null)
             caughtReactionController.ForceGameOver();

@@ -7,7 +7,7 @@ using UnityEngine.UI;
 ///
 /// ゲージの管理：
 ///   疑惑値（0～maxGauge）は警告サイクルをまたいで保持される。
-///   増加：ParentDetectionからのAddGauge()呼び出し（大きな音、チェックイベント）。
+///   増加：MotherSuspicionSystemからのAddGauge()呼び出し（大きな音、チェックイベント）。
 ///   減少：HandleAutoDecrease() — decreaseIntervalSecondsごとに1段階（本番動作）。
 ///   I／Oキー入力はエディターデバッグ専用。
 /// </summary>
@@ -59,6 +59,9 @@ public class MotherGauge : MonoBehaviour
     private float _decreaseTimer;
     private float _baseSePitch = 1f;
 
+    /// <summary>怪しさ管理元（MotherSuspicionSystem）の参照キャッシュ。無敵判定に使う。</summary>
+    private MotherSuspicionSystem _suspicionSystem;
+
     /// <summary>
     /// 怪しさメーターの色段階。SuspicionVisualFeedbackのUI色（青／紫／赤）と同じ区分。
     /// </summary>
@@ -100,6 +103,18 @@ public class MotherGauge : MonoBehaviour
         {
             _baseSePitch = gaugeStepAudioSource.pitch;
         }
+    }
+
+    /// <summary>
+    /// 怪しさ管理元（MotherSuspicionSystem）を解決する。無敵判定に使う。
+    /// 未設定ならシーンから自動検索して結果をキャッシュする。
+    /// </summary>
+    private MotherSuspicionSystem ResolveSuspicionSystem()
+    {
+        if (_suspicionSystem == null)
+            _suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
+
+        return _suspicionSystem;
     }
 
     private void Start()
@@ -182,9 +197,24 @@ public class MotherGauge : MonoBehaviour
     /// <summary>
     /// 疑惑ゲージを指定した段階数だけ変更する（正数で疑惑が増加）。
     /// 値は[0, maxGauge]に収められ、表示フレームも直ちに更新される。
+    ///
+    /// 【無敵モード】テスト用無敵（Lキー）がONの間は、正の加算（増加）だけを抑止する。
+    ///   ・加算経路（通常の覗き／片付けの行き／片付けの視線／アイテム・通信由来）は
+    ///     すべてこのメソッドを通るため、ここで一括してガードする。
+    ///   ・負の加算（自動減少）は抑止しない（既存の自然減少を維持）。
+    ///   ・現在値を0へ戻したり、ON前の値へ戻したりはしない。
     /// </summary>
     public void AddGauge(int amount)
     {
+        // 無敵中は正の加算のみ止める（減少は通す）。
+        //   怪しさ管理元（MotherSuspicionSystem）を参照する。未設定なら自動検索する。
+        MotherSuspicionSystem suspicion = ResolveSuspicionSystem();
+        if (suspicion != null && suspicion.ShouldBlockPositiveGaugeChange(amount))
+        {
+            Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] 無敵モード中のため加算を抑止 | amount={amount} | currentGauge={currentGauge}/{maxGauge}");
+            return;
+        }
+
         int previous = currentGauge;
         Debug.Log($"[F:{Time.frameCount}][MotherGauge-AddGauge] 呼び出し | amount={amount} | currentGauge BEFORE={previous}");
         currentGauge += amount;

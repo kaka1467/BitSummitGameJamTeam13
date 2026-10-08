@@ -79,7 +79,7 @@ public class CatFeintController : MonoBehaviour
         }
     }
 
-    /// <summary>ドアを閉じる前に猫を隠しておく秒数（ParentDetectionのドア閉鎖タイミング計算に使う）。</summary>
+    /// <summary>ドアを閉じる前に猫を隠しておく秒数（MotherSuspicionSystemのドア閉鎖タイミング計算に使う）。</summary>
     public float HideBeforeCloseSeconds => Mathf.Max(0f, catHideBeforeCloseSeconds);
 
     /// <summary>

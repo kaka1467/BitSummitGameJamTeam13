@@ -65,7 +65,7 @@ public class ParentUdpSender : MonoBehaviour
     public string             gameSceneName    = "GameScene";
     [Tooltip("Solo Start（子機接続なし）の遷移先シーン。MotherLoadは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
     public string             soloGameSceneName = "GameScene";
-    [Tooltip("実際にゲームプレイが行われるシーン名。LOUD_ITEM（ラッシュイン）の処理や ParentDetection の参照検索はこのシーンでだけ行う。" +
+    [Tooltip("実際にゲームプレイが行われるシーン名。LOUD_ITEM（ラッシュイン）の処理や MotherSuspicionSystem の参照検索はこのシーンでだけ行う。" +
              "gameSceneName は『ゲーム開始時に最初に読み込むシーン（MotherLoad）』で、プレイ中のシーンとは別物。")]
     public string             gameplaySceneName = "GameScene";
 
@@ -93,7 +93,7 @@ public class ParentUdpSender : MonoBehaviour
 
     [Header("Game References")]
     [Tooltip("Auto-found at Start if not assigned. Used to trigger rush-in on LOUD_ITEM.")]
-    public ParentDetection parentDetection;
+    public MotherSuspicionSystem parentDetection;
 
     [Header("Debug")]
     [Tooltip("通信ログなどの詳細出力を有効にする")]
@@ -169,6 +169,11 @@ public class ParentUdpSender : MonoBehaviour
     private bool      _gameOverScoreHandled = false; // 子機からの CHILD_SCORE:GAME_OVER の再送（重複）を無視するため
     public  bool      ChildLoadingComplete { get; set; } = false;
     private bool      _shouldTriggerLoudItem = false;
+    // ── 片付け演出：悪いアイテム取得・ゲーム進行率の保留フラグ ─────────────
+    //   受信スレッドからメインスレッドへ渡す既存方式（_shouldTriggerLoudItem）と同じ扱い。
+    private bool      _shouldTriggerBadItem = false;
+    private bool      _hasPendingGameProgress = false;
+    private float     _pendingGameProgress = 0f;
 
     public static ParentUdpSender Instance { get; private set; }
 
@@ -359,6 +364,49 @@ public class ParentUdpSender : MonoBehaviour
             }
         }
 
+        // ── 片付け演出：悪いアイテム取得の保留通知（メインスレッドで処理）────
+        if (_shouldTriggerBadItem)
+        {
+            string activeScene = SceneManager.GetActiveScene().name;
+            if (!IsGameplayScene(activeScene))
+            {
+                _shouldTriggerBadItem = false;
+            }
+            else if (parentDetection != null)
+            {
+                _shouldTriggerBadItem = false;
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] Executing OnBadItemCollected on Main Thread!");
+                parentDetection.OnBadItemCollected();
+            }
+            else
+            {
+                _shouldTriggerBadItem = false;
+                if (showDebugLogs)
+                    Debug.LogWarning("[ParentUdpSender] BAD_ITEM triggered but parentDetection is null in GameScene.");
+            }
+        }
+
+        // ── 片付け演出：ゲーム進行率の保留通知（メインスレッドで処理）────────
+        if (_hasPendingGameProgress)
+        {
+            string activeScene = SceneManager.GetActiveScene().name;
+            if (!IsGameplayScene(activeScene))
+            {
+                _hasPendingGameProgress = false;
+            }
+            else if (parentDetection != null)
+            {
+                float pendingRate = _pendingGameProgress;
+                _hasPendingGameProgress = false;
+                parentDetection.OnGameProgress(pendingRate);
+            }
+            else
+            {
+                _hasPendingGameProgress = false;
+            }
+        }
+
         // Timeout check
         if (currentState == ConnectionState.Connected &&
             Time.time - _lastReceiveTime > _timeoutLimit)
@@ -450,6 +498,9 @@ public class ParentUdpSender : MonoBehaviour
             _resultProcessed = false;
             _gameOverScoreHandled = false;
             _shouldTriggerLoudItem = false;
+            // 片付け演出用の保留通知もリセットする（再プレイで前の通知を持ち越さない）。
+            _shouldTriggerBadItem = false;
+            _hasPendingGameProgress = false;
             if (_caughtRetryCoroutine != null)
             {
                 StopCoroutine(_caughtRetryCoroutine);
@@ -462,6 +513,9 @@ public class ParentUdpSender : MonoBehaviour
         {
             // GameScene 以外へ遷移したときは _shouldTriggerLoudItem を安全に初期化
             _shouldTriggerLoudItem = false;
+            // 片付け演出用の保留通知も同様に初期化する（シーン変更で状態を残さない）。
+            _shouldTriggerBadItem = false;
+            _hasPendingGameProgress = false;
         }
     }
 
@@ -654,6 +708,10 @@ public class ParentUdpSender : MonoBehaviour
         _gameOverScoreHandled = false;
         ChildLoadingComplete = false;
         _shouldTriggerLoudItem = false;
+        // 片付け演出用の保留通知もクリアする（前プレイの通知を次プレイへ持ち越さない）。
+        _shouldTriggerBadItem = false;
+        _hasPendingGameProgress = false;
+        _pendingGameProgress = 0f;
 
         // プレイ識別子をクリアする。タイトルに戻った時点で前のプレイは終了しているため、
         // 以降に届く前回プレイの RETURN_TO_TITLE は識別子不一致で無視される
@@ -687,7 +745,7 @@ public class ParentUdpSender : MonoBehaviour
         string currentScene = SceneManager.GetActiveScene().name;
         if (IsGameplayScene(currentScene))
         {
-            parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetection>();
+            parentDetection = UnityEngine.Object.FindFirstObjectByType<MotherSuspicionSystem>();
             if (parentDetection != null)
             {
                 if (showDebugLogs)
@@ -992,6 +1050,53 @@ public class ParentUdpSender : MonoBehaviour
                 if (showDebugLogs)
                     Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null in GameScene — will retry in Update.");
                 _shouldTriggerLoudItem = true;
+            }
+            return;
+        }
+
+        // ── 片付け演出：悪いアイテム取得通知 ─────────────────────────────────
+        if (message.Type == ParentMessageType.BadItem)
+        {
+            if (showDebugLogs)
+                Debug.Log("[ParentUdpSender] Received BAD_ITEM network packet from Child.");
+
+            string activeScene = SceneManager.GetActiveScene().name;
+            if (!IsGameplayScene(activeScene))
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[ParentUdpSender] BAD_ITEM received outside gameplay scene (active='{activeScene}', expected='{gameplaySceneName}') — ignored.");
+                return;
+            }
+
+            if (parentDetection != null)
+            {
+                parentDetection.OnBadItemCollected();
+            }
+            else
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning("[ParentUdpSender] BAD_ITEM received but parentDetection is null in GameScene — will retry in Update.");
+                _shouldTriggerBadItem = true;
+            }
+            return;
+        }
+
+        // ── 片付け演出：ゲーム進行率通知 ─────────────────────────────────────
+        if (message.Type == ParentMessageType.GameProgress)
+        {
+            string activeScene = SceneManager.GetActiveScene().name;
+            if (!IsGameplayScene(activeScene))
+                return;
+
+            float progressRate = Mathf.Clamp01(message.Score / 1000f);
+            if (parentDetection != null)
+            {
+                parentDetection.OnGameProgress(progressRate);
+            }
+            else
+            {
+                _pendingGameProgress = progressRate;
+                _hasPendingGameProgress = true;
             }
             return;
         }

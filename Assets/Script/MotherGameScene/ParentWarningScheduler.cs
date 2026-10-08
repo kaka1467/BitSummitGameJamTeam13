@@ -46,8 +46,36 @@ public class ParentWarningScheduler : MonoBehaviour
     private Coroutine _schedulerCoroutine;
     private Coroutine _triggerSoonCoroutine;
     private bool _gracePeriodOver;
+    // 片付け演出（MotherChoreController）中は true。自動警告の発火を待機させる。
+    private bool _blockedByChore;
 
     public bool IsGracePeriodOver => _gracePeriodOver;
+
+    /// <summary>片付け演出中で自動警告を抑止しているか（Inspector 表示用）。</summary>
+    public bool IsBlockedExternally => _blockedByChore;
+
+    /// <summary>
+    /// 片付け演出による抑止を設定する。true の間は新しい自動警告を発生させない。
+    /// 解除時は、待機中だった次の警告ウィンドウを最初からやり直させる。
+    /// </summary>
+    public void SetBlockedByChore(bool blocked)
+    {
+        if (_blockedByChore == blocked) return;
+        _blockedByChore = blocked;
+        Debug.Log($"[ParentWarningScheduler] 片付け演出による自動警告抑止: {blocked}");
+
+        if (!blocked && autoTrigger && _schedulerCoroutine == null && !isWarningActiveSatisfied())
+        {
+            // 片付け終了後に自動警告を再開する（停止状態を残さない）。
+            StartScheduler();
+        }
+    }
+
+    /// <summary>現在 warningSystem が有効な警告シーケンス中か。</summary>
+    private bool isWarningActiveSatisfied()
+    {
+        return warningSystem != null && warningSystem.isWarningActive;
+    }
 
     private void Start()
     {
@@ -176,6 +204,10 @@ public class ParentWarningScheduler : MonoBehaviour
             yield return null;
         }
 
+        // 片付け演出中は発火しない（大きな音による突入も片付けと重複させない）。
+        while (_blockedByChore)
+            yield return null;
+
         if (warningSystem != null && !warningSystem.isWarningActive)
         {
             Debug.Log("[ParentWarningScheduler] TriggerSoon firing warning now");
@@ -198,7 +230,9 @@ public class ParentWarningScheduler : MonoBehaviour
         timeUntilNextWarning = grace;
         while (timeUntilNextWarning > 0f)
         {
-            timeUntilNextWarning -= Time.deltaTime;
+            // 片付け演出中は時間を進めて待機する（新しい警告は発生させない）。
+            if (!_blockedByChore)
+                timeUntilNextWarning -= Time.deltaTime;
             yield return null;
         }
 
@@ -210,10 +244,18 @@ public class ParentWarningScheduler : MonoBehaviour
 
         while (true)
         {
+            // 片付け演出中は自動警告を発生させない（通常の親イベントと重複させない）。
+            while (_blockedByChore)
+                yield return null;
+
             if (warningSystem != null && warningSystem.isWarningActive)
             {
                 yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
             }
+
+            // 片付け演出が開始された場合も発火を待つ。
+            while (_blockedByChore)
+                yield return null;
 
             int currentGauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
             float baseWindow = Random.Range(baseWindowMinSeconds, baseWindowMaxSeconds);
@@ -235,6 +277,13 @@ public class ParentWarningScheduler : MonoBehaviour
                 if (warningSystem != null && warningSystem.isWarningActive)
                 {
                     yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
+                }
+
+                // 片付け演出中はウィンドウを進めない（発火を待機する）。
+                if (_blockedByChore)
+                {
+                    yield return null;
+                    continue;
                 }
 
                 elapsed += Time.deltaTime;

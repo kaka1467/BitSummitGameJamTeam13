@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// ParentWarningSystem：
@@ -18,19 +19,19 @@ using UnityEngine.InputSystem;
 ///   TriggerInstantDoor()               — 即時デバッグDoorPeek、灯りと遅延なし
 ///   StartLoudItemRushInSequence()      — 大きな音による突入：2階の灯りのみ、速度=loudItemRushInMoveSpeed
 ///   StopWarningSequence()              — 強制停止してリセット（ゲームオーバー、シーンアンロードなど）
-///   EndWarningSequence()               — サイクル完了後にParentDetectionが呼ぶ正常終了
+///   EndWarningSequence()               — サイクル完了後にMotherSuspicionSystemが呼ぶ正常終了
 ///
 /// 責務の境界：
 ///   ParentWarningSystem     — 灯り、遅延、速度、ルート確率、突入設定
 ///   ParentApproachController— 経路移動と向き
-///   ParentDetection       — ドア分岐、疑惑、部屋チェックの結果、捕獲
+///   MotherSuspicionSystem       — ドア分岐、疑惑、部屋チェックの結果、捕獲
 /// </summary>
 public class ParentWarningSystem : MonoBehaviour
 {
     // ── 主要な参照 ────────────────────────────────────────────────────────────
     [Header("参照")]
     [SerializeField] public ParentApproachController approachController;
-    [SerializeField] public ParentDetection        parentDetection;
+    [SerializeField] public MotherSuspicionSystem        parentDetection;
     [SerializeField] public MotherGauge              motherGauge;
 
     // ── 予告灯 ────────────────────────────────────────────────────────────────
@@ -43,28 +44,47 @@ public class ParentWarningSystem : MonoBehaviour
 
     [SerializeField] private AudioSource lightSwitchAudioSource;
 
-    // ── 予告遅延のスケーリング ────────────────────────────────────────────────
-    [Header("予告遅延（低疑惑）")]
-    [Tooltip("低疑惑時の1階の灯りと2階の灯りの間隔の最小秒数。")]
-    public float secondFloorDelayMin = 1f;
-    [Tooltip("低疑惑時の1階の灯りと2階の灯りの間隔の最大秒数。")]
-    public float secondFloorDelayMax = 10f;
-    [Tooltip("低疑惑時の2階の灯りから接近開始までの最小秒数。")]
-    public float approachDelayMin = 1f;
-    [Tooltip("低疑惑時の2階の灯りから接近開始までの最大秒数。")]
-    public float approachDelayMax = 3f;
+    // ── 予兆の段階間の待機（旧: secondFloorDelay / approachDelay） ─────────────
+    //   実際の待機は次の2つ。旧名は「2階」「接近」という場所名に依存していたため、
+    //   現在の役割が分かる名前に変更した（秒数・待機順は変更していない）。
+    //     1) 第1段階の灯りON → 第2段階の灯りON まで
+    //     2) 第2段階の灯りON → 移動開始（接近開始）まで
+    [Header("予兆の段階間の待機（低疑惑）")]
+    [Tooltip("第1段階の灯りを点けてから、第2段階の灯りを点けるまでの最小秒数。")]
+    [FormerlySerializedAs("secondFloorDelayMin")]
+    public float foreshadowStageIntervalMin = 1f;
 
-    [Header("予告遅延（高疑惑）")]
-    [Tooltip("現在のゲージがこの閾値を超えた場合、以下の高疑惑用遅延範囲を使用する。")]
+    [Tooltip("第1段階の灯りを点けてから、第2段階の灯りを点けるまでの最大秒数。")]
+    [FormerlySerializedAs("secondFloorDelayMax")]
+    public float foreshadowStageIntervalMax = 10f;
+
+    [Tooltip("第2段階の灯りを点けてから、移動（接近）を開始するまでの最小秒数。")]
+    [FormerlySerializedAs("approachDelayMin")]
+    public float moveStartDelayMin = 1f;
+
+    [Tooltip("第2段階の灯りを点けてから、移動（接近）を開始するまでの最大秒数。")]
+    [FormerlySerializedAs("approachDelayMax")]
+    public float moveStartDelayMax = 3f;
+
+    [Header("予兆の段階間の待機（高疑惑）")]
+    [Tooltip("現在のゲージがこの閾値を超えた場合、以下の高疑惑用の待機範囲を使用する。")]
     public int highSuspicionDelayGaugeThreshold = 5;
-    [Tooltip("ゲージが閾値を超えたときの1階の灯りと2階の灯りの間隔の最小秒数。")]
-    public float highSuspicionSecondFloorDelayMin = 1f;
-    [Tooltip("ゲージが閾値を超えたときの1階の灯りと2階の灯りの間隔の最大秒数。")]
-    public float highSuspicionSecondFloorDelayMax = 3f;
-    [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最小秒数。")]
-    public float highSuspicionApproachDelayMin;
-    [Tooltip("ゲージが閾値を超えたときの2階の灯りから接近開始までの最大秒数。")]
-    public float highSuspicionApproachDelayMax = 1f;
+
+    [Tooltip("ゲージが閾値を超えたときの、第1段階の灯りから第2段階の灯りまでの最小秒数。")]
+    [FormerlySerializedAs("highSuspicionSecondFloorDelayMin")]
+    public float highSuspicionForeshadowStageIntervalMin = 1f;
+
+    [Tooltip("ゲージが閾値を超えたときの、第1段階の灯りから第2段階の灯りまでの最大秒数。")]
+    [FormerlySerializedAs("highSuspicionSecondFloorDelayMax")]
+    public float highSuspicionForeshadowStageIntervalMax = 3f;
+
+    [Tooltip("ゲージが閾値を超えたときの、第2段階の灯りから移動（接近）開始までの最小秒数。")]
+    [FormerlySerializedAs("highSuspicionApproachDelayMin")]
+    public float highSuspicionMoveStartDelayMin;
+
+    [Tooltip("ゲージが閾値を超えたときの、第2段階の灯りから移動（接近）開始までの最大秒数。")]
+    [FormerlySerializedAs("highSuspicionApproachDelayMax")]
+    public float highSuspicionMoveStartDelayMax = 1f;
 
     // ── ルート確率 ────────────────────────────────────────────────────────────
     [Header("ルート確率")]
@@ -72,6 +92,96 @@ public class ParentWarningSystem : MonoBehaviour
     [Header("状態")]
     [Tooltip("警告／接近シーケンス中はtrue。")]
     public bool isWarningActive;
+
+    // ── 片付け演出との連携 ───────────────────────────────────────────────────
+    /// <summary>
+    /// 片付け演出（MotherChoreController）中は true。通常の警告開始をすべて抑止する。
+    /// 設定は MotherChoreController.SetBlockedByChore() 経由で行う。
+    /// </summary>
+    private bool _choreBlocked;
+
+    /// <summary>片付け演出中で通常の警告を抑止しているか。</summary>
+    public bool IsChoreBlocked => _choreBlocked;
+
+    /// <summary>
+    /// ゲーム進行率（0〜1）。ParentWarningSystem の経過時間を監視時間（180秒）で割った値。
+    /// 片付け開始の判定に使う（子機からの通知がない環境でも機能する）。
+    /// </summary>
+    public float GameplayProgressRate =>
+        Mathf.Clamp01(_gameplayElapsedSeconds / Mathf.Max(1f, gameplaySecondsForProgressRate));
+
+    [Header("ゲーム進行率")]
+    [Tooltip("ゲーム進行率の計算に使う基準秒数（子機の制限時間と同じ180秒を想定）。")]
+    [SerializeField, Min(1f)] private float gameplaySecondsForProgressRate = 180f;
+
+    // ── 片付け演出の設定（ここを唯一の設定元にする） ─────────────────────────
+    //   MotherChoreController / ParentApproachController はここを参照する
+    //   （同じ設定を重複して持たない）。
+    [Header("片付け演出")]
+    [Tooltip("片付けの滞在時間（秒）。chorePoint到着・Chore開始から計測し、この時間が経過すると Chore_End へ進む。" +
+             "Chore_Peek の再生中も時間は進む。")]
+    [SerializeField, Min(1f)] private float choreStayDuration = 10f;
+
+    [Tooltip("自然に覗く間隔の最小秒数。Chore中だけ有効。この範囲から次の覗きまでの間隔を抽選する。")]
+    [SerializeField, Min(0f)] private float choreNaturalLookIntervalMin = 4f;
+
+    [Tooltip("自然に覗く間隔の最大秒数。Chore中だけ有効。この範囲から次の覗きまでの間隔を抽選する。")]
+    [SerializeField, Min(0f)] private float choreNaturalLookIntervalMax = 8f;
+
+    [Tooltip("悪いアイテム取得時に Chore_Peek（こっちを見る）になる確率。0〜1。")]
+    [SerializeField, Range(0f, 1f)] private float choreLookProbability = 0.5f;
+
+    [Tooltip("庭覗き（GardenPeek）でGardenPeekPointに留まる基本秒数。" +
+             "実際の覗き時間 = この値 + GardenPeekPoint到着時のゲージ値（到着時に一度だけ決定）。")]
+    [SerializeField, Min(0f)] private float gardenPeekDurationBase = 3f;
+
+    /// <summary>片付けの滞在時間（秒）。MotherChoreController が参照する。</summary>
+    public float ChoreStayDuration => choreStayDuration;
+
+    /// <summary>自然に覗く間隔の最小秒数。</summary>
+    public float ChoreNaturalLookIntervalMin => choreNaturalLookIntervalMin;
+
+    /// <summary>自然に覗く間隔の最大秒数。</summary>
+    public float ChoreNaturalLookIntervalMax => choreNaturalLookIntervalMax;
+
+    /// <summary>悪いアイテム取得時の視線発生率（0〜1）。</summary>
+    public float ChoreLookProbability => choreLookProbability;
+
+    /// <summary>庭覗きの基本時間（秒）。ParentApproachController が参照する。</summary>
+    public float GardenPeekDurationBase => gardenPeekDurationBase;
+
+    /// <summary>
+    /// 自然に覗く次の間隔を抽選する（最小〜最大。順序が逆でも安全）。
+    /// 不正値（両方0以下）の場合は0を返し、呼び出し側が「自然な覗きなし」として扱う。
+    /// </summary>
+    public float RollNaturalLookInterval()
+    {
+        float min = Mathf.Min(choreNaturalLookIntervalMin, choreNaturalLookIntervalMax);
+        float max = Mathf.Max(choreNaturalLookIntervalMin, choreNaturalLookIntervalMax);
+
+        if (max <= 0f)
+        {
+            Debug.LogWarning($"[ParentWarningSystem] 自然な覗きの間隔が0以下のため無効化します " +
+                             $"(min={choreNaturalLookIntervalMin:F2}, max={choreNaturalLookIntervalMax:F2})", this);
+            return 0f;
+        }
+
+        return Random.Range(min, max);
+    }
+
+    /// <summary>片付け演出の抑止を設定する（MotherChoreController から呼ばれる）。</summary>
+    public void SetChoreBlocked(bool blocked)
+    {
+        if (_choreBlocked == blocked) return;
+        _choreBlocked = blocked;
+        Debug.Log($"[ParentWarningSystem] 片付け演出による警告抑止: {blocked}");
+
+        // 抑止解除時は、進行中の予告があれば安全に停止して状態を残さない。
+        if (!blocked)
+        {
+            // 何もしない（通常サイクル側が管理する）。
+        }
+    }
 
     // ── 現在のルート状態 ──────────────────────────────────────────────────────
     /// <summary>現在の実行で選択されたルート。移動開始前に設定され、シーケンス終了時に解除される。</summary>
@@ -90,12 +200,14 @@ public class ParentWarningSystem : MonoBehaviour
         _gameplayElapsedSeconds = 0f;
         _gameplayClockActive = true;
         _consecutiveAutomaticFeints = 0;
+        // 再プレイ・シーン再読み込みで片付け抑止が残らないようにする。
+        _choreBlocked = false;
 
         if (approachController == null)
             approachController = Object.FindFirstObjectByType<ParentApproachController>();
 
         if (parentDetection == null)
-            parentDetection = Object.FindFirstObjectByType<ParentDetection>();
+            parentDetection = Object.FindFirstObjectByType<MotherSuspicionSystem>();
 
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
@@ -124,8 +236,19 @@ public class ParentWarningSystem : MonoBehaviour
 
         // デバッグ：2キーでフェイントA（HallwayPassBy）を手動起動する。
         // 親機デバッグキーは 1（母親ドア確認：ParentWarningScheduler）／2（本キー）／
-        // 0（RushIn：ParentDetection）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
+        // 0（RushIn：MotherSuspicionSystem）／P（ドア開閉：DoorController）／I・O（疑惑±1：MotherGauge）で構成する。
+        // 6キーは片付け演出の手動テスト開始（MotherChoreController.RequestManualStart）。
         if (Keyboard.current == null) return;
+
+        if (Keyboard.current.digit6Key.wasPressedThisFrame)
+        {
+            Debug.Log("[ParentWarningSystem] 6キー押下 — 片付け演出の手動テスト開始を要求");
+            if (parentDetection != null && parentDetection.RequestManualChoreStart())
+                return;
+
+            if (parentDetection == null)
+                Debug.LogWarning("[ParentWarningSystem] 6キー：parentDetection が未設定のため片付けを開始できません");
+        }
 
         if (Keyboard.current.digit2Key.wasPressedThisFrame)
         {
@@ -160,6 +283,13 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
+        // 片付け演出中は通常の警告を開始しない（重複防止）。
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartWarningSequence: BLOCKED — 片付け演出中");
+            return;
+        }
+
         if (!ValidateController()) return;
 
         isWarningActive = true;
@@ -174,6 +304,13 @@ public class ParentWarningSystem : MonoBehaviour
         if (isWarningActive)
         {
             Debug.Log("[ParentWarningSystem] StartManualDoorWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        // 片付け演出中は通常の警告を開始しない（デバッグ操作も同様に抑止）。
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualDoorWarningSequence: BLOCKED — 片付け演出中");
             return;
         }
 
@@ -200,6 +337,12 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualHallwayPassByWarningSequence: BLOCKED — 片付け演出中");
+            return;
+        }
+
         if (!ValidateController()) return;
 
         isWarningActive = true;
@@ -222,6 +365,12 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualCatFeintWarningSequence: BLOCKED — 片付け演出中");
+            return;
+        }
+
         if (!ValidateController()) return;
 
         isWarningActive = true;
@@ -238,15 +387,15 @@ public class ParentWarningSystem : MonoBehaviour
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] CAT FEINT: HALLWAY LIGHTS 1/2 ON");
 
-        float secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
-        yield return new WaitForSeconds(secondFloorDelay);
+        float stageIntervalDelay = Random.Range(foreshadowStageIntervalMin, foreshadowStageIntervalMax);
+        yield return new WaitForSeconds(stageIntervalDelay);
 
         TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] CAT FEINT: SECOND FLOOR LIGHTS ON");
 
-        float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
-        yield return new WaitForSeconds(approachDelay);
+        float moveStartDelay = Random.Range(moveStartDelayMin, moveStartDelayMax);
+        yield return new WaitForSeconds(moveStartDelay);
 
         // 母親は移動させない。ドアの猫覗きイベントへ引き渡す（ドア開閉はPDが既存APIで行う）。
         ActiveRoute = RouteState.CatFeint;
@@ -267,6 +416,12 @@ public class ParentWarningSystem : MonoBehaviour
         if (isWarningActive)
         {
             Debug.Log("[ParentWarningSystem] StartManualGardenPassByWarningSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualGardenPassByWarningSequence: BLOCKED — 片付け演出中");
             return;
         }
 
@@ -292,6 +447,12 @@ public class ParentWarningSystem : MonoBehaviour
             return;
         }
 
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartManualGardenPeekWarningSequence: BLOCKED — 片付け演出中");
+            return;
+        }
+
         if (!ValidateController()) return;
 
         isWarningActive = true;
@@ -304,6 +465,7 @@ public class ParentWarningSystem : MonoBehaviour
     public void TriggerInstantPassBy()
     {
         if (isWarningActive) return;
+        if (_choreBlocked) return;
         if (!ValidateController()) return;
 
         isWarningActive = true;
@@ -317,6 +479,7 @@ public class ParentWarningSystem : MonoBehaviour
     public void TriggerInstantDoor()
     {
         if (isWarningActive) return;
+        if (_choreBlocked) return;
         if (!ValidateController()) return;
 
         isWarningActive = true;
@@ -330,7 +493,7 @@ public class ParentWarningSystem : MonoBehaviour
     /// <summary>
     /// 大きな音による突入：1階の灯りと予告遅延を省略する。
     /// 2階の灯りだけを点灯し、速度をloudItemRushInMoveSpeedに設定してDoorPeekルートを強制する。
-    /// 音声とゲージの処理後にParentDetection.OnLoudItemTriggered()から呼び出される。
+    /// 音声とゲージの処理後にMotherSuspicionSystem.OnLoudItemTriggered()から呼び出される。
     /// 警告シーケンスがすでに進行中の場合は何もしない。
     /// </summary>
     public void StartLoudItemRushInSequence()
@@ -338,6 +501,13 @@ public class ParentWarningSystem : MonoBehaviour
         if (isWarningActive)
         {
             Debug.Log("[ParentWarningSystem] StartLoudItemRushInSequence: BLOCKED — sequence already active");
+            return;
+        }
+
+        // 片付け演出中は突入も開始しない（重複防止。通常の親イベントと重複させない）。
+        if (_choreBlocked)
+        {
+            Debug.Log("[ParentWarningSystem] StartLoudItemRushInSequence: BLOCKED — 片付け演出中");
             return;
         }
 
@@ -378,6 +548,8 @@ public class ParentWarningSystem : MonoBehaviour
     public void NotifyGameOver()
     {
         _gameplayClockActive = false;
+        // ゲームオーバー時は片付け抑止も解除しておく（停止状態を残さない）。
+        _choreBlocked = false;
     }
 
     public void EndWarningSequence()
@@ -412,15 +584,15 @@ public class ParentWarningSystem : MonoBehaviour
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] GARDEN PASS-BY: HALLWAY LIGHTS 1/2 ON");
 
-        float secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
-        yield return new WaitForSeconds(secondFloorDelay);
+        float stageIntervalDelay = Random.Range(foreshadowStageIntervalMin, foreshadowStageIntervalMax);
+        yield return new WaitForSeconds(stageIntervalDelay);
 
         SetLightActive(outsideLight, true);
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] GARDEN PASS-BY: OUTSIDE LIGHT ON");
 
-        float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
-        yield return new WaitForSeconds(approachDelay);
+        float moveStartDelay = Random.Range(moveStartDelayMin, moveStartDelayMax);
+        yield return new WaitForSeconds(moveStartDelay);
 
         parentDetection?.ApplyApproachSpeed(true);
         ActiveRoute = RouteState.GardenPassBy;
@@ -444,15 +616,15 @@ public class ParentWarningSystem : MonoBehaviour
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] GARDEN PEEK: HALLWAY LIGHTS 1/2 ON");
 
-        float secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
-        yield return new WaitForSeconds(secondFloorDelay);
+        float stageIntervalDelay = Random.Range(foreshadowStageIntervalMin, foreshadowStageIntervalMax);
+        yield return new WaitForSeconds(stageIntervalDelay);
 
         SetLightActive(outsideLight, true);
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] GARDEN PEEK: OUTSIDE LIGHT ON");
 
-        float approachDelay = Random.Range(approachDelayMin, approachDelayMax);
-        yield return new WaitForSeconds(approachDelay);
+        float moveStartDelay = Random.Range(moveStartDelayMin, moveStartDelayMax);
+        yield return new WaitForSeconds(moveStartDelay);
 
         parentDetection?.ApplyApproachSpeed(true);
 
@@ -483,35 +655,35 @@ public class ParentWarningSystem : MonoBehaviour
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] FIRST FLOOR LIGHT ON");
 
-        float secondFloorDelay;
+        float stageIntervalDelay;
         if (highSuspicionDelays)
         {
-            secondFloorDelay = Random.Range(highSuspicionSecondFloorDelayMin, highSuspicionSecondFloorDelayMax);
-            Debug.Log($"[ParentWarningSystem] Second-floor delay: {secondFloorDelay:F1}s (HIGH SUSPICION range {highSuspicionSecondFloorDelayMin}-{highSuspicionSecondFloorDelayMax}s | gauge={gauge})");
+            stageIntervalDelay = Random.Range(highSuspicionForeshadowStageIntervalMin, highSuspicionForeshadowStageIntervalMax);
+            Debug.Log($"[ParentWarningSystem] 予兆の段階間の待機: {stageIntervalDelay:F1}s (HIGH SUSPICION range {highSuspicionForeshadowStageIntervalMin}-{highSuspicionForeshadowStageIntervalMax}s | gauge={gauge})");
         }
         else
         {
-            secondFloorDelay = Random.Range(secondFloorDelayMin, secondFloorDelayMax);
-            Debug.Log($"[ParentWarningSystem] Second-floor delay: {secondFloorDelay:F1}s (LOW SUSPICION range {secondFloorDelayMin}-{secondFloorDelayMax}s | gauge={gauge})");
+            stageIntervalDelay = Random.Range(foreshadowStageIntervalMin, foreshadowStageIntervalMax);
+            Debug.Log($"[ParentWarningSystem] 予兆の段階間の待機: {stageIntervalDelay:F1}s (LOW SUSPICION range {foreshadowStageIntervalMin}-{foreshadowStageIntervalMax}s | gauge={gauge})");
         }
-        yield return new WaitForSeconds(secondFloorDelay);
+        yield return new WaitForSeconds(stageIntervalDelay);
 
         TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
         Debug.Log("[ParentWarningSystem] SECOND FLOOR LIGHTS ON");
 
-        float approachDelay;
+        float moveStartDelay;
         if (highSuspicionDelays)
         {
-            approachDelay = Random.Range(highSuspicionApproachDelayMin, highSuspicionApproachDelayMax);
-            Debug.Log($"[ParentWarningSystem] Approach-start delay: {approachDelay:F1}s (HIGH SUSPICION range {highSuspicionApproachDelayMin}-{highSuspicionApproachDelayMax}s | gauge={gauge})");
+            moveStartDelay = Random.Range(highSuspicionMoveStartDelayMin, highSuspicionMoveStartDelayMax);
+            Debug.Log($"[ParentWarningSystem] 移動開始までの待機: {moveStartDelay:F1}s (HIGH SUSPICION range {highSuspicionMoveStartDelayMin}-{highSuspicionMoveStartDelayMax}s | gauge={gauge})");
         }
         else
         {
-            approachDelay = Random.Range(approachDelayMin, approachDelayMax);
-            Debug.Log($"[ParentWarningSystem] Approach-start delay: {approachDelay:F1}s (LOW SUSPICION range {approachDelayMin}-{approachDelayMax}s | gauge={gauge})");
+            moveStartDelay = Random.Range(moveStartDelayMin, moveStartDelayMax);
+            Debug.Log($"[ParentWarningSystem] 移動開始までの待機: {moveStartDelay:F1}s (LOW SUSPICION range {moveStartDelayMin}-{moveStartDelayMax}s | gauge={gauge})");
         }
-        yield return new WaitForSeconds(approachDelay);
+        yield return new WaitForSeconds(moveStartDelay);
 
         parentDetection?.ApplyApproachSpeed(isManual);
 
@@ -703,7 +875,7 @@ public class ParentWarningSystem : MonoBehaviour
 
     private void HandleStoppedAtDoor()
     {
-        Debug.Log("[ParentWarningSystem] EVENT: Stopped at door — forwarding to ParentDetection.OnApproachReachedDoor()");
+        Debug.Log("[ParentWarningSystem] EVENT: Stopped at door — forwarding to MotherSuspicionSystem.OnApproachReachedDoor()");
 
         if (!isWarningActive)
         {

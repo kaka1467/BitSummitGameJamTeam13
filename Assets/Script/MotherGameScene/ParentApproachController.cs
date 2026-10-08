@@ -61,8 +61,7 @@ using UnityEngine.Serialization;
 public class ParentApproachController : MonoBehaviour
 {
     // ── ウェイポイント ────────────────────────────────────────────────────────
-    [Header("ウェイポイント")]
-    [Tooltip("親機が出現し、リセット時に戻る場所。")]
+    [Header("ウェイポイント")] [Tooltip("親機が出現し、リセット時に戻る場所。")]
     public Transform startPoint;
 
     // ── 廊下ルート（TurnPointの前後で可変） ─────────────────────────────────
@@ -102,8 +101,7 @@ public class ParentApproachController : MonoBehaviour
     /// それはメモリ上だけで、編集時のシーン/Prefabへは書き戻されない（Playを止めると元に戻る）。
     /// 永続化するには Editor メニューから移行し、ユーザー自身がシーン/Prefabを保存する必要がある。
     /// </summary>
-    [SerializeField, HideInInspector]
-    private bool hallwayRouteMigrated;
+    [SerializeField, HideInInspector] private bool hallwayRouteMigrated;
 
     /// <summary>
     /// 未移行のシーンを実行したときだけ行う「実行時の互換移行」を有効にするか。
@@ -112,21 +110,19 @@ public class ParentApproachController : MonoBehaviour
     /// </summary>
     [Tooltip("未移行のシーンを実行したときだけ、旧hallwayPoint1〜3をListへ読み替える実行時の互換処理。\n" +
              "編集時に移行済み（Editorメニューで移行）なら、この設定に関係なくListがそのまま使われます。")]
-    [SerializeField] private bool allowRuntimeCompatMigration = true;
+    [SerializeField]
+    private bool allowRuntimeCompatMigration = true;
 
     // ── 旧フィールド（互換用・非表示） ──────────────────────────────────────
     // 既存シーン／Prefabの参照を消さないため、フィールド名は変更せず残す。
     // 実際の経路は上記の List に自動移行される（Inspector では折りたたみ表示）。
-    [HideInInspector]
-    [Tooltip("（互換用）TurnPointより前の1つ目のウェイポイント。通常は hallwayPointsBeforeTurn を使用する。")]
+    [HideInInspector] [Tooltip("（互換用）TurnPointより前の1つ目のウェイポイント。通常は hallwayPointsBeforeTurn を使用する。")]
     public Transform hallwayPoint1;
 
-    [HideInInspector]
-    [Tooltip("（互換用）TurnPointより前の2つ目のウェイポイント。通常は hallwayPointsBeforeTurn を使用する。")]
+    [HideInInspector] [Tooltip("（互換用）TurnPointより前の2つ目のウェイポイント。通常は hallwayPointsBeforeTurn を使用する。")]
     public Transform hallwayPoint2;
 
-    [HideInInspector]
-    [Tooltip("（互換用）TurnPointより後のウェイポイント。通常は hallwayPointsAfterTurn を使用する。")]
+    [HideInInspector] [Tooltip("（互換用）TurnPointより後のウェイポイント。通常は hallwayPointsAfterTurn を使用する。")]
     public Transform hallwayPoint3;
 
     [Tooltip("ドア前の位置。到着時にこのTransformのローカル＋Z（青い矢印）が示す方向へ回転する。")]
@@ -153,7 +149,6 @@ public class ParentApproachController : MonoBehaviour
     //   ・Window Peek側 = gardenPassByPoint（庭側の到達点）
     // ※ 既存の hallwayPassByPoint（フェイントA用）とは用途が違うため別フィールドにしている。
     [Header("帰路（Door Peek / Window Peek 終了後）")]
-
     [Tooltip("Door Peek 終了後、帰る向きへその場旋回するための地点（回転専用）。\n" +
              "doorPoint と同じ位置に置き、向き（ローカル＋Z／青い矢印）だけ帰る方向へ設定する。\n" +
              "この地点では位置移動を行わず、＋Zへ旋回してから帰路の移動を始める。")]
@@ -191,164 +186,237 @@ public class ParentApproachController : MonoBehaviour
     // Back Points へ進む、という流れにするための待機時間。
     // 0秒なら待機・Idle待機・停止旋回を省略し、従来の連続通過に戻る。
     [Header("Pass By（素通り）の立ち止まり")]
-
     [Tooltip("2キー（Hallway Pass By）で、往路の最後の点に到着して向きを合わせた後、\n" +
              "Back Points へ進む前に立ち止まる秒数（ゲーム内時間。0で無効＝連続通過）。\n" +
              "現在は hallwayPointsAfterTurn の最後の点（例：HallwayPoint_4）で停止します。\n" +
              "停止中は歩行表示（Walk=false）と足音を止め、再開時に歩行と足音を戻します。")]
-    [SerializeField, Min(0f)] private float hallwayPassByPauseSeconds = 1f;
+    [SerializeField, Min(0f)]
+    private float hallwayPassByPauseSeconds = 1f;
 
     [Tooltip("5キー（Garden Pass By）で、往路の最後の点に到着して向きを合わせた後、\n" +
              "Back Points へ進む前に立ち止まる秒数（ゲーム内時間。0で無効＝連続通過）。\n" +
              "現在は gardenRoutePoints の最後の点（例：GardenPoint_4）で停止します。\n" +
              "停止中は歩行表示（Walk=false）と足音を止め、再開時に歩行と足音を戻します。")]
-    [SerializeField, Min(0f)] private float gardenPassByPauseSeconds = 1f;
+    [SerializeField, Min(0f)]
+    private float gardenPassByPauseSeconds = 1f;
 
     // ── 部屋内部（入室） ──────────────────────────────────────────────────────
-    [Header("部屋内部（入室）")]
-    [Tooltip("部屋内部の立ち位置。doorPointから近い順に設定する。未設定または空の場合は入室せず、従来どおりdoorPointで停止する。")]
+    [Header("部屋内部（入室）")] [Tooltip("部屋内部の立ち位置。doorPointから近い順に設定する。未設定または空の場合は入室せず、従来どおりdoorPointで停止する。")]
     public Transform[] roomEntryPoints;
 
-    [Tooltip("部屋から出るとき（doorPointへ戻るとき）に親機が向くY角度（度）。入室時はdoorPointでの向き（Y=90）を維持する。")]
-    [SerializeField] private float roomExitYaw = -90f;
+    [Tooltip("部屋から出るとき（doorPointへ戻るとき）に親機が向くY角度（度）。入室時はdoorPointでの向き（Y=90）を維持する。")] [SerializeField]
+    private float roomExitYaw = -90f;
 
-    [Tooltip("部屋内に留まれる最大秒数。この時間を超えると、退室要求がなくても自動的に退室する。0以下で無効（無制限）。")]
-    [SerializeField] private float roomStayTimeoutSeconds = 20f;
+    [Tooltip("部屋内に留まれる最大秒数。この時間を超えると、退室要求がなくても自動的に退室する。0以下で無効（無制限）。")] [SerializeField]
+    private float roomStayTimeoutSeconds = 20f;
+
+    // ── 片付け専用ルート（MotherChoreController から開始される） ──────────────
+    //   既存の廊下ルート（hallwaypeak）と固定地点はそのまま使い、途中地点だけを
+    //   この List<Transform> で追加指定する。既存の廊下／庭ルートと同じ
+    //   「Inspectorで登録順に通過」する形式。
+    //   roomEntryPoints（入室ルート）とは独立で、片付けではこちらだけを使う
+    //   （専用経路と roomEntryPoints を続けて再生しない）。
+    [Header("片付け専用ルート")]
+    [Tooltip("行きの途中地点。doorPointでドアを開けた後、登録順に通過してから chorePoint へ向かう。\n" +
+             "0個なら chorePoint へ直接進む。途中地点では停止・Idle待機をしない（通過のみ）。\n" +
+             "null要素は警告してスキップする。")]
+    public List<Transform> choreApproachPoints = new List<Transform>();
+
+    [Tooltip("片付けを行う固定地点（choreapproachpoint）。ここで停止して向きを合わせ、Chore を開始する。未設定なら片付けを開始しない。")]
+    public Transform chorePoint;
+
+    [Tooltip("帰りの途中地点。Chore_End 完了後、登録順に通過してから choreReturnPoint_1 へ向かう。\n" +
+             "0個なら choreReturnPoint_1 へ直接進む。途中地点では停止・Idle待機をしない（通過のみ）。\n" +
+             "null要素は警告してスキップする。")]
+    public List<Transform> choreEndPoints = new List<Transform>();
+
+    [Tooltip("帰りの停止地点①。ここで停止・向き合わせを行い、Door_Open を再生してドアを全開にする。\n" +
+             "片付けの帰りでドアを開けるのはこの地点だけ。必須参照（未設定なら片付けを開始しない）。")]
+    [FormerlySerializedAs("choreReturnPoint")]
+    public Transform choreReturnPoint_1;
+
+    [Tooltip("帰りの停止地点②。ここへ移動して停止し、ドアを閉める（Door_Open は再生しない）。\n" +
+             "ドアを閉めるのはこの地点だけ。必須参照（未設定なら片付けを開始しない）。")]
+    public Transform choreReturnPoint_2;
+
+    [Tooltip("片付けのドア開閉を担当する MotherChoreController。" +
+             "Door_Open の再生とドア本体の回転を連携させるために使う。未設定なら自動検索する。")]
+    [SerializeField]
+    private MotherChoreController choreController;
+
+    [Header("片付け固有")] [Tooltip("片付けルートで中間地点を通過するときの旋回速度（度／秒）。")] [SerializeField, Min(1f)]
+    private float choreTurnRotationSpeed = 200f;
 
     // ── 移動 ──────────────────────────────────────────────────────────────────
-    [Header("移動")]
-    [Tooltip("到着と判定するウェイポイントまでの距離（単位）。")]
+    [Header("移動")] [Tooltip("到着と判定するウェイポイントまでの距離（単位）。")]
     public float stopDistance = 0.05f;
 
-    [Tooltip("母親の足元が床に埋まる／浮く場合に調整。ワールドYに加算")]
-    [SerializeField] private float motherHeightOffset;
+    [Tooltip("母親の足元が床に埋まる／浮く場合に調整。ワールドYに加算")] [SerializeField]
+    private float motherHeightOffset;
 
     // ── 回転速度 ──────────────────────────────────────────────────────────────
-    [Header("回転速度")]
-    [Tooltip("階段の角で旋回するときの速度（度／秒）。")]
+    [Header("回転速度")] [Tooltip("階段の角で旋回するときの速度（度／秒）。")]
     public float turnRotation = 90f;
 
-    [Tooltip("到着時にドアへ向く回転速度（度／秒）。")]
-    public float doorTurnRotationSpeed = 120f;
+    [Tooltip("到着時にドアへ向く回転速度（度／秒）。")] public float doorTurnRotationSpeed = 120f;
 
     // ── 表示 ──────────────────────────────────────────────────────────────────
     [Header("親機モデルの表示")]
     [Tooltip("歩く親機モデルのルートGameObject。接近開始時にSetActive(true)にする。ここではSetActive(false)を呼ばず、PDがrealMotherObject経由で非表示を管理する。")]
     public GameObject motherModelRoot;
+
     [Tooltip("任意：motherModelRootだけでは不十分な場合に有効／無効にする子Renderer（例：LODの子）。")]
     public Renderer[] motherModelRenderers;
+
     // ── 演出 ──────────────────────────────────────────────────────────────────
-    [Header("演出")]
-    [Tooltip("母親の覗き見・捕獲突入時に点灯する目のオブジェクト。")]
-    [SerializeField] private GameObject glowingEyesObject;
+    [Header("演出")] [Tooltip("母親の覗き見・捕獲突入時に点灯する目のオブジェクト。")] [SerializeField]
+    private GameObject glowingEyesObject;
 
     [Header("窓覗き時の顔ライト")]
     [Tooltip("庭側の窓から覗くとき（GardenPeek）だけ母親の顔を照らすライト。母親モデルの子（顔の前）に置く。" +
              "覗き待機の開始でフェードイン、終了・リセットでフェードアウトする。未設定なら何もしない。")]
-    [SerializeField] private Light windowPeekFaceLight;
+    [SerializeField]
+    private Light windowPeekFaceLight;
+
     [Tooltip("顔ライトの明るさの基準値はここでは指定せず、シーンに置いたLightのintensityを" +
              "点灯時の明るさとしてStart時にキャッシュする（消灯中はintensity=0にするため）。")]
-    [SerializeField] private bool windowPeekFaceLightEnabledNote = true;
+    [SerializeField]
+    private bool windowPeekFaceLightEnabledNote = true;
 
-    [Header("目の発光マテリアル/カラー")]
-    [Tooltip("左目の発光用Renderer。")]
-    [SerializeField] private Renderer eyeRendererL;
-    [Tooltip("右目の発光用Renderer。")]
-    [SerializeField] private Renderer eyeRendererR;
-    [ColorUsage(true, true)]
-    [SerializeField] private Color normalGlowColor = new Color(1f, 0.8f, 0.2f, 1f);
-    [ColorUsage(true, true)]
-    [SerializeField] private Color dangerGlowColor = new Color(1f, 0f, 0f, 1f);
+    [Header("目の発光マテリアル/カラー")] [Tooltip("左目の発光用Renderer。")] [SerializeField]
+    private Renderer eyeRendererL;
+
+    [Tooltip("右目の発光用Renderer。")] [SerializeField]
+    private Renderer eyeRendererR;
+
+    [ColorUsage(true, true)] [SerializeField]
+    private Color normalGlowColor = new Color(1f, 0.8f, 0.2f, 1f);
+
+    [ColorUsage(true, true)] [SerializeField]
+    private Color dangerGlowColor = new Color(1f, 0f, 0f, 1f);
+
     [Tooltip("怪しさメーターが紫（SuspicionVisualFeedbackの紫状態）のときの目の発光色。\n" +
              "赤より暗く見えないよう、既定は明るめの紫にしています。")]
     [ColorUsage(true, true)]
-    [SerializeField] private Color purpleGlowColor = new Color(0.75f, 0.35f, 1f, 1f);
+    [SerializeField]
+    private Color purpleGlowColor = new Color(0.75f, 0.35f, 1f, 1f);
+
     [Tooltip("目の発光の強さ倍率。1で従来の明るさ（HDRの8倍）。\n" +
              "比較用に2へ上げると従来の約2倍になる。0で発光なし。\n" +
              "シーン全体のBloomは変更しないため、Bloomを強めたい場合はVolume側で別途調整する。")]
-    [SerializeField, Min(0f)] private float eyeEmissionIntensity = 2f;
-    [Tooltip("目が発光色で明滅する速さ（回/秒）。0で明滅なし（一定の明るさ）。")]
-    [SerializeField, Min(0f)] private float eyeGlowPulseSpeed;
+    [SerializeField, Min(0f)]
+    private float eyeEmissionIntensity = 2f;
 
-    [Header("母親モデルへの照明の追従")]
-    [Tooltip("常時点灯する間、顔ライトを毎フレーム頭部のワールド回転へ一致させる。OFFならライトの向きはシーン配置のまま（従来挙動）。")]
-    [SerializeField] private bool faceLightFollowsHead;
-    [Tooltip("faceLightFollowsHeadがONのときに使う頭部のTransform。未設定ならmotherAnimatorのavatarから自動取得する。")]
-    [SerializeField] private Transform faceLightHeadAnchor;
-    [Tooltip("faceLightFollowsHeadがONのとき、頭部の向きに対して顔ライトが向く方向（頭部のローカル角度）。未設定（0,0,0）なら頭部の＋Z。")]
-    [SerializeField] private Vector3 faceLightRotationOffset;
+    [Tooltip("目が発光色で明滅する速さ（回/秒）。0で明滅なし（一定の明るさ）。")] [SerializeField, Min(0f)]
+    private float eyeGlowPulseSpeed;
 
-    [Tooltip("怪しさゲージ参照。未設定の場合はシーンから自動取得する。")]
-    [SerializeField] private MotherGauge motherGauge;
-    [SerializeField] private ParentDetection parentDetection;
+    [Header("母親モデルへの照明の追従")] [Tooltip("常時点灯する間、顔ライトを毎フレーム頭部のワールド回転へ一致させる。OFFならライトの向きはシーン配置のまま（従来挙動）。")] [SerializeField]
+    private bool faceLightFollowsHead;
+
+    [Tooltip("faceLightFollowsHeadがONのときに使う頭部のTransform。未設定ならmotherAnimatorのavatarから自動取得する。")] [SerializeField]
+    private Transform faceLightHeadAnchor;
+
+    [Tooltip("faceLightFollowsHeadがONのとき、頭部の向きに対して顔ライトが向く方向（頭部のローカル角度）。未設定（0,0,0）なら頭部の＋Z。")] [SerializeField]
+    private Vector3 faceLightRotationOffset;
+
+    [Tooltip("怪しさゲージ参照。未設定の場合はシーンから自動取得する。")] [SerializeField]
+    private MotherGauge motherGauge;
+
+    [SerializeField] private MotherSuspicionSystem parentDetection;
 
     // ── Door Peek 横スライド ──────────────────────────────────────────────────
     [Header("Door Peek 横スライド")]
     [Tooltip("Door Peek中に、母親自身の左／右へ短くスライドして戻る演出を有効にする。\n" +
              "Window Peek・Pass By・猫・入室・Rush Inには適用されません。")]
-    [SerializeField] private bool enableDoorPeekSlide = true;
+    [SerializeField]
+    private bool enableDoorPeekSlide = true;
+
     [Tooltip("スライド量（ワールド単位）。正で母親自身の左、負で右。0で位置を変えない。\n" +
              "このモデルは親のスケールが計18倍（MotherRouteRoot 3 × TARGET_MASTER 6）なので、\n" +
              "4.0 で成人の肩幅ぶん（約0.22m相当）の控えめな動きになります。")]
-    [SerializeField] private float doorPeekSlideDistance = 4.0f;
+    [SerializeField]
+    private float doorPeekSlideDistance = 4.0f;
+
     [Tooltip("【時間の基準はDoor Peekアニメーションの実再生開始（Peek Stateへ入った瞬間）】\n" +
              "実再生開始から外向きスライドを始めるまでの待ち時間（秒）。")]
-    [SerializeField, Min(0f)] private float doorPeekSlideStartDelay = 2.10f;
+    [SerializeField, Min(0f)]
+    private float doorPeekSlideStartDelay = 2.10f;
+
     [Tooltip("【時間の基準は外向きスライドの開始時点】\n" +
              "外向きスライド開始から、戻りスライドを始めるまでの時間（秒）。\n" +
              "「外向き移動が完了してから2秒」ではありません。")]
-    [SerializeField, Min(0f)] private float doorPeekSlideReturnDelay = 2.00f;
-    [Tooltip("外向きスライドの移動時間（秒）。0ならその区間だけ即時移動。")]
-    [SerializeField, Min(0f)] private float doorPeekSlideOutDuration = 0.30f;
-    [Tooltip("戻りスライドの移動時間（秒）。0ならその区間だけ即時移動。")]
-    [SerializeField, Min(0f)] private float doorPeekSlideBackDuration = 0.30f;
+    [SerializeField, Min(0f)]
+    private float doorPeekSlideReturnDelay = 2.00f;
+
+    [Tooltip("外向きスライドの移動時間（秒）。0ならその区間だけ即時移動。")] [SerializeField, Min(0f)]
+    private float doorPeekSlideOutDuration = 0.30f;
+
+    [Tooltip("戻りスライドの移動時間（秒）。0ならその区間だけ即時移動。")] [SerializeField, Min(0f)]
+    private float doorPeekSlideBackDuration = 0.30f;
+
     [Tooltip("Door Peek Stateへ入るまで待つ上限【ゲーム内時間の秒数】。\n" +
              "上限に達しても入れなければ、スライドを開始せず警告して安全に中止します。\n" +
              "Time.deltaTimeで計測するため、timeScale=0の通常一時停止中は進みません。\n" +
              "（フレーム数ではなく秒数なので、高フレームレートでも遷移完了を待てます）")]
-    [SerializeField, Min(0f)] private float doorPeekSlideStateWaitTimeoutSeconds = 3f;
+    [SerializeField, Min(0f)]
+    private float doorPeekSlideStateWaitTimeoutSeconds = 3f;
+
     [Tooltip("Door Peek横スライドの各段階（要求受理／State待ち／外向き／戻り／完了・取消）を" +
              "コンソールにログ出力する。原因調査用。通常はOFFのままで構いません。")]
-    [SerializeField] private bool doorPeekSlideVerboseLog;
+    [SerializeField]
+    private bool doorPeekSlideVerboseLog;
 
     // ── タイミング ────────────────────────────────────────────────────────────
-    [Header("タイミング")]
-    [Tooltip("通常ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
+    [Header("タイミング")] [Tooltip("通常ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
     public float pauseAtDoorSeconds = 2f;
 
     [Tooltip("大きな音による突入ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
     public float rushInPauseAtDoorSeconds = 0.2f;
 
-    [Tooltip("庭側覗き（GardenPeek）でGardenPeekPointに留まる基本秒数。実際の覗き時間=この値+GardenPeekPoint到着時のゲージ値。")]
-    [SerializeField] private float gardenPeekDurationBase = 3f;
-
     // ── イベント ──────────────────────────────────────────────────────────────
-    [Header("イベント")]
-    [FormerlySerializedAs("OnApproachStarted")]
+    [Header("イベント")] [FormerlySerializedAs("OnApproachStarted")]
     public UnityEvent onApproachStarted;
+
     [FormerlySerializedAs("OnReachedDoor")]
     public UnityEvent onReachedDoor;
+
     [FormerlySerializedAs("OnStoppedAtDoor")]
     public UnityEvent onStoppedAtDoor;
+
     [FormerlySerializedAs("OnPassedByDoor")]
     public UnityEvent onPassedByDoor;
+
     [Tooltip("親機が部屋内部への入室を完了したときに発生する（入室が受理されたサイクルのみ）。")]
     public UnityEvent onEnteredRoom;
+
     [Tooltip("親機が部屋内部からの退室を完了し、doorPointへ戻ったときに発生する。")]
     public UnityEvent onExitedRoom;
-    [Tooltip("親機がGardenPeekPointで覗き待機を開始したときに発生する。庭覗き中の継続疑惑（ParentDetection）の開始トリガー。")]
+
+    [Tooltip("親機がGardenPeekPointで覗き待機を開始したときに発生する。庭覗き中の継続疑惑（MotherSuspicionSystem）の開始トリガー。")]
     public UnityEvent onGardenPeekStarted;
+
+    // ── 片付け専用ルートのイベント・状態 ─────────────────────────────────────
+    [Tooltip("片付けルートで chorePoint へ到着し、向き合わせが完了したときに発生する（演技開始の合図）。")]
+    public UnityEvent onChoreArrived;
+
+    [Tooltip("片付けルートで choreReturnPoint_2 へ到着し、ドアを閉め終えたときに発生する。")]
+    public UnityEvent onChoreCompleted;
+
+    /// <summary>片付け専用ルートが進行中か（行き〜帰りの完了まで）。</summary>
+    public bool IsChoreRouteActive { get; private set; }
 
     public event Action<bool> MovementStateChanged;
 
     // ── 公開読み取り専用状態 ──────────────────────────────────────────────────
     public bool IsApproaching { get; private set; }
-    public bool ReachedDoor      { get; private set; }
-    public bool StoppedAtDoor    { get; private set; }
-    public bool PassedByDoor     { get; private set; }
+    public bool ReachedDoor { get; private set; }
+    public bool StoppedAtDoor { get; private set; }
+    public bool PassedByDoor { get; private set; }
     public bool IsInHallwayPhase { get; private set; }
+
     /// <summary>GardenPeekPointで覗き待機中か。庭覗き専用の状態で、isMotherLookingNow（ドア側の本チェック）には影響しない。</summary>
     public bool IsGardenPeeking => _isGardenPeeking;
+
     public bool IsGardenRoute { get; private set; }
     public float CurrentApproachSpeed => parentDetection != null ? parentDetection.CurrentApproachSpeed : 1.5f;
 
@@ -360,8 +428,8 @@ public class ParentApproachController : MonoBehaviour
     private Coroutine _approachCoroutine;
     private float _fixedPitch;
     private float _fixedRoll;
-    private float _gardenPeekDuration;   // GardenPeekの覗き時間（秒）。GardenPeekPoint到着時に一度だけ決定する。
-    private bool _isGardenPeeking;       // GardenPeekPointで覗き待機中か。isMotherLookingNowには影響しない。
+    private float _gardenPeekDuration; // GardenPeekの覗き時間（秒）。GardenPeekPoint到着時に一度だけ決定する。
+    private bool _isGardenPeeking; // GardenPeekPointで覗き待機中か。isMotherLookingNowには影響しない。
     private float _faceLightBaseIntensity = 1f; // 顔ライトの「点灯時の明るさ」（Inspectorで設定された値）
 
     // 目の発光マテリアルの実行時キャッシュ（実行中にマテリアルを繰り返し生成しないための保持）。
@@ -376,24 +444,26 @@ public class ParentApproachController : MonoBehaviour
     private Material _eyeOriginalMaterialR;
     private Material _eyeOwnedMaterialL;
     private Material _eyeOwnedMaterialR;
+
     /// <summary>直近に適用した発光色（ゲージ由来の通常色／危険色）。閾値またぎの検出に使う。</summary>
     private Color _lastAppliedGlowColor;
-    private bool _eyesOn;                    // 目の発光がONか（グループ（A）基本）か
-    private bool _faceLightOn;               // 顔ライトがONか（グループ（A）基本）か
-    private bool _peekLightingOn;            // Peek中の追加照明がONか（グループ（B））か
-    private bool _faceLightFollowActive;     // 顔ライトの頭部追従が有効か
+
+    private bool _eyesOn; // 目の発光がONか（グループ（A）基本）か
+    private bool _faceLightOn; // 顔ライトがONか（グループ（A）基本）か
+    private bool _peekLightingOn; // Peek中の追加照明がONか（グループ（B））か
+    private bool _faceLightFollowActive; // 顔ライトの頭部追従が有効か
 
     // Door Peek 横スライドの実行状態。
     // ・_peekSlideCoroutine : スライド演出のコルーチン（Peekごとに1本だけ）
     // ・_peekSlideOffset    : 現在のずれ量（ワールド）。0なら元位置にいる。
     // ・_peekSlideOriginPosition : 元位置。ずれを戻す先（必ずこの位置へそろえる）。
     private Coroutine _peekSlideCoroutine;
-    private bool _peekSlideRequested;                 // 同一Peekで一度だけ開始するための予約フラグ
+    private bool _peekSlideRequested; // 同一Peekで一度だけ開始するための予約フラグ
     private Vector3 _peekSlideOffset;
     private Vector3 _peekSlideOriginPosition;
     private bool _peekSlideOriginValid;
     private Transform _faceLightHeadTransformCache; // avatarから自動取得した頭部Transform
-    private bool _faceLightHeadResolveAttempted;    // 自動取得を試みたか（無駄な再探索を避ける）
+    private bool _faceLightHeadResolveAttempted; // 自動取得を試みたか（無駄な再探索を避ける）
 
     /// <summary>
     /// 進行中の庭ルート旋回コルーチン。停止・リセット時に確実に停止させるためのハンドル。
@@ -401,12 +471,16 @@ public class ParentApproachController : MonoBehaviour
     private Coroutine _rotateCoroutine;
 
     // 部屋入室（案B）の状態
-    private bool _cycleStartedAsRushIn;   // このサイクルが突入（大きな音）として開始されたか — BeginApproach()で捕捉する
-    private bool _doorRoutineActive;      // DoorRoutine()が実行中か（入室要求の受付条件）
-    private bool _roomEntryRequested;     // OnStoppedAtDoor中にPDから入室要求を受けたか
-    private bool _roomPhaseActive;        // 入室フェーズ（部屋内部への移動〜doorPoint復帰）が進行中か
-    private bool _leaveRoomRequested;     // 部屋内部からの退室要求を受けたか
-    private bool _routeExecutionFailed;   // 必須条件に失敗して現在のルートを中断したか
+    private bool _cycleStartedAsRushIn; // このサイクルが突入（大きな音）として開始されたか — BeginApproach()で捕捉する
+    private bool _doorRoutineActive; // DoorRoutine()が実行中か（入室要求の受付条件）
+    private bool _roomEntryRequested; // OnStoppedAtDoor中にPDから入室要求を受けたか
+    private bool _roomPhaseActive; // 入室フェーズ（部屋内部への移動〜doorPoint復帰）が進行中か
+    private bool _leaveRoomRequested; // 部屋内部からの退室要求を受けたか
+    private bool _routeExecutionFailed; // 必須条件に失敗して現在のルートを中断したか
+
+    // 片付け専用ルートの状態
+    private Coroutine _choreCoroutine; // 片付けルート（行き〜帰り）のコルーチン
+    private bool _choreRouteAborted; // 片付けルートを中断したか（帰路の各ループが参照する）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
@@ -447,6 +521,7 @@ public class ParentApproachController : MonoBehaviour
                 hallwayPointsBeforeTurn.Add(hallwayPoint1);
                 migrated++;
             }
+
             if (hallwayPoint2 != null && !hallwayPointsBeforeTurn.Contains(hallwayPoint2))
             {
                 hallwayPointsBeforeTurn.Add(hallwayPoint2);
@@ -494,7 +569,7 @@ public class ParentApproachController : MonoBehaviour
     ///     （空リストも「空」という設定として尊重し、旧フィールドは読まない）
     ///   ・未移行 → allowRuntimeCompatMigration が ON のときだけ旧フィールドを List へ読み替える
     ///
-    /// 呼び出し元は ParentDetection／ParentApproachController／CatFeintController のいずれでも、
+    /// 呼び出し元は MotherSuspicionSystem／ParentApproachController／CatFeintController のいずれでも、
     /// 判定がシリアライズ値のみなので、呼び出し順によって結果が変わらない。
     /// </summary>
     public void MigrateLegacyHallwayPoints()
@@ -518,6 +593,7 @@ public class ParentApproachController : MonoBehaviour
             hallwayPointsBeforeTurn.Add(hallwayPoint1);
             migrated++;
         }
+
         if (hallwayPoint2 != null && !hallwayPointsBeforeTurn.Contains(hallwayPoint2))
         {
             hallwayPointsBeforeTurn.Add(hallwayPoint2);
@@ -570,10 +646,11 @@ public class ParentApproachController : MonoBehaviour
         for (int i = 0; i < points.Count; i++)
         {
             Transform point = points[i];
-            if (point == null) continue;                       // null要素はスキップ
+            if (point == null) continue; // null要素はスキップ
             if (path.Count > 0 && path[path.Count - 1] == point) continue; // 同じ点の連続登録
             path.Add(point);
         }
+
         return path;
     }
 
@@ -591,10 +668,11 @@ public class ParentApproachController : MonoBehaviour
         for (int i = 0; i < points.Count; i++)
         {
             Transform point = points[i];
-            if (point == null) continue;                                   // null要素はスキップ
+            if (point == null) continue; // null要素はスキップ
             if (path.Count > 0 && path[path.Count - 1] == point) continue; // 同じ点の連続登録
             path.Add(point);
         }
+
         return path;
     }
 
@@ -608,7 +686,7 @@ public class ParentApproachController : MonoBehaviour
         SetMotherStageLighting(false);
         SetPeekLighting(false);
         if (parentDetection == null)
-            parentDetection = UnityEngine.Object.FindFirstObjectByType<ParentDetection>();
+            parentDetection = UnityEngine.Object.FindFirstObjectByType<MotherSuspicionSystem>();
 
         // 覗き時間の計算に使う疑惑ゲージをキャッシュする（見つからない場合は覗き開始時に再試行する）。
         if (motherGauge == null)
@@ -662,9 +740,11 @@ public class ParentApproachController : MonoBehaviour
     {
         if (IsApproaching || IsReturningHome)
         {
-            Debug.Log($"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachDoorOnlyを無視");
+            Debug.Log(
+                $"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachDoorOnlyを無視");
             return false;
         }
+
         if (!ValidateWaypoints()) return false;
 
         BeginApproach();
@@ -682,13 +762,16 @@ public class ParentApproachController : MonoBehaviour
     {
         if (IsApproaching || IsReturningHome)
         {
-            Debug.Log($"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachHallwayPassByを無視");
+            Debug.Log(
+                $"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachHallwayPassByを無視");
             return false;
         }
 
         if (hallwayPassByPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。", this);
+            Debug.LogWarning(
+                "[ParentApproachController] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。",
+                this);
             return false;
         }
 
@@ -705,19 +788,24 @@ public class ParentApproachController : MonoBehaviour
     {
         if (IsApproaching || IsReturningHome)
         {
-            Debug.Log($"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachGardenPassByを無視");
+            Debug.Log(
+                $"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachGardenPassByを無視");
             return false;
         }
 
         if (gardenPassByPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] gardenPassByPointが未設定のためGardenPassByを開始しません。SceneでTransformを割り当ててください。", this);
+            Debug.LogWarning(
+                "[ParentApproachController] gardenPassByPointが未設定のためGardenPassByを開始しません。SceneでTransformを割り当ててください。",
+                this);
             return false;
         }
 
         if (!HasValidGardenRoutePoints())
         {
-            Debug.LogWarning("[ParentApproachController] gardenRoutePointsが未設定のためGardenPassByを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。", this);
+            Debug.LogWarning(
+                "[ParentApproachController] gardenRoutePointsが未設定のためGardenPassByを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。",
+                this);
             return false;
         }
 
@@ -737,31 +825,36 @@ public class ParentApproachController : MonoBehaviour
         {
             if (gardenRoutePoints[i] != null) return true;
         }
+
         return false;
     }
 
     /// <summary>
     /// 庭側覗きを開始する。GardenPassByと同じ経路でGardenPeekPointまで進み、停止して覗き方向へ回転する。
-    /// 覗き時間（gardenPeekDurationBase+GardenPeekPoint到着時のゲージ値。到着時に一度だけ取得）経過後、
+    /// 覗き時間（ParentWarningSystem の庭覗き時間 + GardenPeekPoint到着時のゲージ値。到着時に一度だけ取得）経過後、
     /// GardenPassByPointまで進み、onPassedByDoorを一度だけ発生させて既存の終了処理でStartPointへ復帰する。
     /// </summary>
     public bool StartApproachGardenPeek()
     {
         if (IsApproaching || IsReturningHome)
         {
-            Debug.Log($"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachGardenPeekを無視");
+            Debug.Log(
+                $"[ParentApproachController] 接近中または帰路中のため開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome}) — StartApproachGardenPeekを無視");
             return false;
         }
 
         if (gardenPeekPoint == null)
         {
-            Debug.LogWarning("[ParentApproachController] gardenPeekPointが未設定のためGardenPeekを開始しません。SceneでTransformを割り当ててください。", this);
+            Debug.LogWarning(
+                "[ParentApproachController] gardenPeekPointが未設定のためGardenPeekを開始しません。SceneでTransformを割り当ててください。", this);
             return false;
         }
 
         if (!HasValidGardenRoutePoints())
         {
-            Debug.LogWarning("[ParentApproachController] gardenRoutePointsが未設定のためGardenPeekを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。", this);
+            Debug.LogWarning(
+                "[ParentApproachController] gardenRoutePointsが未設定のためGardenPeekを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。",
+                this);
             return false;
         }
 
@@ -826,6 +919,455 @@ public class ParentApproachController : MonoBehaviour
         return true;
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  片付け専用ルート（MotherChoreController から開始・中断される）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 片付け専用ルートを開始する。
+    ///  行き：既存の廊下ルート（hallwaypeak と同じ移動順序・移動方法）
+    ///        startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn
+    ///        → doorPoint（Door_Open で開ける）→ choreApproachPoints（登録順に通過）
+    ///        → chorePoint（到着・その点の＋Zへ向き合わせ）→ onChoreArrived（演技開始の合図）
+    ///  演技待ち → 帰り：choreEndPoints（登録順に通過）→ choreReturnPoint_1（停止・向き合わせ・Door_Open で全開）
+    ///        → choreReturnPoint_2（停止・向き合わせ・ドアを閉める）→ HallwayPoint_3（ドア操作なし）
+    ///        → hallwayPassByPoint（退場）→ onChoreCompleted
+    ///
+    /// 仕様：
+    ///   ・専用の経路リストは新設しない（既存の廊下ルートを再利用する）。
+    ///   ・途中地点リスト（choreApproachPoints / choreEndPoints）は0個なら固定地点へ直接進む。
+    ///   ・途中地点は停止・Idle待機をしない（既存の通過移動処理 PassThroughWaypoint を使う）。
+    ///   ・片付け演技の開始は chorePoint 到着時のみ。片付けの帰りでドアを開けるのは choreReturnPoint_1 到着時のみ、
+    ///     ドアを閉めるのは choreReturnPoint_2 到着時のみ（HallwayPoint_3 ではドア操作をしない）。
+    ///   ・Door_Peek は再生しない（片付けのドア開けは Door_Open 専用）。
+    ///   ・chorePoint / choreReturnPoint_1 / choreReturnPoint_2 が未設定なら開始せず、設定不足を警告する。
+    ///   ・roomEntryPoints（入室ルート）は使わない（専用経路と入室ルートを続けて再生しない）。
+    ///   ・通常の接近中／帰路中／片付けルート進行中は開始しない。
+    /// </summary>
+    public bool StartChoreRoute()
+    {
+        if (IsApproaching || IsReturningHome || IsChoreRouteActive)
+        {
+            Debug.Log(
+                $"[ParentApproachController] 片付けルートを開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome} IsChoreRouteActive={IsChoreRouteActive})");
+            return false;
+        }
+
+        if (chorePoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] 片付けルートの chorePoint が未設定です。" +
+                             "Scene で片付け地点の Transform を割り当ててください（設定不足のため開始しません）。", this);
+            return false;
+        }
+
+        if (choreReturnPoint_1 == null)
+        {
+            Debug.LogWarning("[ParentApproachController] 片付けルートの choreReturnPoint_1（帰りのドア開け地点）が未設定です。" +
+                             "Scene で Transform を割り当ててください（設定不足のため開始しません）。", this);
+            return false;
+        }
+
+        if (choreReturnPoint_2 == null)
+        {
+            Debug.LogWarning("[ParentApproachController] 片付けルートの choreReturnPoint_2（帰りのドア閉め地点）が未設定です。" +
+                             "Scene で Transform を割り当ててください（設定不足のため開始しません）。", this);
+            return false;
+        }
+
+        // 帰りは既存の廊下ルート（hallwayPointsAfterTurn = HallwayPoint_3）を再利用するため、
+        // 経路参照が無い場合は完了待ちが永久に続かないよう開始しない。
+        if (hallwayPassByPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] 片付けの帰りの最終点（hallwayPassByPoint）が未設定のため、" +
+                             "片付けルートを開始しません。Scene で Transform を割り当ててください。", this);
+            return false;
+        }
+
+        if (startPoint == null)
+        {
+            Debug.LogWarning("[ParentApproachController] startPoint が未設定のため片付けルートを開始できません。", this);
+            return false;
+        }
+
+        BeginApproach(choreRoute: true);
+        return true;
+    }
+
+    /// <summary>
+    /// 片付けルートを中断する（ゲームオーバー・OnDisable・再プレイ用）。
+    ///   ・移動ループを中断フラグで止める
+    ///   ・進行中の旋回コルーチンを停止する
+    ///   ・歩行・足音（MovementStateChanged(false)）を止める
+    /// 位置の復帰は呼び出し側（ResetApproach）に委ねる（画面内で瞬間移動しない）。
+    /// </summary>
+    public void AbortChoreRoute(string reason)
+    {
+        if (!IsChoreRouteActive && _choreCoroutine == null) return;
+
+        Debug.LogWarning($"[ParentApproachController] 片付けルートを中断します（{reason}） — 停止・後始末を実施");
+
+        _choreRouteAborted = true;
+        IsChoreRouteActive = false;
+
+        StopRotateCoroutine();
+        MovementStateChanged?.Invoke(false);
+        SetPeekLighting(false);
+        SetMotherStageLighting(false);
+        IsApproaching = false;
+        IsInHallwayPhase = false;
+
+        // 片付けの歩き/移動抑止が残ると通常の親イベントが動かなくなるため、必ず解除する。
+        if (parentDetection != null)
+        {
+            parentDetection.SetChoreWalkingOverrideSuppressed(false);
+            parentDetection.SetChoreMovementSuppressed(false);
+        }
+    }
+
+    /// <summary>再プレイ・シーン開始時に片付けルートの状態を初期化する。</summary>
+    public void ResetChoreRoute()
+    {
+        if (_choreCoroutine != null)
+        {
+            StopCoroutine(_choreCoroutine);
+            _choreCoroutine = null;
+        }
+
+        _choreRouteAborted = false;
+        IsChoreRouteActive = false;
+    }
+
+    /// <summary>
+    /// 片付けの演技が終わったことを通知する（MotherChoreController から呼ばれる）。
+    /// これを受けて ChoreRoutine は演技待ちを抜け、帰りの経路へ進む。
+    /// </summary>
+    public void NotifyChorePerformanceFinished()
+    {
+        if (!IsChoreRouteActive) return;
+        Debug.Log("[ParentApproachController] 片付け演技の終了通知を受信 — 帰りの経路へ進みます");
+        IsChoreRouteActive = false;
+    }
+
+    /// <summary>
+    /// 片付けルート本体（行き → 演技待ち → 帰り）。
+    /// 行きでは途中地点を止まらず通過し、chorePoint だけ停止して向き合わせする。
+    /// 帰りも途中地点は通過のみで、choreReturnPoint_1 と choreReturnPoint_2 で停止して向き合わせる。
+    /// </summary>
+    private IEnumerator ChoreRoutine()
+    {
+        IsChoreRouteActive = true;
+        _choreRouteAborted = false;
+
+        // ══ 行き：hallwaypeak と同じ既存廊下ルートを歩く ═══════════════════════
+        //   startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn
+        //   → doorPoint（Door_Open で開ける）→ choreApproachPoints → chorePoint（停止・向き合わせ）
+        // ※ Door_Peek は再生しない（片付けのドア開けは Door_Open 専用）。
+        // ※ roomEntryPoints（通常の入室ルート）は使わない。
+        Debug.Log($"[ParentApproachController] 片付けルート：行き開始（既存廊下ルートを再利用）| chorePoint='{chorePoint.name}'");
+
+        // 1) 廊下ルート（TurnPointまで）。既存の DoorRoutine と同じ移動処理。
+        yield return MoveToTurnPoint();
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 2) TurnPointより後の廊下（HallwayPoint_3 / HallwayPoint_4）を通過する。
+        yield return MoveAlongHallwayAfterTurn();
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 3) doorPoint 到着（doorPoint の＋Zへ向き合わせ）。
+        //    ここでは Door_Peek を再生せず、Door_Open で openAngle まで開ける。
+        yield return MoveAndFaceWaypoint(doorPoint, doorTurnRotationSpeed, "doorPoint（片付け）");
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        Debug.Log("[ParentApproachController] 片付けルート：doorPoint到着 — Door_Open でドアを開けます");
+
+        // 4) Door_Open 再生 + ドアを openAngle まで開く（完了待ち）。
+        //    開き終わるまで歩行の位置移動を止め、母親が通り抜けないようにする。
+        yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full);
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 5) 行きの途中地点（choreApproachPoints）を登録順に通過する。
+        //    0個の場合は chorePoint へ直接進む（ループが0回）。
+        //    途中地点は停止・Idle待機をしない（PassThroughWaypoint／既存の通過移動処理）。
+        yield return PassChorePoints(choreApproachPoints, "choreApproach", allowNullSkip: true);
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 6) 片付け地点（chorePoint）へ移動し、その＋Zへ向き合わせる。
+        //    片付け演技の開始は、途中地点ではなくこの chorePoint 到着時のみ。
+        yield return MoveAndFaceWaypoint(chorePoint, choreTurnRotationSpeed, "chorePoint");
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        Debug.Log("[ParentApproachController] 片付けルート：chorePointへ到着・向き合わせ完了 — onChoreArrivedを発生");
+        onChoreArrived?.Invoke();
+
+        // ── 演技待ち：外部（MotherChoreController）が IsChoreRouteActive を落とすまで待つ ──
+        while (IsChoreRouteActive && !_choreRouteAborted)
+            yield return null;
+
+        if (_choreRouteAborted)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // ══ 帰り：通常の歩きで choreReturnPoint_1（ドア開け）→ choreReturnPoint_2（ドア閉め）
+        //           → HallwayPoint_3 → HallwayPassByPoint（退場） ═══════════════════
+        //   ※ doorPoint と HallwayPoint_4 は通らない。
+        //   ※ choreReturnPoint_1 / _2 到着では片付け完了にしない（hallwayPassBy まで継続）。
+        //   ※ ドアを開けるのは _1 到着時のみ、閉めるのは _2 到着時のみ。
+        Debug.Log($"[ParentApproachController] 片付けルート：帰り開始 | " +
+                  $"choreReturnPoint_1='{(choreReturnPoint_1 != null ? choreReturnPoint_1.name : "NULL")}' | " +
+                  $"choreReturnPoint_2='{(choreReturnPoint_2 != null ? choreReturnPoint_2.name : "NULL")}'");
+
+        MovementStateChanged?.Invoke(true);
+
+        // 1) 帰りの途中地点（choreEndPoints）を登録順に通過する。
+        //    0個の場合は choreReturnPoint_1 へ直接進む（ループが0回）。
+        //    途中地点は停止・Idle待機をしない（PassThroughWaypoint／既存の通過移動処理）。
+        yield return PassChorePoints(choreEndPoints, "choreEnd", allowNullSkip: true);
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 2) 帰りの停止地点①（choreReturnPoint_1）へ移動し、停止して向きを合わせる。
+        //    帰りでドアを開けるのはこの地点だけ。
+        yield return MoveAndFaceWaypoint(choreReturnPoint_1, choreTurnRotationSpeed, "choreReturnPoint_1");
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        MovementStateChanged?.Invoke(false); // ドア開けのため停止する
+
+        Debug.Log("[ParentApproachController] 片付けルート：choreReturnPoint_1到着 — Door_Open でドアを開けます");
+
+        // 3) Door_Open 再生 + ドアを fullopen（DoorState.Full = openAngle）まで開く。
+        yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full);
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 4) 帰りの停止地点②（choreReturnPoint_2）へ移動して停止・向き合わせ。
+        //    ここでドアを閉める（Door_Open は再生しない）。ドア閉めはこの地点だけ。
+        yield return MoveAndFaceWaypoint(choreReturnPoint_2, choreTurnRotationSpeed, "choreReturnPoint_2");
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        MovementStateChanged?.Invoke(false); // ドア閉めのため停止する
+
+        Debug.Log("[ParentApproachController] 片付けルート：choreReturnPoint_2到着 — ドアを閉めます");
+        yield return ChoreDoorCloseRoutine();
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 5) HallwayPoint_3（hallwayPointsAfterTurn[0]）へ歩く。
+        //    ※ この地点ではドア操作を行わない（閉めは _2 で完了済み）。
+        yield return ChoreReturnToHallwayPoint3Routine();
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 6) hallwayPassBy へ歩く。
+        yield return MovePositionOnly(hallwayPassByPoint);
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 7) 既存の非表示・退場処理を使って消える（初期位置へのリセットは呼び出し側に委ねる）。
+        HideMotherForReturn("Chore", "hallwayPassBy到達", success: true);
+
+        Debug.Log("[ParentApproachController] 片付けルート：退場完了 — onChoreCompletedを発生");
+        IsChoreRouteActive = false;
+        _choreCoroutine = null;
+        onChoreCompleted?.Invoke();
+    }
+
+    /// <summary>
+    /// 片付けルートの中断後始末。位置の復帰・非表示は呼び出し側（MotherChoreController /
+    /// ResetApproach）に委ね、ここでは進行状態だけを閉じる。
+    /// </summary>
+    private void FinishChoreRouteAborted()
+    {
+        Debug.Log("[ParentApproachController] 片付けルート：中断のため終了します");
+        IsChoreRouteActive = false;
+        _choreCoroutine = null;
+    }
+
+    /// <summary>
+    /// 片付けの帰り：HallwayPoint_3（hallwayPointsAfterTurn[0]）へ歩く。
+    ///  ・HallwayPoint_4 と doorPoint は通らない。
+    ///  ・この地点ではドア操作を行わない（ドア閉めは choreReturnPoint_2 で完了済み）。
+    ///  ・hallwayPointsAfterTurn が未設定の場合は警告してスキップする
+    ///    （完了待ちが永久に続かないようにする）。
+    /// </summary>
+    private IEnumerator ChoreReturnToHallwayPoint3Routine()
+    {
+        List<Transform> hallwayAfterTurn = BuildHallwayPath(hallwayPointsAfterTurn);
+        if (hallwayAfterTurn.Count == 0)
+        {
+            Debug.LogWarning("[ParentApproachController] 片付けの帰り：hallwayPointsAfterTurn（HallwayPoint_3）が" +
+                             "未設定のため、HallwayPoint_3 への移動をスキップします", this);
+            yield break;
+        }
+
+        Transform hallwayPoint3 = hallwayAfterTurn[0];
+        Debug.Log($"[ParentApproachController] 片付けルート：HallwayPoint_3('{hallwayPoint3.name}') へ歩きます");
+
+        yield return MoveAndFaceWaypoint(hallwayPoint3, choreTurnRotationSpeed,
+            $"choreReturn:HallwayPoint_3('{hallwayPoint3.name}')");
+
+        // 到着後のドア操作は行わない（閉めは choreReturnPoint_2 で完了済み）。
+        Debug.Log("[ParentApproachController] 片付けルート：HallwayPoint_3 到着 — ドア操作なしで hallwayPassBy へ進みます");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  片付けの途中地点（行き／帰り）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 片付けの途中地点リストを登録順に通過する。
+    ///  ・0個なら何もせず戻る（次の固定地点へ直接進む）。
+    ///  ・停止・Idle待機をしない（既存の通過移動処理 PassThroughWaypoint を使う）。
+    ///  ・null要素は警告してスキップする（Index と件数を出す）。
+    ///  ・リスト自体が null の場合も安全にスキップする。
+    /// </summary>
+    private IEnumerator PassChorePoints(List<Transform> points, string routeLabel, bool allowNullSkip)
+    {
+        if (points == null || points.Count == 0)
+        {
+            Debug.Log($"[ParentApproachController] 片付けルート：{routeLabel} の途中地点は0個 — 次の固定地点へ直接進みます");
+            yield break;
+        }
+
+        Debug.Log($"[ParentApproachController] 片付けルート：{routeLabel} の途中地点を通過します | 登録数={points.Count}");
+
+        int nullCount = 0;
+        for (int i = 0; i < points.Count; i++)
+        {
+            if (_choreRouteAborted || _routeExecutionFailed) yield break;
+
+            Transform point = points[i];
+
+            // null要素は警告してスキップする（allowNullSkip=false なら中断）。
+            if (point == null)
+            {
+                nullCount++;
+                if (allowNullSkip)
+                {
+                    Debug.LogWarning($"[ParentApproachController] 片付けルート：{routeLabel}[{i}] が未設定（null）のため" +
+                                     "スキップします", this);
+                    continue;
+                }
+
+                Debug.LogWarning($"[ParentApproachController] 片付けルート：{routeLabel}[{i}] が未設定（null）のため" +
+                                 "進行を中断します", this);
+                yield break;
+            }
+
+            // 通過のみ（停止・Idle待機なし）。既存の通過移動処理を使う。
+            yield return PassThroughWaypoint(point, choreTurnRotationSpeed, $"{routeLabel}[{i}]('{point.name}')");
+            if (_routeExecutionFailed) yield break;
+        }
+
+        if (nullCount > 0)
+            Debug.LogWarning($"[ParentApproachController] 片付けルート：{routeLabel} で未設定（null）の要素を " +
+                             $"{nullCount} 件スキップしました（登録数={points.Count}）", this);
+    }
+
+    /// <summary>
+    /// 片付けのドア開け（Door_Open）を MotherChoreController に依頼し、完了を待つ。
+    ///  ・ドアの回転とモデルの再生を連携させるため、実処理は MotherChoreController 側が持つ。
+    ///  ・未設定の場合は警告してスキップする（完了待ちが永久に続かないようにする）。
+    /// </summary>
+    private IEnumerator ChoreDoorOpenRoutine(DoorController.DoorState targetState)
+    {
+        MotherChoreController controller = ResolveChoreController();
+        if (controller == null)
+        {
+            Debug.LogWarning("[ParentApproachController] MotherChoreController が見つからないため、" +
+                             "片付けの Door_Open をスキップします", this);
+            yield break;
+        }
+
+        yield return controller.ChoreDoorOpenRoutine(targetState);
+    }
+
+    /// <summary>
+    /// 片付けのドア閉めを MotherChoreController に依頼し、完了を待つ。
+    /// </summary>
+    private IEnumerator ChoreDoorCloseRoutine()
+    {
+        MotherChoreController controller = ResolveChoreController();
+        if (controller == null)
+        {
+            Debug.LogWarning("[ParentApproachController] MotherChoreController が見つからないため、" +
+                             "片付けのドア閉めをスキップします", this);
+            yield break;
+        }
+
+        yield return controller.ChoreDoorCloseRoutine();
+    }
+
+    /// <summary>片付けのドア操作を担当する MotherChoreController を解決する。</summary>
+    private MotherChoreController ResolveChoreController()
+    {
+        if (choreController == null)
+            choreController = UnityEngine.Object.FindFirstObjectByType<MotherChoreController>();
+
+        return choreController;
+    }
+
+    /// <summary>
+    /// 片付けのドア開け（Door_Open）中で、歩行による位置移動を止めるべきか。
+    /// MotherSuspicionSystem が持つ抑止フラグを見る（設定は MotherChoreController 側が行う）。
+    /// </summary>
+    private bool IsChoreMovementSuppressedNow
+    {
+        get
+        {
+            if (parentDetection == null) return false;
+            return parentDetection.IsChoreMovementSuppressed;
+        }
+    }
+
     public void ResetApproach()
     {
         Debug.Log($"[ParentApproachController] ResetApproach | IsApproaching={IsApproaching}");
@@ -837,6 +1379,8 @@ public class ParentApproachController : MonoBehaviour
         }
 
         ResetStateFlags();
+        // 片付け専用ルートの状態も初期化する（次のサイクルへ持ち越さない）。
+        ResetChoreRoute();
 
         if (startPoint != null)
         {
@@ -853,7 +1397,8 @@ public class ParentApproachController : MonoBehaviour
     //  内部開始ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void BeginApproach(bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false)
+    private void BeginApproach(bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false,
+        bool choreRoute = false)
     {
         MovementStateChanged?.Invoke(false);
         // 「このサイクルは突入（大きな音）として開始されたか」を記録する。
@@ -869,7 +1414,7 @@ public class ParentApproachController : MonoBehaviour
         // 実行途中の古いTransformが誤った値を引き継がないようにする。
         Vector3 startEuler = startPoint.rotation.eulerAngles;
         _fixedPitch = startEuler.x;
-        _fixedRoll  = startEuler.z;
+        _fixedRoll = startEuler.z;
 
         transform.position = OffsetGoalPosition(startPoint.position);
         transform.rotation = startPoint.rotation;
@@ -883,9 +1428,16 @@ public class ParentApproachController : MonoBehaviour
         IsApproaching = true;
         onApproachStarted?.Invoke();
 
-        Debug.Log($"[ParentApproachController] BeginApproach | hallwayPassBy={hallwayPassBy} | gardenPassBy={gardenPassBy} | gardenPeek={gardenPeek} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1}");
+        Debug.Log(
+            $"[ParentApproachController] BeginApproach | hallwayPassBy={hallwayPassBy} | gardenPassBy={gardenPassBy} | gardenPeek={gardenPeek} | choreRoute={choreRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1}");
 
-        if (gardenPeek)
+        if (choreRoute)
+        {
+            // 片付け専用ルート：roomEntryPoints は使わない。
+            if (_choreCoroutine != null) StopCoroutine(_choreCoroutine);
+            _choreCoroutine = StartCoroutine(ChoreRoutine());
+        }
+        else if (gardenPeek)
             _approachCoroutine = StartCoroutine(GardenPeekRoutine());
         else if (gardenPassBy)
             _approachCoroutine = StartCoroutine(GardenPassByRoutine());
@@ -956,13 +1508,13 @@ public class ParentApproachController : MonoBehaviour
             yield return RoomPhaseCoroutine();
             // 退室後もモデル表示中はグループ（A）基本の点灯を維持する（帰路の非表示で消灯）。
             _doorRoutineActive = false;
-            yield break;   // 入室ルートは既存の終了処理に委ねる（帰路は通常Peek終了のみ）
+            yield break; // 入室ルートは既存の終了処理に委ねる（帰路は通常Peek終了のみ）
         }
 
         // 【重要】onStoppedAtDoor の Invoke が戻った時点は「Peek開始」であって終了ではない。
-        // 購読側（ParentWarningSystem → ParentDetection.OnApproachReachedDoor）は
+        // 購読側（ParentWarningSystem → MotherSuspicionSystem.OnApproachReachedDoor）は
         // HandlePrimaryResetSequence というコルーチンを開始し、プレイヤーが寝る（または安全タイムアウト）
-        // まで続く。その終了直前に ParentDetection が RequestReturnHome() を呼ぶので、
+        // まで続く。その終了直前に MotherSuspicionSystem が RequestReturnHome() を呼ぶので、
         // ここでは「要求が来るまで」待ってから帰路を開始する（少しも早く始めない）。
         while (ReturnHomePhase != ReturnHomeState.Requested && !_returnHomeAborted())
         {
@@ -987,7 +1539,7 @@ public class ParentApproachController : MonoBehaviour
 
             // Door Peek の帰路：最終点は廊下側の画面外（hallwayPassThroughPoint）。
             yield return ReturnHomeRoutine(hallwayTurnBackPoint, hallwayGoBackPoints,
-                                           hallwayPassThroughPoint, "DoorPeek");
+                hallwayPassThroughPoint, "DoorPeek");
 
             // 結果は ReturnHomeRoutine 内で Completed／Failed として確定済み（ここでは触らない）。
         }
@@ -1009,19 +1561,19 @@ public class ParentApproachController : MonoBehaviour
     {
         if (IsRushIn) return true;
 
-        ParentDetection pd = parentDetection != null
+        MotherSuspicionSystem pd = parentDetection != null
             ? parentDetection
-            : UnityEngine.Object.FindFirstObjectByType<ParentDetection>();
+            : UnityEngine.Object.FindFirstObjectByType<MotherSuspicionSystem>();
         if (pd == null) return false;
 
-        return pd.isCaught;   // ゲームオーバー確定後は帰路を始めない
+        return pd.isCaught; // ゲームオーバー確定後は帰路を始めない
     }
 
     /// <summary>
-    /// 【帰路の開始要求】ParentDetection の通常Door Peek終了処理から呼ばれる。
+    /// 【帰路の開始要求】MotherSuspicionSystem の通常Door Peek終了処理から呼ばれる。
     ///
     /// onStoppedAtDoor の Invoke が戻った時点は「Peek開始」であって終了ではない
-    /// （購読側 HandleStoppedAtDoor → ParentDetection.OnApproachReachedDoor が
+    /// （購読側 HandleStoppedAtDoor → MotherSuspicionSystem.OnApproachReachedDoor が
     ///   コルーチン HandlePrimaryResetSequence を開始し、プレイヤーが寝るまで続く）。
     /// そのため帰路は「PDが通常終了と判断した時点」で、この API を通して開始する。
     ///
@@ -1038,7 +1590,7 @@ public class ParentApproachController : MonoBehaviour
         if (IsReturnHomePending)
         {
             Debug.Log($"[ParentApproachController] RequestReturnHome: 既に帰路を{ReturnHomePhase}で進行中 — 重複要求を無視");
-            return true;   // 待つべき帰路が存在するので true を返す（PDは待機してよい）
+            return true; // 待つべき帰路が存在するので true を返す（PDは待機してよい）
         }
 
         if (!_doorRoutineActive)
@@ -1075,7 +1627,14 @@ public class ParentApproachController : MonoBehaviour
     ///   ・Completed  : 最終点に到達しモデルを非表示にした（正常終了）
     ///   ・Failed     : 必須参照未設定・中断・タイムアウトで終了した（非表示と後始末は実施済み）
     /// </summary>
-    public enum ReturnHomeState { Idle, Requested, Running, Completed, Failed }
+    public enum ReturnHomeState
+    {
+        Idle,
+        Requested,
+        Running,
+        Completed,
+        Failed
+    }
 
     /// <summary>帰路の進行状態（読み取り専用）。</summary>
     public ReturnHomeState ReturnHomePhase { get; private set; } = ReturnHomeState.Idle;
@@ -1095,9 +1654,17 @@ public class ParentApproachController : MonoBehaviour
     {
         switch (ReturnHomePhase)
         {
-            case ReturnHomeState.Completed: success = true;  ReturnHomePhase = ReturnHomeState.Idle; return true;
-            case ReturnHomeState.Failed:    success = false; ReturnHomePhase = ReturnHomeState.Idle; return true;
-            default:                        success = false; return false;   // まだ受付前／実行中／Idle
+            case ReturnHomeState.Completed:
+                success = true;
+                ReturnHomePhase = ReturnHomeState.Idle;
+                return true;
+            case ReturnHomeState.Failed:
+                success = false;
+                ReturnHomePhase = ReturnHomeState.Idle;
+                return true;
+            default:
+                success = false;
+                return false; // まだ受付前／実行中／Idle
         }
     }
 
@@ -1106,9 +1673,9 @@ public class ParentApproachController : MonoBehaviour
     {
         if (IsRushIn) return false;
 
-        ParentDetection pd = parentDetection != null
+        MotherSuspicionSystem pd = parentDetection != null
             ? parentDetection
-            : UnityEngine.Object.FindFirstObjectByType<ParentDetection>();
+            : UnityEngine.Object.FindFirstObjectByType<MotherSuspicionSystem>();
         if (pd == null) return true;
 
         // ゲームオーバー（捕獲）確定後は新しい帰路を始めない。
@@ -1136,7 +1703,7 @@ public class ParentApproachController : MonoBehaviour
     /// List末尾が最終点と同じ場合は、二重移動や不要な中間点旋回をしないよう1要素だけ除外する。
     /// </summary>
     private IEnumerator PassByTailRoutine(List<Transform> routePoints, List<Transform> goBackPoints,
-                                          Transform endPoint, float pauseSeconds, string routeLabel)
+        Transform endPoint, float pauseSeconds, string routeLabel)
     {
         // 1) 往路の残り（TurnPointより後など）を登録順に通過する。
         //    ただし「最後の有効な点」では、指定秒数だけ立ち止まる（pauseSeconds > 0 のとき）。
@@ -1228,7 +1795,8 @@ public class ParentApproachController : MonoBehaviour
                 Debug.Log($"[ParentApproachController] {label}: 待機中に経路が中断されたため、待機を打ち切ります");
                 yield break;
             }
-            elapsed += Time.deltaTime;   // timeScale の影響を受けるゲーム内時間
+
+            elapsed += Time.deltaTime; // timeScale の影響を受けるゲーム内時間
             yield return null;
         }
 
@@ -1247,7 +1815,7 @@ public class ParentApproachController : MonoBehaviour
     ///   → hallwayPassByPoint（最終点。到着して停止）
     ///
     /// 【重要】doorPoint は経由しない（Door側の覗き地点へ寄らない）。
-    /// onReachedDoor／onStoppedAtDoorは一切発生させないため、ParentDetectionの
+    /// onReachedDoor／onStoppedAtDoorは一切発生させないため、MotherSuspicionSystemの
     /// ドア分岐（primary=固定でドア全開になる経路）には到達しない。
     /// 到達後に既存のonPassedByDoorを発生させ、
     /// PD.OnApproachPassedBy → ResetCycle → EndWarningSequence → ResetApproach（StartPointへ即時復帰）
@@ -1264,10 +1832,10 @@ public class ParentApproachController : MonoBehaviour
         // 往路の残り（hallwayPointsAfterTurn）→ 最後の点で立ち止まり → Back Points → hallwayPassByPoint。
         // ※ doorPoint は通らない。Turn Back Point も使わない（それはPeek後の帰路専用）。
         yield return PassByTailRoutine(hallwayPointsAfterTurn, hallwayGoBackPoints,
-                                       hallwayPassByPoint, hallwayPassByPauseSeconds, "HallwayPassBy");
+            hallwayPassByPoint, hallwayPassByPauseSeconds, "HallwayPassBy");
         if (_routeExecutionFailed) yield break;
 
-        PassedByDoor  = true;
+        PassedByDoor = true;
         IsApproaching = false;
         // IsInHallwayPhaseは既存DoorRoutineと同じくResetStateFlags()でのみ解除する。
 
@@ -1288,7 +1856,7 @@ public class ParentApproachController : MonoBehaviour
         // ※ gardenPeekPoint は通らない（Window Peek の覗き地点へ寄らない）。
         // ※ Turn Back Point も使わない（それはPeek後の帰路専用）。
         yield return PassByTailRoutine(new List<Transform>(gardenRoutePoints), gardenGoBackPoints,
-                                       gardenPassByPoint, gardenPassByPauseSeconds, "GardenPassBy");
+            gardenPassByPoint, gardenPassByPauseSeconds, "GardenPassBy");
         if (_routeExecutionFailed) yield break;
 
         MovementStateChanged?.Invoke(false);
@@ -1351,12 +1919,16 @@ public class ParentApproachController : MonoBehaviour
         // 実際のController（mother_animation_controller）のTrigger名 Peek_Windows に合わせて発火する。
         TriggerPeekAnimation(PeekWindowsParameter);
 
+        // 覗き時間の基本値は ParentWarningSystem の「庭覗き時間」を参照する（重複保持しない）。
         // 覗き時間は「GardenPeekPoint到着時のゲージ値」を一度だけ取得して決定する（覗き中のゲージ変化では延長しない）。
         if (motherGauge == null)
             motherGauge = UnityEngine.Object.FindFirstObjectByType<MotherGauge>();
         int gaugeAtPeekStart = (motherGauge != null) ? motherGauge.currentGauge : 0;
-        _gardenPeekDuration = Mathf.Max(0f, gardenPeekDurationBase) + gaugeAtPeekStart;
-        Debug.Log($"[ParentApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={gardenPeekDurationBase:F1} + gauge={gaugeAtPeekStart})");
+
+        float peekBaseSeconds = ResolveGardenPeekDurationBase();
+        _gardenPeekDuration = Mathf.Max(0f, peekBaseSeconds) + gaugeAtPeekStart;
+        Debug.Log(
+            $"[ParentApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={peekBaseSeconds:F1} + gauge={gaugeAtPeekStart})");
 
         // 覗き待機開始：庭覗き中の継続疑惑（PD）に開始を通知する。
         _isGardenPeeking = true;
@@ -1379,7 +1951,7 @@ public class ParentApproachController : MonoBehaviour
         // Window Peek の帰路：最終点は gardenPassByPoint（庭側の到達点）。
         // 到着したらそこで非表示にし、廊下側（hallwayPassThroughPoint）へは進まない。
         yield return ReturnHomeRoutine(gardenTurnBackPoint, gardenGoBackPoints,
-                                       gardenPassByPoint, "WindowPeek");
+            gardenPassByPoint, "WindowPeek");
 
         PassedByDoor = true;
         IsApproaching = false;
@@ -1404,6 +1976,7 @@ public class ParentApproachController : MonoBehaviour
         {
             if (roomEntryPoints[i] != null) count++;
         }
+
         return count;
     }
 
@@ -1418,7 +1991,8 @@ public class ParentApproachController : MonoBehaviour
         _roomPhaseActive = true;
 
         int entryCount = CountValidRoomEntryPoints();
-        Debug.Log($"[ParentApproachController] RoomPhase：入室開始 | 有効なroomEntryPoints={entryCount} | yaw={transform.rotation.eulerAngles.y:F1}");
+        Debug.Log(
+            $"[ParentApproachController] RoomPhase：入室開始 | 有効なroomEntryPoints={entryCount} | yaw={transform.rotation.eulerAngles.y:F1}");
 
         if (entryCount > 0)
         {
@@ -1454,6 +2028,7 @@ public class ParentApproachController : MonoBehaviour
             elapsed += Time.deltaTime;
             yield return null;
         }
+
         _leaveRoomRequested = false;
 
         // 部屋から出る：退室の向きへ回転してから、入室時と逆順でdoorPointへ戻る。
@@ -1515,7 +2090,7 @@ public class ParentApproachController : MonoBehaviour
         SetPeekLighting(false);
         SetMotherStageLighting(false);
 
-        // 足音などの移動演出を止める（ParentDetectionが購読している）。
+        // 足音などの移動演出を止める（MotherSuspicionSystemが購読している）。
         MovementStateChanged?.Invoke(false);
     }
 
@@ -1593,7 +2168,7 @@ public class ParentApproachController : MonoBehaviour
     /// 画面内で瞬間移動せず、安全に非表示にして終了する。
     /// </summary>
     private IEnumerator ReturnHomeRoutine(Transform turnBackPoint, List<Transform> goBackPoints,
-                                          Transform endPoint, string routeLabel)
+        Transform endPoint, string routeLabel)
     {
         Debug.Log($"[ParentApproachController] ReturnHome（帰路）：開始 [{routeLabel}] " +
                   $"endPoint={(endPoint != null ? endPoint.name : "null")}");
@@ -1606,6 +2181,7 @@ public class ParentApproachController : MonoBehaviour
             HideMotherForReturn(routeLabel, "TurnBackPoint未設定", success: false);
             yield break;
         }
+
         if (endPoint == null)
         {
             Debug.LogWarning($"[ParentApproachController] {routeLabel}: 帰路の最終点（endPoint）が" +
@@ -1654,6 +2230,7 @@ public class ParentApproachController : MonoBehaviour
                 Debug.Log("[ParentApproachController] 帰路は中断済みのため、以降の移動を中止します");
                 yield break;
             }
+
             yield return PassThroughWaypoint(goBack[i], turnRotation, $"{routeLabel}:GoBack[{i}]");
             if (_routeExecutionFailed) yield break;
         }
@@ -1666,6 +2243,7 @@ public class ParentApproachController : MonoBehaviour
             Debug.Log("[ParentApproachController] 帰路は中断済みのため、最終点への移動を中止します");
             yield break;
         }
+
         yield return MovePositionOnly(endPoint);
         if (_routeExecutionFailed) yield break;
 
@@ -1711,6 +2289,7 @@ public class ParentApproachController : MonoBehaviour
             motherModelRoot.SetActive(false);
             Debug.Log($"[ParentApproachController] 母親モデルを非表示にしました（{routeLabel}:{reason}）");
         }
+
         if (motherModelRenderers != null)
         {
             foreach (var r in motherModelRenderers)
@@ -1749,7 +2328,7 @@ public class ParentApproachController : MonoBehaviour
     /// </summary>
     public void AbortReturnHome(string reason)
     {
-        if (!IsReturnHomePending) return;   // 帰路が進行していなければ何もしない
+        if (!IsReturnHomePending) return; // 帰路が進行していなければ何もしない
 
         Debug.LogWarning($"[ParentApproachController] 帰路を中断します（{reason}） — 停止・非表示・後始末を実施");
 
@@ -1772,7 +2351,7 @@ public class ParentApproachController : MonoBehaviour
     /// </summary>
     private IEnumerator MoveAndFaceWaypoint(Transform waypoint, float turnSpeed, string routeLabel)
     {
-        if (waypoint == null) yield break;   // null要素はスキップ
+        if (waypoint == null) yield break; // null要素はスキップ
 
         // 1-2. 位置のみ移動（向きは変えない）
         yield return MovePositionOnly(waypoint);
@@ -1830,7 +2409,6 @@ public class ParentApproachController : MonoBehaviour
         if (!TryGetTargetYawFromForward(waypoint, out float targetYaw, routeLabel)) yield break;
 
         yield return RotateToYaw(targetYaw, turnSpeed);
-
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1866,10 +2444,18 @@ public class ParentApproachController : MonoBehaviour
             // 帰路が中断されたら、通過中でもその場で位置更新を止める。
             if (IsReturnHomeAborted) yield break;
 
+            // 片付けのドア開け（Door_Open）中は位置移動を止める。
+            if (IsChoreMovementSuppressedNow)
+            {
+                yield return null;
+                continue;
+            }
+
             transform.position = Vector3.MoveTowards(
                 transform.position, goal, CurrentApproachSpeed * Time.deltaTime);
             yield return null;
         }
+
         transform.position = goal;
 
         UpdateRouteState(target);
@@ -1908,14 +2494,26 @@ public class ParentApproachController : MonoBehaviour
             // 帰路が中断（タイムアウト／ゲームオーバー）されたら、その場で位置更新を止める。
             if (IsReturnHomeAborted) yield break;
 
+            // 片付けのドア開け（Door_Open）中は位置移動を止める
+            // （開け終わる前に母親が通り抜けないようにする）。
+            if (IsChoreMovementSuppressedNow)
+            {
+                yield return null;
+                continue;
+            }
+
             transform.position = Vector3.MoveTowards(
                 transform.position, goal, CurrentApproachSpeed * Time.deltaTime);
             yield return null;
         }
+
         transform.position = goal;
 
         // 到着したので「位置移動中」を解除する（歩行表示と足音を止める）。
-        MovementStateChanged?.Invoke(false);
+        // 【片付け】片付けの歩行区間は Walk=true を維持する必要があるため、
+        //   片付けルート進行中は Walk を落とさない（到着直後は向き合わせが続く）。
+        if (!IsChoreRouteActive)
+            MovementStateChanged?.Invoke(false);
 
         UpdateRouteState(target);
 
@@ -1952,7 +2550,7 @@ public class ParentApproachController : MonoBehaviour
     /// Controllerの種類（AnimatorController／AnimatorOverrideController）には依存しない。
     /// </summary>
     private static bool TryResolveIdleState(Animator animator, out int layerIndex, out int idleFullPathHash,
-                                            out string failureReason)
+        out string failureReason)
     {
         layerIndex = IdleLayerIndex;
         idleFullPathHash = Animator.StringToHash(IdleStateFullPath);
@@ -2006,7 +2604,7 @@ public class ParentApproachController : MonoBehaviour
     /// 位置移動は既に終わっているため、この待機は「移動」ではない（足音に影響しない）。
     /// </summary>
     private IEnumerator WaitForIdleState(string phase, string waypointName,
-                                        System.Action<IdleWaitResult> onComplete)
+        System.Action<IdleWaitResult> onComplete)
     {
         var result = new IdleWaitResult { Reached = false, AlreadyIdle = false, FramesWaited = 0 };
 
@@ -2026,7 +2624,7 @@ public class ParentApproachController : MonoBehaviour
         }
 
         if (!TryResolveIdleState(animator, out int idleLayerIndex, out int idleFullPathHash,
-                                 out string idleFailureReason))
+                out string idleFailureReason))
         {
             WarnIdleWaitFailure(phase, waypointName, animator, idleFailureReason);
             onComplete?.Invoke(result);
@@ -2034,13 +2632,25 @@ public class ParentApproachController : MonoBehaviour
         }
 
         // Walk=false を確実にする（覗きは Walk からは到達できないため）。
-        if (animator.GetBool("Walk")) animator.SetBool("Walk", false);
+        // 【片付け】片付けの歩行区間は Walk=true を維持する必要があるため、
+        //   片付けルート進行中は強制しない（片付けアニメ保護を壊さない）。
+        if (!IsChoreRouteActive && animator.GetBool("Walk")) animator.SetBool("Walk", false);
 
         // 既に Idle に到達していれば、不要な待機はしない。
         if (IsIdleReached(animator, idleLayerIndex, idleFullPathHash))
         {
             result.Reached = true;
             result.AlreadyIdle = true;
+            onComplete?.Invoke(result);
+            yield break;
+        }
+
+        // 【片付け】片付けルート進行中は、Walk=true を維持したまま移動を続ける必要がある。
+        //   Idle 到達（Walk=false 必須）を待つと到着判定が成立せず経路が中断するため、
+        //   片付け中は Idle 待機を行わずに成功として扱う（片付けは Idle を要求しない）。
+        if (IsChoreRouteActive)
+        {
+            result.Reached = true;
             onComplete?.Invoke(result);
             yield break;
         }
@@ -2055,12 +2665,13 @@ public class ParentApproachController : MonoBehaviour
                 onComplete?.Invoke(result);
                 yield break;
             }
+
             yield return null;
         }
 
         // 上限到達：Idleへ到達できなかった（成功扱いにしない）。
         WarnIdleWaitFailure(phase, waypointName, animator,
-                            $"上限 {budget} フレーム以内に Idle へ到達しませんでした");
+            $"上限 {budget} フレーム以内に Idle へ到達しませんでした");
         result.FramesWaited = budget;
         onComplete?.Invoke(result);
     }
@@ -2104,10 +2715,10 @@ public class ParentApproachController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
     //  母親アニメーション（覗き）の再生
     //
-    //  Animatorパラメーターを書き換える箇所は、このファイルと ParentDetection の2つだけ：
+    //  Animatorパラメーターを書き換える箇所は、このファイルと MotherSuspicionSystem の2つだけ：
     //   ・ParentApproachController … 覗きのTrigger（Peek_Windows）。「庭側覗きの再生開始」のみ担当。
-    //   ・ParentDetection          … Walk(bool) と ドア覗きのTrigger（Peek_Door）。検出・演出進行に追従。
-    //  同じ状態を同時に上書きしないよう、ParentDetection 側は「覗き再生中は Walk を書き換えない」
+    //   ・MotherSuspicionSystem          … Walk(bool) と ドア覗きのTrigger（Peek_Door）。検出・演出進行に追従。
+    //  同じ状態を同時に上書きしないよう、MotherSuspicionSystem 側は「覗き再生中は Walk を書き換えない」
     //  ガード（IsPeekAnimationActive）を持っている。
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -2125,17 +2736,60 @@ public class ParentApproachController : MonoBehaviour
     /// </summary>
     [Tooltip("母親モデルのAnimator。未設定の場合は motherModelRoot の子から自動取得する。" +
              "シーン全体からは検索しないため、無関係なAnimatorを誤って掴むことはない。")]
-    [SerializeField] private Animator motherAnimator;
+    [SerializeField]
+    private Animator motherAnimator;
 
     /// <summary>Animator未検出／パラメーター欠落の警告を多重出力しないためのフラグ。</summary>
     private bool _animatorWarningLogged;
 
+    /// <summary>アニメーション操作の窓口（MotherAnimationPlayer）。未設定なら自動検索する。</summary>
+    [SerializeField] private MotherAnimationPlayer animationPlayer;
+
+    /// <summary>庭覗き時間の取得元（ParentWarningSystem）。未設定なら自動検索して結果をキャッシュする。</summary>
+    private ParentWarningSystem _warningSystemCache;
+
     /// <summary>
-    /// 母親モデルのAnimator（ParentDetectionなど他スクリプトと共有するための公開アクセサ）。
+    /// 庭覗きの基本時間（秒）を ParentWarningSystem から取得する。
+    /// 設定の唯一の保持元は ParentWarningSystem（chore/garden の調整値を集約）。
+    /// 接続できない場合は固定値へ戻さず、警告して 0 を返す（呼び出し側は最小の覗き時間になる）。
+    /// </summary>
+    private float ResolveGardenPeekDurationBase()
+    {
+        if (_warningSystemCache == null)
+            _warningSystemCache = UnityEngine.Object.FindFirstObjectByType<ParentWarningSystem>();
+
+        if (_warningSystemCache == null)
+        {
+            Debug.LogWarning("[ParentApproachController] ParentWarningSystem が見つからないため、" +
+                             "庭覗き時間を取得できません（ParentWarningSystem を Scene に配置してください）", this);
+            return 0f;
+        }
+
+        return _warningSystemCache.GardenPeekDurationBase;
+    }
+
+    /// <summary>
+    /// 母親モデルのAnimator（MotherSuspicionSystemなど他スクリプトと共有するための公開アクセサ）。
     /// 「どのオブジェクトをAnimatorとして扱うか」の判断をこの1箇所に集約し、
     /// 複数スクリプトが別々に取得して別のAnimatorを掴む事態を防ぐ。
     /// </summary>
     public Animator MotherAnimator => ResolveMotherAnimator();
+
+    /// <summary>
+    /// アニメーション操作の窓口（MotherAnimationPlayer）。
+    /// 各スクリプトが Animator を直接操作しないよう、この1箇所から共有する。
+    /// 未設定の場合はシーンから自動検索する。
+    /// </summary>
+    public MotherAnimationPlayer AnimationPlayer
+    {
+        get
+        {
+            if (animationPlayer == null)
+                animationPlayer = UnityEngine.Object.FindFirstObjectByType<MotherAnimationPlayer>();
+
+            return animationPlayer;
+        }
+    }
 
     /// <summary>
     /// 母親モデルのAnimatorを解決する。
@@ -2256,7 +2910,8 @@ public class ParentApproachController : MonoBehaviour
         }
 
         string controller = animator.runtimeAnimatorController != null
-            ? animator.runtimeAnimatorController.name : "null";
+            ? animator.runtimeAnimatorController.name
+            : "null";
 
         SlideLog("ANIMATOR",
             $"{timing} | obj='{animator.gameObject.name}' controller='{controller}' " +
@@ -2414,7 +3069,7 @@ public class ParentApproachController : MonoBehaviour
         float outEffectiveEnd = Mathf.Min(outEnd, returnStart);
 
         float peakElapsed = 0f;
-        int lastPhase = -1;   // 0=wait 1=out 2=hold 3=back（段階ログの1回出力用）
+        int lastPhase = -1; // 0=wait 1=out 2=hold 3=back（段階ログの1回出力用）
         while (true)
         {
             // 強制中断／ゲームオーバー／ルート失敗なら、その場でスライドを止める。
@@ -2442,7 +3097,7 @@ public class ParentApproachController : MonoBehaviour
                     ? 1f
                     : Mathf.Clamp01((peakElapsed - outStart) / doorPeekSlideOutDuration);
                 horizontal = Vector3.Lerp(HorizontalOnly(_peekSlideOriginPosition),
-                                          HorizontalOnly(outTarget), t);
+                    HorizontalOnly(outTarget), t);
                 phase = 1;
             }
             else if (peakElapsed < returnStart)
@@ -2458,7 +3113,7 @@ public class ParentApproachController : MonoBehaviour
                     ? 1f
                     : Mathf.Clamp01((peakElapsed - returnStart) / doorPeekSlideBackDuration);
                 horizontal = Vector3.Lerp(HorizontalOnly(outTarget),
-                                          HorizontalOnly(_peekSlideOriginPosition), backT);
+                    HorizontalOnly(_peekSlideOriginPosition), backT);
                 phase = 3;
                 if (backT >= 1f) finished = true;
             }
@@ -2487,7 +3142,7 @@ public class ParentApproachController : MonoBehaviour
                 yield break;
             }
 
-            peakElapsed += Time.deltaTime;   // ゲーム内時間（通常ポーズ中は進めない）
+            peakElapsed += Time.deltaTime; // ゲーム内時間（通常ポーズ中は進めない）
             yield return null;
         }
     }
@@ -2539,7 +3194,7 @@ public class ParentApproachController : MonoBehaviour
     {
         Vector3 left = HorizontalOnly(-transform.right);
         if (left.sqrMagnitude < 1e-6f)
-            return Vector3.zero;   // 真上／真下向きで水平左が定まらない場合は動かさない
+            return Vector3.zero; // 真上／真下向きで水平左が定まらない場合は動かさない
         return left.normalized;
     }
 
@@ -2582,11 +3237,11 @@ public class ParentApproachController : MonoBehaviour
                 if (!animator.IsInTransition(layerIndex) &&
                     animator.GetCurrentAnimatorStateInfo(layerIndex).fullPathHash == doorPeekHash)
                 {
-                    started = true;   // Door Peek State に入った＝実再生開始
+                    started = true; // Door Peek State に入った＝実再生開始
                     break;
                 }
 
-                elapsed += Time.deltaTime;   // ゲーム内時間（一時停止中は進めない）
+                elapsed += Time.deltaTime; // ゲーム内時間（一時停止中は進めない）
                 yield return null;
             }
 
@@ -2634,13 +3289,15 @@ public class ParentApproachController : MonoBehaviour
     }
 
     /// <summary>Animatorが指定名・指定型のパラメーターを持っているかを返す。</summary>
-    private static bool HasAnimatorParameter(Animator animator, string parameterName, AnimatorControllerParameterType type)
+    private static bool HasAnimatorParameter(Animator animator, string parameterName,
+        AnimatorControllerParameterType type)
     {
         if (animator == null) return false;
         foreach (AnimatorControllerParameter parameter in animator.parameters)
         {
             if (parameter.name == parameterName && parameter.type == type) return true;
         }
+
         return false;
     }
 
@@ -2758,7 +3415,7 @@ public class ParentApproachController : MonoBehaviour
         if (t == null) return false;
 
         Vector3 forward = t.forward;
-        forward.y = 0f;   // 地面上の向きとして扱う
+        forward.y = 0f; // 地面上の向きとして扱う
 
         if (forward.sqrMagnitude <= 0.0001f)
         {
@@ -2768,7 +3425,7 @@ public class ParentApproachController : MonoBehaviour
         }
 
         forward.Normalize();
-        yaw = NormalizeAngle(Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg);   // ＋Z基準
+        yaw = NormalizeAngle(Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg); // ＋Z基準
         return true;
     }
 
@@ -2780,7 +3437,7 @@ public class ParentApproachController : MonoBehaviour
     private static float NormalizeAngle(float angle)
     {
         angle %= 360f;
-        if (angle > 180f)  angle -= 360f;
+        if (angle > 180f) angle -= 360f;
         if (angle < -180f) angle += 360f;
         return angle;
     }
@@ -2969,6 +3626,7 @@ public class ParentApproachController : MonoBehaviour
                              " sharedMaterial が無いため、目を発光できません。");
             return;
         }
+
         if (!source.HasProperty(EyeEmissionColorProperty))
         {
             Debug.LogWarning($"[ParentApproachController] Renderer '{eyeRenderer.name}' のマテリアルに" +
@@ -3035,7 +3693,7 @@ public class ParentApproachController : MonoBehaviour
     /// 所有判定は _eyeOwnedMaterialX だけで行い、sharedMaterial との一致は見ない。
     /// </summary>
     private static void DestroyOwnedEyeMaterial(Renderer eyeRenderer, Material originalMaterial,
-                                                ref Material ownedMaterial)
+        ref Material ownedMaterial)
     {
         Material owned = ownedMaterial;
         ownedMaterial = null;
@@ -3095,8 +3753,8 @@ public class ParentApproachController : MonoBehaviour
             switch (motherGauge.CurrentColorState)
             {
                 case MotherGauge.SuspicionColorState.Purple: return purpleGlowColor;
-                case MotherGauge.SuspicionColorState.Red:    return dangerGlowColor;
-                default:                                     return normalGlowColor;
+                case MotherGauge.SuspicionColorState.Red: return dangerGlowColor;
+                default: return normalGlowColor;
             }
         }
 
@@ -3115,7 +3773,8 @@ public class ParentApproachController : MonoBehaviour
     {
         float multiplier = Mathf.Max(0f, eyeEmissionIntensity);
         if (eyeGlowPulseSpeed > 0f)
-            multiplier *= Mathf.Lerp(0.5f, 1f, Mathf.Sin(Time.unscaledTime * Mathf.PI * 2f * eyeGlowPulseSpeed) * 0.5f + 0.5f);
+            multiplier *= Mathf.Lerp(0.5f, 1f,
+                Mathf.Sin(Time.unscaledTime * Mathf.PI * 2f * eyeGlowPulseSpeed) * 0.5f + 0.5f);
         return multiplier;
     }
 
@@ -3155,12 +3814,12 @@ public class ParentApproachController : MonoBehaviour
     private void ResetStateFlags()
     {
         _routeExecutionFailed = false;
-        IsApproaching    = false;
-        ReachedDoor      = false;
-        StoppedAtDoor    = false;
-        PassedByDoor     = false;
+        IsApproaching = false;
+        ReachedDoor = false;
+        StoppedAtDoor = false;
+        PassedByDoor = false;
         IsInHallwayPhase = false;
-        IsRushIn         = false;
+        IsRushIn = false;
         _isGardenPeeking = false;
         // サイクル初期化：スライドの予約・ずれを次サイクルへ持ち越さない。
         // 位置そのものは ResetApproach 側が startPoint へ戻すため、ここでは触らない。
@@ -3171,9 +3830,9 @@ public class ParentApproachController : MonoBehaviour
 
         // 部屋入室（案B）の状態を初期化する。_cycleStartedAsRushInはBeginApproach()で
         // ResetStateFlags()より前に設定されるため、ここではクリアしない。
-        _doorRoutineActive  = false;
+        _doorRoutineActive = false;
         _roomEntryRequested = false;
-        _roomPhaseActive    = false;
+        _roomPhaseActive = false;
         _leaveRoomRequested = false;
 
         // 帰路の状態も初期化する（リセット・中断時に古い要求/実行が残らないようにする）。
@@ -3186,6 +3845,11 @@ public class ParentApproachController : MonoBehaviour
         MovementStateChanged?.Invoke(false);
         IsGardenRoute = false;
 
+        // 片付け専用ルートの中断フラグをクリアする（新しいサイクル開始時に古い中断を持ち越さない）。
+        // IsChoreRouteActive は ChoreRoutine 自身が管理するため、ここでは触らない
+        // （BeginApproach から ChoreRoutine を起動する順序を壊さないため）。
+        _choreRouteAborted = false;
+
         // 進行中の旋回コルーチンを止め、リセット後に回転指示が残らないようにする。
         StopRotateCoroutine();
     }
@@ -3197,11 +3861,13 @@ public class ParentApproachController : MonoBehaviour
             Debug.LogWarning("[ParentApproachController] startPointがNULLです。", this);
             return false;
         }
+
         if (doorPoint == null)
         {
             Debug.LogWarning("[ParentApproachController] doorPointがNULLです。", this);
             return false;
         }
+
         // 中間ウェイポイントは List が空でも（=旧フィールド未設定でも）続行する。
         return true;
     }
@@ -3226,7 +3892,8 @@ public class ParentApproachController : MonoBehaviour
     [Tooltip("覗き開始前に Idle State への到達を待つ上限フレーム数。\n" +
              "上限に達しても到達しなければ、覗きを要求せず安全に中断します。\n" +
              "※ フレーム数なので実時間は可変です（60fpsで約2秒）。")]
-    [SerializeField, Min(1)] private int maxFramesToReachIdle = 120;
+    [SerializeField, Min(1)]
+    private int maxFramesToReachIdle = 120;
 
     private const string IdleLayerName = "Base Layer";
     private const string IdleStateFullPath = "Base Layer.Idle";
@@ -3302,6 +3969,7 @@ public class ParentApproachController : MonoBehaviour
             Transform from = (i == beforeTurnGizmo.Count - 1 && turnPoint != null) ? turnPoint : beforeTurnGizmo[i + 1];
             Gizmos.DrawLine(from.position, beforeTurnGizmo[i].position);
         }
+
         if (beforeTurnGizmo.Count > 0 && startPoint != null)
             Gizmos.DrawLine(beforeTurnGizmo[0].position, startPoint.position);
 
@@ -3316,11 +3984,13 @@ public class ParentApproachController : MonoBehaviour
                 if (passPrev != null) Gizmos.DrawLine(passPrev.position, wp.position);
                 passPrev = wp;
             }
+
             if (doorPoint != null)
             {
                 if (passPrev != null) Gizmos.DrawLine(passPrev.position, doorPoint.position);
                 passPrev = doorPoint;
             }
+
             if (passPrev != null) Gizmos.DrawLine(passPrev.position, hallwayPassByPoint.position);
         }
 

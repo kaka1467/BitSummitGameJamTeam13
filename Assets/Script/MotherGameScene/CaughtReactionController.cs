@@ -6,19 +6,19 @@ using System.Collections;
 /// CaughtReactionController：
 ///
 /// ゲージ管理 — 厳密な単一書き込みモデル：
-///   MotherGaugeに書き込む唯一のスクリプトはParentDetection
+///   MotherGaugeに書き込む唯一のスクリプトはMotherSuspicionSystem
 ///   （毎フレームのSetGaugeDirectによる増減、大きな音によるAddGauge）。
 ///   このスクリプトはMotherGaugeに一切書き込まない。
 ///
 /// このスクリプトの責務：
 ///   - ゲームオーバー監視：ゲージを監視し、最大値到達時にシーン／UDP遷移を実行
-///   - ParentDetectionへNotifyGameOverを転送し、進行を停止
+///   - MotherSuspicionSystemへNotifyGameOverを転送し、進行を停止
 ///   - ゲームオーバー時にゲームロジックのコンポーネントを無効化
 /// </summary>
 public class CaughtReactionController : MonoBehaviour
 {
     [Header("システム参照")]
-    [SerializeField] private ParentDetection parentDetection;
+    [SerializeField] private MotherSuspicionSystem suspicionSystem;
     [SerializeField] private SleepingController sleepingController;
     [SerializeField] private DoorController doorController;
     [SerializeField] private ParentUdpSender udpSender;
@@ -38,8 +38,7 @@ public class CaughtReactionController : MonoBehaviour
 
     private void Start()
     {
-        if (parentDetection == null)
-            parentDetection = Object.FindFirstObjectByType<ParentDetection>();
+        EnsureSuspicionSystem();
         if (sleepingController == null)
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
         if (doorController == null)
@@ -52,6 +51,18 @@ public class CaughtReactionController : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log("[CaughtReactionController] initialized - game-over watchdog only (gauge owned by PD)");
+    }
+
+    /// <summary>
+    /// 怪しさ管理元（MotherSuspicionSystem）を解決する。
+    /// 無敵判定・ゲームオーバー抑止で参照する。未設定ならシーンから自動検索する。
+    /// </summary>
+    private MotherSuspicionSystem EnsureSuspicionSystem()
+    {
+        if (suspicionSystem == null)
+            suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
+
+        return suspicionSystem;
     }
 
     private void EnsureUdpSender()
@@ -67,8 +78,27 @@ public class CaughtReactionController : MonoBehaviour
         if (_hasTriggeredGameOver) return;
         if (motherGauge == null) return;
 
-        // ゲームオーバー監視：PDは毎フレームゲージを書き込み、最大値到達時にOnPlayerCaughtを呼ぶ。
-        // PDが自身のゲームオーバー処理を実行する前に無効化された場合に備えた安全網。
+        // 無敵モード中は最大ゲージ監視による捕獲も行わない。
+        if (EnsureSuspicionSystem() != null && suspicionSystem.IsInvincible) return;
+
+        // ゲームオーバー監視：PDは毎フレームゲージを書き込むが、PD側が無敵中に加算を止めた結果として
+        // 「ゲージ最大のまま」が残ることがある。無敵を使ったことがあるサイクルでは、
+        // ゲージ最大だけを根拠に即座に捕獲しない（＝無敵OFF直後の翌フレーム捕獲を防ぐ）。
+        // 無敵を一度も使っていない通常プレイでは従来どおり最大到達で即捕獲する。
+        if (suspicionSystem != null && suspicionSystem.WasInvincibleUsedInThisPlay)
+        {
+            // ゲージが最大未満に戻れば通常の監視を再開する（次の有効な発見判定で捕獲を許可）。
+            if (motherGauge.currentGauge < motherGauge.maxGauge)
+            {
+                suspicionSystem.ClearInvincibleUsage();
+            }
+            else
+            {
+                // 最大のまま：PD側の有効な発見判定（OnPlayerCaught）に捕獲を委ねる。
+                return;
+            }
+        }
+
         if (motherGauge.currentGauge >= motherGauge.maxGauge)
         {
             TriggerGameOver();
@@ -77,7 +107,7 @@ public class CaughtReactionController : MonoBehaviour
 
         if (showDebugLogs)
         {
-            bool isLooking  = (parentDetection != null) && parentDetection.isMotherLookingNow;
+            bool isLooking  = (suspicionSystem != null) && suspicionSystem.isMotherLookingNow;
             bool isSleeping = (sleepingController != null) && sleepingController.IsSleeping;
             Debug.Log($"[CaughtReactionController-Update] isMotherLookingNow={isLooking} | IsSleeping={isSleeping} | gauge={motherGauge.currentGauge}/{motherGauge.maxGauge} | (gauge written exclusively by PD)");
         }
@@ -112,14 +142,23 @@ public class CaughtReactionController : MonoBehaviour
     {
         if (_hasTriggeredGameOver) return;
 
+        // 【無敵モード】テスト用無敵（Lキー）がONの間はゲームオーバーを抑止する。
+        //   ゲージ最大到達を監視する安全網からの捕獲入口のため、ここでも一括ガードする。
+        //   抑止中は _hasTriggeredGameOver を立てない（OFF後に次の有効な判定で通常処理を行う）。
+        if (EnsureSuspicionSystem() != null && suspicionSystem.ShouldBlockCapture())
+        {
+            Debug.Log("[CaughtReactionController] 無敵モード中のためゲームオーバーを抑止します");
+            return;
+        }
+
         _hasTriggeredGameOver = true;
 
-        // ParentDetectionに永続的なゲームオーバーを通知し、進行を停止させる
-        if (parentDetection != null)
+        // MotherSuspicionSystemに永続的なゲームオーバーを通知し、進行を停止させる
+        if (suspicionSystem != null)
         {
             try
             {
-                parentDetection.NotifyGameOver();
+                suspicionSystem.NotifyGameOver();
             }
             catch (System.Exception exception)
             {
@@ -154,7 +193,7 @@ public class CaughtReactionController : MonoBehaviour
     {
         if (doorController != null) { doorController.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Door Controller disabled"); }
         if (sleepingController != null) { sleepingController.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Sleeping Controller disabled"); }
-        if (parentDetection != null) { parentDetection.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Parent Detection disabled"); }
+        if (suspicionSystem != null) { suspicionSystem.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Parent Detection disabled"); }
     }
 
     private IEnumerator GameOverSequence()
@@ -182,12 +221,19 @@ public class CaughtReactionController : MonoBehaviour
 
     public void ForceGameOver()
     {
+        // 【無敵モード】無敵中は強制ゲームオーバーも抑止する（捕獲の共通入口で一括ガード）。
+        if (EnsureSuspicionSystem() != null && suspicionSystem.ShouldBlockCapture())
+        {
+            Debug.Log("[CaughtReactionController] 無敵モード中のため ForceGameOver を抑止します");
+            return;
+        }
+
         if (!_hasTriggeredGameOver) TriggerGameOver();
     }
 
     /// <summary>
     /// インスペクターまたはテストコードからゲージを0に戻すデバッグ専用ヘルパー。
-    /// 通常のゲームプレイではParentDetection.ResetCycle()がゲージをリセットする。
+    /// 通常のゲームプレイではMotherSuspicionSystem.ResetCycle()がゲージをリセットする。
     /// </summary>
     public void DebugResetSuspicionGauge()
     {

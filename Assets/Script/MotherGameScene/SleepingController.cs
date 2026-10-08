@@ -51,7 +51,7 @@ public class SleepingController : MonoBehaviour
     private bool _diagLastWasSleeping;
 
     /// <summary>
-    /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（ParentDetectionとCaughtReactionControllerが使用）
+    /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（MotherSuspicionSystemとCaughtReactionControllerが使用）
     /// </summary>
     public bool IsSleeping => _isSleeping;
 

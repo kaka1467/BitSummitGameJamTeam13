@@ -74,6 +74,17 @@ public class GameManager : MonoBehaviour
 
     private Coroutine timeChangeRoutine;
 
+    // ── 片付け演出用：ゲーム進行率の通知 ─────────────────────────────────────
+    //   親機の片付け開始条件（後半に入室するか）に使う。
+    //   送信頻度を抑えるため、更新は間隔制御して行う（毎フレームは送らない）。
+    [Header("Game Progress Notification")]
+    [Tooltip("親機へ進行率（0〜1）を送信する間隔（秒）。片付け演出の開始判定に使用。")]
+    [SerializeField, Min(0.1f)] private float gameProgressSendInterval = 1f;
+    [Tooltip("進行率通知を有効にする。OFFにすると片付け演出の開始は親機側の経過時間で判定される。")]
+    [SerializeField] private bool sendGameProgress = true;
+
+    private float _nextGameProgressSendTime;
+
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
     private bool isTutorialMode = false;
@@ -143,6 +154,29 @@ public class GameManager : MonoBehaviour
         {
             feverText.text = string.Format("{0}/{1}", feverCount, feverNeeded);
         }
+
+        // 片付け演出用：進行率を親機へ定期通知する（出現率・得点には影響しない）。
+        SendGameProgressIfDue();
+    }
+
+    /// <summary>
+    /// 現在のゲーム進行率（0〜1）を算出し、間隔どおりに親機へ送信する。
+    /// 片付け演出（母親の後半入室）の開始条件に使用する。
+    /// </summary>
+    private void SendGameProgressIfDue()
+    {
+        if (!sendGameProgress) return;
+        if (isGameOver || isTutorialMode) return;
+        if (Time.unscaledTime < _nextGameProgressSendTime) return;
+
+        EnsureUdpReceiver();
+        if (udpReceiver == null) return;
+
+        float maxTimeSafe = Mathf.Max(1f, maxTime);
+        float progressRate = Mathf.Clamp01(1f - (time / maxTimeSafe));
+        udpReceiver.SendGameProgress(progressRate);
+
+        _nextGameProgressSendTime = Time.unscaledTime + Mathf.Max(0.1f, gameProgressSendInterval);
     }
 
     /// <summary>

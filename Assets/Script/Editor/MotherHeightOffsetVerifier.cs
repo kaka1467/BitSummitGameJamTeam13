@@ -51,15 +51,15 @@ public static class MotherHeightOffsetVerifier
             peekGo.transform.position  = new Vector3(6f, 3f, 6f);
 
             var controller = controllerGo.AddComponent<ParentApproachController>();
-            var parentDetection = controllerGo.GetComponent<ParentDetection>();
+            var parentDetection = controllerGo.GetComponent<MotherSuspicionSystem>();
             if (parentDetection == null)
-                parentDetection = controllerGo.AddComponent<ParentDetection>();
+                parentDetection = controllerGo.AddComponent<MotherSuspicionSystem>();
             if (parentDetection == null)
-                parentDetection = Object.FindFirstObjectByType<ParentDetection>();
+                parentDetection = Object.FindFirstObjectByType<MotherSuspicionSystem>();
 
             if (parentDetection == null)
             {
-                Debug.LogWarning("[検証] ParentDetectionが見つからないため、移動速度を取得できず検証を中止します。");
+                Debug.LogWarning("[検証] MotherSuspicionSystemが見つからないため、移動速度を取得できず検証を中止します。");
                 return;
             }
 
@@ -87,7 +87,7 @@ public static class MotherHeightOffsetVerifier
             }
 
             parentDetectionField.SetValue(controller, parentDetection);
-            Debug.Log($"[検証] ParentDetection.CurrentApproachSpeed={parentDetection.CurrentApproachSpeed:F2}");
+            Debug.Log($"[検証] MotherSuspicionSystem.CurrentApproachSpeed={parentDetection.CurrentApproachSpeed:F2}");
 
             Transform mother = controllerGo.transform;
 

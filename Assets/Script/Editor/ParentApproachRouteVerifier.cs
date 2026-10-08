@@ -206,7 +206,7 @@ public static class ParentApproachRouteVerifier
         beforeField.SetValue(controller, new List<Transform>());
         afterField.SetValue(controller, new List<Transform>());
 
-        // 猫が最初に取得（ParentDetection.Start より前に CatFeintController が動く想定）。
+        // 猫が最初に取得（MotherSuspicionSystem.Start より前に CatFeintController が動く想定）。
         List<Transform> catFirst = controller.GetHallwayPointsBeforeTurn();
         List<Transform> catFirstAfter = controller.GetHallwayPointsAfterTurn();
 

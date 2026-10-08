@@ -1,9 +1,10 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
 /// DoorController：Lerpアニメーションでドアの回転を管理する。
-/// 新しい入力システムによる手動切り替え（Pキー）と、ParentDetectionからの外部命令に対応する。
+/// 新しい入力システムによる手動切り替え（Pキー）と、MotherSuspicionSystemからの外部命令に対応する。
 /// </summary>
 public class DoorController : MonoBehaviour
 {
@@ -44,7 +45,7 @@ public class DoorController : MonoBehaviour
             door.localRotation = Quaternion.Euler(0f, closedAngle, 0f);
 
         _currentDoorState = DoorState.Closed;
-        _targetDoorState  = DoorState.Closed;
+        _targetDoorState = DoorState.Closed;
     }
 
     private void Update()
@@ -105,7 +106,7 @@ public class DoorController : MonoBehaviour
     }
 
     /// <summary>
-    /// ドアを指定した状態にする（ParentDetectionおよび手動入力から呼び出される）
+    /// ドアを指定した状態にする（MotherSuspicionSystemおよび手動入力から呼び出される）
     /// </summary>
     public void SetDoorState(DoorState newState)
     {
@@ -137,5 +138,62 @@ public class DoorController : MonoBehaviour
     {
         if (door == null) return 0f;
         return door.localEulerAngles.y;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  片付け演出用：角度指定の開閉と「到達待ち」
+    //   ・モデルの Door_Open 再生と連携し、開け終わる前に通り抜けないようにするため、
+    //     目標角度へ到達するまで待てる IEnumerator を用意する。
+    //   ・既存の SetDoorState / UpdateDoorRotation（Lerp）をそのまま使う。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>openAngle（完全に開いた位置）へ向かう目標角度。片付けの「fullopen」に対応する。</summary>
+    public float FullOpenAngle => openAngle;
+
+    /// <summary>peekAngle（覗き用に少し開いた位置）へ向かう目標角度。</summary>
+    public float PeekAngle => peekAngle;
+
+    /// <summary>closedAngle（閉じた位置）へ向かう目標角度。</summary>
+    public float ClosedAngle => closedAngle;
+
+    /// <summary>
+    /// 現在のドア回転が「目標角度」へ十分近づいているか（到達判定のしきい値は1度）。
+    /// UpdateDoorRotation と同じしきい値を使い、判定が食い違わないようにする。
+    /// </summary>
+    public bool IsDoorRotationReached()
+    {
+        if (door == null) return true;
+
+        float targetAngleY = GetTargetAngle(_targetDoorState);
+        Quaternion targetRotation = Quaternion.Euler(0f, targetAngleY, 0f);
+        return Quaternion.Angle(door.localRotation, targetRotation) < 1f;
+    }
+
+    /// <summary>
+    /// 指定したドア状態へ動かし、実際にその角度へ到達するまで待つ。
+    /// タイムアウト付きで、到達しない場合も永久に待たない（呼び出し側が警告を出す）。
+    /// 片付け演出（Door_Open とドア回転の連携）で使用する。
+    /// </summary>
+    public IEnumerator WaitForDoorState(DoorState newState, float timeoutSeconds)
+    {
+        SetDoorState(newState);
+
+        float elapsed = 0f;
+        float timeout = Mathf.Max(0f, timeoutSeconds);
+
+        while (!IsDoorRotationReached())
+        {
+            if (timeout > 0f && elapsed >= timeout)
+            {
+                Debug.LogWarning($"[DoorController] ドアが {newState} へ到達しませんでした（{timeout:F1}s で打ち切り）");
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (showDebugLogs)
+            Debug.Log($"[DoorController] ドアが {newState} へ到達（{elapsed:F2}s）");
     }
 }

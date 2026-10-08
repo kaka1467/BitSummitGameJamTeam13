@@ -274,6 +274,30 @@ public class ChildUdpReceiver : MonoBehaviour
     }
 
     /// <summary>
+    /// 悪いアイテム（時間減少効果を持つ既存アイテム）を取得したことを親機に送信する。
+    /// 片付け演出中の視線抽選に使う（出現率・得点は変更しない）。
+    /// </summary>
+    public void SendBadItem()
+    {
+        // MAGIC_NUMBER ("TEAM13_") + "BAD_ITEM" で送信（既存の LOUD_ITEM と同じ形式）
+        SendState("BAD_ITEM");
+        if (showDebugLogs)
+            Debug.Log("[ChildUdpReceiver] Sent BAD_ITEM packet to Parent.");
+    }
+
+    /// <summary>
+    /// ゲーム進行率（0〜1）を親機に送信する。片付け演出の開始条件に使う。
+    /// 送信コストを抑えるため、呼び出し側で間隔を制御する（毎フレームは送らない）。
+    /// </summary>
+    public void SendGameProgress(float progressRate)
+    {
+        int progressMilli = Mathf.RoundToInt(Mathf.Clamp01(progressRate) * 1000f);
+        SendState($"GAME_PROGRESS:{progressMilli}");
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] Sent GAME_PROGRESS:{progressMilli} packet to Parent.");
+    }
+
+    /// <summary>
     /// 子機側で「タイトルへ戻る」処理を開始したことを親機へ通知する。
     /// 完全なメッセージは "TEAM13_RETURN_TO_TITLE:&lt;プレイ識別子&gt;:&lt;連番&gt;"（SendState が MAGIC_NUMBER を前置する）。
     /// 取りこぼすと親機がリザルト画面に取り残されるため、再送付きで送る。識別子・連番は再送でも同じ値を送る。
