@@ -36,7 +36,8 @@ public class MotherAnimationPlayer : MonoBehaviour
     // 片付け演出用の Animator パラメーター（Animator Controller 側で Transition の条件に使う）。
     private const string ChoreStartParameter = "Chore_Start";
     private const string ChorePeekParameter = "Chore_Peek_Trigger";
-    private const string ChoreEndParameter = "Chore_EndTrigger";
+    // 終了要求は Bool。視線中に要求が来たら true を保持し、視線終了後に Chore_End へ進む。
+    private const string ChoreExitRequestedParameter = "Chore_ExitRequested";
     private const string DoorOpenParameter = "Door_OpenTrigger";
 
     // ── 参照 ──────────────────────────────────────────────────────────────────
@@ -165,8 +166,8 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// <summary>Chore_Peek（こちらを見る・1回）へ遷移要求を出す。</summary>
     public void PlayChorePeek() => FireTrigger(ChorePeekParameter);
 
-    /// <summary>Chore_End（立つ・1回）へ遷移要求を出す。</summary>
-    public void PlayChoreEnd() => FireTrigger(ChoreEndParameter);
+    /// <summary>Chore_End（立つ・1回）へ進む終了要求を立てる（Bool=true）。</summary>
+    public void PlayChoreEnd() => SetChoreExitRequested(true);
 
     /// <summary>Door_Open（ドアを開ける・1回）へ遷移要求を出す。</summary>
     public void PlayDoorOpen() => FireTrigger(DoorOpenParameter);
@@ -180,8 +181,55 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// <summary>Door_Open の再生完了を待つ（タイムアウト付き）。</summary>
     public IEnumerator WaitForDoorOpen() => WaitForOneShot(doorOpenStateName);
 
-    /// <summary>ステート名を指定して1回再生の完了を待つ（汎用）。</summary>
-    public IEnumerator WaitForOneShot(string stateName) => WaitForOneShotState(stateName);
+    /// <summary>
+    /// 終了要求（Chore_ExitRequested）を設定する。
+    ///  ・true … Chore / Chore_Peek から Chore_End へ進む要求（視線中でも保持される）。
+    ///  ・false … Chore_Peek → Chore に戻る条件（視線終了後）。
+    /// </summary>
+    public void SetChoreExitRequested(bool requested)
+    {
+        Animator a = ResolveAnimator();
+        if (a == null) return;
+
+        if (!HasParameter(ChoreExitRequestedParameter, AnimatorControllerParameterType.Bool))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Animator に Bool '{ChoreExitRequestedParameter}' がありません。" +
+                             "Animator Controller へ登録してください", this);
+            return;
+        }
+
+        a.SetBool(ChoreExitRequestedParameter, requested);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] {ChoreExitRequestedParameter} = {requested}");
+    }
+
+    /// <summary>
+    /// 片付け用の未消費パラメーターをリセットする。
+    /// 開始・完了・中断・再プレイ時に呼び、Chore_ExitRequested と Trigger の残留を防ぐ。
+    /// </summary>
+    public void ResetChoreParameters()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null) return;
+
+        ResetBoolIfExists(a, ChoreExitRequestedParameter);
+        ResetTriggerIfExists(a, ChoreStartParameter);
+        ResetTriggerIfExists(a, ChorePeekParameter);
+        ResetTriggerIfExists(a, DoorOpenParameter);
+    }
+
+    private static void ResetBoolIfExists(Animator a, string name)
+    {
+        if (HasParameterOn(a, name, AnimatorControllerParameterType.Bool))
+            a.SetBool(name, false);
+    }
+
+    private static void ResetTriggerIfExists(Animator a, string name)
+    {
+        if (HasParameterOn(a, name, AnimatorControllerParameterType.Trigger))
+            a.ResetTrigger(name);
+    }
 
     /// <summary>
     /// 演出（Chore / Chore_Peek / Chore_End / Door_Open）の再生を中断し、
@@ -191,6 +239,9 @@ public class MotherAnimationPlayer : MonoBehaviour
     {
         Animator a = ResolveAnimator();
         if (a == null) return;
+
+        // 未消費の片付けパラメーターを残さない。
+        ResetChoreParameters();
 
         // 再生待ちコルーチンは呼び出し側が停止する。ここでは状態だけを歩きへ戻す。
         RestoreWalking();
@@ -232,15 +283,36 @@ public class MotherAnimationPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// 1回再生ステートの完了を待つ。ループステートが渡された場合は即終了（呼び出し側が時間管理）。
-    /// ステート未登録・到達不能・尺超過の場合はタイムアウトで抜け、警告を出す。
+    /// 1回再生ステートの完了を待つ。結果を success で返す（未開始・中断・タイムアウトと正常終了を混同しない）。
+    ///  成功条件：ステートへ到達し、その再生が最後まで進んだ（normalizedTime>=1 もしくは正式な退出）。
+    ///  失敗：Animator未解決／ステート未登録／到達タイムアウト／完了タイムアウト／中断。
     /// </summary>
-    private IEnumerator WaitForOneShotState(string stateName)
+    public IEnumerator WaitForOneShot(string stateName, System.Action<bool> onResult) =>
+        WaitForOneShotState(stateName, onResult);
+
+    /// <summary>
+    /// 1回再生ステートの完了を待つ（結果なしの互換オーバーロード）。
+    /// </summary>
+    public IEnumerator WaitForOneShot(string stateName)
+    {
+        yield return WaitForOneShotState(stateName, null);
+    }
+
+    /// <summary>
+    /// 1回再生ステートの完了を待つ本体。
+    ///  ・開始を確認できた場合のみ「正常終了」を判定する（未開始を成功扱いにしない）。
+    ///  ・中断フラグ（AbortPerformance 経由で ResetChoreParameters が呼ばれた場合は呼び出し側が停止）では失敗を返す。
+    ///  ・ループステートは呼び出し側の時間管理に委ね、開始確認のみで成功とする。
+    /// </summary>
+    private IEnumerator WaitForOneShotState(string stateName, System.Action<bool> onResult)
     {
         Animator a = ResolveAnimator();
+
         if (a == null || string.IsNullOrEmpty(stateName) || !HasState(stateName))
         {
+            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' を解決できないため再生完了を判定できません（失敗扱い）", this);
             yield return new WaitForSeconds(fallbackWaitSeconds);
+            onResult?.Invoke(false);
             yield break;
         }
 
@@ -254,26 +326,55 @@ public class MotherAnimationPlayer : MonoBehaviour
 
         if (!IsPlayingState(stateName))
         {
-            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' へ到達できませんでした（{reachTimeoutSeconds:F1}s）", this);
+            // 未開始：正常終了と混同しない（失敗を返す）。
+            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' へ到達できませんでした（{reachTimeoutSeconds:F1}s）— 失敗", this);
             yield return new WaitForSeconds(fallbackWaitSeconds);
+            onResult?.Invoke(false);
             yield break;
         }
 
-        // 2) 1回再生の終了（normalizedTime >= 1）まで待つ。ループは時間管理に委ねる。
+        // 2) 開始を確認できた。1回再生の終了まで待つ。
+        //    ・現在もそのステートなら、normalizedTime>=1 で「正常終了」。
+        //    ・別のステートへ正式に退出した場合も「正常終了」（遷移による退出。Exit Time=1 の遷移で起こる）。
+        //    ・同じステートへ戻ってきた場合（ループ）や再入は正常終了とみなさない。
         float elapsed = 0f;
+        bool completed = false;
+        bool leftToOtherState = false;
+
         while (elapsed < oneShotTimeoutSeconds)
         {
             AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
-            if (!info.IsName(stateName)) yield break;          // 別ステート＝終了扱い
-            if (info.loop) yield break;                        // ループは呼び出し側で時間管理
-            if (info.normalizedTime >= 1f) yield break;        // 1回再生の終了
+
+            if (info.IsName(stateName))
+            {
+                if (info.loop) { completed = true; break; }        // ループは時間管理に委ねる
+                if (info.normalizedTime >= 1f) { completed = true; break; }
+                // 一度別ステートへ出た後に同じステートへ戻ってきた場合は正常終了としない
+                leftToOtherState = false;
+            }
+            else
+            {
+                // 別ステートへ移動した。遷移中（IsInTransition）でなければ正式な退出とみなす。
+                if (!a.IsInTransition(Layer))
+                {
+                    leftToOtherState = true;
+                    break;
+                }
+            }
 
             elapsed += Time.deltaTime;
             yield return null;
         }
 
-        Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' の再生完了を" +
-                         $"{oneShotTimeoutSeconds:F1}s で確認できませんでした", this);
+        if (!completed && !leftToOtherState)
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' の再生完了を" +
+                             $"{oneShotTimeoutSeconds:F1}s で確認できませんでした — 失敗", this);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        onResult?.Invoke(true);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -302,8 +403,13 @@ public class MotherAnimationPlayer : MonoBehaviour
 
     private bool HasParameter(string parameterName, AnimatorControllerParameterType type)
     {
-        Animator a = ResolveAnimator();
-        if (a == null) return false;
+        return HasParameterOn(ResolveAnimator(), parameterName, type);
+    }
+
+    /// <summary>指定 Animator がパラメーターを持つか（static。リセット処理から使う）。</summary>
+    private static bool HasParameterOn(Animator a, string parameterName, AnimatorControllerParameterType type)
+    {
+        if (a == null || string.IsNullOrEmpty(parameterName)) return false;
 
         AnimatorControllerParameter[] parameters = a.parameters;
         for (int i = 0; i < parameters.Length; i++)

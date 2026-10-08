@@ -1102,7 +1102,8 @@ public class MotherApproachController : MonoBehaviour
 
         // 4) Door_Open 再生 + ドアを openAngle まで開く（完了待ち）。
         //    開き終わるまで歩行の位置移動を止め、母親が通り抜けないようにする。
-        yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full);
+        //    isApproach=true（行き）: 完了後に怪しさ加算を開始する。
+        yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full, isApproach: true);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1219,7 +1220,8 @@ public class MotherApproachController : MonoBehaviour
         Debug.Log("[MotherApproachController] 片付けルート：choreReturnPoint_1到着 — Door_Open でドアを開けます");
 
         // 3) Door_Open 再生 + ドアを fullopen（DoorState.Full = openAngle）まで開く。
-        yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full);
+        //    帰り（isApproach=false）: 怪しさ加算は開始しない。
+        yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full, isApproach: false);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1406,17 +1408,18 @@ public class MotherApproachController : MonoBehaviour
     ///  ・ドアの回転とモデルの再生を連携させるため、実処理は MotherChoreController 側が持つ。
     ///  ・未設定の場合は警告してスキップする（完了待ちが永久に続かないようにする）。
     /// </summary>
-    private IEnumerator ChoreDoorOpenRoutine(DoorController.DoorState targetState)
+    private IEnumerator ChoreDoorOpenRoutine(DoorController.DoorState targetState, bool isApproach)
     {
         MotherChoreController controller = ResolveChoreController();
         if (controller == null)
         {
             Debug.LogWarning("[MotherApproachController] MotherChoreController が見つからないため、" +
                              "片付けの Door_Open をスキップします", this);
+            _routeExecutionFailed = true;   // 成功扱いにしない（移動許可・加算へ進まない）
             yield break;
         }
 
-        yield return controller.ChoreDoorOpenRoutine(targetState);
+        yield return controller.ChoreDoorOpenRoutine(targetState, isApproach);
     }
 
     /// <summary>
