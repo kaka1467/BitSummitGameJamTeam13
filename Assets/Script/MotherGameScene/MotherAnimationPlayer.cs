@@ -33,6 +33,12 @@ public class MotherAnimationPlayer : MonoBehaviour
     private const string WalkParameter = "Walk";
     private const int Layer = 0;
 
+    // 片付け演出用の Animator パラメーター（Animator Controller 側で Transition の条件に使う）。
+    private const string ChoreStartParameter = "Chore_Start";
+    private const string ChorePeekParameter = "Chore_Peek_Trigger";
+    private const string ChoreEndParameter = "Chore_EndTrigger";
+    private const string DoorOpenParameter = "Door_OpenTrigger";
+
     // ── 参照 ──────────────────────────────────────────────────────────────────
     [Header("参照")]
     [Tooltip("母親モデルのAnimator。未設定の場合はMotherApproachControllerから解決する。")]
@@ -157,23 +163,25 @@ public class MotherAnimationPlayer : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  片付け用ステートの再生
+    //  片付け用ステートの再生（Animator のパラメーターと Transition で遷移させる）
+    //   ・MotherChoreController は「要求」だけを出し、実際の遷移は Animator Controller が行う。
+    //   ・直接 Play しないため、通常の歩き要求が演出を途中で上書きしない。
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Chore（片付け中・ループ）を再生する。</summary>
-    public void PlayChore() => PlayChoreLoop();
+    /// <summary>Chore（片付け中・ループ）へ遷移要求を出す。</summary>
+    public void PlayChore() => FireTrigger(ChoreStartParameter);
 
-    /// <summary>Chore（片付け中・ループ）を再生する。</summary>
-    public void PlayChoreLoop() => PlayState(choreLoopStateName);
+    /// <summary>Chore は ループステートのため、再トリガーは不要（互換用）。</summary>
+    public void PlayChoreLoop() { /* Chore は遷移後ループする。再要求しない。 */ }
 
-    /// <summary>Chore_Peek（こちらを見る・1回）を再生する。</summary>
-    public void PlayChorePeek() => PlayState(choreLookStateName);
+    /// <summary>Chore_Peek（こちらを見る・1回）へ遷移要求を出す。</summary>
+    public void PlayChorePeek() => FireTrigger(ChorePeekParameter);
 
-    /// <summary>Chore_End（立つ・1回）を再生する。</summary>
-    public void PlayChoreEnd() => PlayState(choreEndStateName);
+    /// <summary>Chore_End（立つ・1回）へ遷移要求を出す。</summary>
+    public void PlayChoreEnd() => FireTrigger(ChoreEndParameter);
 
-    /// <summary>Door_Open（ドアを開ける・1回）を再生する。</summary>
-    public void PlayDoorOpen() => PlayState(doorOpenStateName);
+    /// <summary>Door_Open（ドアを開ける・1回）へ遷移要求を出す。</summary>
+    public void PlayDoorOpen() => FireTrigger(DoorOpenParameter);
 
     /// <summary>Chore_Peek の再生完了を待つ（タイムアウト付き）。</summary>
     public IEnumerator WaitForChorePeek() => WaitForOneShot(choreLookStateName);
@@ -205,33 +213,34 @@ public class MotherAnimationPlayer : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 指定ステートへ直接切り替える（Animator.Play）。
-    /// 先に Walk を false にして、歩行からの上書きを防ぐ。
+    /// 指定ステート名へ Trigger を発火して遷移させる（Animator の Transition が実際の遷移を行う）。
+    /// ステート名は「遷移先ステートの存在確認」にのみ使い、Play はしない。
     /// </summary>
-    private void PlayState(string stateName)
+    private void FireTrigger(string triggerName)
     {
         Animator a = ResolveAnimator();
         if (a == null) return;
 
-        if (string.IsNullOrEmpty(stateName))
+        if (string.IsNullOrEmpty(triggerName))
         {
-            Debug.LogWarning("[MotherAnimationPlayer] ステート名が空のため再生できません", this);
+            Debug.LogWarning("[MotherAnimationPlayer] Trigger名が空のため要求できません", this);
             return;
         }
 
-        if (!HasState(stateName))
+        if (!HasParameter(triggerName, AnimatorControllerParameterType.Trigger))
         {
-            Debug.LogWarning($"[MotherAnimationPlayer] Animator にステート '{stateName}' がありません。" +
+            Debug.LogWarning($"[MotherAnimationPlayer] Animator に Trigger '{triggerName}' がありません。" +
                              "Animator Controller へ登録してください", this);
             return;
         }
 
-        // 歩行で上書きされないよう先に Walk を解除する。
+        // 歩行で上書きされないよう先に Walk を解除してから遷移を要求する。
         SetWalking(false);
-        a.Play(stateName, Layer, 0f);
+        a.ResetTrigger(triggerName);
+        a.SetTrigger(triggerName);
 
         if (showDebugLogs)
-            Debug.Log($"[MotherAnimationPlayer] アニメ再生: {stateName}");
+            Debug.Log($"[MotherAnimationPlayer] 遷移要求: {triggerName}");
     }
 
     /// <summary>

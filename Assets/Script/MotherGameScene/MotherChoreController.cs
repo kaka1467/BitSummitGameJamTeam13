@@ -158,6 +158,7 @@ public class MotherChoreController : MonoBehaviour
     private bool _choreArrived; // chorePoint 到着・向き合わせ完了（onChoreArrived）を受けたか
     private bool _choreCompleted; // 退場完了（onChoreCompleted）を受けたか
     private bool _choreApproachSuspicionStarted; // 行きの怪しさ加算を開始済みか（1回だけ発行）
+    private bool _choreEndRequested;             // Chore_End への遷移要求を発行済みか（二重要求防止）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unity ライフサイクル
@@ -388,6 +389,7 @@ public class MotherChoreController : MonoBehaviour
         _badItemNotifiedDuringLook = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
+        _choreEndRequested = false;
         _choreCompleted = false;
         // 6キーの開始待ち要求もクリアする（中断・ゲームオーバー・シーン変更で残さない）。
         _manualStartRequested = false;
@@ -442,6 +444,7 @@ public class MotherChoreController : MonoBehaviour
         _detectionStartPending = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
+        _choreEndRequested = false;
         _choreCompleted = false;
         IsChoreActive = false;
         SetDetection(false);
@@ -640,7 +643,7 @@ public class MotherChoreController : MonoBehaviour
     /// </summary>
     private IEnumerator ChorePerformPhase()
     {
-        // ── 片付け中：Chore（ループ再生）を直接開始する ──────────────────────
+        // ── 片付け中：Chore（ループ）へ遷移要求する ──────────────────────────
         PlayChoreState(choreLoopStateName, loop: true);
         _inChoreLoop = true;
         _loopElapsed = 0f;
@@ -668,17 +671,23 @@ public class MotherChoreController : MonoBehaviour
         if (!IsChoreActive) yield break;
 
         // ── Chore_Peek（視線）が進行中の場合は、その終了を待ってから Chore_End へ ──
-        //    Chore_Peek 終了後は Chore へ戻る実装なので、ここで Chore_End へ切り替える。
+        //    Chore_Peek → Chore_End の切り替えは LookRoutine が _pendingExit を見て行う。
         while (IsLooking && IsChoreActive)
             yield return null;
 
         if (!IsChoreActive) yield break;
 
-        // ── Chore_End（片付け終わって立つ・1回再生）──────────────────────────
-        PlayChoreState(choreEndStateName);
+        // ── Chore_End（片付け終わって立つ・1回）──────────────────────────────
+        //    LookRoutine 経由で既に Chore_End へ進んでいる場合は二重要求しない。
+        if (!_choreEndRequested)
+        {
+            PlayChoreState(choreEndStateName);
+            _choreEndRequested = true;
+        }
+
         yield return WaitForOneShotState(choreEndStateName);
 
-        // Chore_End 終了後、通常の歩きへ確実に切り替える。
+        // Chore_End 終了後、Animator の Chore_End → Idle 遷移を待って歩き要求を出す。
         RestoreWalkingAnimation();
     }
 
@@ -687,8 +696,8 @@ public class MotherChoreController : MonoBehaviour
     /// 実処理は MotherAnimationPlayer が持つ（Animator を直接操作しない）。
     ///
     /// 【重要】Animator Controller には Chore_End / Door_Open から出る遷移が存在しないため、
-    /// Walk を true にしただけでは現在のステートに留まり、歩きへ戻らない。
-    /// プレイヤー側で Idle を経由させてから Walk を立てる。
+    /// Chore_End / Door_Open は Animator の Transition で Idle へ自動遷移するため、
+    /// ここでは Walk を立てるだけでよい（Play("Idle") による強制復帰は不要）。
     /// </summary>
     private void RestoreWalkingAnimation()
     {
@@ -699,10 +708,12 @@ public class MotherChoreController : MonoBehaviour
             return;
         }
 
-        player.RestoreWalking();
+        // Chore_End / Door_Open → Idle の遷移（Exit Time）が働いた後、Walk=true で
+        // Idle → Walk の既存遷移に乗る。直接 Play しない。
+        player.SetWalking(true);
 
         if (showDebugLogs)
-            Debug.Log("[MotherChore] 片付け／ドア開け終了 — プレイヤー経由で既存の歩きアニメーションへ復帰");
+            Debug.Log("[MotherChore] 片付け／ドア開け終了 — 歩き要求（Walk=true）を出しました");
     }
 
     /// <summary>
@@ -733,10 +744,16 @@ public class MotherChoreController : MonoBehaviour
         _badItemNotifiedDuringLook = false;
         _lookRoutine = null;
 
-        // 終了後は Chore へ戻る。
-        //  片付け時間が満了している場合（_pendingExit）も、いったん Chore へ戻してから
-        //  ChorePerformPhase の待機ループが抜けて Chore_End へ進む（見た目の連続性を保つ）。
-        PlayChoreState(choreLoopStateName, loop: true);
+        // 終了後は Chore へ戻る（Animator の Chore_Peek → Chore 遷移が exitTime で自動的に行う）。
+        //  片付け時間が満了している場合（_pendingExit）は、視線を最後まで再生した後で
+        //  Chore を一瞬挟まずに Chore_End へ進める（Chore_EndTrigger を立てる）。
+        if (_pendingExit)
+        {
+            PlayChoreState(choreEndStateName);
+            _choreEndRequested = true;
+            if (showDebugLogs)
+                Debug.Log("[MotherChore] 視線終了（再生完了）— 片付け時間満了のため Chore_End へ進みます");
+        }
 
         if (showDebugLogs)
             Debug.Log($"[MotherChore] Chore_Peek 終了 — Chore へ戻ります（pendingExit={_pendingExit}）");
@@ -795,6 +812,7 @@ public class MotherChoreController : MonoBehaviour
         _detectionStartPending = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
+        _choreEndRequested = false;
         _choreCompleted = false;
         IsChoreActive = false;
         SetDetection(false);
@@ -885,15 +903,15 @@ public class MotherChoreController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 片付け用のステートへ切り替える。
-    /// Animator への書き込みは MotherAnimationPlayer に集約する（Walk 解除もプレイヤーが行う）。
+    /// 片付け用のステートへの遷移を「要求」する。
+    /// 実際の遷移は Animator Controller の Transition が行う（Animator.Play は使わない）。
     /// </summary>
     private void PlayChoreState(string stateName, bool loop = false)
     {
         MotherAnimationPlayer player = ResolveAnimationPlayer();
         if (player == null)
         {
-            Debug.LogWarning("[MotherChore] MotherAnimationPlayer が未設定のため再生できません", this);
+            Debug.LogWarning("[MotherChore] MotherAnimationPlayer が未設定のため遷移要求できません", this);
             return;
         }
 
@@ -901,10 +919,10 @@ public class MotherChoreController : MonoBehaviour
         if (stateName == doorOpenStateName) player.PlayDoorOpen();
         else if (stateName == choreLookStateName) player.PlayChorePeek();
         else if (stateName == choreEndStateName) player.PlayChoreEnd();
-        else player.PlayChoreLoop();
+        else player.PlayChore();
 
         if (showDebugLogs)
-            Debug.Log($"[MotherChore] アニメ再生要求: {stateName} (loop={loop})");
+            Debug.Log($"[MotherChore] 遷移要求: {stateName} (loop={loop})");
     }
 
     /// <summary>
@@ -967,8 +985,7 @@ public class MotherChoreController : MonoBehaviour
             Debug.LogWarning("[MotherChore] doorController が未設定のため、ドア本体を開けられません", this);
 
         // 開け終わったので抑止を解除し、歩行（位置移動・Walk）を再開できるようにする。
-        // その後 Idle 経由で歩きアニメーションへ戻す
-        // （Door_Open から出る遷移が無いため、Play("Idle") + Walk=true が必要）。
+        // Door_Open → Idle の遷移（Exit Time）が働いた後、Walk=true で Idle → Walk に乗る。
         SetWalkingOverrideSuppressed(false);
         SetMovementSuppressed(false);
         RestoreWalkingAnimation();
