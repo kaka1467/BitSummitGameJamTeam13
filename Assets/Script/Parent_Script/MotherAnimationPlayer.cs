@@ -33,6 +33,13 @@ public class MotherAnimationPlayer : MonoBehaviour
     private const string WalkParameter = "Walk";
     private const int Layer = 0;
 
+    /// <summary>
+    /// 1回再生の「完了」とみなす normalizedTime の下限。
+    /// Exit Time 遷移（1.0）で退出した場合に、退出直前の観測値がわずかに1未満でも
+    /// 正常終了として扱うための許容値。
+    /// </summary>
+    private const float CompletionNormalizedTolerance = 0.99f;
+
     // 片付け演出用の Animator パラメーター（Animator Controller 側で Transition の条件に使う）。
     private const string ChoreStartParameter = "Chore_Start";
     private const string ChorePeekParameter = "Chore_Peek_Trigger";
@@ -334,39 +341,67 @@ public class MotherAnimationPlayer : MonoBehaviour
         }
 
         // 2) 開始を確認できた。1回再生の終了まで待つ。
-        //    ・現在もそのステートなら、normalizedTime>=1 で「正常終了」。
-        //    ・別のステートへ正式に退出した場合も「正常終了」（遷移による退出。Exit Time=1 の遷移で起こる）。
-        //    ・同じステートへ戻ってきた場合（ループ）や再入は正常終了とみなさない。
+        //    ・normalizedTime>=1 を観測 → 正常終了。
+        //    ・完了前に別ステートへ退出 → 想定外の退出（失敗）。
+        //    ・ループ設定 → 設定ミス（警告して失敗）。
+        //    ・Animator無効化／タイムアウト → 失敗。
         float elapsed = 0f;
+        float maxNormalized = 0f;   // 対象ステートで観測した最大 normalizedTime
         bool completed = false;
-        bool leftToOtherState = false;
+        bool failed = false;
+        string failReason = null;
 
         while (elapsed < oneShotTimeoutSeconds)
         {
+            // Animator が無効化された（シーン変更・中断など）→ 失敗。
+            if (a == null || !a.isActiveAndEnabled)
+            {
+                failReason = "Animatorが無効化されました";
+                failed = true;
+                break;
+            }
+
             AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
 
             if (info.IsName(stateName))
             {
-                if (info.loop) { completed = true; break; }        // ループは時間管理に委ねる
-                if (info.normalizedTime >= 1f) { completed = true; break; }
-                // 一度別ステートへ出た後に同じステートへ戻ってきた場合は正常終了としない
-                leftToOtherState = false;
-            }
-            else
-            {
-                // 別ステートへ移動した。遷移中（IsInTransition）でなければ正式な退出とみなす。
-                if (!a.IsInTransition(Layer))
+                // 3) ワンショット対象のループ設定は誤り。即成功にせず警告して失敗とする。
+                if (info.loop)
                 {
-                    leftToOtherState = true;
+                    failReason = $"ステート '{stateName}' がループ設定です（ワンショット対象にループは不正）";
+                    failed = true;
                     break;
                 }
+
+                if (info.normalizedTime >= 1f) { completed = true; break; }
+                if (info.normalizedTime > maxNormalized) maxNormalized = info.normalizedTime;
+            }
+            else if (!a.IsInTransition(Layer))
+            {
+                // 2) 別ステートへ退出した。完了（normalizedTime>=1）を観測済みなら正常終了、
+                //    そうでなければ想定外の退出として失敗にする。
+                if (maxNormalized >= CompletionNormalizedTolerance) completed = true;
+                else
+                {
+                    failReason = $"ステート '{stateName}' が完了前に退出しました" +
+                                 $"（normalizedTime={maxNormalized:F2}）";
+                    failed = true;
+                }
+                break;
             }
 
             elapsed += Time.deltaTime;
             yield return null;
         }
 
-        if (!completed && !leftToOtherState)
+        if (failed)
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] {failReason} — 失敗", this);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        if (!completed)
         {
             Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' の再生完了を" +
                              $"{oneShotTimeoutSeconds:F1}s で確認できませんでした — 失敗", this);

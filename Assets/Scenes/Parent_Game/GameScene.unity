@@ -5059,7 +5059,7 @@ GameObject:
   - component: {fileID: 1418577573}
   - component: {fileID: 1418577572}
   m_Layer: 0
-  m_Name: MotherGauge
+  m_Name: SuspicionGauge
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

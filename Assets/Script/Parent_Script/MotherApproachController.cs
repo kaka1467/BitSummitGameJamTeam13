@@ -1420,6 +1420,14 @@ public class MotherApproachController : MonoBehaviour
         }
 
         yield return controller.ChoreDoorOpenRoutine(targetState, isApproach);
+
+        // MotherChoreController 側で再生失敗が確定した場合は経路を失敗にする
+        // （呼び出し元が FinishChoreRouteAborted で移動抑止・加算・通常イベント停止を解除する）。
+        if (controller.IsChoreRouteFailed)
+        {
+            Debug.LogWarning("[MotherApproachController] Door_Open の再生失敗を検出 — 片付けルートを中断します", this);
+            _routeExecutionFailed = true;
+        }
     }
 
     /// <summary>

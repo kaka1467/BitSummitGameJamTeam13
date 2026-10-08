@@ -139,6 +139,12 @@ public class MotherChoreController : MonoBehaviour
     /// <summary>視線アニメーション（3）を再生中か。</summary>
     public bool IsLooking => _lookRoutine != null;
 
+    /// <summary>
+    /// 片付けの再生が失敗したか（呼び出し元が経路を中断するために参照する）。
+    /// Door_Open / Chore_End の再生完了を確認できなかった場合に true になる。
+    /// </summary>
+    public bool IsChoreRouteFailed => _choreRouteFailed;
+
     // ── 内部状態 ──────────────────────────────────────────────────────────────
     private Coroutine _mainRoutine; // 片付け本体（開始待ち＋行き〜帰り）
     private Coroutine _lookRoutine; // 視線アニメ（3）と発見判定の期間管理
@@ -159,6 +165,7 @@ public class MotherChoreController : MonoBehaviour
     private bool _choreCompleted; // 退場完了（onChoreCompleted）を受けたか
     private bool _choreApproachSuspicionStarted; // 行きの怪しさ加算を開始済みか（1回だけ発行）
     private bool _choreEndRequested;             // Chore_End への遷移要求を発行済みか（二重要求防止）
+    private bool _choreRouteFailed;              // 片付けの再生失敗（呼び出し元へ伝えて経路を中断させる）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unity ライフサイクル
@@ -392,6 +399,7 @@ public class MotherChoreController : MonoBehaviour
         _choreEndRequested = false;
         // 未消費の終了要求・Trigger を Animator に残さない（再プレイ・中断で持ち越さない）。
         ResolveAnimationPlayer()?.ResetChoreParameters();
+        _choreRouteFailed = false;
         _choreCompleted = false;
         // 6キーの開始待ち要求もクリアする（中断・ゲームオーバー・シーン変更で残さない）。
         _manualStartRequested = false;
@@ -449,6 +457,7 @@ public class MotherChoreController : MonoBehaviour
         _choreEndRequested = false;
         // 未消費の終了要求・Trigger を Animator に残さない（再プレイ・中断で持ち越さない）。
         ResolveAnimationPlayer()?.ResetChoreParameters();
+        _choreRouteFailed = false;
         _choreCompleted = false;
         IsChoreActive = false;
         SetDetection(false);
@@ -699,6 +708,7 @@ public class MotherChoreController : MonoBehaviour
         if (!choreEndOk)
         {
             Debug.LogWarning("[MotherChore] Chore_End の再生完了を確認できなかったため、歩き復帰を保留します（失敗）", this);
+            _choreRouteFailed = true;
             yield break;
         }
 
@@ -824,6 +834,7 @@ public class MotherChoreController : MonoBehaviour
         _choreEndRequested = false;
         // 未消費の終了要求・Trigger を Animator に残さない（再プレイ・中断で持ち越さない）。
         ResolveAnimationPlayer()?.ResetChoreParameters();
+        _choreRouteFailed = false;
         _choreCompleted = false;
         IsChoreActive = false;
         SetDetection(false);
@@ -1020,7 +1031,11 @@ public class MotherChoreController : MonoBehaviour
                              "移動許可と怪しさ加算へ進みません（失敗）", this);
             SetWalkingOverrideSuppressed(false);
             SetMovementSuppressed(false);
-            yield break;   // 呼び出し側が _routeExecutionFailed 経由で中断する
+
+            // 失敗を呼び出し元へ伝える（MotherApproachController が経路を中断し、
+            // FinishChoreRouteAborted → 通常イベント停止・移動抑止を解除する）。
+            _choreRouteFailed = true;
+            yield break;
         }
 
         // ── ドア本体の全開完了を待つ ──
