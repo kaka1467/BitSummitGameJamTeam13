@@ -7,8 +7,8 @@ using UnityEngine.InputSystem;
 /// ドアイベント／分岐のみを制御する。
 ///
 /// 責務の境界：
-///   ParentApproachController  — 移動とルート演出
-///   ParentWarningSystem       — シーケンス調整
+///   MotherApproachController  — 移動とルート演出
+///   MotherApproachWarning       — シーケンス調整
 ///   ParentWarningScheduler    — タイミングと自動警告スケジュール（1キーの母親ドア確認起動を含む）
 ///   MotherSuspicionSystem（本クラス）— 親機のドア到着／通過に反応し、
 ///                               分岐、ドア状態、サイクルリセット、大きな音を処理する
@@ -24,10 +24,10 @@ using UnityEngine.InputSystem;
 public class MotherSuspicionSystem : MonoBehaviour
 {
     // ── システム参照 ──────────────────────────────────────────────────────────
-    [Header("システム参照")] public ParentWarningSystem warningSystem;
+    [Header("システム参照")] public MotherApproachWarning warningSystem;
     public CaughtReactionController caughtReactionController;
     public MotherGauge motherGauge;
-    public ParentApproachController approachController;
+    public MotherApproachController approachController;
     public SleepingController sleepingController;
 
     // ── 親機の速度・足音・Animator ────────────────────────────────────────────
@@ -48,38 +48,12 @@ public class MotherSuspicionSystem : MonoBehaviour
     // アニメーション操作の窓口（Animator への書き込みはここに集約する）。
     [SerializeField] private MotherAnimationPlayer animationPlayer;
 
-    [Header("親機の足音")] [SerializeField] private AudioSource hallwayFootstepAudioSource;
-    [SerializeField] private AudioSource gardenFootstepAudioSource;
-    [Range(0f, 1f)] [SerializeField] private float farVolume = 0.2f;
-    [Range(0f, 1f)] [SerializeField] private float midVolume = 0.5f;
-    [Range(0f, 1f)] [SerializeField] private float nearDoorVolume = 1f;
-    [SerializeField] private float volumeChangeSpeed = 1f;
-
-    // ── オーディオ ─────────────────────────────────────────────────────────────
-    [Header("オーディオソース")] [Tooltip("ダミー（覗き見）ドアイベント発生時に再生。")] [SerializeField]
-    private AudioSource dummyDoorAudioSource;
-
-    [Tooltip("本チェック（全開）でドアが開いたときに再生。")] [SerializeField]
-    private AudioSource mainDoorOpenAudioSource;
-
-    [Tooltip("各イベント終了時にドアが閉じるときに再生。")] [SerializeField]
-    private AudioSource mainDoorCloseAudioSource;
-
-    [Tooltip("大きな音による突入が発生した直後に再生。")] [SerializeField]
-    private AudioSource rushInAudioSource;
-
-    [Tooltip("廊下を通過した後に再生する偽ドア音。")] [SerializeField]
-    private AudioSource passByDoorAudioSource;
-
-    [Tooltip("通過完了から偽ドア音を再生するまでの秒数。")] [SerializeField, Min(0f)]
-    private float passByDoorSoundDelay = 1f;
-
     // ── ドア ──────────────────────────────────────────────────────────────────
     [Header("ドア制御")] [SerializeField] private DoorController targetDoorController;
 
     // ── 分岐 ──────────────────────────────────────────────────────────────────
     [Header("イベント分岐")]
-    [Tooltip("ParentWarningSystemからルート状態を取得できない場合のダミー（覗き見）チェック確率（例：Pキーのデバッグ）。")]
+    [Tooltip("MotherApproachWarningからルート状態を取得できない場合のダミー（覗き見）チェック確率（例：Pキーのデバッグ）。")]
     [SerializeField, Range(0f, 1f)]
     private float dummyProbability = 0.3f;
 
@@ -216,7 +190,6 @@ public class MotherSuspicionSystem : MonoBehaviour
     private Coroutine _primaryResetCoroutine;
     private Coroutine _continuousRoomCoroutine;
     private Coroutine _rushInPeekCoroutine;
-    private Coroutine _passByDoorSoundCoroutine;
     private bool _hasPermanentGameOver;
     private float _activePeekDuration = 3f;
 
@@ -224,13 +197,10 @@ public class MotherSuspicionSystem : MonoBehaviour
     private bool _roomEntryAccepted; // このサイクルでRequestRoomEntry()が受理されたか
     private bool _roomEntryStarted; // OnEnteredRoom後に疑惑コルーチンを開始済みか
     private bool _roomExitCompleted; // OnExitedRoomを受信済みか
-    private bool _approachEventsSubscribed; // ParentApproachControllerの入退室イベントを購読中か
+    private bool _approachEventsSubscribed; // MotherApproachControllerの入退室イベントを購読中か
     private int _roomCycleId; // OnApproachReachedDoorのたびに増えるサイクル識別子
     private int _primaryResetCycleId; // HandlePrimaryResetSequence開始時点の_roomCycleId
     private float _approachSpeed = 1.5f;
-    private float _currentFootstepVolume;
-    private float _targetFootstepVolume;
-    private bool _isGrassFootstepRoute;
     private bool _animatorWarningLogged;
     public float CurrentApproachSpeed => _approachSpeed;
 
@@ -262,18 +232,18 @@ public class MotherSuspicionSystem : MonoBehaviour
             targetDoorController = Object.FindFirstObjectByType<DoorController>();
 
         if (warningSystem == null)
-            warningSystem = Object.FindFirstObjectByType<ParentWarningSystem>();
+            warningSystem = Object.FindFirstObjectByType<MotherApproachWarning>();
 
         if (caughtReactionController == null)
             caughtReactionController = Object.FindFirstObjectByType<CaughtReactionController>();
 
         if (approachController == null)
-            approachController = Object.FindFirstObjectByType<ParentApproachController>();
+            approachController = Object.FindFirstObjectByType<MotherApproachController>();
 
         if (sleepingController == null)
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
 
-        // Animatorの特定は ParentApproachController に一元化する（複数スクリプトが別々に探して
+        // Animatorの特定は MotherApproachController に一元化する（複数スクリプトが別々に探して
         // 別のAnimatorを掴むことを防ぐ）。取得できない場合は Controller 側が理由つきで警告する。
         if (motherAnimator == null && approachController != null)
             motherAnimator = approachController.MotherAnimator;
@@ -284,10 +254,6 @@ public class MotherSuspicionSystem : MonoBehaviour
             approachController.MigrateLegacyHallwayPoints();
 
         _approachSpeed = initialApproachSpeed;
-        _currentFootstepVolume = farVolume;
-        _targetFootstepVolume = farVolume;
-        InitializeFootstepAudioSource(hallwayFootstepAudioSource);
-        InitializeFootstepAudioSource(gardenFootstepAudioSource);
         if (approachController != null)
         {
             approachController.MovementStateChanged += HandleWalkingStateChanged;
@@ -301,7 +267,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     private void OnDestroy()
     {
-        CancelPassByDoorSound();
+        // 偽ドア音の予約は MotherApproachWarning 側が管理する（ここでは触らない）。
         if (approachController != null)
         {
             approachController.MovementStateChanged -= HandleWalkingStateChanged;
@@ -348,45 +314,6 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         SetApproachSpeed(speed);
-    }
-
-    private void UpdateFootstepAudio()
-    {
-        bool shouldPlay = approachController != null && approachController.IsApproaching &&
-                          !approachController.IsRushIn;
-        _isGrassFootstepRoute = approachController != null && approachController.IsGardenRoute;
-        AudioSource activeSource = _isGrassFootstepRoute
-            ? gardenFootstepAudioSource
-            : hallwayFootstepAudioSource;
-
-        if (approachController != null)
-        {
-            _targetFootstepVolume = approachController.ReachedDoor
-                ? nearDoorVolume
-                : approachController.IsInHallwayPhase
-                    ? midVolume
-                    : farVolume;
-        }
-
-        if (!shouldPlay || activeSource == null)
-        {
-            StopFootstepAudioSources();
-            _currentFootstepVolume = farVolume;
-            _targetFootstepVolume = farVolume;
-            return;
-        }
-
-        StopInactiveFootstepAudioSources(activeSource);
-        if (!activeSource.isPlaying)
-        {
-            activeSource.loop = true;
-            activeSource.volume = _currentFootstepVolume;
-            activeSource.Play();
-        }
-
-        _currentFootstepVolume = Mathf.MoveTowards(
-            _currentFootstepVolume, _targetFootstepVolume, volumeChangeSpeed * Time.deltaTime);
-        activeSource.volume = _currentFootstepVolume;
     }
 
     private void HandleWalkingStateChanged(bool isWalking)
@@ -449,29 +376,6 @@ public class MotherSuspicionSystem : MonoBehaviour
         player.FirePeekTrigger(triggerName);
     }
 
-    private void InitializeFootstepAudioSource(AudioSource source)
-    {
-        if (source == null) return;
-        source.loop = true;
-        source.Stop();
-        source.volume = farVolume;
-    }
-
-    private void StopInactiveFootstepAudioSources(AudioSource activeSource)
-    {
-        AudioSource inactiveSource = activeSource == hallwayFootstepAudioSource
-            ? gardenFootstepAudioSource
-            : hallwayFootstepAudioSource;
-        if (inactiveSource != null)
-            inactiveSource.Stop();
-    }
-
-    private void StopFootstepAudioSources()
-    {
-        if (hallwayFootstepAudioSource != null) hallwayFootstepAudioSource.Stop();
-        if (gardenFootstepAudioSource != null) gardenFootstepAudioSource.Stop();
-    }
-
     private bool HasAnimatorParameter(string parameterName, AnimatorControllerParameterType parameterType)
     {
         if (motherAnimator == null) return false;
@@ -501,7 +405,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             "[MotherSuspicionSystem] 母親AnimatorまたはWalk/Peekパラメータが未設定のため、アニメーション制御をスキップします。",
             this);
     }
-    // ── 部屋入室（案B）：ParentApproachControllerイベントの購読 ────────────────
+    // ── 部屋入室（案B）：MotherApproachControllerイベントの購読 ────────────────
 
     private void SubscribeApproachEvents()
     {
@@ -513,7 +417,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         _approachEventsSubscribed = true;
         Debug.Log(
-            "[PD] Subscribed to ParentApproachController events (OnEnteredRoom/OnExitedRoom/OnGardenPeekStarted)");
+            "[PD] Subscribed to MotherApproachController events (OnEnteredRoom/OnExitedRoom/OnGardenPeekStarted)");
     }
 
     private void UnsubscribeApproachEvents()
@@ -528,7 +432,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// ParentApproachControllerから、親機が部屋内部への移動を完了し入室したときに呼び出される。
+    /// MotherApproachControllerから、親機が部屋内部への移動を完了し入室したときに呼び出される。
     /// ここで初めて部屋侵入時の疑惑（バースト／継続疑惑／睡眠退出待ち）を開始する。
     /// </summary>
     private void HandleEnteredRoom()
@@ -565,7 +469,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// ParentApproachControllerから、親機が部屋内部から退室しdoorPointへ戻ったときに呼び出される。
+    /// MotherApproachControllerから、親機が部屋内部から退室しdoorPointへ戻ったときに呼び出される。
     /// 退室順序の最終段（ドアを閉じる→ResetCycle→EndWarningSequence）をここで実行する。
     /// </summary>
     private void HandleExitedRoom()
@@ -584,8 +488,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         // ゲームオーバー確定後はドア状態・疑惑状態を変更しない（従来のサイクル終了と同じ扱い）。
         if (isCaught || _hasPermanentGameOver) return;
 
-        if (mainDoorCloseAudioSource != null)
-            mainDoorCloseAudioSource.Play();
+        warningSystem?.PlayMainDoorClose();
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
@@ -601,7 +504,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     private void Update()
     {
-        UpdateFootstepAudio();
+        // 足音の更新は MotherApproachWarning.UpdateMotherFootsteps が担当する（移管済み）。
 
         // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
 
@@ -629,11 +532,11 @@ public class MotherSuspicionSystem : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  公開API — ParentWarningSystemから呼び出される
+    //  公開API — MotherApproachWarningから呼び出される
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// ParentWarningSystemから、親機がドアで停止したときに呼び出される。
+    /// MotherApproachWarningから、親機がドアで停止したときに呼び出される。
     /// warningSystem.ActiveRouteで分岐する — ルートは移動開始前に決定済み。
     /// ActiveRouteがNoneの場合（例：Pキーのデバッグ）のみdummyProbabilityにフォールバックする。
     /// </summary>
@@ -662,14 +565,14 @@ public class MotherSuspicionSystem : MonoBehaviour
         Debug.Log($"[PD] activePeekDuration={_activePeekDuration:F1}s (base={peekDurationBase:F1} + gauge={gauge})");
 
         bool primary;
-        var route = (warningSystem != null) ? warningSystem.ActiveRoute : ParentWarningSystem.RouteState.None;
+        var route = (warningSystem != null) ? warningSystem.ActiveRoute : MotherApproachWarning.RouteState.None;
 
-        if (route == ParentWarningSystem.RouteState.DoorPeek)
+        if (route == MotherApproachWarning.RouteState.DoorPeek)
         {
             primary = true;
             Debug.Log("[PD] Branch: PRIMARY — from ActiveRoute=DoorPeek");
         }
-        else if (route == ParentWarningSystem.RouteState.HallwayPassBy)
+        else if (route == MotherApproachWarning.RouteState.HallwayPassBy)
         {
             primary = false;
             Debug.LogWarning("[PD] WARNING: OnApproachReachedDoor was called on a non-door route");
@@ -698,7 +601,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// ParentWarningSystemから、親機が停止せず通過したときに呼び出される。
+    /// MotherApproachWarningから、親機が停止せず通過したときに呼び出される。
     /// 疑惑増加やドアイベントを発生させず、サイクルを正常にリセットする。
     /// </summary>
     public void OnApproachPassedBy()
@@ -722,7 +625,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     public void NotifyGameOver()
     {
-        CancelPassByDoorSound();
+        warningSystem?.CancelPassByDoorSound();
         _hasPermanentGameOver = true;
         // 片付けの歩行加算も確実に停止する（ゲームオーバー中に加算が残らない）。
         DisableChoreSuspicion();
@@ -752,8 +655,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
         RefreshWalkingAnimationState();
 
-        if (mainDoorOpenAudioSource != null)
-            mainDoorOpenAudioSource.Play();
+        warningSystem?.PlayMainDoorOpen();
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: false);
 
@@ -778,8 +680,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             yield break;
         }
 
-        if (mainDoorCloseAudioSource != null)
-            mainDoorCloseAudioSource.Play();
+        warningSystem?.PlayMainDoorClose();
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
 
@@ -791,7 +692,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     /// <summary>
     /// 子機の大きな音のアイテムが発生したとき（または0キーのデバッグ時）に呼び出される。
-    /// 突入音を再生し、ゲージを加算してからParentWarningSystem.StartLoudItemRushInSequence()へ引き渡す。
+    /// 突入音を再生し、ゲージを加算してからMotherApproachWarning.StartLoudItemRushInSequence()へ引き渡す。
     /// 警告シーケンスがすでに進行中の場合は完全に抑制する。
     /// </summary>
     public void OnLoudItemTriggered()
@@ -818,8 +719,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         Debug.Log($"[PD] Loud item triggered rush-in request — adding {loudItemGaugeAmount} gauge stages");
 
-        if (rushInAudioSource != null)
-            rushInAudioSource.Play();
+        warningSystem?.PlayRushIn();
 
         if (motherGauge != null)
         {
@@ -860,8 +760,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
         RefreshWalkingAnimationState();
 
-        if (mainDoorOpenAudioSource != null)
-            mainDoorOpenAudioSource.Play();
+        warningSystem?.PlayMainDoorOpen();
 
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: true);
@@ -1055,8 +954,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             }
         }
 
-        if (mainDoorCloseAudioSource != null)
-            mainDoorCloseAudioSource.Play();
+        warningSystem?.PlayMainDoorClose();
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
@@ -1070,7 +968,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         isMotherLookingNow = false;
 
         // 【帰路】ResetApproach で初期位置へ瞬間復帰させる前に、帰路（Turn Back → 帰路List → 画面外）を
-        // ParentApproachController へ要求し、受付から完了／失敗まで待つ。
+        // MotherApproachController へ要求し、受付から完了／失敗まで待つ。
         // 受理されなかった場合（突入・入室・ゲームオーバー等）は従来どおり即時復帰する。
         if (approachController != null && approachController.RequestReturnHome())
         {
@@ -1140,7 +1038,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
         RefreshWalkingAnimationState();
 
-        if (dummyDoorAudioSource != null) dummyDoorAudioSource.Play();
+        warningSystem?.PlayDummyDoor();
 
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: false);
@@ -1154,7 +1052,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         Debug.Log($"[PD] HandleDummySequence: activePeekDuration={_activePeekDuration:F1}s");
         yield return new WaitForSeconds(_activePeekDuration);
 
-        if (mainDoorCloseAudioSource != null) mainDoorCloseAudioSource.Play();
+        warningSystem?.PlayMainDoorClose();
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
@@ -1232,8 +1130,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         catFeintController.TriggerJump();
         catFeintController.PlayMeow();
 
-        if (dummyDoorAudioSource != null)
-            dummyDoorAudioSource.Play();
+        warningSystem?.PlayDummyDoor();
 
         // 4. 所定時間後に猫を隠し、ドアを閉める。中断があればループを抜けて後始末する。
         float catVisibleDuration = Mathf.Max(0f, duration - catFeintController.HideBeforeCloseSeconds);
@@ -1250,8 +1147,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (hideBeforeClose > 0f)
             yield return new WaitForSeconds(hideBeforeClose);
 
-        if (mainDoorCloseAudioSource != null)
-            mainDoorCloseAudioSource.Play();
+        warningSystem?.PlayMainDoorClose();
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
@@ -1353,7 +1249,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 庭覗きの待機開始（ParentApproachController.onGardenPeekStarted）で継続疑惑を開始する。
+    /// 庭覗きの待機開始（MotherApproachController.onGardenPeekStarted）で継続疑惑を開始する。
     /// 加算量はドア側の継続疑惑と同じ（continuousRoomSuspicionAmount）。
     /// 加算間隔はドア側の間隔×gardenPeekSuspicionIntervalMultiplier（初期値1.5）。
     /// 倍率やドア側間隔が0以下の場合は異常な高速加算を避けるため、警告を出して無効化する。
@@ -1457,7 +1353,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     public void OnApproachStarted()
     {
-        CancelPassByDoorSound();
+        warningSystem?.CancelPassByDoorSound();
 
         // 片付け演出のサイクル中は通常の接近開始処理を行わない（重複防止）。
         if (IsChoreOverrideActive)
@@ -1465,35 +1361,14 @@ public class MotherSuspicionSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// 廊下通過完了後の偽ドア音を、従来と同じ1回だけ遅延再生する。
+    /// 廊下通過完了後の偽ドア音は MotherApproachWarning.PlayPassByDoorSound へ移管した。
+    /// 呼び出し元（MotherApproachWarning）は自クラスのメソッドを直接使用する。
     /// </summary>
-    public void PlayPassByDoorSound()
+    private void NoopPassByDoorSoundRemoved()
     {
-        CancelPassByDoorSound();
-        _passByDoorSoundCoroutine = StartCoroutine(PlayPassByDoorSoundCoroutine());
+        // 移管済みのため、ここに再生処理は持たない。
     }
 
-    public void CancelPassByDoorSound()
-    {
-        if (_passByDoorSoundCoroutine == null) return;
-        StopCoroutine(_passByDoorSoundCoroutine);
-        _passByDoorSoundCoroutine = null;
-    }
-
-    private IEnumerator PlayPassByDoorSoundCoroutine()
-    {
-        float delay = Mathf.Max(0f, passByDoorSoundDelay);
-        Debug.Log($"[MotherSuspicionSystem] Pass-by door sound: waiting {delay:F1}s");
-        yield return new WaitForSeconds(delay);
-
-        if (passByDoorAudioSource != null)
-        {
-            Debug.Log("[MotherSuspicionSystem] Pass-by door sound: PLAY");
-            passByDoorAudioSource.Play();
-        }
-
-        _passByDoorSoundCoroutine = null;
-    }
 
     // ── 片付け演出（MotherChoreController との連携） ─────────────────────────
     //   ・SetChoreOverride(true) 中は通常の親イベント入口を止める（片付けと重複させない）。
@@ -1552,7 +1427,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     /// <summary>
     /// 片付けのドア開け（Door_Open）中、歩きアニメーションの上書きを抑止する。
-    /// 歩行の位置移動は ParentApproachController 側が止める。ここでは Walk の書き換えだけを止める
+    /// 歩行の位置移動は MotherApproachController 側が止める。ここでは Walk の書き換えだけを止める
     /// （通常イベントのドア操作へ片付けの再生が遅れて干渉しないようにするため）。
     /// </summary>
     public void SetChoreWalkingOverrideSuppressed(bool suppressed)
@@ -1563,14 +1438,14 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     /// <summary>
     /// 片付けのドア開け（Door_Open）中、歩行による位置移動を止めているか。
-    /// ParentApproachController の移動ループがこれを見て位置更新を止める
+    /// MotherApproachController の移動ループがこれを見て位置更新を止める
     /// （開け終わる前に母親が通り抜けないようにする）。
     /// </summary>
     public bool IsChoreMovementSuppressed => _choreMovementSuppressed;
 
     /// <summary>
     /// 片付けのドア開け（Door_Open）中の位置移動抑止を設定する。
-    /// ParentApproachController 側から呼ばれる。
+    /// MotherApproachController 側から呼ばれる。
     /// </summary>
     public void SetChoreMovementSuppressed(bool suppressed)
     {
@@ -1801,7 +1676,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (motherChoreController == null) return;
 
-        // 親機側の経過率（ParentWarningSystem の _gameplayElapsedSeconds 相当）と併用する。
+        // 親機側の経過率（MotherApproachWarning の _gameplayElapsedSeconds 相当）と併用する。
         float parentRate = 0f;
         if (warningSystem != null)
             parentRate = warningSystem.GameplayProgressRate;
@@ -1873,7 +1748,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         Debug.Log("[PD] OnPlayerCaught — GAME OVER");
-        CancelPassByDoorSound();
+        warningSystem?.CancelPassByDoorSound();
         // 片付けの歩行加算も確実に停止する（捕獲後に加算が残らない）。
         DisableChoreSuspicion();
         isCaught = true;

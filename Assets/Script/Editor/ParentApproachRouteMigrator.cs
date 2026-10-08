@@ -7,12 +7,12 @@ using UnityEngine.SceneManagement;
 /// ParentApproachRouteMigrator：
 /// 廊下ルート（旧 hallwayPoint1〜3 → List）の移行を【編集時に明示的に】実行するEditorツール。
 ///
-/// 実行時の互換移行（ParentApproachController.MigrateLegacyHallwayPoints）とは別物で、
+/// 実行時の互換移行（MotherApproachController.MigrateLegacyHallwayPoints）とは別物で、
 /// こちらは「編集時のオブジェクトを実際に書き換える」唯一の手段。
 /// 実行時側はメモリ上だけで完結し、編集時のシーン/Prefabへは書き戻さない。
 ///
 /// メニュー：
-///   ・Tools/親機ルート: 選択中を移行           … 選択中の ParentApproachController を移行（通常はこちら）
+///   ・Tools/親機ルート: 選択中を移行           … 選択中の MotherApproachController を移行（通常はこちら）
 ///   ・Tools/親機ルート: 開いているシーンを移行 … 開いているシーン内の該当コンポーネントをすべて移行
 ///   ・Tools/親機ルート: 選択中を旧フィールドから作り直す … 既存Listを破棄して旧値から作り直す（警告あり）
 ///
@@ -36,17 +36,17 @@ public static class ParentApproachRouteMigrator
     {
         if (!ValidateEditMode()) return;
 
-        var controllers = Selection.GetFiltered<ParentApproachController>(SelectionMode.Editable);
+        var controllers = Selection.GetFiltered<MotherApproachController>(SelectionMode.Editable);
         if (controllers == null || controllers.Length == 0)
         {
-            Debug.LogWarning("[親機ルート移行] ParentApproachController を持つオブジェクトを選択してから実行してください。");
+            Debug.LogWarning("[親機ルート移行] MotherApproachController を持つオブジェクトを選択してから実行してください。");
             return;
         }
 
         int totalAdded = 0;
         int migratedCount = 0;
 
-        foreach (ParentApproachController controller in controllers)
+        foreach (MotherApproachController controller in controllers)
         {
             int added = MigrateOne(controller);
             if (added < 0) continue;   // 既に移行済み
@@ -63,19 +63,19 @@ public static class ParentApproachRouteMigrator
     {
         if (!ValidateEditMode()) return;
 
-        var controllers = Object.FindObjectsByType<ParentApproachController>(
+        var controllers = Object.FindObjectsByType<MotherApproachController>(
             FindObjectsInactive.Include, FindObjectsSortMode.None);
 
         if (controllers == null || controllers.Length == 0)
         {
-            Debug.LogWarning("[親機ルート移行] 開いているシーンに ParentApproachController が見つかりません。");
+            Debug.LogWarning("[親機ルート移行] 開いているシーンに MotherApproachController が見つかりません。");
             return;
         }
 
         int totalAdded = 0;
         int migratedCount = 0;
 
-        foreach (ParentApproachController controller in controllers)
+        foreach (MotherApproachController controller in controllers)
         {
             // Prefabアセット自体（シーン外）と、保存済みPrefabは対象外にする。
             if (EditorUtility.IsPersistent(controller)) continue;
@@ -95,10 +95,10 @@ public static class ParentApproachRouteMigrator
     {
         if (!ValidateEditMode()) return;
 
-        var controllers = Selection.GetFiltered<ParentApproachController>(SelectionMode.Editable);
+        var controllers = Selection.GetFiltered<MotherApproachController>(SelectionMode.Editable);
         if (controllers == null || controllers.Length == 0)
         {
-            Debug.LogWarning("[親機ルート移行] ParentApproachController を持つオブジェクトを選択してから実行してください。");
+            Debug.LogWarning("[親機ルート移行] MotherApproachController を持つオブジェクトを選択してから実行してください。");
             return;
         }
 
@@ -114,7 +114,7 @@ public static class ParentApproachRouteMigrator
         int count = 0;
         int total = 0;
 
-        foreach (ParentApproachController controller in controllers)
+        foreach (MotherApproachController controller in controllers)
         {
             Undo.RecordObject(controller, "廊下ルートを旧フィールドから作り直す");
             controller.RebuildFromLegacyFields();
@@ -133,7 +133,7 @@ public static class ParentApproachRouteMigrator
     // ──────────────────────────────────────────────────────────────────────
 
     /// <summary>1つのコンポーネントを移行する。戻り値：追加した点数（移行済みなら -1）。</summary>
-    private static int MigrateOne(ParentApproachController controller)
+    private static int MigrateOne(MotherApproachController controller)
     {
         if (controller.IsHallwayRouteMigrated) return -1;   // 未移行のときだけ取り込む
 
@@ -162,7 +162,7 @@ public static class ParentApproachRouteMigrator
     /// 対象を「変更済み」として扱い、PrefabインスタンスならOverrideを記録する。
     /// シーンの自動保存は行わない（保存はユーザー操作に委ねる）。
     /// </summary>
-    private static void MarkDirtyAndRecordPrefabOverrides(ParentApproachController controller)
+    private static void MarkDirtyAndRecordPrefabOverrides(MotherApproachController controller)
     {
         EditorUtility.SetDirty(controller);
 

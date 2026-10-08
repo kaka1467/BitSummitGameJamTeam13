@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// ParentWarningScheduler:
-/// ParentWarningSystemを一定の時間ウィンドウで自動的に発生させる。
+/// MotherApproachWarningを一定の時間ウィンドウで自動的に発生させる。
 /// - 最初は猶予期間として自動接近をすべて阻止する。
 /// - 猶予期間後は各ウィンドウで1回だけ、ウィンドウ内のランダムな時刻に自動接近を発生させる。
 /// - 疑惑が高いほど、1段階あたりwindowReductionPerGauge秒だけ実効ウィンドウを短縮する。
@@ -14,8 +14,8 @@ using UnityEngine.InputSystem;
 public class ParentWarningScheduler : MonoBehaviour
 {
     [Header("システム参照")]
-    [Tooltip("制御対象のParentWarningSystem")]
-    public ParentWarningSystem warningSystem;
+    [Tooltip("制御対象のMotherApproachWarning")]
+    public MotherApproachWarning warningSystem;
     public MotherGauge motherGauge;
 
     [Header("スケジューラー設定")]
@@ -80,7 +80,7 @@ public class ParentWarningScheduler : MonoBehaviour
     private void Start()
     {
         if (warningSystem == null)
-            warningSystem = GetComponent<ParentWarningSystem>();
+            warningSystem = GetComponent<MotherApproachWarning>();
 
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();

@@ -100,7 +100,7 @@ public static class ParentApproachRouteVerifier
     private static void GroupA_NoDoubleMigration(
         GameObject controllerGo, GameObject h1Go, GameObject h2Go, GameObject h3Go, GameObject h4Go)
     {
-        var controller = controllerGo.AddComponent<ParentApproachController>();
+        var controller = controllerGo.AddComponent<MotherApproachController>();
         var beforeField = Field("hallwayPointsBeforeTurn");
         var afterField = Field("hallwayPointsAfterTurn");
 
@@ -146,7 +146,7 @@ public static class ParentApproachRouteVerifier
     private static void GroupC_EmptyListsStayEmpty(
         GameObject controllerGo, GameObject h1Go, GameObject h2Go, GameObject h3Go)
     {
-        var controller = controllerGo.AddComponent<ParentApproachController>();
+        var controller = controllerGo.AddComponent<MotherApproachController>();
         var beforeField = Field("hallwayPointsBeforeTurn");
         var afterField = Field("hallwayPointsAfterTurn");
 
@@ -194,7 +194,7 @@ public static class ParentApproachRouteVerifier
     private static void GroupD_MotherAndCatOrder(
         GameObject controllerGo, GameObject h1Go, GameObject h2Go, GameObject h3Go)
     {
-        var controller = controllerGo.AddComponent<ParentApproachController>();
+        var controller = controllerGo.AddComponent<MotherApproachController>();
         var beforeField = Field("hallwayPointsBeforeTurn");
         var afterField = Field("hallwayPointsAfterTurn");
 
@@ -221,7 +221,7 @@ public static class ParentApproachRouteVerifier
         var otherGo = new GameObject("検証用 MotherRouteRoot(逆順)");
         try
         {
-            var motherFirstController = otherGo.AddComponent<ParentApproachController>();
+            var motherFirstController = otherGo.AddComponent<MotherApproachController>();
             SetMigrated(motherFirstController, false);
             motherFirstController.hallwayPoint1 = h1Go.transform;
             motherFirstController.hallwayPoint2 = h2Go.transform;
@@ -271,7 +271,7 @@ public static class ParentApproachRouteVerifier
             SceneManager.MoveGameObjectToScene(h2, tempScene);
             SceneManager.MoveGameObjectToScene(h3, tempScene);
 
-            var controller = rootGo.AddComponent<ParentApproachController>();
+            var controller = rootGo.AddComponent<MotherApproachController>();
             controller.hallwayPoint1 = h1.transform;
             controller.hallwayPoint2 = h2.transform;
             controller.hallwayPoint3 = h3.transform;
@@ -290,9 +290,9 @@ public static class ParentApproachRouteVerifier
 
             AssetDatabase.Refresh();
             Scene reloaded = EditorSceneManager.OpenScene(tempScenePath, OpenSceneMode.Additive);
-            var reloadedController = FindInScene<ParentApproachController>(reloaded);
+            var reloadedController = FindInScene<MotherApproachController>(reloaded);
 
-            Check("B 再読み込み後も ParentApproachController が存在する", reloadedController != null);
+            Check("B 再読み込み後も MotherApproachController が存在する", reloadedController != null);
             if (reloadedController != null)
             {
                 Check("B 再読み込み後も移行済みフラグが保持される", reloadedController.IsHallwayRouteMigrated);
@@ -337,10 +337,10 @@ public static class ParentApproachRouteVerifier
     // ──────────────────────────────────────────────────────────────────────
 
     private static FieldInfo Field(string name) =>
-        typeof(ParentApproachController).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance);
+        typeof(MotherApproachController).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance);
 
     /// <summary>編集時移行フラグをテスト用に設定し、実行時の解決をやり直させる。</summary>
-    private static void SetMigrated(ParentApproachController controller, bool migrated)
+    private static void SetMigrated(MotherApproachController controller, bool migrated)
     {
         Field("hallwayRouteMigrated")?.SetValue(controller, migrated);
         Field("_hallwayRouteResolved")?.SetValue(controller, false);

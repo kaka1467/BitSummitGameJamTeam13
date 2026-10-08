@@ -5,7 +5,7 @@ using UnityEngine;
 
 /// <summary>
 /// MotherHeightOffsetVerifier：
-/// ParentApproachController.motherHeightOffset の仕様をEditMode上で機械的に確認する一時ツール。
+/// MotherApproachController.motherHeightOffset の仕様をEditMode上で機械的に確認する一時ツール。
 /// メニュー「Tools/母親高さオフセット検証 (EditMode)」を実行すると、Consoleに各確認項目の結果（PASS/FAIL）を出力する。
 ///
 /// 確認項目：
@@ -50,7 +50,7 @@ public static class MotherHeightOffsetVerifier
             doorGo.transform.position  = new Vector3(4f, 2f, 4f);
             peekGo.transform.position  = new Vector3(6f, 3f, 6f);
 
-            var controller = controllerGo.AddComponent<ParentApproachController>();
+            var controller = controllerGo.AddComponent<MotherApproachController>();
             var parentDetection = controllerGo.GetComponent<MotherSuspicionSystem>();
             if (parentDetection == null)
                 parentDetection = controllerGo.AddComponent<MotherSuspicionSystem>();
@@ -68,14 +68,14 @@ public static class MotherHeightOffsetVerifier
             controller.doorPoint       = doorGo.transform;
             controller.gardenPeekPoint  = peekGo.transform;
 
-            var offsetField = typeof(ParentApproachController).GetField(
+            var offsetField = typeof(MotherApproachController).GetField(
                 "motherHeightOffset", BindingFlags.NonPublic | BindingFlags.Instance);
-            var parentDetectionField = typeof(ParentApproachController).GetField(
+            var parentDetectionField = typeof(MotherApproachController).GetField(
                 "parentDetection", BindingFlags.NonPublic | BindingFlags.Instance);
-            var offsetGoalMethod = typeof(ParentApproachController).GetMethod(
+            var offsetGoalMethod = typeof(MotherApproachController).GetMethod(
                 "OffsetGoalPosition", BindingFlags.NonPublic | BindingFlags.Instance);
             // 位置移動は MovePositionOnly に統一された（旧 MoveToPoint／MoveToPointFacingMovement は廃止）。
-            var moveToPointMethod = typeof(ParentApproachController).GetMethod(
+            var moveToPointMethod = typeof(MotherApproachController).GetMethod(
                 "MovePositionOnly", BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (offsetField == null || offsetGoalMethod == null ||
@@ -170,7 +170,7 @@ public static class MotherHeightOffsetVerifier
     /// <summary>
     /// privateな移動コルーチンをEditMode上で手動実行する（MoveNextを最後まで回すと到達点スナップまで完了する）。
     /// </summary>
-    private static void DriveCoroutine(MethodInfo method, ParentApproachController controller, Transform target)
+    private static void DriveCoroutine(MethodInfo method, MotherApproachController controller, Transform target)
     {
         var routine = (IEnumerator)method.Invoke(controller, new object[] { target });
 

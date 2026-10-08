@@ -14,7 +14,7 @@ using UnityEngine;
 ///   ・通常の覗き（Peek_Door / Peek_Windows）の Trigger 発火
 ///
 /// 担当しない（他クラスの責務）：
-///   ・経路・Waypoint 移動（ParentApproachController）
+///   ・経路・Waypoint 移動（MotherApproachController）
 ///   ・怪しさゲージ（MotherSuspicionSystem / MotherGauge）
 ///   ・ゲーム進行・片付けの進行（MotherChoreController）
 ///
@@ -35,11 +35,11 @@ public class MotherAnimationPlayer : MonoBehaviour
 
     // ── 参照 ──────────────────────────────────────────────────────────────────
     [Header("参照")]
-    [Tooltip("母親モデルのAnimator。未設定の場合はParentApproachControllerから解決する。")]
+    [Tooltip("母親モデルのAnimator。未設定の場合はMotherApproachControllerから解決する。")]
     [SerializeField] private Animator animator;
 
     [Tooltip("Animator解決のフォールバック元（未設定時にMotherAnimatorを参照する）。")]
-    [SerializeField] private ParentApproachController approachController;
+    [SerializeField] private MotherApproachController approachController;
 
     // ── ステート名 ────────────────────────────────────────────────────────────
     [Header("ステート名")]
@@ -288,7 +288,7 @@ public class MotherAnimationPlayer : MonoBehaviour
         if (animator != null) return animator;
 
         if (approachController == null)
-            approachController = Object.FindFirstObjectByType<ParentApproachController>();
+            approachController = Object.FindFirstObjectByType<MotherApproachController>();
 
         if (approachController != null)
             animator = approachController.MotherAnimator;

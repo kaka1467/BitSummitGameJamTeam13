@@ -6,7 +6,7 @@ using UnityEngine;
 /// <summary>
 /// CatFeintController：猫フェイント（3キー）で、猫だけを母親のドア側と同じwaypoint順で移動させ、
 /// DoorPoint到着後にドアから覗く猫として見せるためのコンポーネント。
-/// 経路はParentApproachControllerの公開参照（startPoint／廊下ルートList／turnPoint／doorPoint）をそのまま再利用し、
+/// 経路はMotherApproachControllerの公開参照（startPoint／廊下ルートList／turnPoint／doorPoint）をそのまま再利用し、
 /// 猫本体（catObject）だけを移動させる（母親モデル・母親のイベントは一切動かさない）。
 /// 移動アニメーションは猫の実移動中だけ再生する。鳴き声は専用meowAudioSourceから再生する。
 /// </summary>
@@ -28,8 +28,8 @@ public class CatFeintController : MonoBehaviour
     [SerializeField] private float footstepVolume = 0.35f;
 
     [Header("経路（母親と同じwaypoint参照を再利用）")]
-    [Tooltip("母親のドア側経路を持つParentApproachController。startPoint〜doorPointの公開参照をそのまま使う。")]
-    [SerializeField] private ParentApproachController routeController;
+    [Tooltip("母親のドア側経路を持つMotherApproachController。startPoint〜doorPointの公開参照をそのまま使う。")]
+    [SerializeField] private MotherApproachController routeController;
 
     [Header("移動")]
     [Tooltip("猫の移動速度（単位／秒）。")]

@@ -1545,6 +1545,37 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 357113472}
   m_Mesh: {fileID: -561264128345985180, guid: 9a5e6fce8138e4ea898d3ee24ad772a8, type: 3}
+--- !u!1 &364896176
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 364896177}
+  m_Layer: 0
+  m_Name: ChoreApproachPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &364896177
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 364896176}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 0.843855, z: -0, w: -0.5365713}
+  m_LocalPosition: {x: -90.9, y: 3.9, z: -267.5}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: 244.901, z: 0}
 --- !u!1 &395735889
 GameObject:
   m_ObjectHideFlags: 0
@@ -1556,7 +1587,7 @@ GameObject:
   - component: {fileID: 395735890}
   - component: {fileID: 395735891}
   m_Layer: 0
-  m_Name: ParentWarning
+  m_Name: MotherWarning
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1588,7 +1619,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b116c3e489281e54eaee13637ee45556, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParentWarningSystem
+  m_EditorClassIdentifier: Assembly-CSharp::MotherApproachWarning
   approachController: {fileID: 2053139200}
   parentDetection: {fileID: 1951468137}
   motherGauge: {fileID: 1418577572}
@@ -1598,6 +1629,18 @@ MonoBehaviour:
   frontLight: {fileID: 2082205560}
   outsideLight: {fileID: 1204741296}
   lightSwitchAudioSource: {fileID: 1856311165}
+  hallwayFootstepAudioSource: {fileID: 1615664220}
+  gardenFootstepAudioSource: {fileID: 599155505}
+  farVolume: 0.2
+  midVolume: 0.5
+  nearDoorVolume: 1
+  volumeChangeSpeed: 1
+  dummyDoorAudioSource: {fileID: 1222304632}
+  mainDoorOpenAudioSource: {fileID: 1017118909}
+  mainDoorCloseAudioSource: {fileID: 1079912679}
+  rushInAudioSource: {fileID: 2088502699}
+  passByDoorAudioSource: {fileID: 1222304632}
+  passByDoorSoundDelay: 1
   foreshadowStageIntervalMin: 1
   foreshadowStageIntervalMax: 3
   moveStartDelayMin: 0
@@ -6386,15 +6429,15 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 727079863}
-  - {fileID: 1393430532}
   - {fileID: 1919619510}
+  - {fileID: 1393430532}
+  - {fileID: 1951468136}
   - {fileID: 395735890}
   - {fileID: 445778318}
-  - {fileID: 1951468136}
   - {fileID: 1418577573}
-  - {fileID: 1474122165}
   - {fileID: 1372611142}
+  - {fileID: 1474122165}
+  - {fileID: 727079863}
   - {fileID: 2121813539}
   - {fileID: 479984878}
   - {fileID: 472387658}
@@ -7163,18 +7206,6 @@ MonoBehaviour:
   fixedDebugApproachSpeed: 30
   initialApproachSpeed: 25
   animationPlayer: {fileID: 727079862}
-  hallwayFootstepAudioSource: {fileID: 1615664220}
-  gardenFootstepAudioSource: {fileID: 599155505}
-  farVolume: 0.2
-  midVolume: 0.5
-  nearDoorVolume: 1
-  volumeChangeSpeed: 1
-  dummyDoorAudioSource: {fileID: 1222304632}
-  mainDoorOpenAudioSource: {fileID: 1017118909}
-  mainDoorCloseAudioSource: {fileID: 1079912679}
-  rushInAudioSource: {fileID: 2088502699}
-  passByDoorAudioSource: {fileID: 1222304632}
-  passByDoorSoundDelay: 1
   targetDoorController: {fileID: 1919619509}
   dummyProbability: 0.3
   catFeintController: {fileID: 1393430533}
@@ -7389,7 +7420,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 364896177}
   m_Father: {fileID: 221510673}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2047066873
@@ -7565,7 +7597,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a0973a77ca8df0648bad732aebfe88d6, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParentApproachController
+  m_EditorClassIdentifier: Assembly-CSharp::MotherApproachController
   startPoint: {fileID: 987698540}
   hallwayPointsBeforeTurn:
   - {fileID: 118555310}

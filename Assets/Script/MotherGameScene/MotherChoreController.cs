@@ -6,9 +6,9 @@ using UnityEngine;
 /// ゲーム後半に母親が部屋へ入室して「片付け」を行い、終了後に退出する演出を管理する。
 ///
 /// 既存との関係（責務の境界）：
-///   ParentWarningSystem      — 通常の警告（予告灯・遅延・ルート選択）。片付け中は開始しない。
+///   MotherApproachWarning      — 通常の警告（予告灯・遅延・ルート選択）。片付け中は開始しない。
 ///   ParentWarningScheduler   — 自動警告のスケジュール。片付け中は発火を待機する。
-///   ParentApproachController — 経路移動と向き。片付けは専用ルートを StartChoreRoute() で開始する。
+///   MotherApproachController — 経路移動と向き。片付けは専用ルートを StartChoreRoute() で開始する。
 ///                              行きは既存の廊下ルート（hallwaypeak と同じ移動順序・移動方法）を再利用し、
 ///                              doorPoint では Door_Peek ではなく Door_Open で開ける。
 ///                              帰りは choreReturnPoint_1（Door_Open で全開）→ choreReturnPoint_2（ドア閉め）
@@ -33,7 +33,7 @@ using UnityEngine;
 ///   帰りでは減少処理も追加しない。
 ///
 /// 制約：
-///   ・片付け中は通常の親イベントと重複させない（ParentWarningSystem / Scheduler を抑止する）。
+///   ・片付け中は通常の親イベントと重複させない（MotherApproachWarning / Scheduler を抑止する）。
 ///   ・1、3、4、入退室の歩き中は視線抽選をしない（抽選は 2 のループ中のみ）。
 ///   ・3 の再生中に通知が来ても再開始や予約をしない。
 ///   ・3 の途中で片付け時間が終わったら、3 の終了後に 4 へ進む。
@@ -42,16 +42,16 @@ using UnityEngine;
 ///   ・アニメーションの見た目の切り替えと、発見判定の有効期間を分ける。
 ///
 /// 【手動設定が必要】Animator Controller に Chore / Chore_Peek / Chore_End / Door_Open の
-/// ステートを用意し、ParentApproachController の片付け専用ルート（chorePoint など）を Inspector で割り当てる。
+/// ステートを用意し、MotherApproachController の片付け専用ルート（chorePoint など）を Inspector で割り当てる。
 /// </summary>
 public class MotherChoreController : MonoBehaviour
 {
     // ── 参照 ──────────────────────────────────────────────────────────────────
     [Header("システム参照")] [Tooltip("通常の警告シーケンス。片付けの開始可否と重複防止に使用する。")] [SerializeField]
-    private ParentWarningSystem warningSystem;
+    private MotherApproachWarning warningSystem;
 
     [Tooltip("親機の経路移動。入室・退室は既存 API をそのまま使用する。")] [SerializeField]
-    private ParentApproachController approachController;
+    private MotherApproachController approachController;
 
     [Tooltip("通常のドア分岐・疑惑・捕獲。片付け中はここの入口処理を抑止する。")] [SerializeField]
     private MotherSuspicionSystem parentDetection;
@@ -82,11 +82,11 @@ public class MotherChoreController : MonoBehaviour
     private bool waitForActiveWarning = true;
 
     // ── 片付け時間 ────────────────────────────────────────────────────────────
-    //   片付けの滞在時間は ParentWarningSystem の「片付け演出 > 片付けの滞在時間」を参照する
-    //   （ここでは保持しない。設定の唯一の保持元は ParentWarningSystem）。
+    //   片付けの滞在時間は MotherApproachWarning の「片付け演出 > 片付けの滞在時間」を参照する
+    //   （ここでは保持しない。設定の唯一の保持元は MotherApproachWarning）。
 
     // ── 視線 ──────────────────────────────────────────────────────────────────
-    //   悪いアイテム取得時の視線発生率は ParentWarningSystem の「片付け演出 > 悪いアイテム取得時の視線発生率」を参照する
+    //   悪いアイテム取得時の視線発生率は MotherApproachWarning の「片付け演出 > 悪いアイテム取得時の視線発生率」を参照する
     //   （ここでは保持しない）。
     [Tooltip("視線アニメーション開始直後、発見判定を有効にするまでの遅延秒数。見た目とは別に管理する。")] [SerializeField, Min(0f)]
     private float lookDetectionStartDelay = 0.3f;
@@ -146,7 +146,7 @@ public class MotherChoreController : MonoBehaviour
     private int _choreStartCount; // このプレイで開始した回数
     private bool _manualStartRequested; // 6キーによる手動開始の要求を保持しているか（開始待ちは1件だけ）
     private bool _manualStartPending; // 開始待ちコルーチンが手動要求から動いているか
-    private bool _subscribed; // ParentApproachController のイベント購読中か
+    private bool _subscribed; // MotherApproachController のイベント購読中か
     private bool _pendingExit; // 片付け時間満了済み（3 終了後に 4 へ進むためのフラグ）
     private bool _inChoreLoop; // アニメ2のループ中か（視線抽選の対象期間のみ true）
     private float _loopElapsed; // アニメ2の経過時間
@@ -346,7 +346,7 @@ public class MotherChoreController : MonoBehaviour
         // アニメ2のループ中以外（1・4・入退室の歩き）は抽選しない。
         if (!_inChoreLoop) return;
 
-        // 視線発生率は ParentWarningSystem の設定を参照する（重複保持しない）。
+        // 視線発生率は MotherApproachWarning の設定を参照する（重複保持しない）。
         float probability = ResolveChoreLookProbability();
         if (Random.value > probability)
         {
@@ -642,7 +642,7 @@ public class MotherChoreController : MonoBehaviour
         _inChoreLoop = true;
         _loopElapsed = 0f;
 
-        // 片付けの滞在時間は ParentWarningSystem の設定を参照する（重複保持しない）。
+        // 片付けの滞在時間は MotherApproachWarning の設定を参照する（重複保持しない）。
         float stayDuration = ResolveChoreStayDuration();
 
         while (_loopElapsed < stayDuration && IsChoreActive)
@@ -740,8 +740,8 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// 片付けの滞在時間（秒）を ParentWarningSystem から取得する。
-    /// 設定の唯一の保持元は ParentWarningSystem。接続できない場合は固定値へ戻さず、
+    /// 片付けの滞在時間（秒）を MotherApproachWarning から取得する。
+    /// 設定の唯一の保持元は MotherApproachWarning。接続できない場合は固定値へ戻さず、
     /// 警告して既定の0（＝到着後すぐ Chore_End）ではなく安全側の短い値ではなく、
     /// 呼び出し側が停止しないよう明確に 0 を返す（警告で気付けるようにする）。
     /// </summary>
@@ -749,8 +749,8 @@ public class MotherChoreController : MonoBehaviour
     {
         if (warningSystem == null)
         {
-            Debug.LogWarning("[MotherChore] ParentWarningSystem が見つからないため、" +
-                             "片付けの滞在時間を取得できません（ParentWarningSystem を Scene に配置してください）", this);
+            Debug.LogWarning("[MotherChore] MotherApproachWarning が見つからないため、" +
+                             "片付けの滞在時間を取得できません（MotherApproachWarning を Scene に配置してください）", this);
             return 0f;
         }
 
@@ -758,16 +758,16 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// 悪いアイテム取得時の視線発生率（0〜1）を ParentWarningSystem から取得する。
-    /// 設定の唯一の保持元は ParentWarningSystem。接続できない場合は警告して 0 を返す
+    /// 悪いアイテム取得時の視線発生率（0〜1）を MotherApproachWarning から取得する。
+    /// 設定の唯一の保持元は MotherApproachWarning。接続できない場合は警告して 0 を返す
     /// （＝視線抽選を発生させない安全側）。
     /// </summary>
     private float ResolveChoreLookProbability()
     {
         if (warningSystem == null)
         {
-            Debug.LogWarning("[MotherChore] ParentWarningSystem が見つからないため、" +
-                             "視線発生率を取得できません（ParentWarningSystem を Scene に配置してください）", this);
+            Debug.LogWarning("[MotherChore] MotherApproachWarning が見つからないため、" +
+                             "視線発生率を取得できません（MotherApproachWarning を Scene に配置してください）", this);
             return 0f;
         }
 
@@ -838,7 +838,7 @@ public class MotherChoreController : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  ParentApproachController イベント
+    //  MotherApproachController イベント
     // ──────────────────────────────────────────────────────────────────────────
 
     private void SubscribeApproachEvents()
@@ -921,18 +921,12 @@ public class MotherChoreController : MonoBehaviour
 
     /// <summary>
     /// アニメーション操作の窓口（MotherAnimationPlayer）を解決する。
-    /// 明示参照が最優先。未設定なら approachController 経由で解決し、最後にシーンから自動検索する。
+    /// 明示参照が最優先。未設定ならシーンから自動検索する
+    /// （MotherApproachController の AnimationPlayer アクセサは廃止したため依存しない）。
     /// </summary>
     private MotherAnimationPlayer ResolveAnimationPlayer()
     {
         if (animationPlayer != null) return animationPlayer;
-
-        // ParentApproachController が持つ Animator を窓口に渡せるなら、それを優先して使う。
-        if (approachController != null)
-        {
-            MotherAnimationPlayer found = approachController.AnimationPlayer;
-            if (found != null) return animationPlayer = found;
-        }
 
         animationPlayer = Object.FindFirstObjectByType<MotherAnimationPlayer>();
         return animationPlayer;
@@ -940,7 +934,7 @@ public class MotherChoreController : MonoBehaviour
 
     // ──────────────────────────────────────────────────────────────────────────
     //  片付けのドア開閉（Door_Open 再生とドア本体回転の連携）
-    //   ・ParentApproachController の片付けルートから呼ばれる。
+    //   ・MotherApproachController の片付けルートから呼ばれる。
     //   ・Door_Open 中は歩行による位置移動と歩きアニメーションの上書きを止め、
     //     モデルの再生とドア回転が両方終わるまで待ってから通過させる。
     // ──────────────────────────────────────────────────────────────────────────
@@ -949,7 +943,7 @@ public class MotherChoreController : MonoBehaviour
     /// 片付けのドア開け：Door_Open を1回再生し、ドア本体を指す角度まで開いて完了を待つ。
     ///  ・行き（doorPoint）は openAngle（既存の openAngle に対応）まで開く。
     ///  ・帰り（choreReturnPoint_1）は DoorState.Full（既存の fullopen）まで開く。
-    /// 歩行の位置移動は呼び出し側（ParentApproachController）が止めている。
+    /// 歩行の位置移動は呼び出し側（MotherApproachController）が止めている。
     /// </summary>
     public IEnumerator ChoreDoorOpenRoutine(DoorController.DoorState targetState)
     {
@@ -1010,7 +1004,7 @@ public class MotherChoreController : MonoBehaviour
 
     /// <summary>
     /// 片付けのドア開け中、歩行による位置移動を止めるかどうかを設定する。
-    /// 経路側（ParentApproachController）の移動ループがこれを見て位置更新を止める。
+    /// 経路側（MotherApproachController）の移動ループがこれを見て位置更新を止める。
     /// </summary>
     private void SetMovementSuppressed(bool suppressed)
     {
@@ -1042,9 +1036,9 @@ public class MotherChoreController : MonoBehaviour
     private void ResolveReferences()
     {
         if (warningSystem == null)
-            warningSystem = Object.FindFirstObjectByType<ParentWarningSystem>();
+            warningSystem = Object.FindFirstObjectByType<MotherApproachWarning>();
         if (approachController == null)
-            approachController = Object.FindFirstObjectByType<ParentApproachController>();
+            approachController = Object.FindFirstObjectByType<MotherApproachController>();
         if (parentDetection == null)
             parentDetection = Object.FindFirstObjectByType<MotherSuspicionSystem>();
         if (warningScheduler == null)
