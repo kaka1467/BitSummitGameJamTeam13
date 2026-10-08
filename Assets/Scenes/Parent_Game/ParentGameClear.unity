@@ -586,7 +586,7 @@ MonoBehaviour:
   inputIgnoreDuration: 5
   autoChangeDelay: 20
   returnToTitleSe: {fileID: 0}
-  titleSceneName: MotherTitle
+  titleSceneName: ParentTitle
 --- !u!1 &575331549
 GameObject:
   m_ObjectHideFlags: 0

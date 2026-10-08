@@ -4790,7 +4790,7 @@ MonoBehaviour:
   doorController: {fileID: 1919619509}
   udpSender: {fileID: 1385247218}
   motherGauge: {fileID: 1418577572}
-  gameOverSceneName: GameOverResult
+  gameOverSceneName: ParentGameOver
   sceneChangeDelay: 0
   showDebugLogs: 0
 --- !u!4 &1372611142
@@ -4847,16 +4847,16 @@ MonoBehaviour:
   connectButtonLabel: {fileID: 0}
   startButtonObject: {fileID: 0}
   soloStartButtonObject: {fileID: 0}
-  gameSceneName: GameOverResult
-  soloGameSceneName: GameScene
-  gameplaySceneName: GameScene
+  gameSceneName: ParentLoading
+  soloGameSceneName: ParentGameScene
+  gameplaySceneName: ParentGameScene
   enableReturnToTitleKey: 1
   returnToTitleKey: 60
   returnToTitleHoldSeconds: 1.5
-  motherTitleSceneName: MotherTitle
-  titleSceneName: Mini Title
-  gameOverSceneName: GameOverResult
-  timeUpSceneName: TimeUpResult
+  motherTitleSceneName: ParentTitle
+  titleSceneName: ChildeTitle
+  gameOverSceneName: ParentGameOver
+  timeUpSceneName: ParentGameClear
   cancelButton: {fileID: 0}
   parentDetection: {fileID: 1951468137}
   showDebugLogs: 1

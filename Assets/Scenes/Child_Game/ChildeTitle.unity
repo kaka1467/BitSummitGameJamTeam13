@@ -1269,8 +1269,8 @@ MonoBehaviour:
   targetIP: 127.0.0.1
   currentState: 0
   lastMessage: 
-  gameSceneName: ChildLoad
-  titleSceneName: Mini Title
+  gameSceneName: ChildLoading
+  titleSceneName: ChildeTitle
   sleepingManager: {fileID: 0}
   connectButton: {fileID: 1463660737}
   connectButtonLabel: {fileID: 1893753028}

@@ -5,7 +5,10 @@ public class SleepingManager : MonoBehaviour
     private bool _isCaught;
     private bool _isSleeping;
 
-    public string gameOverSceneName = "GameOver";
+    // 未使用（参照なし）。子機のゲームオーバーシーン名として保持しているが、
+    // 実際の遷移は GameManager.TriggerResult(GameOver) が担当する。
+    [Tooltip("子機のゲームオーバーシーン名（未使用。遷移は GameManager が担当）。")]
+    public string gameOverSceneName = "ChildGameOver";
 
     public bool IsCaught => _isCaught;
     public bool IsSleeping => _isSleeping;

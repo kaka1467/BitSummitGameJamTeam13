@@ -871,11 +871,11 @@ MonoBehaviour:
   connectButtonLabel: {fileID: 0}
   startButtonObject: {fileID: 0}
   soloStartButtonObject: {fileID: 0}
-  gameSceneName: GameScene
-  soloGameSceneName: GameScene
-  titleSceneName: Mini Title
-  gameOverSceneName: GameOverResult
-  timeUpSceneName: TimeUpResult
+  gameSceneName: ParentLoading
+  soloGameSceneName: ParentGameScene
+  titleSceneName: ChildeTitle
+  gameOverSceneName: ParentGameOver
+  timeUpSceneName: ParentGameClear
   cancelButton: {fileID: 0}
   parentDetection: {fileID: 0}
   showDebugLogs: 1
@@ -923,7 +923,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 03773f658a48de044a657571e376f607, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentLoadingController
-  gameSceneName: GameScene
+  gameSceneName: ParentGameScene
   minimumDisplaySeconds: 1
 --- !u!4 &1953161686
 Transform:

@@ -1544,16 +1544,16 @@ MonoBehaviour:
   connectButtonLabel: {fileID: 1849547969}
   startButtonObject: {fileID: 0}
   soloStartButtonObject: {fileID: 1417649033}
-  gameSceneName: MotherLoad
-  soloGameSceneName: GameScene
-  gameplaySceneName: GameScene
+  gameSceneName: ParentLoading
+  soloGameSceneName: ParentGameScene
+  gameplaySceneName: ParentGameScene
   enableReturnToTitleKey: 1
   returnToTitleKey: 60
   returnToTitleHoldSeconds: 1.5
-  motherTitleSceneName: MotherTitle
-  titleSceneName: Mini Title
-  gameOverSceneName: MotherGameOver
-  timeUpSceneName: MotherTimeUp
+  motherTitleSceneName: ParentTitle
+  titleSceneName: ChildeTitle
+  gameOverSceneName: ParentGameOver
+  timeUpSceneName: ParentGameClear
   cancelButton: {fileID: 1900922101}
   parentDetection: {fileID: 0}
   showDebugLogs: 1

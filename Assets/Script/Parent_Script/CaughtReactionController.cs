@@ -25,7 +25,7 @@ public class CaughtReactionController : MonoBehaviour
     [SerializeField] private MotherGauge motherGauge;
 
     [Header("シーン設定")]
-    [SerializeField] private string gameOverSceneName = "GameOverResult";
+    [SerializeField] private string gameOverSceneName = "ParentGameOver";
 
     [SerializeField, Min(0f)] private float sceneChangeDelay;
 
@@ -205,7 +205,7 @@ public class CaughtReactionController : MonoBehaviour
             yield return new WaitForSecondsRealtime(delay);
         }
 
-        // 親機側のゲームオーバーシーン（GameOverResult）をロード
+        // 親機側のゲームオーバーシーン（ParentGameOver）をロード
         if (showDebugLogs) Debug.Log($"[CaughtReactionController] {gameOverSceneName}シーンをロード中...");
 
         if (!string.IsNullOrEmpty(gameOverSceneName))

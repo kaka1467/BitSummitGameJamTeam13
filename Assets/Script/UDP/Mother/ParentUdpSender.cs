@@ -43,8 +43,8 @@ public class ParentUdpSender : MonoBehaviour
     /// 前置するため、ここでは payload 部分の "RETURN_TO_TITLE" のみを保持する。
     /// </summary>
     private const string parentReturnToTitle = "RETURN_TO_TITLE";
-    private const string ResultGameOverScene = "GameOverResult";
-    private const string ResultTimeUpScene   = "TimeUpResult";
+    private const string ResultGameOverScene = "ParentGameOver";
+    private const string ResultTimeUpScene   = "ParentGameClear";
 
     public enum ConnectionState { Disconnected, Connecting, Connected }
 
@@ -62,12 +62,12 @@ public class ParentUdpSender : MonoBehaviour
     [Header("Solo Start（子機接続なしで開始）")]
     [Tooltip("子機の接続・START_GAME受信を待たずに、親機だけでゲームを開始するボタン。未設定でも動作するが、割り当てると押した瞬間に自動で非表示になる。")]
     public GameObject         soloStartButtonObject;
-    public string             gameSceneName    = "GameScene";
-    [Tooltip("Solo Start（子機接続なし）の遷移先シーン。MotherLoadは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
-    public string             soloGameSceneName = "GameScene";
+    public string             gameSceneName    = "ParentLoading";
+    [Tooltip("Solo Start（子機接続なし）の遷移先シーン。ParentLoadingは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
+    public string             soloGameSceneName = "ParentGameScene";
     [Tooltip("実際にゲームプレイが行われるシーン名。LOUD_ITEM（ラッシュイン）の処理や MotherSuspicionSystem の参照検索はこのシーンでだけ行う。" +
-             "gameSceneName は『ゲーム開始時に最初に読み込むシーン（MotherLoad）』で、プレイ中のシーンとは別物。")]
-    public string             gameplaySceneName = "GameScene";
+             "gameSceneName は『ゲーム開始時に最初に読み込むシーン（ParentLoading）』で、プレイ中のシーンとは別物。")]
+    public string             gameplaySceneName = "ParentGameScene";
 
     [Header("タイトルへ戻る（親機のキーボード）")]
     [Tooltip("ゲーム中などに、キーを長押しして親機をタイトル画面へ戻す。タイトル画面では無効。")]
@@ -76,10 +76,11 @@ public class ParentUdpSender : MonoBehaviour
     [Tooltip("誤操作防止のため、このキーをこの秒数だけ押し続けるとタイトルへ戻る。")]
     public float              returnToTitleHoldSeconds = 1.5f;
     [Tooltip("戻る先の親機タイトルシーン名。")]
-    public string             motherTitleSceneName = "MotherTitle";
-    public string             titleSceneName   = "Mini Title";
-    public string             gameOverSceneName = "GameOverResult";
-    public string             timeUpSceneName   = "TimeUpResult";
+    public string             motherTitleSceneName = "ParentTitle";
+    [Tooltip("子機のタイトルシーン名。親機のタイトル復帰では motherTitleSceneName を使う。この値は子機向けの判定にのみ使用する。")]
+    public string             titleSceneName   = "ChildeTitle";
+    public string             gameOverSceneName = "ParentGameOver";
+    public string             timeUpSceneName   = "ParentGameClear";
     public Button             cancelButton;
 
     // ── PlayerPrefs Keys（結果・ランキング保存用） ─────────────────────────────
@@ -242,7 +243,7 @@ public class ParentUdpSender : MonoBehaviour
         // soloStartButtonObject の非表示は TitleMenuHighlight.FlashAndDeactivate 側が
         // フラッシュ演出の完了後に行う（ここで即座に隠すと演出が表示されないため、外してある）。
 
-        // MotherLoad（子機を無期限に待つ）は経由せず、直接ゲームシーンへ遷移する
+        // ParentLoading（子機を無期限に待つ）は経由せず、直接ゲームシーンへ遷移する
         StartCoroutine(LoadSceneAfterBgmFade(soloGameSceneName));
     }
 
@@ -260,7 +261,7 @@ public class ParentUdpSender : MonoBehaviour
     //
     // 重要（ロード画面表示の遅延対策）:
     //   以前は「BGMフェード完了」と「画面フェード完了」の長い方（= BGMの3秒）まで待ってから
-    //   遷移していたため、子機が開始しても親機のロード画面（MotherLoad）が出るまで3秒かかっていた。
+    //   遷移していたため、子機が開始しても親機のロード画面（ParentLoading）が出るまで3秒かかっていた。
     //   BGMフェードは音の演出であり、ロード画面の表示を待たせる必要はない。
     //   そのため待機時間は「画面フェード（暗転）の完了」だけを基準にし、BGMフェードは待たない。
     //
@@ -412,7 +413,7 @@ public class ParentUdpSender : MonoBehaviour
             Time.time - _lastReceiveTime > _timeoutLimit)
         {
             string sceneName = SceneManager.GetActiveScene().name;
-            if (sceneName == "MotherLoad")
+            if (sceneName == gameSceneName)
             {
                 // Keep connection alive during loading to avoid false timeouts.
                 _lastReceiveTime = Time.time;
@@ -667,7 +668,7 @@ public class ParentUdpSender : MonoBehaviour
         ReturnToTitle(notifyPeer: false);
     }
 
-    // 実際のゲームプレイシーンか。gameSceneName は最初に読み込む MotherLoad を指すため、
+    // 実際のゲームプレイシーンか。gameSceneName は最初に読み込む ParentLoading を指すため、
     // プレイ中の判定には使えない（使うと LOUD_ITEM が常に無視され、ラッシュインが起きない）。
     private bool IsGameplayScene(string sceneName)
     {
@@ -676,11 +677,13 @@ public class ParentUdpSender : MonoBehaviour
 
     private bool IsTitleScene(string sceneName)
     {
-        return sceneName == titleSceneName ||
+        // 親機のタイトル（motherTitleSceneName）と子機のタイトル（titleSceneName）の両方を扱う。
+        // 末尾の Contains("Title") は、命名ゆれの吸収用のフォールバック。
+        return sceneName == motherTitleSceneName ||
+               sceneName == titleSceneName ||
                sceneName == "TitleScene" ||
                sceneName == "Title" ||
-               sceneName.Contains("Title") ||
-               sceneName == "Mini Title";
+               sceneName.Contains("Title");
     }
 
     private void AttachUiListeners()

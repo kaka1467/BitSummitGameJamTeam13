@@ -24,7 +24,9 @@ public class ResultSceneChamger : MonoBehaviour
     public AudioSource returnToTitleSe;
 
     [Header("遷移先シーン名")]
-    public string titleSceneName = "MiniTitle"; 
+    [Tooltip("タイトルへ戻る先のシーン名。親機／子機の各結果シーンで Inspector から上書きしてください" +
+             "（既定は子機タイトル。親機の結果シーンでは ParentTitle を指定）。")]
+    public string titleSceneName = "ChildeTitle"; 
 
     private bool isFading = false;
     private float elapsed = 0f;

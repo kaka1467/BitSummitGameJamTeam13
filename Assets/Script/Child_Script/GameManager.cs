@@ -6,8 +6,8 @@ using UnityEngine.SceneManagement;
 public class GameManager : MonoBehaviour
 {
     [Header("Game Over")]
-    public string gameOverSceneName = "GameOverResult"; // GAME_OVER (caught) result scene
-    public string timeUpSceneName = "TimeUpResult";   // TIME_UP result scene
+    public string gameOverSceneName = "ChildGameOver"; // GAME_OVER (caught) result scene
+    public string timeUpSceneName = "ChildGameClear";   // TIME_UP result scene
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
 
     // ── PlayerPrefs Keys（結果・ランキング保存用） ─────────────────────────────

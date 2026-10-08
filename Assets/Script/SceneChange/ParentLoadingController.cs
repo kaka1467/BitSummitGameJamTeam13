@@ -6,7 +6,7 @@ public class ParentLoadingController : MonoBehaviour
 {
     [Header("Scene Settings")]
     [Tooltip("Name of the parent game scene to load after loading is done.")]
-    public string gameSceneName = "MotherGameScene";
+    public string gameSceneName = "ParentGameScene";
 
     [Header("Timing")]
     [Tooltip("Minimum seconds to show the loading screen before transitioning, even if child is already ready.")]

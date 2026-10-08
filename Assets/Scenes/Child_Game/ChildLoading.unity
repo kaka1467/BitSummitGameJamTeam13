@@ -571,7 +571,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GaugeSceneChanger
   gaugeImage: {fileID: 200993035}
   duration: 15
-  nextSceneName: MiniGame
+  nextSceneName: ChildGameScene
   changeSceneOnComplete: 0
 --- !u!1 &564310545
 GameObject:
@@ -932,7 +932,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c802d2461b93fda44a8aa698848a1aa1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChildLoadingController
-  gameSceneName: MiniGame
+  gameSceneName: ChildGameScene
   minimumDisplaySeconds: 1
   sendLoadingCompleteOnFinish: 0
   waitForGaugeComplete: 1
@@ -1309,7 +1309,7 @@ MonoBehaviour:
   targetIP: 127.0.0.1
   currentState: 0
   lastMessage: 
-  gameSceneName: MiniGame
+  gameSceneName: ChildLoading
   sleepingManager: {fileID: 0}
   connectButton: {fileID: 0}
   connectButtonLabel: {fileID: 0}

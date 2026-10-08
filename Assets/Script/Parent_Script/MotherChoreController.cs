@@ -248,7 +248,7 @@ public class MotherChoreController : MonoBehaviour
         if (sender != null && !string.IsNullOrEmpty(sender.gameplaySceneName))
             return active == sender.gameplaySceneName;
 
-        return active == "GameScene";
+        return active == "ParentGameScene";
     }
 
     // ──────────────────────────────────────────────────────────────────────────
