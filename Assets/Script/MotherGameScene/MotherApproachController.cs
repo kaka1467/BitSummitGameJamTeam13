@@ -953,6 +953,14 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
+        if (choreApproachPoints == null || choreApproachPoints.Count == 0 || choreApproachPoints[0] == null)
+        {
+            Debug.LogWarning("[ParentApproachController] 片付けルートの choreApproachPoints の先頭（choreapproachpoint1 = 行きのドア閉め地点）が" +
+                             "未設定です。リストを1件以上にし、先頭へ Transform を割り当ててください" +
+                             "（設定不足のため開始しません）。", this);
+            return false;
+        }
+
         if (chorePoint == null)
         {
             Debug.LogWarning("[MotherApproachController] 片付けルートの chorePoint が未設定です。" +
@@ -1101,10 +1109,53 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 5) 行きの途中地点（choreApproachPoints）を登録順に通過する。
-        //    0個の場合は chorePoint へ直接進む（ループが0回）。
-        //    途中地点は停止・Idle待機をしない（PassThroughWaypoint／既存の通過移動処理）。
-        yield return PassChorePoints(choreApproachPoints, "choreApproach", allowNullSkip: true);
+        // 5) 行きの途中地点（choreApproachPoints）を通過する。
+        //    ・先頭（choreApproachPoints[0]＝choreapproachpoint1）は「行きのドア閉め地点」として
+        //      到着後に一時停止し、ドアを閉めて閉じ終わるまで待つ（Door_Open は再生しない）。
+        //    ・2番目以降は従来どおり登録順に通過する（停止・Idle待機をしない）。
+        //    ・先頭は必須。リストが空／先頭が null の場合は開始前に拒否する（StartChoreRoute で検証済み）。
+        List<Transform> approachPath = BuildChoreApproachPath();
+        if (approachPath.Count == 0)
+        {
+            Debug.LogWarning("[MotherApproachController] 片付けの行き：choreApproachPoints の先頭が未設定のため、" +
+                             "ドア閉め地点を確定できません — 片付けルートを中断します", this);
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 5-1) 先頭の途中地点（ドア閉め地点）へ移動し、停止して向きを合わせる。
+        Transform approachClosePoint = approachPath[0];
+        yield return MoveAndFaceWaypoint(approachClosePoint, choreTurnRotationSpeed,
+                                         $"choreApproach[0]:DoorClose('{approachClosePoint.name}')");
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 5-2) 一時停止してドアを閉め、閉じ終わるまで待つ（モデルのアニメーションは再生しない）。
+        MovementStateChanged?.Invoke(false);   // ドア閉めのため停止する
+        Debug.Log($"[MotherApproachController] 片付けルート：行きのドア閉め地点 " +
+                  $"'{approachClosePoint.name}' 到着 — ドアを閉めます");
+
+        yield return ChoreDoorCloseRoutine();
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 5-3) 残りの途中地点（2番目以降）を登録順に通過する。
+        //      null要素は警告してスキップする（従来どおり）。
+        for (int i = 1; i < approachPath.Count; i++)
+        {
+            if (_choreRouteAborted || _routeExecutionFailed) break;
+
+            yield return PassThroughWaypoint(approachPath[i], choreTurnRotationSpeed,
+                                             $"choreApproach[{i}]('{approachPath[i].name}')");
+            if (_routeExecutionFailed) break;
+        }
+
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1261,6 +1312,44 @@ public class MotherApproachController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
     //  片付けの途中地点（行き／帰り）
     // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 片付けの行きの途中地点リストを「通過する順」の一時リストにする。
+    ///  ・先頭（index 0）は行きのドア閉め地点として必須。null はスキップせず、
+    ///    そのまま先頭に置く（呼び出し側が中断判定する。勝手に次の地点へ繰り上げない）。
+    ///  ・2番目以降の null 要素は警告してスキップする（従来どおり）。
+    ///  ・同じTransformの連続登録は後に来る方を残す（既存 BuildTransformPath と同じ扱い）。
+    /// </summary>
+    private List<Transform> BuildChoreApproachPath()
+    {
+        var path = new List<Transform>();
+        if (choreApproachPoints == null || choreApproachPoints.Count == 0) return path;
+
+        // 先頭は必須。null でもその位置を保持する（次の地点を勝手にドア閉め地点にしない）。
+        path.Add(choreApproachPoints[0]);
+
+        int nullCount = 0;
+        for (int i = 1; i < choreApproachPoints.Count; i++)
+        {
+            Transform point = choreApproachPoints[i];
+            if (point == null)
+            {
+                nullCount++;
+                Debug.LogWarning($"[ParentApproachController] 片付けの行き：choreApproachPoints[{i}] が未設定（null）のため" +
+                                 "スキップします", this);
+                continue;
+            }
+
+            if (path[path.Count - 1] == point) continue;   // 同じ点の連続登録は除外
+            path.Add(point);
+        }
+
+        if (nullCount > 0)
+            Debug.LogWarning($"[ParentApproachController] 片付けの行き：choreApproachPoints で未設定（null）の要素を " +
+                             $"{nullCount} 件スキップしました（登録数={choreApproachPoints.Count}）", this);
+
+        return path;
+    }
 
     /// <summary>
     /// 片付けの途中地点リストを登録順に通過する。

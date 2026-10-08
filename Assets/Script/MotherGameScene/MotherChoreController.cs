@@ -157,6 +157,7 @@ public class MotherChoreController : MonoBehaviour
     private bool _badItemNotifiedDuringLook; // 視線中に通知が来たか（再開始・予約しないことの確認用）
     private bool _choreArrived; // chorePoint 到着・向き合わせ完了（onChoreArrived）を受けたか
     private bool _choreCompleted; // 退場完了（onChoreCompleted）を受けたか
+    private bool _choreApproachSuspicionStarted; // 行きの怪しさ加算を開始済みか（1回だけ発行）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unity ライフサイクル
@@ -386,6 +387,7 @@ public class MotherChoreController : MonoBehaviour
         _detectionStartPending = false;
         _badItemNotifiedDuringLook = false;
         _choreArrived = false;
+        _choreApproachSuspicionStarted = false;
         _choreCompleted = false;
         // 6キーの開始待ち要求もクリアする（中断・ゲームオーバー・シーン変更で残さない）。
         _manualStartRequested = false;
@@ -439,6 +441,7 @@ public class MotherChoreController : MonoBehaviour
         _badItemNotifiedDuringLook = false;
         _detectionStartPending = false;
         _choreArrived = false;
+        _choreApproachSuspicionStarted = false;
         _choreCompleted = false;
         IsChoreActive = false;
         SetDetection(false);
@@ -569,10 +572,10 @@ public class MotherChoreController : MonoBehaviour
             yield break;
         }
 
-        // ── 行きの怪しさ加算：移動開始 〜 chorePoint到着・向き合わせ完了まで ──
-        //    プレイ状態／寝たふり判定・加算量・間隔・捕獲判定は既存の仕組みを使う。
-        if (parentDetection != null)
-            parentDetection.EnableChoreSuspicion();
+        // ── 行きの怪しさ加算は「DoorPoint の Door_Open 完了後」から開始する ──
+        //    StartChoreRoute 直後（開始待ち・廊下移動・Door_Open 中）では加算しない。
+        //    実際の開始は MotherApproachController が ChoreDoorOpenRoutine から
+        //    NotifyChoreApproachSuspicionStarted() を呼ぶタイミングで行う（1回だけ）。
 
         // ── chorePoint 到着・向き合わせ完了待ち（onChoreArrived を購読して検知する）──
         _choreArrived = false;
@@ -791,6 +794,7 @@ public class MotherChoreController : MonoBehaviour
         _pendingExit = false;
         _detectionStartPending = false;
         _choreArrived = false;
+        _choreApproachSuspicionStarted = false;
         _choreCompleted = false;
         IsChoreActive = false;
         SetDetection(false);
@@ -969,8 +973,32 @@ public class MotherChoreController : MonoBehaviour
         SetMovementSuppressed(false);
         RestoreWalkingAnimation();
 
+        // ── 行きの怪しさ加算の開始（Door_Open とドア全開の完了後）──
+        //    1回だけ発行する。加算失敗・タイムアウト・中断の経路ではここへ到達しないため
+        //    加算は始まらない。
+        NotifyChoreApproachSuspicionStarted();
+
         if (showDebugLogs)
             Debug.Log($"[MotherChore] Door_Open 完了（目標={targetState}）— 通過を許可します");
+    }
+
+    /// <summary>
+    /// 片付けの行き怪しさ加算の開始を1回だけ通知する（Door_Open とドア全開の完了後に呼ばれる）。
+    ///  ・開始待ち／廊下移動／Door_Open 中は呼ばれない（＝加算しない）。
+    ///  ・中断・再プレイで状態が残らないよう FinishChoreCycle / AbortChore / ResetChoreState で解除する。
+    /// </summary>
+    public void NotifyChoreApproachSuspicionStarted()
+    {
+        if (!IsChoreActive) return;
+        if (_choreApproachSuspicionStarted) return;   // 二重起動を防ぐ
+
+        _choreApproachSuspicionStarted = true;
+
+        if (parentDetection != null)
+        {
+            parentDetection.EnableChoreSuspicion();
+            Debug.Log("[MotherChore] 行きの怪しさ加算を開始しました（Door_Open 完了後）");
+        }
     }
 
     /// <summary>
