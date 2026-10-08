@@ -1569,13 +1569,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 364896176}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: 0.843855, z: -0, w: -0.5365713}
+  m_LocalRotation: {x: 0, y: -0.5735764, z: 0, w: 0.8191521}
   m_LocalPosition: {x: -90.9, y: 3.9, z: -267.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 2010855717}
-  m_LocalEulerAnglesHint: {x: 0, y: 244.901, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: -70, z: 0}
 --- !u!1 &395735889
 GameObject:
   m_ObjectHideFlags: 0
@@ -1657,6 +1657,9 @@ MonoBehaviour:
   choreNaturalLookIntervalMax: 8
   choreLookProbability: 0.5
   gardenPeekDurationBase: 8
+  _footstepCurrentVolume: 0
+  _footstepTargetVolume: 0
+  _isGrassFootstepRoute: 0
 --- !u!1 &434492880
 GameObject:
   m_ObjectHideFlags: 0
@@ -2511,6 +2514,37 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 654653897}
   m_CullTransparentMesh: 1
+--- !u!1 &684571568
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 684571569}
+  m_Layer: 0
+  m_Name: ChoreEndPoint_2
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &684571569
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 684571568}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: -92.9, y: 3.9, z: -270.90002}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &688304454
 GameObject:
   m_ObjectHideFlags: 0
@@ -2684,6 +2718,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1760085926}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &727177173
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 727177174}
+  m_Layer: 0
+  m_Name: ChoreEndPoint_1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &727177174
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 727177173}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: -105.1, y: 3.9, z: -270.90002}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!95 &743680854
 Animator:
   serializedVersion: 7
@@ -3327,7 +3392,7 @@ GameObject:
   - component: {fileID: 875155243}
   - component: {fileID: 875155242}
   m_Layer: 0
-  m_Name: Ayasisa
+  m_Name: MotherMeter
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4285,6 +4350,37 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!1 &1152572593
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1152572594}
+  m_Layer: 0
+  m_Name: ChoreReturnPoint_2
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1152572594
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1152572593}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0.38268343, z: -0, w: 0.92387956}
+  m_LocalPosition: {x: -60, y: 5, z: -258.8}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: -45, z: 0}
 --- !u!1 &1187825838
 GameObject:
   m_ObjectHideFlags: 0
@@ -5818,6 +5914,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1718951538}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1641722592
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1641722593}
+  m_Layer: 0
+  m_Name: 'ChorePoint '
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1641722593
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1641722592}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: -0.5735764, z: 0, w: 0.8191521}
+  m_LocalPosition: {x: -103.9, y: 3.9, z: -267.7}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: -70, z: 0}
 --- !u!1 &1671530395
 GameObject:
   m_ObjectHideFlags: 0
@@ -6012,6 +6139,37 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1711394023}
   m_Mesh: {fileID: 8385836491182413749, guid: 32df505fda5964f218da2bd244ed8b25, type: 3}
+--- !u!1 &1714533699
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1714533700}
+  m_Layer: 0
+  m_Name: ChoreReturnPoint_1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1714533700
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1714533699}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 0.38563317, z: -0, w: 0.9226522}
+  m_LocalPosition: {x: -85.1, y: 3.9, z: -270.90002}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: 45.366, z: 0}
 --- !u!1 &1717104452
 GameObject:
   m_ObjectHideFlags: 0
@@ -7224,7 +7382,7 @@ MonoBehaviour:
   enableContinuousRoomSuspicion: 1
   continuousRoomSuspicionAmount: 2
   continuousRoomSuspicionTickInterval: 0.5
-  motherChoreController: {fileID: 0}
+  motherChoreController: {fileID: 445778319}
   choreNotificationTimeout: 5
   isCaught: 0
   isMotherLookingNow: 0
@@ -7422,6 +7580,11 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 364896177}
+  - {fileID: 1641722593}
+  - {fileID: 727177174}
+  - {fileID: 684571569}
+  - {fileID: 1714533700}
+  - {fileID: 1152572594}
   m_Father: {fileID: 221510673}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2047066873
@@ -7635,12 +7798,15 @@ MonoBehaviour:
   roomEntryPoints: []
   roomExitYaw: -90
   roomStayTimeoutSeconds: 20
-  choreApproachPoints: []
-  chorePoint: {fileID: 0}
-  choreEndPoints: []
-  choreReturnPoint_1: {fileID: 0}
-  choreReturnPoint_2: {fileID: 0}
-  choreController: {fileID: 0}
+  choreApproachPoints:
+  - {fileID: 364896177}
+  chorePoint: {fileID: 1641722593}
+  choreEndPoints:
+  - {fileID: 727177174}
+  - {fileID: 684571569}
+  choreReturnPoint_1: {fileID: 1714533700}
+  choreReturnPoint_2: {fileID: 1152572594}
+  choreController: {fileID: 445778319}
   choreTurnRotationSpeed: 200
   stopDistance: 0.05
   motherHeightOffset: 0
@@ -7701,7 +7867,6 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   motherAnimator: {fileID: 758022367832795544}
-  animationPlayer: {fileID: 727079862}
   maxFramesToReachIdle: 120
 --- !u!1 &2057672896
 GameObject:
