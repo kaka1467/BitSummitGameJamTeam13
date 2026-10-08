@@ -115,32 +115,20 @@ public class MotherAnimationPlayer : MonoBehaviour
 
     /// <summary>
     /// 通常歩きへ復帰する。
-    ///  ・Chore / Chore_Peek / Chore_End / Door_Open は遷移を持たないため、
-    ///    Idle へ明示的に切り替えてから Walk=true で既存の Idle→Walk に乗せる。
-    ///  ・既に Idle 到達済みなら Idle の Play を省略して無駄な再開をしない。
+    ///  ・Chore_End / Door_Open は Animator の Transition（Exit Time）で Idle へ自動遷移するため、
+    ///    ここでは Walk=true を立てるだけでよい（Play("Idle") による強制復帰は行わない）。
+    ///  ・Idle 到達後は既存の Idle→Walk 遷移で歩きへ入る。
     /// </summary>
     public void RestoreWalking()
     {
         Animator a = ResolveAnimator();
         if (a == null) return;
 
-        // 1) Idle へ切り替える（演出ステートから出る唯一の有効な切り替え）。
-        if (HasState(idleStateName))
-        {
-            if (!IsPlayingState(idleStateName))
-                a.Play(idleStateName, Layer, 0f);
-        }
-        else
-        {
-            Debug.LogWarning($"[MotherAnimationPlayer] Animator に '{idleStateName}' が無いため歩きへ戻せません", this);
-            return;
-        }
-
-        // 2) 歩行中として扱い、既存の Idle→Walk 遷移で歩きへ入る。
+        // 歩行中として扱う。演出ステートからの Idle 復帰は Animator の Transition が担当する。
         SetWalking(true);
 
         if (showDebugLogs)
-            Debug.Log($"[MotherAnimationPlayer] {idleStateName} 経由で通常歩きへ復帰");
+            Debug.Log("[MotherAnimationPlayer] 歩き要求（Walk=true）— Idle 復帰は Animator 遷移に委ねます");
     }
 
     /// <summary>
