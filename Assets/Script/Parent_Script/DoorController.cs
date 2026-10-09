@@ -75,6 +75,44 @@ public class DoorController : MonoBehaviour
         _speedOverride = -1f;
     }
 
+    /// <summary>
+    /// 片付けの全開を「開始」する（回転を開始させるだけ。完了待ちは WaitForDoorReached）。
+    /// 速度の上書きは回転を開始させる SetDoorState の前に適用する（回転開始時から効かせる）。
+    /// </summary>
+    public void BeginChoreFullOpen(float speedOverride)
+    {
+        if (speedOverride > 0f) _speedOverride = speedOverride;
+        SetDoorState(DoorState.Full);
+
+        // 既に Full へ到達済み（＝回転が始まらない）場合は、速度上書きが使われない旨を残す。
+        if (IsDoorRotationReached() && showDebugLogs)
+            Debug.Log("[DoorController] ドアは既に Full へ到達済み（回転開始なし。速度上書きは未使用）");
+    }
+
+    /// <summary>
+    /// 現在の目標状態へ実際に到達するまで待つ（状態・速度上書きは変更しない）。
+    /// BeginChoreFullOpen の後、ドア全開の完了待ちに使う。
+    /// </summary>
+    public IEnumerator WaitForDoorReached(float timeoutSeconds)
+    {
+        float elapsed = 0f;
+        float timeout = Mathf.Max(0f, timeoutSeconds);
+
+        while (!IsDoorRotationReached())
+        {
+            if (timeout > 0f && elapsed >= timeout)
+            {
+                Debug.LogWarning($"[DoorController] ドアが目標角度へ到達しませんでした（{timeout:F1}s で打ち切り）");
+                yield break;
+            }
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (showDebugLogs)
+            Debug.Log($"[DoorController] ドアが目標角度へ到達（{elapsed:F2}s）");
+    }
+
     private void Update()
     {
         // Pキーによる手動切り替え（新しい入力システム）。ドアのClosed↔Full切替のみで、怪しさへの加算は行わない。

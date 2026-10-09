@@ -988,6 +988,25 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
+    /// Door_Open の「手がドアを押す」タイミングまで待つ（MotherAnimationPlayer へ委譲）。
+    ///  ・ステート名・正規化タイムはここでは渡さない（MotherAnimationPlayer が保持する）。
+    ///  ・MotherAnimationPlayer 未設定時は失敗(false)として扱う。
+    /// </summary>
+    private IEnumerator WaitForDoorOpenPush(System.Action<bool> onResult)
+    {
+        MotherAnimationPlayer player = ResolveAnimationPlayer();
+        if (player == null)
+        {
+            Debug.LogWarning("[MotherChore] MotherAnimationPlayer が未設定のため、ドア開け開始を判定できません（失敗扱い）", this);
+            yield return new WaitForSeconds(1f);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        yield return player.WaitForDoorOpenPush(onResult);
+    }
+
+    /// <summary>
     /// アニメーション操作の窓口（MotherAnimationPlayer）を解決する。
     /// 明示参照が最優先。未設定ならシーンから自動検索する
     /// （MotherApproachController の AnimationPlayer アクセサは廃止したため依存しない）。
@@ -1008,13 +1027,14 @@ public class MotherChoreController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 片付けのドア開け：Door_Open へ遷移要求し、ドア本体を指す角度まで開いて完了を待つ。
-    ///  ・行き（doorPoint）は openAngle（既存の openAngle に対応）まで開く。
-    ///  ・帰り（choreReturnPoint_1）は DoorState.Full（既存の fullopen）まで開く。
+    /// 片付けのドア開け：Door_Open へ遷移要求し、モデルの「手がドアを押す」タイミングで
+    /// ドア本体を開き始め、モデル正常終了とドア全開の両方が成立してから通過させる。
+    ///  ・開き始めのタイミングは MotherAnimationPlayer が管理する（ここではステート名・秒数を渡さない）。
+    ///  ・ドア本体の速度上書きは回転開始（BeginChoreFullOpen）の前に適用される。
     /// 歩行の位置移動は呼び出し側（MotherApproachController）が止めている。
     ///
-    /// isApproach=true（行き）のときだけ、完了後に「行きの怪しさ加算」を開始する。
-    /// 再生が未開始・失敗・タイムアウトの場合は加算せず、移動許可もしない（success=false で返す）。
+    /// isApproach=true（行き）のときだけ、両方の完了後に「行きの怪しさ加算」を開始する。
+    /// 開始・再生の失敗・タイムアウトの場合は加算せず、移動許可もしない（_choreRouteFailed で通知）。
     /// </summary>
     public IEnumerator ChoreDoorOpenRoutine(DoorController.DoorState targetState, bool isApproach)
     {
@@ -1030,7 +1050,35 @@ public class MotherChoreController : MonoBehaviour
 
         player?.RequestDoorOpen();
 
-        // ── モデルの Door_Open 再生完了を待つ（未開始・失敗を正常終了と混同しない）──
+        // ── 1) モデルの「手がドアを押す」タイミングまで待つ（モデル開始の確認。まだドアは開けない）──
+        //     タイミング（ステート名・正規化タイム）は MotherAnimationPlayer が保持する。
+        bool pushOk = false;
+        yield return WaitForDoorOpenPush(ok => pushOk = ok);
+
+        if (!pushOk)
+        {
+            Debug.LogWarning("[MotherChore] Door_Open の開け始めを確認できなかったため、" +
+                             "ドアを開かず移動許可と怪しさ加算へ進みません（失敗）", this);
+            SetWalkingOverrideSuppressed(false);
+            SetMovementSuppressed(false);
+            if (doorController != null) doorController.ClearChoreSpeedOverride();
+            _choreRouteFailed = true;
+            yield break;
+        }
+
+        // ── 2) ドア本体の回転を「開始」する（片付け用の速度。回転開始時から上書きが効く）──
+        if (doorController != null)
+        {
+            doorController.BeginChoreFullOpen(doorController.ChoreFullOpenSpeed);
+            if (showDebugLogs)
+                Debug.Log("[MotherChore] ドア本体の回転を開始（モデルの押すタイミングに合わせる）");
+        }
+        else
+        {
+            Debug.LogWarning("[MotherChore] doorController が未設定のため、ドア本体を開けられません", this);
+        }
+
+        // ── 3) モデルの Door_Open 正常終了を待つ（ドア回転は背景で進行）──
         bool doorOpenAnimationOk = false;
         yield return WaitForChoreOneShot(ChoreOneShot.DoorOpen, ok => doorOpenAnimationOk = ok);
 
@@ -1040,6 +1088,7 @@ public class MotherChoreController : MonoBehaviour
                              "移動許可と怪しさ加算へ進みません（失敗）", this);
             SetWalkingOverrideSuppressed(false);
             SetMovementSuppressed(false);
+            if (doorController != null) doorController.ClearChoreSpeedOverride();
 
             // 失敗を呼び出し元へ伝える（MotherApproachController が経路を中断し、
             // FinishChoreRouteAborted → 通常イベント停止・移動抑止を解除する）。
@@ -1047,11 +1096,13 @@ public class MotherChoreController : MonoBehaviour
             yield break;
         }
 
-        // ── ドア本体の全開完了を待つ（片付け用の速度で開く。行き／帰り共通）──
+        // ── 4) ドア全開の完了を待つ（モデル正常終了とドア全開の両方が成立）──
         if (doorController != null)
-            yield return doorController.WaitForDoorState(targetState, doorOpenWaitTimeout, doorController.ChoreFullOpenSpeed);
-        else
-            Debug.LogWarning("[MotherChore] doorController が未設定のため、ドア本体を開けられません", this);
+            yield return doorController.WaitForDoorReached(doorOpenWaitTimeout);
+
+        // 速度上書きを解除する（通常の覗き・閉め速度へ影響を残さない）。
+        if (doorController != null)
+            doorController.ClearChoreSpeedOverride();
 
         // 開け終わったので抑止を解除し、歩行（位置移動・Walk）を再開できるようにする。
         // Door_Open → Idle の遷移（Exit Time）が働いた後、Walk=true で Idle → Walk に乗る。
@@ -1059,7 +1110,7 @@ public class MotherChoreController : MonoBehaviour
         SetMovementSuppressed(false);
         RestoreWalkingAnimation();
 
-        // ── 行き限定：怪しさ加算の開始（Door_Open とドア全開の完了後）──
+        // ── 行き限定：怪しさ加算の開始（モデル正常終了とドア全開の両方の後）──
         //    帰り（isApproach=false）では呼ばない。
         if (isApproach)
             NotifyChoreApproachSuspicionStarted();

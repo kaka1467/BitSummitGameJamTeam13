@@ -83,6 +83,21 @@ public class MotherAnimationPlayer : MonoBehaviour
              "速度パラメーター（Door_OpenSpeed）を設定する。1=等倍。行き／帰りの両方に適用する。")]
     [SerializeField, Min(0.01f)] private float doorOpenSpeedMultiplier = 1.5f;
 
+    // ── 片付けのドア開け「開始タイミング」 ────────────────────────────────────
+    //   Door_Open の「手がドアを押す」位置でドア本体を開き始めるための判定を本クラスで持つ。
+    //   ※推測の遅延秒数は入れていない。Unity の Animation ウィンドウで押すフレームを確認し、
+    //     正規化タイム（フレーム ÷ クリップ長）を doorOpenPushNormalizedTime に設定すること。
+    [Tooltip("Door_Open で「手がドアを押す」正規化タイム（0〜1）。この位置でドア本体を開き始める。" +
+             "0=モデル開始と同時。※Unity の Animation ウィンドウで押すフレームを確認して設定する" +
+             "（推測値は入れていない）。Animation Event（NotifyDoorOpenPushPoint）があればそちらが優先。")]
+    [SerializeField, Range(0f, 1f)] private float doorOpenPushNormalizedTime = 0f;
+
+    [Tooltip("Door_Open の押すタイミング待ちの上限（秒）。超えたら失敗として扱う（無限待機しない）。")]
+    [SerializeField, Min(0.1f)] private float doorOpenPushTimeoutSeconds = 5f;
+
+    /// <summary>押すタイミングが通知されたか（Animation Event 用の任意フック）。</summary>
+    private bool _doorOpenPushSignaled;
+
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     /// <summary>解決済みの Animator（未解決なら null）。</summary>
     public Animator Animator => ResolveAnimator();
@@ -186,8 +201,84 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// </summary>
     public void RequestDoorOpen()
     {
+        _doorOpenPushSignaled = false;   // 新しい Door_Open のためにクリア
         ApplyDoorOpenSpeed();
         FireTrigger(DoorOpenParameter);
+    }
+
+    /// <summary>
+    /// 【任意】Door_Open の「手がドアを押す」瞬間を知らせる（Animation Event から呼べるフック）。
+    ///  ・イベントを置く場合は、押すフレームでこのメソッドを呼ぶ（その場合 normalizedTime 判定より優先）。
+    ///  ・ステート名・タイミングの管理は本クラスに閉じる（MotherChoreController へ戻さない）。
+    /// </summary>
+    public void NotifyDoorOpenPushPoint()
+    {
+        _doorOpenPushSignaled = true;
+    }
+
+    /// <summary>
+    /// Door_Open の「手がドアを押す」タイミング（＝ドア本体を開き始める瞬間）まで待つ。
+    ///  ・モデルの開始（Door_Open へ到達）が確認できるまで成立しない（開始前にドアを開けない）。
+    ///  ・Animation Event（NotifyDoorOpenPushPoint）が来たら成立。
+    ///  ・イベントが無い場合は doorOpenPushNormalizedTime を超えたら成立。
+    ///  ・タイムアウトしたら success=false（無限待機しない）。
+    /// ステート名・正規化タイムは本クラスが保持する（呼び出し側は何も渡さない）。
+    /// </summary>
+    public IEnumerator WaitForDoorOpenPush(System.Action<bool> onResult)
+    {
+        Animator a = ResolveAnimator();
+        if (a == null || !HasState(doorOpenStateName))
+        {
+            Debug.LogWarning("[MotherAnimationPlayer] Door_Open ステートを解決できないため、押すタイミングを判定できません（失敗）", this);
+            yield return new WaitForSeconds(fallbackWaitSeconds);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        _doorOpenPushSignaled = false;
+        float elapsed = 0f;
+
+        // 1) モデルの開始（Door_Open 到達）を確認する。開始前にドアを開けない。
+        bool started = false;
+        while (elapsed < reachTimeoutSeconds)
+        {
+            if (a.GetCurrentAnimatorStateInfo(Layer).IsName(doorOpenStateName))
+            {
+                started = true;
+                break;
+            }
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (!started)
+        {
+            Debug.LogWarning("[MotherAnimationPlayer] Door_Open の開始を確認できなかったため、ドアを開きません（失敗）", this);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        // 2) 押すタイミングを待つ（Animation Event 優先。無ければ正規化タイム閾値）。
+        while (!_doorOpenPushSignaled)
+        {
+            AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
+            if (info.IsName(doorOpenStateName) && info.normalizedTime >= doorOpenPushNormalizedTime)
+                break;
+
+            if (elapsed >= doorOpenPushTimeoutSeconds)
+            {
+                Debug.LogWarning($"[MotherAnimationPlayer] Door_Open の押すタイミングを {doorOpenPushTimeoutSeconds:F1}s で確認できませんでした（失敗）", this);
+                onResult?.Invoke(false);
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] Door_Open 押すタイミング成立（normalizedTime={doorOpenPushNormalizedTime:F2}）— ドア本体を開き始めます");
+        onResult?.Invoke(true);
     }
 
     /// <summary>
@@ -255,6 +346,9 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// </summary>
     public void ResetChoreParameters()
     {
+        // 押すタイミング通知もクリアする（中断・再プレイで持ち越さない）。
+        _doorOpenPushSignaled = false;
+
         Animator a = ResolveAnimator();
         if (a == null) return;
 
