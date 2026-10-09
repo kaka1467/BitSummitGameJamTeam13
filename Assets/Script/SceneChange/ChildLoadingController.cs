@@ -12,7 +12,7 @@ public class ChildLoadingController : MonoBehaviour
 {
     [Header("Scene Settings")]
     [Tooltip("Name of the child game scene to load after loading is done.")]
-    public string gameSceneName = "GameScene";
+    public string gameSceneName = "ChildGameScene";
 
     [Header("Timing")]
     [Tooltip("Minimum seconds to show the loading screen before transitioning.")]

@@ -12,7 +12,9 @@ public enum ParentMessageType
     ChildScore,
     LoadingComplete,
     LoudItem,
-    TeamReturnToTitle
+    TeamReturnToTitle,
+    // 片付け演出用：子機のゲーム進行率（0〜1を1000倍した整数）通知
+    GameProgress
 }
 
 public enum ChildGameResultType
@@ -119,7 +121,28 @@ public static class ParentUdpMessageParser
 
         const string scorePrefix = "CHILD_SCORE:";
         if (!payload.StartsWith(scorePrefix, StringComparison.Ordinal))
+        {
+            // 片付け演出：ゲーム進行率通知 "GAME_PROGRESS:<0〜1を1000倍した整数>"
+            const string progressPrefix = "GAME_PROGRESS:";
+            if (payload.StartsWith(progressPrefix, StringComparison.Ordinal))
+            {
+                string progressText = payload.Substring(progressPrefix.Length);
+                if (int.TryParse(progressText, out int progressMilli))
+                {
+                    return new ParentUdpMessage(
+                        ParentMessageType.GameProgress,
+                        score: progressMilli,
+                        rawPayload: payload);
+                }
+
+                return new ParentUdpMessage(
+                    ParentMessageType.Invalid,
+                    rawPayload: payload,
+                    parseError: $"[ParentUdpSender] Could not parse progress in GAME_PROGRESS: '{progressText}'");
+            }
+
             return new ParentUdpMessage(ParentMessageType.Unknown, rawPayload: payload);
+        }
 
         string scorePayload = payload.Substring(scorePrefix.Length);
         ChildGameResultType resultType;

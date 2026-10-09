@@ -720,7 +720,7 @@ public class TutorialFlow : MonoBehaviour
                 }
                 startSignalRoutine = StartCoroutine(EnsureStartSignalAfterSeconds(startTweenSeconds));
 
-                // ここでStartの表示時間分待機している間に、親機側はMotherLoadを抜けてシーン遷移を開始します
+                // ここでStartの表示時間分待機している間に、親機側はParentLoadingを抜けてシーン遷移を開始します
                 yield return new WaitForSecondsRealtime(goDisplaySeconds);
                 startText.gameObject.SetActive(false);
                 yield break;

@@ -47,8 +47,8 @@ public class ChildUdpReceiver : MonoBehaviour
     public string targetIP = "127.0.0.1";
     public ConnectionState currentState = ConnectionState.Disconnected;
     public string lastMessage = "";
-    public string gameSceneName = "GameScene";
-    public string titleSceneName = "Mini Title";
+    public string gameSceneName = "ChildLoading";
+    public string titleSceneName = "ChildeTitle";
 
     public SleepingManager sleepingManager;
     public Button connectButton;
@@ -274,6 +274,18 @@ public class ChildUdpReceiver : MonoBehaviour
     }
 
     /// <summary>
+    /// ゲーム進行率（0〜1）を親機に送信する。片付け演出の開始条件に使う。
+    /// 送信コストを抑えるため、呼び出し側で間隔を制御する（毎フレームは送らない）。
+    /// </summary>
+    public void SendGameProgress(float progressRate)
+    {
+        int progressMilli = Mathf.RoundToInt(Mathf.Clamp01(progressRate) * 1000f);
+        SendState($"GAME_PROGRESS:{progressMilli}");
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] Sent GAME_PROGRESS:{progressMilli} packet to Parent.");
+    }
+
+    /// <summary>
     /// 子機側で「タイトルへ戻る」処理を開始したことを親機へ通知する。
     /// 完全なメッセージは "TEAM13_RETURN_TO_TITLE:&lt;プレイ識別子&gt;:&lt;連番&gt;"（SendState が MAGIC_NUMBER を前置する）。
     /// 取りこぼすと親機がリザルト画面に取り残されるため、再送付きで送る。識別子・連番は再送でも同じ値を送る。
@@ -452,8 +464,7 @@ public class ChildUdpReceiver : MonoBehaviour
         return sceneName == titleSceneName ||
                sceneName == "TitleScene" ||
                sceneName == "Title" ||
-               sceneName.Contains("Title") ||
-               sceneName == "Mini Title";
+               sceneName.Contains("Title");
     }
 
     private void AttachUiListeners()
@@ -672,14 +683,14 @@ public class ChildUdpReceiver : MonoBehaviour
             else
             {
                 // フォールバック：既に結果画面やタイトル画面にいる場合の二重ロードを防止
-                bool shouldRunFallback = activeScene != "GameOverResult" &&
-                                         activeScene != "TimeUpResult" &&
-                                         activeScene != "ChildLoad" &&
+                bool shouldRunFallback = activeScene != "ChildGameOver" &&
+                                         activeScene != "ChildGameClear" &&
+                                         activeScene != "ChildLoading" &&
                                          !IsTitleScene(activeScene);
                 if (shouldRunFallback)
                 {
                     if (showDebugLogs)
-                        Debug.Log($"[ChildUdpReceiver] CAUGHT fallback executed — scene='{activeScene}', loading 'GameOverResult'.");
+                        Debug.Log($"[ChildUdpReceiver] CAUGHT fallback executed — scene='{activeScene}', loading 'ChildGameOver'.");
                     // GameManager.instance が未設定でも、シーン内に実体があればそこから実スコアを取得する。
                     // それも見つからない場合のみ 0 点として扱う（最終手段）。
                     int finalScore = 0;
@@ -691,7 +702,7 @@ public class ChildUdpReceiver : MonoBehaviour
                     PlayerPrefs.SetInt("LastGameOverScore", finalScore);
                     PlayerPrefs.Save();
                     SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
-                    SceneManager.LoadScene("GameOverResult");
+                    SceneManager.LoadScene("ChildGameOver");
                 }
                 else if (showDebugLogs)
                 {

@@ -4,7 +4,7 @@ using UnityEngine.SceneManagement;
 /// <summary>
 /// Inspector に書かれたシーン名が Build Settings に無い場合（シーン名の変更、空白の有無の違いなど）でも、
 /// 空白と大文字小文字を無視して同名のシーンを探して読み替える。
-/// 例："Mini Title" と書かれていても、実在する "MiniTitle" に解決される。
+/// 例："Childe Title" と書かれていても、実在する "ChildeTitle" に解決される。
 /// </summary>
 public static class SceneNameResolver
 {
