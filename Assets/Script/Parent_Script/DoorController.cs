@@ -57,6 +57,22 @@ public class DoorController : MonoBehaviour
 
         _currentDoorState = DoorState.Closed;
         _targetDoorState = DoorState.Closed;
+        _speedOverride = -1f;
+    }
+
+    private void OnDisable()
+    {
+        // 無効化（シーン変更・ゲームオーバー等）で速度上書きを残さない。
+        _speedOverride = -1f;
+    }
+
+    /// <summary>
+    /// 片付けの速度上書きを解除する（中断・失敗・無効化で、通常の覗き・閉め速度に影響を残さない）。
+    /// 呼び出し元：片付けの中断・終了時（MotherChoreController）。
+    /// </summary>
+    public void ClearChoreSpeedOverride()
+    {
+        _speedOverride = -1f;
     }
 
     private void Update()
@@ -198,10 +214,20 @@ public class DoorController : MonoBehaviour
     /// </summary>
     public IEnumerator WaitForDoorState(DoorState newState, float timeoutSeconds, float speedOverride)
     {
+        // 速度の上書きは「回転を開始させる SetDoorState の前」に適用する（回転の最初のフレームから効かせる）。
         float previousOverride = _speedOverride;
         if (speedOverride > 0f) _speedOverride = speedOverride;
 
         SetDoorState(newState);
+
+        // 既に目標角度へ到達済み（＝回転が始まらない）なら、速度上書きは使われない。その旨を残す。
+        if (IsDoorRotationReached())
+        {
+            if (showDebugLogs)
+                Debug.Log($"[DoorController] ドアは既に {newState} へ到達済み — 回転開始なし（速度上書きは未使用）");
+            _speedOverride = previousOverride;
+            yield break;
+        }
 
         float elapsed = 0f;
         float timeout = Mathf.Max(0f, timeoutSeconds);

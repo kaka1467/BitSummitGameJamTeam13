@@ -170,9 +170,8 @@ public class ParentUdpSender : MonoBehaviour
     private bool      _gameOverScoreHandled = false; // 子機からの CHILD_SCORE:GAME_OVER の再送（重複）を無視するため
     public  bool      ChildLoadingComplete { get; set; } = false;
     private bool      _shouldTriggerLoudItem = false;
-    // ── 片付け演出：悪いアイテム取得・ゲーム進行率の保留フラグ ─────────────
+    // ── 片付け演出：ゲーム進行率の保留フラグ ─────────────────────────────────
     //   受信スレッドからメインスレッドへ渡す既存方式（_shouldTriggerLoudItem）と同じ扱い。
-    private bool      _shouldTriggerBadItem = false;
     private bool      _hasPendingGameProgress = false;
     private float     _pendingGameProgress = 0f;
 
@@ -365,29 +364,6 @@ public class ParentUdpSender : MonoBehaviour
             }
         }
 
-        // ── 片付け演出：悪いアイテム取得の保留通知（メインスレッドで処理）────
-        if (_shouldTriggerBadItem)
-        {
-            string activeScene = SceneManager.GetActiveScene().name;
-            if (!IsGameplayScene(activeScene))
-            {
-                _shouldTriggerBadItem = false;
-            }
-            else if (parentDetection != null)
-            {
-                _shouldTriggerBadItem = false;
-                if (showDebugLogs)
-                    Debug.Log("[ParentUdpSender] Executing OnBadItemCollected on Main Thread!");
-                parentDetection.OnBadItemCollected();
-            }
-            else
-            {
-                _shouldTriggerBadItem = false;
-                if (showDebugLogs)
-                    Debug.LogWarning("[ParentUdpSender] BAD_ITEM triggered but parentDetection is null in GameScene.");
-            }
-        }
-
         // ── 片付け演出：ゲーム進行率の保留通知（メインスレッドで処理）────────
         if (_hasPendingGameProgress)
         {
@@ -500,7 +476,6 @@ public class ParentUdpSender : MonoBehaviour
             _gameOverScoreHandled = false;
             _shouldTriggerLoudItem = false;
             // 片付け演出用の保留通知もリセットする（再プレイで前の通知を持ち越さない）。
-            _shouldTriggerBadItem = false;
             _hasPendingGameProgress = false;
             if (_caughtRetryCoroutine != null)
             {
@@ -515,7 +490,6 @@ public class ParentUdpSender : MonoBehaviour
             // GameScene 以外へ遷移したときは _shouldTriggerLoudItem を安全に初期化
             _shouldTriggerLoudItem = false;
             // 片付け演出用の保留通知も同様に初期化する（シーン変更で状態を残さない）。
-            _shouldTriggerBadItem = false;
             _hasPendingGameProgress = false;
         }
     }
@@ -712,7 +686,6 @@ public class ParentUdpSender : MonoBehaviour
         ChildLoadingComplete = false;
         _shouldTriggerLoudItem = false;
         // 片付け演出用の保留通知もクリアする（前プレイの通知を次プレイへ持ち越さない）。
-        _shouldTriggerBadItem = false;
         _hasPendingGameProgress = false;
         _pendingGameProgress = 0f;
 
@@ -1053,33 +1026,6 @@ public class ParentUdpSender : MonoBehaviour
                 if (showDebugLogs)
                     Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null in GameScene — will retry in Update.");
                 _shouldTriggerLoudItem = true;
-            }
-            return;
-        }
-
-        // ── 片付け演出：悪いアイテム取得通知 ─────────────────────────────────
-        if (message.Type == ParentMessageType.BadItem)
-        {
-            if (showDebugLogs)
-                Debug.Log("[ParentUdpSender] Received BAD_ITEM network packet from Child.");
-
-            string activeScene = SceneManager.GetActiveScene().name;
-            if (!IsGameplayScene(activeScene))
-            {
-                if (showDebugLogs)
-                    Debug.Log($"[ParentUdpSender] BAD_ITEM received outside gameplay scene (active='{activeScene}', expected='{gameplaySceneName}') — ignored.");
-                return;
-            }
-
-            if (parentDetection != null)
-            {
-                parentDetection.OnBadItemCollected();
-            }
-            else
-            {
-                if (showDebugLogs)
-                    Debug.LogWarning("[ParentUdpSender] BAD_ITEM received but parentDetection is null in GameScene — will retry in Update.");
-                _shouldTriggerBadItem = true;
             }
             return;
         }

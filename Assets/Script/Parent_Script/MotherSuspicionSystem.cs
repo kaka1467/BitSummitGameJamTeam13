@@ -131,8 +131,10 @@ public class MotherSuspicionSystem : MonoBehaviour
     private float choreNotificationTimeout = 5f;
 
     // ── 片付け中の視線回数（怪しさ段階別の Min/Max） ──────────────────────────
-    //   設定元は本クラスだけ。MotherChoreController は片付け開始時に1回だけ取得し、
-    //   その怪しさ段階の Min〜Max から目標回数を抽選して固定する。
+    //   設定元は本クラスだけ。MotherChoreController は「片付けイベント開始時」に1回だけ取得し、
+    //   その怪しさ段階の Min〜Max から目標回数を抽選して固定する（演技中に段階が変わっても変更しない）。
+    //   【回数保証】MotherApproachWarning の滞在時間は上限ではなく目安。この回数を滞在時間内に
+    //   終えられない場合は、時間を超えて完了してから Chore_End へ進む。
     [Header("片付け中の視線回数（怪しさ段階別）")]
     [Tooltip("怪しさ段階『低』と判定するゲージ上限（この値以下を低とする）。")]
     [SerializeField, Min(0)]
@@ -1408,7 +1410,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     // ── 片付け演出（MotherChoreController との連携） ─────────────────────────
     //   ・SetChoreOverride(true) 中は通常の親イベント入口を止める（片付けと重複させない）。
     //   ・SetChoreLooking() は視線アニメ中の発見判定を On/Off する（見た目とは別管理）。
-    //   ・OnBadItemCollected() / OnGameProgress() は子機からの通知を片付け側へ渡す。
+    //   ・OnGameProgress() は子機からの進行率通知を片付け側へ渡す。
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>通常の親イベントが有効か（片付け演出中は false）。片付け側が判定に使う。</summary>
@@ -1707,26 +1709,6 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         min = rawMin;
         max = rawMax;
-    }
-
-    /// <summary>
-    /// 子機から届いた「悪いアイテム取得」通知。片付け中ループ中の視線抽選に使う。
-    /// 視線抽選はMotherChoreController側（抽選条件・確率）で行う。
-    /// </summary>
-    public void OnBadItemCollected()
-    {
-        _lastChoreNotificationTime = Time.time;
-
-        if (motherChoreController == null)
-            motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
-
-        if (motherChoreController == null)
-        {
-            Debug.Log("[PD] OnBadItemCollected: MotherChoreController が見つからないため無視");
-            return;
-        }
-
-        motherChoreController.NotifyBadItemCollected();
     }
 
     /// <summary>

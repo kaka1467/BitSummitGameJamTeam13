@@ -19,25 +19,26 @@ using UnityEngine;
 ///                              （SetChoreOverride(true) により抑止する）。
 ///                              行きの怪しさ加算は EnableChoreSuspicion() / DisableChoreSuspicion() で
 ///                              既存の継続疑惑と同じ仕組みを使う。
-///   本クラス                 — 片付けの開始条件・進行・アニメーション・視線抽選・発見判定の期間。
+///   本クラス                 — 片付けの開始条件・進行・アニメーション・視線の回数保証・発見判定の期間。
 ///
 /// 進行（仕様）：
-///   専用ルートで歩いて chorePoint へ → 1（片付け始める・1回） → 2（片付け中・ループ）
-///   → 4（片付け終わって立つ・1回） → 専用ルートで歩いて choreReturnPoint_1 / _2 へ戻る
-///   2 の間に悪いアイテム取得の通知を受けたら視線抽選を行い、当選した場合は 3（こっちを見る・1回）へ移り、
-///   終了後に 2 へ戻る。
+///   専用ルートで歩いて chorePoint へ → Chore（片付け中・ループ）
+///   → Chore_Peek（視線）を目標回数だけ → Chore_End（立つ・1回）
+///   → 専用ルートで歩いて choreReturnPoint_1 / _2 へ戻る。
+///   視線の目標回数は、片付けイベント開始時点の怪しさ段階（MotherSuspicionSystem の段階別 Min/Max）から
+///   抽選し、1 つの制御でタイミングと回数をまとめて管理する（開始後に段階が変わっても目標は固定）。
+///   【回数保証】滞在時間内に目標回数を終えられない場合は、時間を超えて完了してから Chore_End へ進む
+///   （滞在時間は上限ではなく、回数保証を優先する）。
 ///
 /// 怪しさ加算（行きのみ）：
 ///   行きの移動開始 〜 chorePoint 到着・向き合わせ完了まで、プレイヤーがゲームを触っていれば加算する。
-///   01・02・04 および帰りの移動では加算しない。03 では既存の視線判定期間だけ加算する。
-///   帰りでは減少処理も追加しない。
+///   演技中・帰りの移動では加算しない。視線中は既存の視線判定期間だけ加算する。
 ///
 /// 制約：
 ///   ・片付け中は通常の親イベントと重複させない（MotherApproachWarning / Scheduler を抑止する）。
-///   ・1、3、4、入退室の歩き中は視線抽選をしない（抽選は 2 のループ中のみ）。
-///   ・3 の再生中に通知が来ても再開始や予約をしない。
-///   ・3 の途中で片付け時間が終わったら、3 の終了後に 4 へ進む。
-///   ・ゲームオーバーになったら片付けを中断し、既存のゲームオーバー処理を妨げない。
+///   ・入退室の歩き中・Chore_End 中は視線を再生しない（視線は演技フェーズのみ）。
+///   ・視線は直列に1つずつ再生し、同時再生・再生中の再要求・未消費Triggerの持ち越しをしない。
+///   ・ゲームオーバー・中断は回数保証より優先する。
 ///   ・中断・シーン変更・再プレイ時に片付け状態・経路状態・怪しさ加算状態が残らないようにする。
 ///   ・アニメーションの見た目の切り替えと、発見判定の有効期間を分ける。
 ///
@@ -143,7 +144,9 @@ public class MotherChoreController : MonoBehaviour
     private bool _manualStartPending; // 開始待ちコルーチンが手動要求から動いているか
     private bool _subscribed; // MotherApproachController のイベント購読中か
     private bool _gazeInProgress; // 視線（Chore_Peek）を再生中か（IsLooking）
-    private int _targetLookCount; // このサイクルの目標視線回数（開始時に抽選して固定）
+    private int _targetLookCount; // このサイクルの目標視線回数（片付けイベント開始時に抽選して固定）
+    private int _minLookCount; // 抽選に使った Min（記録用）
+    private int _maxLookCount; // 抽選に使った Max（記録用）
     private int _completedLookCount; // 正常終了を確認できた視線の回数
     private bool _detectionActive; // 発見判定（isMotherLookingNow）を有効にしているか
     private float _detectionEndTime; // 発見判定を解除する時刻（Time.time 基準）
@@ -325,19 +328,6 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// 悪いアイテム取得の通知。
-    ///   【重要】片付けの視線は「回数保証の自然視線」（ChorePerformPhase の1つの制御）だけで行う。
-    ///   悪いアイテム由来の視線は使用しない（自然視線に混ざらないようここでは何もしない。再開始・予約もしない）。
-    /// </summary>
-    public void NotifyBadItemCollected()
-    {
-        if (!IsChoreActive) return;
-
-        if (showDebugLogs)
-            Debug.Log("[MotherChore] 悪いアイテム通知を受信しましたが、悪いアイテム由来の視線は使用しません（自然視線のみ）");
-    }
-
-    /// <summary>
     /// 片付けを強制中断する（ゲームオーバー・シーン遷移・リセット用）。
     /// 既存のゲームオーバー処理には何も介入しない（片付けの状態だけを戻す）。
     /// </summary>
@@ -352,6 +342,10 @@ public class MotherChoreController : MonoBehaviour
         }
 
         _gazeInProgress = false;
+        _targetLookCount = 0;
+        _minLookCount = 0;
+        _maxLookCount = 0;
+        _completedLookCount = 0;
         _detectionStartPending = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
@@ -374,6 +368,10 @@ public class MotherChoreController : MonoBehaviour
             parentDetection.SetChoreWalkingOverrideSuppressed(false);
             parentDetection.SetChoreMovementSuppressed(false);
         }
+
+        // ドア本体の速度上書きも残さない（中断で通常の覗き・閉め速度へ影響を残さない）。
+        if (doorController != null)
+            doorController.ClearChoreSpeedOverride();
 
         if (approachController != null)
             approachController.AbortChoreRoute(reason);
@@ -402,6 +400,8 @@ public class MotherChoreController : MonoBehaviour
         _manualStartPending = false;
         _gazeInProgress = false;
         _targetLookCount = 0;
+        _minLookCount = 0;
+        _maxLookCount = 0;
         _completedLookCount = 0;
         _detectionStartPending = false;
         _choreArrived = false;
@@ -421,6 +421,10 @@ public class MotherChoreController : MonoBehaviour
             parentDetection.SetChoreWalkingOverrideSuppressed(false);
             parentDetection.SetChoreMovementSuppressed(false);
         }
+
+        // ドア本体の速度上書きも残さない（再プレイで持ち越さない）。
+        if (doorController != null)
+            doorController.ClearChoreSpeedOverride();
 
         if (approachController != null)
             approachController.ResetChoreRoute();
@@ -513,10 +517,18 @@ public class MotherChoreController : MonoBehaviour
         // ── サイクル開始：通常の親イベントを抑止する ─────────────────────────
         IsChoreActive = true;
         _gazeInProgress = false;
-        _targetLookCount = 0;
         _completedLookCount = 0;
         SetDetection(false);
         ApplyChoreLocks();
+
+        // ── 視線の目標回数を「片付けイベント全体の開始時」に固定する ────────────
+        //    開始時点の怪しさ段階で Min/Max を取得し、その範囲から一度だけ抽選する。
+        //    以降、入室中などの加算で怪しさ段階が変わっても、現在の目標回数は変更しない。
+        //    （設定元は MotherSuspicionSystem だけ。ここでは取得して固定するだけ）
+        ResolveChoreLookCountRange(out _minLookCount, out _maxLookCount);
+        _targetLookCount = Random.Range(_minLookCount, _maxLookCount + 1);
+        if (showDebugLogs)
+            Debug.Log($"[MotherChore] 片付けイベント開始 — 視線の目標回数を固定 | 段階別範囲={_minLookCount}〜{_maxLookCount}回 | 目標={_targetLookCount}回");
 
         if (showDebugLogs)
             Debug.Log("[MotherChore] 片付けサイクル開始 — 通常の親イベントを停止します");
@@ -633,22 +645,22 @@ public class MotherChoreController : MonoBehaviour
 
         float stayDuration = Mathf.Max(0f, ResolveChoreStayDuration());
 
-        // 開始時点の怪しさ段階で設定を固定し、目標回数を Min〜Max の整数から抽選する。
-        // （設定元は MotherSuspicionSystem だけ。ここでは結果だけを使う）
-        int minLooks, maxLooks;
-        ResolveChoreLookCountRange(out minLooks, out maxLooks);
-        _targetLookCount = Random.Range(minLooks, maxLooks + 1);
+        // 目標回数は「片付けイベント開始時」に固定済み（ChoreRoutine で段階別 Min/Max から抽選）。
+        //   ここでは取り直さない（演技中に怪しさ段階が変わっても目標は変えない）。
         _completedLookCount = 0;
 
         // 滞在時間内に視線を分散させるための「短い片付け区間」の長さ。
+        //   回数保証のため、滞在時間（設定値）は上限ではなく「分散の目安」である。
         float segment = stayDuration / Mathf.Max(1, _targetLookCount + 1);
 
         if (showDebugLogs)
-            Debug.Log($"[MotherChore] 片付け演技開始 | 滞在={stayDuration:F1}s | 目標視線={_targetLookCount}回（{minLooks}〜{maxLooks}）| 区間={segment:F2}s");
+            Debug.Log($"[MotherChore] 片付け演技開始 | 目標視線={_targetLookCount}回（開始時範囲 {_minLookCount}〜{_maxLookCount}）| " +
+                      $"滞在設定={stayDuration:F1}s（上限ではなく目安）| 区間={segment:F2}s");
 
         if (segment < minChoreSegmentSeconds)
-            Debug.LogWarning($"[MotherChore] 目標視線 {_targetLookCount}回 は滞在 {stayDuration:F1}s に収まらない可能性があります" +
-                             $"（区間 {segment:F2}s < 最小 {minChoreSegmentSeconds:F2}s）。時間満了後に残りを完了します。", this);
+            Debug.LogWarning($"[MotherChore] 目標視線 {_targetLookCount}回 は滞在設定 {stayDuration:F1}s に収まらない可能性があります" +
+                             $"（区間 {segment:F2}s < 最小 {minChoreSegmentSeconds:F2}s）。" +
+                             "回数保証のため、滞在設定を超えて残りの視線を完了してから Chore_End へ進みます。", this);
 
         float phaseStart = Time.time;
 
@@ -694,10 +706,22 @@ public class MotherChoreController : MonoBehaviour
             _completedLookCount++;
         }
 
-        if (showDebugLogs)
-            Debug.Log($"[MotherChore] 片付け演技終了 | 視線 {_completedLookCount}/{_targetLookCount}回 | 滞在={stayDuration:F1}s");
+        // ── 演技フェーズの結果を記録する（目標・正常完了・実時間を明示。失敗/中断と正常完走を区別）──
+        float actualSeconds = Time.time - phaseStart;
 
-        if (!IsChoreActive) yield break;
+        if (!IsChoreActive)
+        {
+            Debug.LogWarning($"[MotherChore] 片付け演技：中断（未完了） | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回 | " +
+                             $"実時間={actualSeconds:F1}s（滞在設定={stayDuration:F1}s）");
+            yield break;
+        }
+
+        if (_completedLookCount < _targetLookCount)
+            Debug.LogWarning($"[MotherChore] 片付け演技：失敗（目標未達） | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回 | " +
+                             $"実時間={actualSeconds:F1}s（滞在設定={stayDuration:F1}s）");
+        else if (showDebugLogs)
+            Debug.Log($"[MotherChore] 片付け演技：正常完走 | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回 | " +
+                      $"実時間={actualSeconds:F1}s（滞在設定={stayDuration:F1}s。回数保証のため超える場合あり）");
 
         // ── Chore_End（片付け終わって立つ・1回）──────────────────────────────
         //    視線がすべて終わってから終了要求Boolを立てる（時間満了で未達でも同じ）。
@@ -712,7 +736,8 @@ public class MotherChoreController : MonoBehaviour
 
         if (!choreEndOk)
         {
-            Debug.LogWarning("[MotherChore] Chore_End の再生完了を確認できなかったため、歩き復帰を保留します（失敗）", this);
+            Debug.LogWarning($"[MotherChore] Chore_End の再生完了を確認できなかったため、歩き復帰を保留します（失敗）" +
+                             $"| 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回 | 実時間={actualSeconds:F1}s", this);
             _choreRouteFailed = true;
             yield break;
         }
@@ -820,6 +845,10 @@ public class MotherChoreController : MonoBehaviour
     {
         _mainRoutine = null;
         _gazeInProgress = false;
+        _targetLookCount = 0;
+        _minLookCount = 0;
+        _maxLookCount = 0;
+        _completedLookCount = 0;
         _detectionStartPending = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
@@ -838,6 +867,10 @@ public class MotherChoreController : MonoBehaviour
             parentDetection.SetChoreWalkingOverrideSuppressed(false);
             parentDetection.SetChoreMovementSuppressed(false);
         }
+
+        // ドア本体の速度上書きも残さない（通常の覗き・閉め速度へ影響を残さない）。
+        if (doorController != null)
+            doorController.ClearChoreSpeedOverride();
 
         if (showDebugLogs)
             Debug.Log("[MotherChore] 片付けサイクル終了 — 通常の親イベントを再開します");

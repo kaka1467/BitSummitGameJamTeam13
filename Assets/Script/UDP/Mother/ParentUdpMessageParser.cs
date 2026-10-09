@@ -13,8 +13,6 @@ public enum ParentMessageType
     LoadingComplete,
     LoudItem,
     TeamReturnToTitle,
-    // 片付け演出用：子機が悪いアイテム（時間減少効果を持つ既存アイテム）を取得した通知
-    BadItem,
     // 片付け演出用：子機のゲーム進行率（0〜1を1000倍した整数）通知
     GameProgress
 }
@@ -88,9 +86,6 @@ public static class ParentUdpMessageParser
                 return new ParentUdpMessage(ParentMessageType.LoadingComplete, rawPayload: payload);
             case "LOUD_ITEM":
                 return new ParentUdpMessage(ParentMessageType.LoudItem, rawPayload: payload);
-            // 片付け演出：悪いアイテム取得通知（既存の LOUD_ITEM と同じ形式の単純メッセージ）
-            case "BAD_ITEM":
-                return new ParentUdpMessage(ParentMessageType.BadItem, rawPayload: payload);
         }
 
         // START_GAME:<playSessionId> — プレイ識別子付きの開始通知（旧: 引数なしの "START_GAME"）

@@ -151,8 +151,9 @@ public class MotherApproachWarning : MonoBehaviour
     //   MotherChoreController / MotherApproachController はここを参照する
     //   （同じ設定を重複して持たない）。
     [Header("片付け演出")]
-    [Tooltip("片付けの滞在時間（秒）。chorePoint到着・Chore開始から計測し、この時間が経過すると Chore_End へ進む。" +
-             "Chore_Peek の再生中も時間は進む。")]
+    [Tooltip("片付けの滞在時間（秒）。chorePoint到着・Chore開始から計測する。" +
+             "【注意】これは上限ではなく「分散の目安」。MotherSuspicionSystem の片付け視線回数（回数保証）を" +
+             "この時間内に終えられない場合は、時間を超えて残りの視線を完了してから Chore_End へ進む。")]
     [SerializeField, Min(1f)] private float choreStayDuration = 10f;
 
     [Tooltip("自然に覗く間隔の最小秒数。Chore中だけ有効。この範囲から次の覗きまでの間隔を抽選する。")]
@@ -160,9 +161,6 @@ public class MotherApproachWarning : MonoBehaviour
 
     [Tooltip("自然に覗く間隔の最大秒数。Chore中だけ有効。この範囲から次の覗きまでの間隔を抽選する。")]
     [SerializeField, Min(0f)] private float choreNaturalLookIntervalMax = 8f;
-
-    [Tooltip("悪いアイテム取得時に Chore_Peek（こっちを見る）になる確率。0〜1。")]
-    [SerializeField, Range(0f, 1f)] private float choreLookProbability = 0.5f;
 
     [Tooltip("庭覗き（GardenPeek）でGardenPeekPointに留まる基本秒数。" +
              "実際の覗き時間 = この値 + GardenPeekPoint到着時のゲージ値（到着時に一度だけ決定）。")]
@@ -176,9 +174,6 @@ public class MotherApproachWarning : MonoBehaviour
 
     /// <summary>自然に覗く間隔の最大秒数。</summary>
     public float ChoreNaturalLookIntervalMax => choreNaturalLookIntervalMax;
-
-    /// <summary>悪いアイテム取得時の視線発生率（0〜1）。</summary>
-    public float ChoreLookProbability => choreLookProbability;
 
     /// <summary>庭覗きの基本時間（秒）。MotherApproachController が参照する。</summary>
     public float GardenPeekDurationBase => gardenPeekDurationBase;

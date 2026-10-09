@@ -35,11 +35,6 @@ public class Item : MonoBehaviour
 
         bool applyTimeOnCollect = itemType != ItemType.HugeObstacle;
 
-        // 悪いアイテム判定：既存の分類は使ったまま、新しい分類は作らない。
-        // 「時間減少効果を持つアイテム」＝ timeAmount が負の既存アイテム（DecrementClock など）。
-        // HugeObstacle は timeAmount が 0 のためここで検出されない（QTE成功時は減少しない仕様のため）。
-        NotifyBadItemIfNeeded();
-
         switch (itemType)
         {
             case ItemType.Score:
@@ -187,28 +182,6 @@ public class Item : MonoBehaviour
         }
 
         AudioManager.Instance.PlaySE(seClip, seVolume);
-    }
-
-    /// <summary>
-    /// 悪いアイテム取得の通知を親機へ送る（片付け演出の視線抽選に使用）。
-    ///   ・既存の ItemType 分類は変更しない（新しい分類を作らない）。
-    ///   ・判定は「timeAmount &lt; 0」＝時間減少効果を持つ既存アイテムのみ。
-    ///   ・アイテムの出現率・得点には一切影響しない（通知のみ）。
-    ///   ・子機 UDP（ChildUdpReceiver）が見つからない場合は何もしない。
-    /// </summary>
-    private void NotifyBadItemIfNeeded()
-    {
-        if (timeAmount >= 0f) return;
-
-        ChildUdpReceiver udpReceiver = FindFirstObjectByType<ChildUdpReceiver>();
-        if (udpReceiver == null)
-        {
-            Debug.LogWarning("[Item] ChildUdpReceiver could not be found — BAD_ITEM notification skipped.");
-            return;
-        }
-
-        Debug.Log($"[Item] 悪いアイテム取得（timeAmount={timeAmount}）— BAD_ITEM を親機へ送信");
-        udpReceiver.SendBadItem();
     }
 
     private void TriggerPlayerDamage(Component target)

@@ -274,18 +274,6 @@ public class ChildUdpReceiver : MonoBehaviour
     }
 
     /// <summary>
-    /// 悪いアイテム（時間減少効果を持つ既存アイテム）を取得したことを親機に送信する。
-    /// 片付け演出中の視線抽選に使う（出現率・得点は変更しない）。
-    /// </summary>
-    public void SendBadItem()
-    {
-        // MAGIC_NUMBER ("TEAM13_") + "BAD_ITEM" で送信（既存の LOUD_ITEM と同じ形式）
-        SendState("BAD_ITEM");
-        if (showDebugLogs)
-            Debug.Log("[ChildUdpReceiver] Sent BAD_ITEM packet to Parent.");
-    }
-
-    /// <summary>
     /// ゲーム進行率（0〜1）を親機に送信する。片付け演出の開始条件に使う。
     /// 送信コストを抑えるため、呼び出し側で間隔を制御する（毎フレームは送らない）。
     /// </summary>

@@ -1655,7 +1655,6 @@ MonoBehaviour:
   choreStayDuration: 10
   choreNaturalLookIntervalMin: 4
   choreNaturalLookIntervalMax: 8
-  choreLookProbability: 0.5
   gardenPeekDurationBase: 8
   _footstepCurrentVolume: 0
   _footstepTargetVolume: 0
