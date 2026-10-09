@@ -1210,7 +1210,7 @@ MonoBehaviour:
   resultScoreText: {fileID: 575331551}
   rankTexts:
   - {fileID: 2112662684}
-  - {fileID: 1691850998}
+  - {fileID: 2031223130}
   - {fileID: 1691850998}
   rank1Text: {fileID: 0}
   rank2Text: {fileID: 0}

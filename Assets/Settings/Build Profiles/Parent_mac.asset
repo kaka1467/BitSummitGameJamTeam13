@@ -21,15 +21,15 @@ MonoBehaviour:
   m_OverrideGlobalSceneList: 1
   m_Scenes:
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/MotherTitle.unity
+    m_path: Assets/Scenes/Parent_Game/ParentTitle.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/MotherLoad.unity
+    m_path: Assets/Scenes/Parent_Game/ParentLoading.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/GameScene.unity
+    m_path: Assets/Scenes/Parent_Game/ParentGameScene.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/GameOverResult.unity
+    m_path: Assets/Scenes/Parent_Game/ParentGameOver.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MotherGame/TimeUpResult.unity
+    m_path: Assets/Scenes/Parent_Game/ParentGameClear.unity
   m_HasScriptingDefines: 0
   m_ScriptingDefines: []
   m_PlayerSettingsYaml:
