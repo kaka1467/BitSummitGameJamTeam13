@@ -955,6 +955,17 @@ public class MotherApproachController : MonoBehaviour
     /// </summary>
     public bool StartChoreRoute()
     {
+        // 段階ログ（6キー手動開始の追跡用・1回だけ）。必須参照の有無を1行で出す。
+        Debug.Log(
+            "[MotherApproachController] StartChoreRoute：必須参照チェック | " +
+            $"choreApproachPoint_1={(choreApproachPoint_1 != null ? choreApproachPoint_1.name : "NULL")} | " +
+            $"choreApproachPoint_2={(choreApproachPoint_2 != null ? choreApproachPoint_2.name : "NULL")} | " +
+            $"chorePoint={(chorePoint != null ? chorePoint.name : "NULL")} | " +
+            $"choreReturnPoint_1={(choreReturnPoint_1 != null ? choreReturnPoint_1.name : "NULL")} | " +
+            $"choreReturnPoint_2={(choreReturnPoint_2 != null ? choreReturnPoint_2.name : "NULL")} | " +
+            $"hallwayPassByPoint={(hallwayPassByPoint != null ? hallwayPassByPoint.name : "NULL")} | " +
+            $"startPoint={(startPoint != null ? startPoint.name : "NULL")}");
+
         if (IsApproaching || IsReturningHome || IsChoreRouteActive)
         {
             Debug.Log(
@@ -1014,6 +1025,7 @@ public class MotherApproachController : MonoBehaviour
         }
 
         BeginApproach(choreRoute: true);
+        Debug.Log("[MotherApproachController] StartChoreRoute：検証OK — 片付けルート（行き）を開始します");
         return true;
     }
 

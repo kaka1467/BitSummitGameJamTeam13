@@ -1638,6 +1638,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             return false;
         }
 
+        Debug.Log("[PD] 6キー：MotherChoreController.RequestManualStart() へ開始要求を転送します");
         return motherChoreController.RequestManualStart();
     }
 
