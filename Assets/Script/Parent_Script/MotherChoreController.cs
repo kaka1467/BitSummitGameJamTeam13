@@ -1014,9 +1014,9 @@ public class MotherChoreController : MonoBehaviour
             yield break;
         }
 
-        // ── ドア本体の全開完了を待つ ──
+        // ── ドア本体の全開完了を待つ（片付け用の速度で開く。行き／帰り共通）──
         if (doorController != null)
-            yield return doorController.WaitForDoorState(targetState, doorOpenWaitTimeout);
+            yield return doorController.WaitForDoorState(targetState, doorOpenWaitTimeout, doorController.ChoreFullOpenSpeed);
         else
             Debug.LogWarning("[MotherChore] doorController が未設定のため、ドア本体を開けられません", this);
 

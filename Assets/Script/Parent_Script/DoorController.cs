@@ -27,6 +27,17 @@ public class DoorController : MonoBehaviour
     [SerializeField] private float openAngle = -180f;  // 完全に開いた位置（-180度）
     [SerializeField] private float openSpeed = 5f;     // 回転速度の倍率
 
+    [Header("片付け演出用")]
+    [Tooltip("片付けのドア全開（Full）で使う回転速度。0以下なら通常の openSpeed を使う。" +
+             "通常の覗き・閉め速度は変更しない。")]
+    [SerializeField] private float choreFullOpenSpeed = 10f;
+
+    /// <summary>片付けの全開待ちの間だけ使う回転速度の上書き（0以下で無効＝通常の openSpeed）。</summary>
+    private float _speedOverride = -1f;
+
+    /// <summary>片付けの全開で使う回転速度（0以下なら通常の openSpeed）。</summary>
+    public float ChoreFullOpenSpeed => choreFullOpenSpeed;
+
     [Header("デバッグ")]
     public bool showDebugLogs;
 
@@ -81,8 +92,11 @@ public class DoorController : MonoBehaviour
         float targetAngleY = GetTargetAngle(_targetDoorState);
         Quaternion targetRotation = Quaternion.Euler(0f, targetAngleY, 0f);
 
+        // 片付けの全開待ち中は上書き速度を使う（通常の覗き・閉め速度は変更しない）。
+        float speed = (_speedOverride > 0f) ? _speedOverride : openSpeed;
+
         // 目標回転へLerpする
-        door.localRotation = Quaternion.Lerp(door.localRotation, targetRotation, Time.deltaTime * openSpeed);
+        door.localRotation = Quaternion.Lerp(door.localRotation, targetRotation, Time.deltaTime * speed);
 
         // 回転が目標に十分近づいたら現在状態を更新する
         if (Quaternion.Angle(door.localRotation, targetRotation) < 1f)
@@ -170,30 +184,46 @@ public class DoorController : MonoBehaviour
     }
 
     /// <summary>
-    /// 指定したドア状態へ動かし、実際にその角度へ到達するまで待つ。
+    /// 指定したドア状態へ動かし、実際にその角度へ到達するまで待つ（通常速度）。
     /// タイムアウト付きで、到達しない場合も永久に待たない（呼び出し側が警告を出す）。
-    /// 片付け演出（Door_Open とドア回転の連携）で使用する。
     /// </summary>
     public IEnumerator WaitForDoorState(DoorState newState, float timeoutSeconds)
+        => WaitForDoorState(newState, timeoutSeconds, -1f);
+
+    /// <summary>
+    /// 指定したドア状態へ動かし、到達するまで待つ（速度上書き付き）。
+    ///  ・speedOverride が0より大きい場合だけ、待機中はその速度を使う（通常の覗き・閉め速度は変えない）。
+    ///  ・完了後に速度の上書きは必ず元へ戻す。
+    /// 片付け演出（Door_Open とドア回転の連携）で使用する。
+    /// </summary>
+    public IEnumerator WaitForDoorState(DoorState newState, float timeoutSeconds, float speedOverride)
     {
+        float previousOverride = _speedOverride;
+        if (speedOverride > 0f) _speedOverride = speedOverride;
+
         SetDoorState(newState);
 
         float elapsed = 0f;
         float timeout = Mathf.Max(0f, timeoutSeconds);
+        bool reached = true;
 
         while (!IsDoorRotationReached())
         {
             if (timeout > 0f && elapsed >= timeout)
             {
                 Debug.LogWarning($"[DoorController] ドアが {newState} へ到達しませんでした（{timeout:F1}s で打ち切り）");
-                yield break;
+                reached = false;
+                break;
             }
 
             elapsed += Time.deltaTime;
             yield return null;
         }
 
-        if (showDebugLogs)
+        // 速度の上書きを必ず元へ戻す（通常の覗き・閉めへ影響を残さない）。
+        _speedOverride = previousOverride;
+
+        if (reached && showDebugLogs)
             Debug.Log($"[DoorController] ドアが {newState} へ到達（{elapsed:F2}s）");
     }
 }

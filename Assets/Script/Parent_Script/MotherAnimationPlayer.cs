@@ -46,6 +46,8 @@ public class MotherAnimationPlayer : MonoBehaviour
     // 終了要求は Bool。視線中に要求が来たら true を保持し、視線終了後に Chore_End へ進む。
     private const string ChoreExitRequestedParameter = "Chore_ExitRequested";
     private const string DoorOpenParameter = "Door_OpenTrigger";
+    // Door_Open ステート専用の速度パラメーター（Animator全体の speed は変更しない）。
+    private const string DoorOpenSpeedParameter = "Door_OpenSpeed";
 
     // ── 参照 ──────────────────────────────────────────────────────────────────
     [Header("参照")]
@@ -75,6 +77,11 @@ public class MotherAnimationPlayer : MonoBehaviour
 
     [Header("デバッグ")]
     [SerializeField] private bool showDebugLogs = true;
+
+    // ── 片付けのドア開け速度 ──────────────────────────────────────────────────
+    [Tooltip("片付けの Door_Open 再生速度（倍率）。Animator全体の speed は変更せず、Door_Open 専用の" +
+             "速度パラメーター（Door_OpenSpeed）を設定する。1=等倍。行き／帰りの両方に適用する。")]
+    [SerializeField, Min(0.01f)] private float doorOpenSpeedMultiplier = 1.5f;
 
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     /// <summary>解決済みの Animator（未解決なら null）。</summary>
@@ -173,8 +180,39 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// <summary>【片付け】Chore_End（立つ・1回）へ進む終了要求を立てる（Bool=true、Transition方式維持）。</summary>
     public void RequestChoreEnd() => SetChoreExitRequested(true);
 
-    /// <summary>【片付け】Door_Open（ドアを開ける・1回）へ遷移要求を出す。</summary>
-    public void RequestDoorOpen() => FireTrigger(DoorOpenParameter);
+    /// <summary>
+    /// 【片付け】Door_Open（ドアを開ける・1回）へ遷移要求を出す。
+    /// 先に Door_Open 専用の速度パラメーターを設定する（Animator全体の speed は変更しない）。
+    /// </summary>
+    public void RequestDoorOpen()
+    {
+        ApplyDoorOpenSpeed();
+        FireTrigger(DoorOpenParameter);
+    }
+
+    /// <summary>
+    /// Door_Open ステート専用の速度パラメーター（Door_OpenSpeed）を設定する。
+    ///  ・Animator全体の speed は変更しない（このパラメーターは Door_Open ステートだけが見る）。
+    ///  ・パラメーターが未登録の場合は警告して速度調整をスキップする（通常速度で再生される）。
+    /// </summary>
+    private void ApplyDoorOpenSpeed()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null) return;
+
+        if (!HasParameterOn(a, DoorOpenSpeedParameter, AnimatorControllerParameterType.Float))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Animator に Float '{DoorOpenSpeedParameter}' がありません。" +
+                             "Door_Open の速度調整をスキップします（Animator Controller へ登録してください）", this);
+            return;
+        }
+
+        float speed = Mathf.Max(0.01f, doorOpenSpeedMultiplier);
+        a.SetFloat(DoorOpenSpeedParameter, speed);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] Door_Open 速度パラメーター {DoorOpenSpeedParameter} = {speed:F2}");
+    }
 
     /// <summary>【片付け】Chore_Peek の再生完了を待つ（成功/失敗を onResult で返す）。</summary>
     public IEnumerator WaitForChorePeek(System.Action<bool> onResult = null) =>
