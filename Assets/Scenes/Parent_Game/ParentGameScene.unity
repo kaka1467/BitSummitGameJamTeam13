@@ -1739,7 +1739,6 @@ MonoBehaviour:
   approachController: {fileID: 2053139200}
   parentDetection: {fileID: 1951468137}
   warningScheduler: {fileID: 472387659}
-  motherAnimator: {fileID: 758022367832795544}
   animationPlayer: {fileID: 727079862}
   choreAllowedProgressRate: 0.6
   choreCountPerPlay: 1

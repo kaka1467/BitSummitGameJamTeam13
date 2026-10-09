@@ -290,20 +290,14 @@ public class MotherAnimationPlayer : MonoBehaviour
     }
 
     /// <summary>
-    /// 1回再生ステートの完了を待つ。結果を success で返す（未開始・中断・タイムアウトと正常終了を混同しない）。
+    /// 【内部実装】1回再生ステートの完了を待つ。結果を success で返す（未開始・中断・タイムアウトと正常終了を混同しない）。
+    /// ステート名を外部へ渡さないよう private にする（外部は用途別API
+    /// WaitForChorePeek / WaitForChoreEnd / WaitForDoorOpen を使う）。
     ///  成功条件：ステートへ到達し、その再生が最後まで進んだ（normalizedTime>=1 もしくは正式な退出）。
     ///  失敗：Animator未解決／ステート未登録／到達タイムアウト／完了タイムアウト／中断。
     /// </summary>
-    public IEnumerator WaitForOneShot(string stateName, System.Action<bool> onResult) =>
+    private IEnumerator WaitForOneShot(string stateName, System.Action<bool> onResult) =>
         WaitForOneShotState(stateName, onResult);
-
-    /// <summary>
-    /// 1回再生ステートの完了を待つ（結果なしの互換オーバーロード）。
-    /// </summary>
-    public IEnumerator WaitForOneShot(string stateName)
-    {
-        yield return WaitForOneShotState(stateName, null);
-    }
 
     /// <summary>
     /// 1回再生ステートの完了を待つ本体。

@@ -59,9 +59,6 @@ public class MotherChoreController : MonoBehaviour
     [Tooltip("自動警告のスケジューラ。片付け中は発火を待機させる。")] [SerializeField]
     private ParentWarningScheduler warningScheduler;
 
-    [Tooltip("親機のAnimator。未設定の場合は approachController.MotherAnimator を使用する。")] [SerializeField]
-    private Animator motherAnimator;
-
     [Tooltip("アニメーション操作の窓口。Animator への書き込みはここに集約する（未設定なら自動検索）。")] [SerializeField]
     private MotherAnimationPlayer animationPlayer;
 
@@ -1138,8 +1135,6 @@ public class MotherChoreController : MonoBehaviour
             parentDetection = Object.FindFirstObjectByType<MotherSuspicionSystem>();
         if (warningScheduler == null)
             warningScheduler = Object.FindFirstObjectByType<ParentWarningScheduler>();
-        if (motherAnimator == null && approachController != null)
-            motherAnimator = approachController.MotherAnimator;
 
         if (doorController == null)
             doorController = Object.FindFirstObjectByType<DoorController>();
