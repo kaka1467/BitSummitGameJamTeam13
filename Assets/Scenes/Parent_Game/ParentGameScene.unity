@@ -1747,9 +1747,10 @@ MonoBehaviour:
   waitForActiveWarning: 1
   lookDetectionStartDelay: 0.3
   lookDetectionDuration: 1.5
+  minChoreSegmentSeconds: 0.5
   doorController: {fileID: 1919619509}
   doorOpenWaitTimeout: 2
-  choreDoorOpenSpeed: 10
+  choreDoorOpenSpeed: 2
   doorCloseWaitTimeout: 2
   returnSafetyTimeout: 20
   choreEnabled: 1
@@ -2699,6 +2700,9 @@ MonoBehaviour:
   oneShotTimeoutSeconds: 30
   fallbackWaitSeconds: 1
   showDebugLogs: 1
+  doorOpenSpeedMultiplier: 1.5
+  doorOpenPushNormalizedTime: 0
+  doorOpenPushTimeoutSeconds: 5
 --- !u!4 &727079863
 Transform:
   m_ObjectHideFlags: 0
@@ -6191,7 +6195,7 @@ Transform:
   m_GameObject: {fileID: 1714533699}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.38563317, z: -0, w: 0.9226522}
-  m_LocalPosition: {x: -83.6, y: 3.9, z: -269.5}
+  m_LocalPosition: {x: -86.8, y: 3.9, z: -272.7}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7411,6 +7415,14 @@ MonoBehaviour:
   continuousRoomSuspicionTickInterval: 0.5
   motherChoreController: {fileID: 445778319}
   choreNotificationTimeout: 5
+  choreLookLowGaugeMax: 3
+  choreLookMidGaugeMax: 6
+  choreLookLowMin: 1
+  choreLookLowMax: 1
+  choreLookMidMin: 1
+  choreLookMidMax: 2
+  choreLookHighMin: 2
+  choreLookHighMax: 3
   isCaught: 0
   isMotherLookingNow: 0
   enableInvincibleToggle: 1
