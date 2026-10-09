@@ -94,20 +94,10 @@ public class MotherChoreController : MonoBehaviour
     [Tooltip("発見判定を有効にしたまま維持する秒数。経過後に解除してアニメーション再生は継続する。")] [SerializeField, Min(0f)]
     private float lookDetectionDuration = 1.5f;
 
-    // ── アニメーション名 ──────────────────────────────────────────────────────
-    //   指定の3構成。Chore は片付け開始時から直接再生して片付け中はループする
-    //   （独立した片付け開始アニメーションは再生しない）。
-    [Header("アニメーションステート名（Animator の State 名）")] [Tooltip("片付け中（ループ再生）。開始時から直接再生する。")] [SerializeField]
-    private string choreLoopStateName = "Chore";
-
-    [Tooltip("こちらを見る（1回再生）。終了後は Chore へ戻る。")] [SerializeField]
-    private string choreLookStateName = "Chore_Peek";
-
-    [Tooltip("片付け終わって立つ（1回再生）。終了後に通常の歩きへ切り替える。")] [SerializeField]
-    private string choreEndStateName = "Chore_End";
-
-    [Tooltip("ドアを開ける動作（1回再生）。片付けのドア開閉で使用する（Door_Open 専用）。")] [SerializeField]
-    private string doorOpenStateName = "Door_Open";
+    // ── アニメーション ────────────────────────────────────────────────────────
+    //   ステート名・パラメーター名・再生方法・再生完了判定は MotherAnimationPlayer が保持する。
+    //   ここでは用途別API（RequestChoreStart / RequestChorePeek / RequestChoreEnd /
+    //   RequestDoorOpen と各 WaitFor…）だけを呼び、ステート名は渡さない。
 
     // ── ドア開閉（片付け） ────────────────────────────────────────────────────
     [Header("片付けのドア開閉")] [Tooltip("片付けで使用する DoorController。行きの doorPoint と帰りの choreReturnPoint_1 でドアを開け、choreReturnPoint_2 で閉める。")] [SerializeField]
@@ -673,8 +663,9 @@ public class MotherChoreController : MonoBehaviour
     {
         // ── 片付け中：Chore（ループ）へ遷移要求する ──────────────────────────
         //    終了要求は Bool（Chore_ExitRequested）で保持する。開始時は false に戻す。
-        SetChoreExitRequested(false);
-        PlayChoreState(choreLoopStateName, loop: true);
+        MotherAnimationPlayer player = ResolveAnimationPlayer();
+        player?.SetChoreExitRequested(false);
+        player?.RequestChoreStart();
         _inChoreLoop = true;
         _loopElapsed = 0f;
 
@@ -690,7 +681,7 @@ public class MotherChoreController : MonoBehaviour
             if (_loopElapsed >= stayDuration)
             {
                 _pendingExit = true;
-                SetChoreExitRequested(true);   // Bool を立てて保持する
+                player?.RequestChoreEnd();   // Bool を立てて保持する
                 break;
             }
 
@@ -713,12 +704,12 @@ public class MotherChoreController : MonoBehaviour
         //    Chore から来た場合はまだ Bool が false のため、ここで終了要求を立てる。
         if (!_choreEndRequested)
         {
-            SetChoreExitRequested(true);
+            player?.RequestChoreEnd();
             _choreEndRequested = true;
         }
 
         bool choreEndOk = false;
-        yield return WaitForOneShotState(choreEndStateName, ok => choreEndOk = ok);
+        yield return WaitForChoreOneShot(ChoreOneShot.ChoreEnd, ok => choreEndOk = ok);
 
         if (!choreEndOk)
         {
@@ -764,7 +755,7 @@ public class MotherChoreController : MonoBehaviour
     /// </summary>
     private IEnumerator LookRoutine()
     {
-        PlayChoreState(choreLookStateName);
+        ResolveAnimationPlayer()?.RequestChorePeek();
 
         // 発見判定：開始遅延後に有効化し、継続時間経過で解除する（見た目は再生し続ける）。
         _detectionStartTime = Time.time + Mathf.Max(0f, lookDetectionStartDelay);
@@ -773,7 +764,7 @@ public class MotherChoreController : MonoBehaviour
 
         // Chore_Peek の再生終了まで待つ（1回再生ステート）。
         bool lookOk = false;
-        yield return WaitForOneShotState(choreLookStateName, ok => lookOk = ok);
+        yield return WaitForChoreOneShot(ChoreOneShot.ChoreLook, ok => lookOk = ok);
 
         _detectionStartPending = false;
         SetDetection(false);
@@ -940,46 +931,25 @@ public class MotherChoreController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 片付け用のステートへの遷移を「要求」する。
-    /// 実際の遷移は Animator Controller の Transition が行う（Animator.Play は使わない）。
+    /// 片付けの1回再生の用途（ステート名は MotherAnimationPlayer が保持する）。
+    /// ここでは用途だけを指定し、ステート名は渡さない。
     /// </summary>
-    private void PlayChoreState(string stateName, bool loop = false)
+    private enum ChoreOneShot
     {
-        MotherAnimationPlayer player = ResolveAnimationPlayer();
-        if (player == null)
-        {
-            Debug.LogWarning("[MotherChore] MotherAnimationPlayer が未設定のため遷移要求できません", this);
-            return;
-        }
-
-        // ステート名はインスペクタで差し替え可能なため、名前で振り分けてプレイヤーのAPIを呼ぶ。
-        if (stateName == doorOpenStateName) player.PlayDoorOpen();
-        else if (stateName == choreLookStateName) player.PlayChorePeek();
-        else if (stateName == choreEndStateName) player.PlayChoreEnd();
-        else player.PlayChore();
-
-        if (showDebugLogs)
-            Debug.Log($"[MotherChore] 遷移要求: {stateName} (loop={loop})");
+        ChoreLook,  // こちらを見る（Chore_Peek）
+        ChoreEnd,   // 片付け終わって立つ（Chore_End）
+        DoorOpen,   // ドアを開ける（Door_Open）
     }
 
     /// <summary>
-    /// 終了要求（Chore_ExitRequested: Bool）を設定する。
-    ///  ・true  … Chore / Chore_Peek から Chore_End へ進む（視線中でも保持される）。
-    ///  ・false … Chore_Peek → Chore に戻る条件。
+    /// 用途別に1回再生の完了を待つ（ステート名は受け取らない）。
+    ///  ・成功 … ステートへ到達して最後まで再生された
+    ///  ・失敗 … 未開始・別ステートへ退出・タイムアウト
+    ///  ・MotherAnimationPlayer 未設定時も「失敗(false)」として扱う
+    ///    （呼び出し側が正常終了と混同しないようにする）。
+    /// 判定の中身は MotherAnimationPlayer の WaitForChorePeek / WaitForChoreEnd / WaitForDoorOpen が持つ。
     /// </summary>
-    private void SetChoreExitRequested(bool requested)
-    {
-        MotherAnimationPlayer player = ResolveAnimationPlayer();
-        if (player == null) return;
-
-        player.SetChoreExitRequested(requested);
-    }
-
-    /// <summary>
-    /// 1回再生ステートの終了を待つ（プレイヤーへ委譲）。
-    /// 未開始・中断・タイムアウトは success=false で返す（呼び出し側が正常終了と混同しないようにする）。
-    /// </summary>
-    private IEnumerator WaitForOneShotState(string stateName, System.Action<bool> onResult)
+    private IEnumerator WaitForChoreOneShot(ChoreOneShot oneShot, System.Action<bool> onResult)
     {
         MotherAnimationPlayer player = ResolveAnimationPlayer();
         if (player == null)
@@ -990,7 +960,12 @@ public class MotherChoreController : MonoBehaviour
             yield break;
         }
 
-        yield return player.WaitForOneShot(stateName, onResult);
+        switch (oneShot)
+        {
+            case ChoreOneShot.ChoreLook: yield return player.WaitForChorePeek(onResult); break;
+            case ChoreOneShot.ChoreEnd:  yield return player.WaitForChoreEnd(onResult);  break;
+            case ChoreOneShot.DoorOpen:  yield return player.WaitForDoorOpen(onResult);  break;
+        }
     }
 
     /// <summary>
@@ -1034,11 +1009,11 @@ public class MotherChoreController : MonoBehaviour
         MotherAnimationPlayer player = ResolveAnimationPlayer();
         player?.ResetChoreParameters();
 
-        PlayChoreState(doorOpenStateName);
+        player?.RequestDoorOpen();
 
         // ── モデルの Door_Open 再生完了を待つ（未開始・失敗を正常終了と混同しない）──
         bool doorOpenAnimationOk = false;
-        yield return WaitForOneShotState(doorOpenStateName, ok => doorOpenAnimationOk = ok);
+        yield return WaitForChoreOneShot(ChoreOneShot.DoorOpen, ok => doorOpenAnimationOk = ok);
 
         if (!doorOpenAnimationOk)
         {

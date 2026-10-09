@@ -164,29 +164,29 @@ public class MotherAnimationPlayer : MonoBehaviour
     //   ・直接 Play しないため、通常の歩き要求が演出を途中で上書きしない。
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Chore（片付け中・ループ）へ遷移要求を出す。</summary>
-    public void PlayChore() => FireTrigger(ChoreStartParameter);
+    /// <summary>【片付け】Chore（片付け中・ループ）へ遷移要求を出す（Transition方式。Animator.Playは使わない）。</summary>
+    public void RequestChoreStart() => FireTrigger(ChoreStartParameter);
 
-    /// <summary>Chore は ループステートのため、再トリガーは不要（互換用）。</summary>
-    public void PlayChoreLoop() { /* Chore は遷移後ループする。再要求しない。 */ }
+    /// <summary>【片付け】Chore_Peek（こちらを見る・1回）へ遷移要求を出す。</summary>
+    public void RequestChorePeek() => FireTrigger(ChorePeekParameter);
 
-    /// <summary>Chore_Peek（こちらを見る・1回）へ遷移要求を出す。</summary>
-    public void PlayChorePeek() => FireTrigger(ChorePeekParameter);
+    /// <summary>【片付け】Chore_End（立つ・1回）へ進む終了要求を立てる（Bool=true、Transition方式維持）。</summary>
+    public void RequestChoreEnd() => SetChoreExitRequested(true);
 
-    /// <summary>Chore_End（立つ・1回）へ進む終了要求を立てる（Bool=true）。</summary>
-    public void PlayChoreEnd() => SetChoreExitRequested(true);
+    /// <summary>【片付け】Door_Open（ドアを開ける・1回）へ遷移要求を出す。</summary>
+    public void RequestDoorOpen() => FireTrigger(DoorOpenParameter);
 
-    /// <summary>Door_Open（ドアを開ける・1回）へ遷移要求を出す。</summary>
-    public void PlayDoorOpen() => FireTrigger(DoorOpenParameter);
+    /// <summary>【片付け】Chore_Peek の再生完了を待つ（成功/失敗を onResult で返す）。</summary>
+    public IEnumerator WaitForChorePeek(System.Action<bool> onResult = null) =>
+        WaitForOneShot(choreLookStateName, onResult);
 
-    /// <summary>Chore_Peek の再生完了を待つ（タイムアウト付き）。</summary>
-    public IEnumerator WaitForChorePeek() => WaitForOneShot(choreLookStateName);
+    /// <summary>【片付け】Chore_End の再生完了を待つ（成功/失敗を onResult で返す）。</summary>
+    public IEnumerator WaitForChoreEnd(System.Action<bool> onResult = null) =>
+        WaitForOneShot(choreEndStateName, onResult);
 
-    /// <summary>Chore_End の再生完了を待つ（タイムアウト付き）。</summary>
-    public IEnumerator WaitForChoreEnd() => WaitForOneShot(choreEndStateName);
-
-    /// <summary>Door_Open の再生完了を待つ（タイムアウト付き）。</summary>
-    public IEnumerator WaitForDoorOpen() => WaitForOneShot(doorOpenStateName);
+    /// <summary>【片付け】Door_Open の再生完了を待つ（成功/失敗を onResult で返す）。</summary>
+    public IEnumerator WaitForDoorOpen(System.Action<bool> onResult = null) =>
+        WaitForOneShot(doorOpenStateName, onResult);
 
     /// <summary>
     /// 終了要求（Chore_ExitRequested）を設定する。
