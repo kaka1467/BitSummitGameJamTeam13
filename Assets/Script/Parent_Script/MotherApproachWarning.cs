@@ -343,6 +343,44 @@ public class MotherApproachWarning : MonoBehaviour
         _foreshadowCoroutine = StartCoroutine(ForeshadowAndApproachCoroutine(RouteOverride.None));
     }
 
+    /// <summary>
+    /// 【片付け用】通常の hallway イベントと同じ照明の予兆（点灯順・待ち時間）を再利用して実行する。
+    ///  ・既存の TurnOnFirstStageLights / TurnOnSecondStageLights と
+    ///    foreshadowStageInterval* / moveStartDelay*（＋高疑惑版）をそのまま使う。
+    ///  ・片付け専用の秒数・照明設定はコピーして増やさない。
+    ///  ・移動は開始しない（照明と待機だけ）。呼び出し元（MotherChoreController）が経路を開始する。
+    ///  ・isManual=true（6キー）でも照明の予兆は省略しない。高疑惑の短縮判定のみ isManual に従う。
+    /// </summary>
+    public IEnumerator RunChoreForeshadowLights(bool isManual)
+    {
+        int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+        bool highSuspicionDelays = !isManual && gauge > highSuspicionDelayGaugeThreshold;
+
+        // 第1段階の灯り（既存の予兆と同じ）。
+        TurnOnFirstStageLights();
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[MotherApproachWarning] 片付け予兆: HALLWAY LIGHTS 1/2 ON");
+
+        // 予兆の段階間の待機（既存の設定・ルールをそのまま使用）。
+        float stageIntervalDelay = highSuspicionDelays
+            ? Random.Range(highSuspicionForeshadowStageIntervalMin, highSuspicionForeshadowStageIntervalMax)
+            : Random.Range(foreshadowStageIntervalMin, foreshadowStageIntervalMax);
+        Debug.Log($"[MotherApproachWarning] 片付け予兆: 予兆の段階間の待機 {stageIntervalDelay:F1}s (gauge={gauge})");
+        yield return new WaitForSeconds(stageIntervalDelay);
+
+        // 第2段階の灯り（既存の予兆と同じ）。
+        TurnOnSecondStageLights();
+        if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
+        Debug.Log("[MotherApproachWarning] 片付け予兆: SECOND FLOOR LIGHTS ON");
+
+        // 移動開始までの待機（既存の設定・ルールをそのまま使用）。
+        float moveStartDelay = highSuspicionDelays
+            ? Random.Range(highSuspicionMoveStartDelayMin, highSuspicionMoveStartDelayMax)
+            : Random.Range(moveStartDelayMin, moveStartDelayMax);
+        Debug.Log($"[MotherApproachWarning] 片付け予兆: 移動開始までの待機 {moveStartDelay:F1}s (gauge={gauge})");
+        yield return new WaitForSeconds(moveStartDelay);
+    }
+
     public void StartManualDoorWarningSequence()
     {
         if (isWarningActive)

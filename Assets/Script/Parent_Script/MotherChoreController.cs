@@ -166,6 +166,7 @@ public class MotherChoreController : MonoBehaviour
     private bool _choreApproachSuspicionStarted; // 行きの怪しさ加算を開始済みか（1回だけ発行）
     private bool _choreEndRequested;             // Chore_End への遷移要求を発行済みか（二重要求防止）
     private bool _choreRouteFailed;              // 片付けの再生失敗（呼び出し元へ伝えて経路を中断させる）
+    private bool _choreStartIsManual;            // このサイクルが6キーの手動開始か（照明予兆の高疑惑判定に使う）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unity ライフサイクル
@@ -550,6 +551,7 @@ public class MotherChoreController : MonoBehaviour
         }
 
         _choreStartRequested = false;
+        _choreStartIsManual = isManual;   // 照明予兆の高疑惑判定に使う（6キーは true）
 
         if (_mainRoutine != null) StopCoroutine(_mainRoutine);
         _mainRoutine = StartCoroutine(ChoreRoutine());
@@ -578,6 +580,19 @@ public class MotherChoreController : MonoBehaviour
         // 通常イベントが進行中なら、終わるまで待つ（重複させない）。
         while (warningSystem.isWarningActive)
             yield return null;
+
+        // ── 片付け開始の照明の予兆（通常の hallway イベントと同じ照明・順番・待ち時間）──
+        //    MotherApproachWarning の既存予兆処理を再利用する（片付け専用の秒数・照明設定は増やさない）。
+        //    6キーの手動開始（isManual）でも照明の予兆は省略しない。
+        //    通常イベントの移動は二重起動しない（ここでは照明と待機のみ）。
+        if (warningSystem != null)
+        {
+            if (showDebugLogs)
+                Debug.Log("[MotherChore] 片付け開始の照明予兆を開始します（通常の hallway と同じ照明処理を再利用）");
+            yield return warningSystem.RunChoreForeshadowLights(_choreStartIsManual);
+        }
+
+        if (!IsChoreActive) yield break;
 
         // ── 片付け専用ルート開始（行き → chorePoint到着・向き合わせ → onChoreArrived）──
         //    roomEntryPoints（通常の入室ルート）は使わない。専用経路だけを歩く。

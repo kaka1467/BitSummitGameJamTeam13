@@ -217,9 +217,17 @@ public class MotherApproachController : MonoBehaviour
     //   roomEntryPoints（入室ルート）とは独立で、片付けではこちらだけを使う
     //   （専用経路と roomEntryPoints を続けて再生しない）。
     [Header("片付け専用ルート")]
-    [Tooltip("行きの途中地点。doorPointでドアを開けた後、登録順に通過してから chorePoint へ向かう。\n" +
+    [Tooltip("行きのドア開け地点①。既存廊下ルート（HallwayPoint_4 まで）の後にここへ到着し、" +
+             "Door_Open を再生してドアを全開にする。必須参照（未設定なら片付けを開始しない）。")]
+    public Transform choreApproachPoint_1;
+
+    [Tooltip("行きのドア閉め地点②。ドア全開の完了後にここへ到着し、ドアを閉める（Door_Open は再生しない）。" +
+             "必須参照（未設定なら片付けを開始しない）。")]
+    public Transform choreApproachPoint_2;
+
+    [Tooltip("行きの自由な途中地点。ドア閉め後に登録順に通過してから chorePoint へ向かう。\n" +
              "0個なら chorePoint へ直接進む。途中地点では停止・Idle待機をしない（通過のみ）。\n" +
-             "null要素は警告してスキップする。")]
+             "null要素は警告してスキップする。固定のドア操作地点（_1/_2）とは役割を分けて維持する。")]
     public List<Transform> choreApproachPoints = new List<Transform>();
 
     [Tooltip("片付けを行う固定地点（choreapproachpoint）。ここで停止して向きを合わせ、Chore を開始する。未設定なら片付けを開始しない。")]

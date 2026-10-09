@@ -1555,7 +1555,7 @@ GameObject:
   m_Component:
   - component: {fileID: 364896177}
   m_Layer: 0
-  m_Name: ChoreApproachPoint
+  m_Name: ChoreApproachPoint_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4350,6 +4350,37 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!1 &1117074331
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1117074332}
+  m_Layer: 0
+  m_Name: ChoreApproachPoint_1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1117074332
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1117074331}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.9238796, z: -0, w: -0.38268325}
+  m_LocalPosition: {x: -64.7, y: 3.9, z: -259.3}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2010855717}
+  m_LocalEulerAnglesHint: {x: 0, y: 225, z: 0}
 --- !u!1 &1152572593
 GameObject:
   m_ObjectHideFlags: 0
@@ -6164,7 +6195,7 @@ Transform:
   m_GameObject: {fileID: 1714533699}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.38563317, z: -0, w: 0.9226522}
-  m_LocalPosition: {x: -85.1, y: 3.9, z: -270.90002}
+  m_LocalPosition: {x: -87.7, y: 3.9, z: -273.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7579,6 +7610,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 1117074332}
   - {fileID: 364896177}
   - {fileID: 1641722593}
   - {fileID: 727177174}
@@ -7798,6 +7830,8 @@ MonoBehaviour:
   roomEntryPoints: []
   roomExitYaw: -90
   roomStayTimeoutSeconds: 20
+  choreApproachPoint_1: {fileID: 0}
+  choreApproachPoint_2: {fileID: 0}
   choreApproachPoints:
   - {fileID: 364896177}
   chorePoint: {fileID: 1641722593}
@@ -11192,8 +11226,8 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -3846018093981099296, guid: 059ffe3880fe94e64af9e56825eee17d, type: 3}
-  - {fileID: -6478536213147159724, guid: 059ffe3880fe94e64af9e56825eee17d, type: 3}
+  - {fileID: 2100000, guid: 2de790ca5fab649c49e14978c44ce28b, type: 2}
+  - {fileID: 2100000, guid: 2de790ca5fab649c49e14978c44ce28b, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -15244,7 +15278,7 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 8442073218314760290, guid: 059ffe3880fe94e64af9e56825eee17d, type: 3}
+  - {fileID: 2100000, guid: 6ab1b9ea529ea469e952a0884eb4e636, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
