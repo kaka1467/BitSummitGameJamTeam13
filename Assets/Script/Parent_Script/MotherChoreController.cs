@@ -107,6 +107,11 @@ public class MotherChoreController : MonoBehaviour
     [Tooltip("Door_Open 再生後、ドアが目標角度へ到達するまで待つ最大秒数。超過しても完了待ちを続けない。")] [SerializeField, Min(0.5f)]
     private float doorOpenWaitTimeout = 5f;
 
+    [Tooltip("片付け時のドア本体の開く速度。小さいほどゆっくり。モデルのアニメーション速度には影響しない" +
+             "（行き／帰りの片付けドア開けで同じ値を使う）。")]
+    [SerializeField, Min(0.01f)]
+    private float choreDoorOpenSpeed = 10f;
+
     [Tooltip("帰りの HallwayPoint_3 到着でドアを閉める。完了を待つ最大秒数。")] [SerializeField, Min(0.5f)]
     private float doorCloseWaitTimeout = 5f;
 
@@ -168,6 +173,15 @@ public class MotherChoreController : MonoBehaviour
         ResolveReferences();
         SubscribeApproachEvents();
         ResetChoreState();
+    }
+
+    /// <summary>
+    /// Inspector値の検証：片付けのドア開く速度は0以下にしない（0だと全開の到達判定が成立しない）。
+    /// </summary>
+    private void OnValidate()
+    {
+        if (choreDoorOpenSpeed <= 0f)
+            choreDoorOpenSpeed = 0.01f;
     }
 
     private void OnEnable()
@@ -1069,9 +1083,11 @@ public class MotherChoreController : MonoBehaviour
         // ── 2) ドア本体の回転を「開始」する（片付け用の速度。回転開始時から上書きが効く）──
         if (doorController != null)
         {
-            doorController.BeginChoreFullOpen(doorController.ChoreFullOpenSpeed);
+            // 片付けのドア開く速度は MotherChoreController 側の設定を使う（行き／帰り共通）。
+            // 0以下は無効なので最小値へクランプしてから渡す。
+            doorController.BeginChoreFullOpen(Mathf.Max(0.01f, choreDoorOpenSpeed));
             if (showDebugLogs)
-                Debug.Log("[MotherChore] ドア本体の回転を開始（モデルの押すタイミングに合わせる）");
+                Debug.Log($"[MotherChore] ドア本体の回転を開始（速度={choreDoorOpenSpeed:F2}、モデルの押すタイミングに合わせる）");
         }
         else
         {
@@ -1097,8 +1113,21 @@ public class MotherChoreController : MonoBehaviour
         }
 
         // ── 4) ドア全開の完了を待つ（モデル正常終了とドア全開の両方が成立）──
+        bool doorReachedOk = true;
         if (doorController != null)
-            yield return doorController.WaitForDoorReached(doorOpenWaitTimeout);
+            yield return doorController.WaitForDoorReached(doorOpenWaitTimeout, ok => doorReachedOk = ok);
+
+        if (!doorReachedOk)
+        {
+            // 速度が遅く時間内に全開しなかった場合は、正常終了扱いにせず安全に中断する。
+            Debug.LogWarning("[MotherChore] ドア全開の完了を確認できなかったため（タイムアウト）、" +
+                             "移動許可と怪しさ加算へ進みません（失敗）", this);
+            SetWalkingOverrideSuppressed(false);
+            SetMovementSuppressed(false);
+            if (doorController != null) doorController.ClearChoreSpeedOverride();
+            _choreRouteFailed = true;
+            yield break;
+        }
 
         // 速度上書きを解除する（通常の覗き・閉め速度へ影響を残さない）。
         if (doorController != null)

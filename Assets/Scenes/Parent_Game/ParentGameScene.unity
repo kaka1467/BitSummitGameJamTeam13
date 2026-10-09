@@ -1749,6 +1749,7 @@ MonoBehaviour:
   lookDetectionDuration: 1.5
   doorController: {fileID: 1919619509}
   doorOpenWaitTimeout: 2
+  choreDoorOpenSpeed: 10
   doorCloseWaitTimeout: 2
   returnSafetyTimeout: 20
   choreEnabled: 1

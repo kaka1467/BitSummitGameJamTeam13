@@ -28,15 +28,11 @@ public class DoorController : MonoBehaviour
     [SerializeField] private float openSpeed = 5f;     // 回転速度の倍率
 
     [Header("片付け演出用")]
-    [Tooltip("片付けのドア全開（Full）で使う回転速度。0以下なら通常の openSpeed を使う。" +
-             "通常の覗き・閉め速度は変更しない。")]
-    [SerializeField] private float choreFullOpenSpeed = 10f;
+    // 片付けの全開で使う回転速度は MotherChoreController 側の設定（choreDoorOpenSpeed）から
+    // BeginChoreFullOpen() で受け取る（旧 choreFullOpenSpeed は撤去。通常の openSpeed は変更しない）。
 
     /// <summary>片付けの全開待ちの間だけ使う回転速度の上書き（0以下で無効＝通常の openSpeed）。</summary>
     private float _speedOverride = -1f;
-
-    /// <summary>片付けの全開で使う回転速度（0以下なら通常の openSpeed）。</summary>
-    public float ChoreFullOpenSpeed => choreFullOpenSpeed;
 
     [Header("デバッグ")]
     public bool showDebugLogs;
@@ -92,8 +88,9 @@ public class DoorController : MonoBehaviour
     /// <summary>
     /// 現在の目標状態へ実際に到達するまで待つ（状態・速度上書きは変更しない）。
     /// BeginChoreFullOpen の後、ドア全開の完了待ちに使う。
+    ///  ・到達できたら onResult(true)、タイムアウトなら onResult(false)（呼び出し側が正常終了と区別する）。
     /// </summary>
-    public IEnumerator WaitForDoorReached(float timeoutSeconds)
+    public IEnumerator WaitForDoorReached(float timeoutSeconds, System.Action<bool> onResult = null)
     {
         float elapsed = 0f;
         float timeout = Mathf.Max(0f, timeoutSeconds);
@@ -103,6 +100,7 @@ public class DoorController : MonoBehaviour
             if (timeout > 0f && elapsed >= timeout)
             {
                 Debug.LogWarning($"[DoorController] ドアが目標角度へ到達しませんでした（{timeout:F1}s で打ち切り）");
+                onResult?.Invoke(false);
                 yield break;
             }
             elapsed += Time.deltaTime;
@@ -111,6 +109,7 @@ public class DoorController : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log($"[DoorController] ドアが目標角度へ到達（{elapsed:F2}s）");
+        onResult?.Invoke(true);
     }
 
     private void Update()
