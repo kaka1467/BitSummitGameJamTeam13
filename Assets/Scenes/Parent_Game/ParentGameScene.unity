@@ -7830,10 +7830,9 @@ MonoBehaviour:
   roomEntryPoints: []
   roomExitYaw: -90
   roomStayTimeoutSeconds: 20
-  choreApproachPoint_1: {fileID: 0}
-  choreApproachPoint_2: {fileID: 0}
-  choreApproachPoints:
-  - {fileID: 364896177}
+  choreApproachPoint_1: {fileID: 1117074332}
+  choreApproachPoint_2: {fileID: 364896177}
+  choreApproachPoints: []
   chorePoint: {fileID: 1641722593}
   choreEndPoints:
   - {fileID: 727177174}
