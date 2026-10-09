@@ -21,15 +21,15 @@ MonoBehaviour:
   m_OverrideGlobalSceneList: 1
   m_Scenes:
   - m_enabled: 1
-    m_path: Assets/Scenes/MiniGame/MiniTitle.unity
+    m_path: Assets/Scenes/Child_Game/ChildeTitle.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MiniGame/ChildLoad.unity
+    m_path: Assets/Scenes/Child_Game/ChildLoading.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MiniGame/MiniGame.unity
+    m_path: Assets/Scenes/Child_Game/ChildGameScene.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MiniGame/TimeUpResult.unity
+    m_path: Assets/Scenes/Child_Game/ChildGameClear.unity
   - m_enabled: 1
-    m_path: Assets/Scenes/MiniGame/GameOverResult.unity
+    m_path: Assets/Scenes/Child_Game/ChildGameOver.unity
   m_HasScriptingDefines: 0
   m_ScriptingDefines: []
   m_PlayerSettingsYaml:

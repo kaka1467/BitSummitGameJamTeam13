@@ -205,9 +205,19 @@ public class ParentUdpSender : MonoBehaviour
     }
     public void OnStartButtonClicked()
     {
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][親機] ParentUdpSender.OnStartButtonClicked ENTER — scene='{SceneManager.GetActiveScene().name}', currentState={currentState}, _gameStarted={_gameStarted}, sessionId={_currentPlaySessionId}, id={GetInstanceID()}", this);
+
         // 二重開始防止: すでに開始済みなら何もしない（Start/SoloStart を連打しても遷移は1回だけ）。
-        if (_gameStarted) return;
+        if (_gameStarted)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] OnStartButtonClicked 中断 — _gameStarted が既に true のため開始しません。", this);
+            return;
+        }
         _gameStarted = true;
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][親機] OnStartButtonClicked → StartGameRoutine 開始 (遷移先='{gameSceneName}')", this);
         StartCoroutine(StartGameRoutine());
     }
 
@@ -218,6 +228,9 @@ public class ParentUdpSender : MonoBehaviour
     /// </summary>
     public void OnSoloStartButtonClicked()
     {
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][親機] ParentUdpSender.OnSoloStartButtonClicked ENTER — scene='{SceneManager.GetActiveScene().name}', currentState={currentState}, _gameStarted={_gameStarted}, soloGameSceneName='{soloGameSceneName}', gameSceneName='{gameSceneName}', sessionId={_currentPlaySessionId}, id={GetInstanceID()}", this);
+
         // 単体開始が押されたことと、その時点の状態を必ず記録する（「Connecting表示」診断用）。
         Debug.Log($"[ParentUdpSender][Diag] OnSoloStartButtonClicked called — scene='{SceneManager.GetActiveScene().name}', " +
                   $"state={currentState}, _gameStarted={_gameStarted}, " +
@@ -226,6 +239,8 @@ public class ParentUdpSender : MonoBehaviour
         if (_gameStarted)
         {
             Debug.Log("[ParentUdpSender][Diag] OnSoloStartButtonClicked ignored — already started (_gameStarted=true).");
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] OnSoloStartButtonClicked 中断 — _gameStarted が既に true のため開始しません。", this);
             return;
         }
         _gameStarted = true;
@@ -243,6 +258,8 @@ public class ParentUdpSender : MonoBehaviour
         // フラッシュ演出の完了後に行う（ここで即座に隠すと演出が表示されないため、外してある）。
 
         // ParentLoading（子機を無期限に待つ）は経由せず、直接ゲームシーンへ遷移する
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][親機] OnSoloStartButtonClicked → LoadSceneAfterBgmFade('{soloGameSceneName}') を開始 (currentState={currentState}, sessionId={_currentPlaySessionId}, START_GAME送信先={targetIP}:{normalPort}, id={GetInstanceID()})", this);
         StartCoroutine(LoadSceneAfterBgmFade(soloGameSceneName));
     }
 
@@ -269,6 +286,8 @@ public class ParentUdpSender : MonoBehaviour
     //   暗転が完了してから遷移するので、フェード途中で切れるBGMは画面が黒い状態で途切れ、耳障りになりにくい。
     private IEnumerator LoadSceneAfterBgmFade(string sceneName)
     {
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][親機] ParentUdpSender.LoadSceneAfterBgmFade ENTER — 遷移先='{sceneName}', 現在scene='{SceneManager.GetActiveScene().name}', currentState={currentState}, sessionId={_currentPlaySessionId}, id={GetInstanceID()}", this);
         TitleBgmFader bgmFader = FindFirstObjectByType<TitleBgmFader>();
         TitleScreenFader screenFader = FindFirstObjectByType<TitleScreenFader>();
 
@@ -296,9 +315,19 @@ public class ParentUdpSender : MonoBehaviour
         if (waitSeconds > 0f)
         {
             Debug.Log($"[ParentUdpSender] LoadSceneAfterBgmFade: 画面フェード {waitSeconds}秒で '{sceneName}' へ遷移します（BGMフェードは待ちません）。");
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] LoadSceneAfterBgmFade フェード待機開始 — waitSeconds={waitSeconds:F2}, 遷移先='{sceneName}'", this);
             yield return new WaitForSecondsRealtime(waitSeconds);
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] LoadSceneAfterBgmFade フェード待機解除 — 遷移先='{sceneName}'", this);
+        }
+        else if (showDebugLogs)
+        {
+            Debug.Log($"[StartTrace][親機] LoadSceneAfterBgmFade フェード待機なし (waitSeconds=0) — 遷移先='{sceneName}'", this);
         }
 
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][親機] LoadSceneAfterBgmFade → SceneManager.LoadScene('{sceneName}') 直前", this);
         SceneManager.LoadScene(sceneName);
     }
 
@@ -456,7 +485,10 @@ public class ParentUdpSender : MonoBehaviour
         _returnToTitleHeld = 0f;
 
         if (showDebugLogs)
+        {
             Debug.Log($"[ParentUdpSender] Scene loaded: '{scene.name}' — refreshing scene references.");
+            Debug.Log($"[StartTrace][親機] ParentUdpSender.OnSceneLoaded 到着 — scene='{scene.name}', mode={mode}, currentState={currentState}, _gameStarted={_gameStarted}, ChildLoadingComplete={ChildLoadingComplete}, isTitle={IsTitleScene(scene.name)}, sessionId={_currentPlaySessionId}, id={GetInstanceID()}", this);
+        }
         RefreshSceneReferences();
         RefreshUiReferences();
         AttachUiListeners();
@@ -666,12 +698,24 @@ public class ParentUdpSender : MonoBehaviour
         {
             connectButton.onClick.RemoveAllListeners();
             connectButton.onClick.AddListener(OnConnectButtonClicked);
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] AttachUiListeners: '{connectButton.gameObject.name}'.onClick → OnConnectButtonClicked を動的登録 (id={GetInstanceID()}, scene='{SceneManager.GetActiveScene().name}')", this);
+        }
+        else if (showDebugLogs)
+        {
+            Debug.LogWarning($"[StartTrace][親機] AttachUiListeners: connectButton が null のため登録なし (scene='{SceneManager.GetActiveScene().name}')", this);
         }
 
         if (cancelButton != null)
         {
             cancelButton.onClick.RemoveAllListeners();
             cancelButton.onClick.AddListener(OnCancelButtonClicked);
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] AttachUiListeners: '{cancelButton.gameObject.name}'.onClick → OnCancelButtonClicked を動的登録 (id={GetInstanceID()})", this);
+        }
+        else if (showDebugLogs)
+        {
+            Debug.LogWarning($"[StartTrace][親機] AttachUiListeners: cancelButton が null のため登録なし (scene='{SceneManager.GetActiveScene().name}')", this);
         }
     }
 
@@ -913,6 +957,10 @@ public class ParentUdpSender : MonoBehaviour
 
         if (message.Type == ParentMessageType.StartGame)
         {
+            // 開始経路の診断: パーサが返した種別と、開始を止める条件の現在値を記録する。
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] ParentUdpSender.HandleIncoming START_GAME — parsedType={message.Type}, playSessionId='{message.PlaySessionId}', scene='{SceneManager.GetActiveScene().name}', currentState={currentState}, _gameStarted={_gameStarted}, id={GetInstanceID()}", this);
+
             if (!_gameStarted && currentState == ConnectionState.Connected)
             {
                 _gameStarted = true;
@@ -924,8 +972,15 @@ public class ParentUdpSender : MonoBehaviour
                     : message.PlaySessionId;
 
                 if (showDebugLogs)
+                {
                     Debug.Log($"[ParentUdpSender] Received START_GAME from child — loading game scene. playSessionId={_currentPlaySessionId}");
+                    Debug.Log($"[StartTrace][親機] START_GAME 分岐=開始 → LoadSceneAfterBgmFade('{gameSceneName}') を開始 (sessionId={_currentPlaySessionId})", this);
+                }
                 StartCoroutine(LoadSceneAfterBgmFade(gameSceneName));
+            }
+            else if (showDebugLogs)
+            {
+                Debug.Log($"[StartTrace][親機] START_GAME 分岐=開始しない — 条件(!_gameStarted && currentState==Connected)が不成立: _gameStarted={_gameStarted}, currentState={currentState}", this);
             }
             return;
         }
@@ -999,8 +1054,11 @@ public class ParentUdpSender : MonoBehaviour
 
         if (message.Type == ParentMessageType.LoadingComplete)
         {
+            bool previous = ChildLoadingComplete;
             ChildLoadingComplete = true;
             Debug.Log("[ParentUdpSender] Received LOADING_COMPLETE from child. Property set to true.");
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][親機] ParentUdpSender.HandleIncoming LOADING_COMPLETE — ChildLoadingComplete: {previous} → {ChildLoadingComplete}, scene='{SceneManager.GetActiveScene().name}', id={GetInstanceID()}", this);
             return;
         }
 

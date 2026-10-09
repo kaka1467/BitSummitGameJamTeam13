@@ -755,6 +755,7 @@ public class TutorialFlow : MonoBehaviour
 
         if (udpReceiver != null)
         {
+            Debug.Log($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown — LOADING_COMPLETE 送信 (startSignalSent={startSignalSent}, receiverId={udpReceiver.GetInstanceID()}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
             udpReceiver.SendState("LOADING_COMPLETE");
             Debug.Log("[TutorialFlow] Start shown — sent LOADING_COMPLETE to parent.");
             if (loadingCompleteRoutine != null)
@@ -766,6 +767,7 @@ public class TutorialFlow : MonoBehaviour
         else
         {
             Debug.LogWarning("[TutorialFlow] Start shown but ChildUdpReceiver not found — LOADING_COMPLETE not sent.");
+            Debug.LogWarning($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown 失敗 — udpReceiver が見つからず LOADING_COMPLETE を送れません (startSignalSent={startSignalSent}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
         }
     }
 

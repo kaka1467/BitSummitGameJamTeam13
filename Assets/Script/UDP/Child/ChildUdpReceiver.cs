@@ -144,10 +144,21 @@ public class ChildUdpReceiver : MonoBehaviour
     // ── Button callbacks ──────────────────────────────────────────────────────
     public void OnConnectButtonClicked()
     {
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][子機] ChildUdpReceiver.OnConnectButtonClicked ENTER — scene='{SceneManager.GetActiveScene().name}', currentState={currentState}, gameSceneLoaded={gameSceneLoaded}, id={GetInstanceID()}", this);
+
         if (currentState == ConnectionState.Connected)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][子機] OnConnectButtonClicked → 分岐=START (Connected なので OnStartButtonClicked を呼ぶ)", this);
             OnStartButtonClicked();
+        }
         else
+        {
             currentState = ConnectionState.Connecting;
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][子機] OnConnectButtonClicked → 分岐=Connect (Connected ではないため Connecting にして接続操作へ。currentState={currentState})", this);
+        }
     }
 
     public void OnCancelButtonClicked() { currentState = ConnectionState.Disconnected; }
@@ -196,10 +207,17 @@ public class ChildUdpReceiver : MonoBehaviour
 
     public void OnStartButtonClicked()
     {
+        // 中止条件は無し（このメソッドに return は存在しない）。入口の状態を記録する。
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][子機] ChildUdpReceiver.OnStartButtonClicked ENTER — scene='{SceneManager.GetActiveScene().name}', currentState={currentState}, gameSceneLoaded={gameSceneLoaded}, titleSceneName='{titleSceneName}', gameSceneName='{gameSceneName}', id={GetInstanceID()}", this);
+
         // このプレイの識別子を新しく発行し、開始通知に載せて親機と共有する。
         // 以降の RETURN_TO_TITLE はこの識別子で「どのプレイの通知か」を判定する。
         _playSessionId = CreatePlaySessionId();
         _lastPeerReturnToTitleSeq = 0;
+
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][子機] OnStartButtonClicked → START_GAME 送信へ (sessionId={_playSessionId}, 送信先={targetIP}:{parentReceivePort})", this);
 
         SendState($"{CMD_START}:{_playSessionId}");
         Debug.Log($"[ChildUdpReceiver] Sent START_GAME (playSessionId={_playSessionId}) to parent at {targetIP}:{parentReceivePort}");
@@ -219,10 +237,19 @@ public class ChildUdpReceiver : MonoBehaviour
     {
         if (showDebugLogs)
             Debug.Log($"[ChildUdpReceiver] → '{message}' to {targetIP}:{parentReceivePort}");
+
+        // 開始経路の診断: 子機の SendState は接続状態ガードを持たず常に送信する（中断条件は無し）。
+        bool isStartTrace = message.StartsWith(CMD_START, StringComparison.Ordinal);
+        if (isStartTrace && showDebugLogs)
+            Debug.Log($"[StartTrace][子機] ChildUdpReceiver.SendState 送信直前 — '{message}' → {targetIP}:{parentReceivePort}, currentState={currentState}, id={GetInstanceID()}", this);
+
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
             sendClient.Send(data, data.Length, targetIP, parentReceivePort);
+
+            if (isStartTrace && showDebugLogs)
+                Debug.Log($"[StartTrace][子機] ChildUdpReceiver.SendState 送信成功 — '{message}' → {targetIP}:{parentReceivePort} ({data.Length} bytes)", this);
 
             if (message == "LOADING_COMPLETE")
             {
@@ -235,6 +262,8 @@ public class ChildUdpReceiver : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogError($"[ChildUdpReceiver] SendState error: {e.Message}");
+            if (isStartTrace)
+                Debug.LogError($"[StartTrace][子機] ChildUdpReceiver.SendState 例外 — '{message}' → {targetIP}:{parentReceivePort}, error='{e.Message}'", this);
         }
     }
 
@@ -392,6 +421,8 @@ public class ChildUdpReceiver : MonoBehaviour
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         Debug.Log($"[ChildUdpReceiver] Scene loaded: '{scene.name}' — refreshing scene references.");
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][子機] ChildUdpReceiver.OnSceneLoaded 到着 — scene='{scene.name}', mode={mode}, currentState={currentState}, gameSceneLoaded={gameSceneLoaded}, isTitle={IsTitleScene(scene.name)}, sessionId={_playSessionId}, id={GetInstanceID()}", this);
         RefreshSceneReferences();
 
         if (IsTitleScene(scene.name))
@@ -1086,8 +1117,20 @@ public class ChildUdpReceiver : MonoBehaviour
 
     private void LoadGameScene()
     {
-        if (gameSceneLoaded) return;
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][子機] ChildUdpReceiver.LoadGameScene ENTER — gameSceneLoaded={gameSceneLoaded}, 遷移先='{gameSceneName}', 現在scene='{SceneManager.GetActiveScene().name}', id={GetInstanceID()}", this);
+
+        // 二重ロード防止。ここで return する場合は遷移しない（判定値も記録する）。
+        if (gameSceneLoaded)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[StartTrace][子機] LoadGameScene 中断 — gameSceneLoaded が既に true のため LoadScene しません。", this);
+            return;
+        }
         gameSceneLoaded = true;
+
+        if (showDebugLogs)
+            Debug.Log($"[StartTrace][子機] LoadGameScene → SceneManager.LoadScene('{gameSceneName}') 直前", this);
         SceneManager.LoadScene(gameSceneName);
     }
 

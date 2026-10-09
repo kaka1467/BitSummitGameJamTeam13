@@ -37,11 +37,14 @@ public class ParentLoadingController : MonoBehaviour
         float elapsed = 0f;
 
         // Phase 1: 最小表示時間の待機
+        string senderId = _udpSender != null ? _udpSender.GetInstanceID().ToString() : "null";
+        Debug.Log($"[StartTrace][親機] ParentLoadingController.LoadingRoutine 開始 — 最小表示待ち開始 (minimumDisplaySeconds={minimumDisplaySeconds}, senderId={senderId}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}', id={GetInstanceID()})", this);
         while (elapsed < minimumDisplaySeconds)
         {
             elapsed += Time.unscaledDeltaTime;
             yield return null;
         }
+        Debug.Log($"[StartTrace][親機] ParentLoadingController.LoadingRoutine 最小表示待ち解除 (elapsed={elapsed:F2}s)", this);
 
         // ─── 修正箇所 ───
         if (_udpSender != null)
@@ -95,6 +98,8 @@ public class ParentLoadingController : MonoBehaviour
         if (_sceneLoaded) return;
         _sceneLoaded = true;
         Debug.Log($"[ParentLoadingController] Loading {gameSceneName}.");
+        string childLoadingComplete = _udpSender != null ? _udpSender.ChildLoadingComplete.ToString() : "null";
+        Debug.Log($"[StartTrace][親機] ParentLoadingController → SceneManager.LoadScene('{gameSceneName}') 直前 (現在scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}', ChildLoadingComplete={childLoadingComplete})", this);
         SceneManager.LoadScene(gameSceneName);
     }
 }

@@ -44,19 +44,28 @@ public class ChildLoadingController : MonoBehaviour
         float elapsed = 0f;
 
         // Wait for minimum display time
+        Debug.Log($"[StartTrace][子機] ChildLoadingController.LoadingRoutine 開始 — 最小表示待ち開始 (minimumDisplaySeconds={minimumDisplaySeconds}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}', id={GetInstanceID()})", this);
         while (elapsed < minimumDisplaySeconds)
         {
             elapsed += Time.unscaledDeltaTime;
             yield return null;
         }
+        Debug.Log($"[StartTrace][子機] ChildLoadingController.LoadingRoutine 最小表示待ち解除 (elapsed={elapsed:F2}s)", this);
 
         if (waitForGaugeComplete && gaugeSceneChanger != null)
         {
+            Debug.Log($"[StartTrace][子機] ChildLoadingController.LoadingRoutine ゲージ完了待ち開始 (gauge='{gaugeSceneChanger.name}')", this);
             gaugeSceneChanger.SetChangeSceneOnComplete(false);
             while (!gaugeSceneChanger.IsComplete)
             {
                 yield return null;
             }
+            Debug.Log($"[StartTrace][子機] ChildLoadingController.LoadingRoutine ゲージ完了待ち解除 (IsComplete={gaugeSceneChanger.IsComplete})", this);
+        }
+        else
+        {
+            string gaugeName = gaugeSceneChanger != null ? gaugeSceneChanger.name : "null";
+            Debug.Log($"[StartTrace][子機] ChildLoadingController.LoadingRoutine ゲージ完了待ちなし (waitForGaugeComplete={waitForGaugeComplete}, gaugeSceneChanger={gaugeName})", this);
         }
 
         // ─── 修正箇所 ───
@@ -80,6 +89,7 @@ public class ChildLoadingController : MonoBehaviour
         yield return new WaitForSecondsRealtime(0.1f);
 
         Debug.Log($"[ChildLoadingController] Loading {gameSceneName}.");
+        Debug.Log($"[StartTrace][子機] ChildLoadingController → SceneManager.LoadScene('{gameSceneName}') 直前 (現在scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
         SceneManager.LoadScene(gameSceneName);
     }
 }
