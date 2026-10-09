@@ -961,11 +961,19 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        if (choreApproachPoints == null || choreApproachPoints.Count == 0 || choreApproachPoints[0] == null)
+        // 行きのドア開け地点①（必須）。行きはここで Door_Open を再生して全開にする。
+        if (choreApproachPoint_1 == null)
         {
-            Debug.LogWarning("[ParentApproachController] 片付けルートの choreApproachPoints の先頭（choreapproachpoint1 = 行きのドア閉め地点）が" +
-                             "未設定です。リストを1件以上にし、先頭へ Transform を割り当ててください" +
-                             "（設定不足のため開始しません）。", this);
+            Debug.LogWarning("[MotherApproachController] 片付けルートの choreApproachPoint_1（行きのドア開け地点）が未設定です。" +
+                             "Scene で Transform を割り当ててください（設定不足のため開始しません）。", this);
+            return false;
+        }
+
+        // 行きのドア閉め地点②（必須）。ドア操作はこの明示参照の到着時だけ行う。
+        if (choreApproachPoint_2 == null)
+        {
+            Debug.LogWarning("[MotherApproachController] 片付けルートの choreApproachPoint_2（行きのドア閉め地点）が未設定です。" +
+                             "Scene で Transform を割り当ててください（設定不足のため開始しません）。", this);
             return false;
         }
 
@@ -990,8 +998,7 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        // 帰りは既存の廊下ルート（hallwayPointsAfterTurn = HallwayPoint_3）を再利用するため、
-        // 経路参照が無い場合は完了待ちが永久に続かないよう開始しない。
+        // 帰りの最終点（hallwayPassByPoint）。未設定だと退場待ちが成立しないため開始しない。
         if (hallwayPassByPoint == null)
         {
             Debug.LogWarning("[MotherApproachController] 片付けの帰りの最終点（hallwayPassByPoint）が未設定のため、" +
@@ -1066,8 +1073,11 @@ public class MotherApproachController : MonoBehaviour
 
     /// <summary>
     /// 片付けルート本体（行き → 演技待ち → 帰り）。
-    /// 行きでは途中地点を止まらず通過し、chorePoint だけ停止して向き合わせする。
-    /// 帰りも途中地点は通過のみで、choreReturnPoint_1 と choreReturnPoint_2 で停止して向き合わせる。
+    ///  行き：既存廊下ルート（HallwayPoint_4 まで）→ choreApproachPoint_1（Door_Open 全開）
+    ///        → choreApproachPoint_2（ドア閉め）→ choreApproachPoints（自由通過）→ chorePoint（停止・向き合わせ）
+    ///  帰り：choreReturnPoint_1（Door_Open 全開）→ choreReturnPoint_2（ドア閉め）
+    ///        → hallwayPassByPoint（退場）
+    /// ドア操作は明示した固定参照の到着時だけ行い、途中地点リストの番号からは決めない。
     /// </summary>
     private IEnumerator ChoreRoutine()
     {
@@ -1075,8 +1085,10 @@ public class MotherApproachController : MonoBehaviour
         _choreRouteAborted = false;
 
         // ══ 行き：hallwaypeak と同じ既存廊下ルートを歩く ═══════════════════════
-        //   startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn
-        //   → doorPoint（Door_Open で開ける）→ choreApproachPoints → chorePoint（停止・向き合わせ）
+        //   startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn（HallwayPoint_4 まで）
+        //   → choreApproachPoint_1（Door_Open で全開）→ choreApproachPoint_2（ドア閉め）
+        //   → choreApproachPoints（自由通過）→ chorePoint（停止・向き合わせ）
+        // ※ doorPoint は通らない（行きのドア操作は choreApproachPoint_1/_2 で行う）。
         // ※ Door_Peek は再生しない（片付けのドア開けは Door_Open 専用）。
         // ※ roomEntryPoints（通常の入室ルート）は使わない。
         Debug.Log($"[MotherApproachController] 片付けルート：行き開始（既存廊下ルートを再利用）| chorePoint='{chorePoint.name}'");
@@ -1097,18 +1109,19 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 3) doorPoint 到着（doorPoint の＋Zへ向き合わせ）。
-        //    ここでは Door_Peek を再生せず、Door_Open で openAngle まで開ける。
-        yield return MoveAndFaceWaypoint(doorPoint, doorTurnRotationSpeed, "doorPoint（片付け）");
+        // 3) 行きのドア開け地点①（choreApproachPoint_1）へ移動し、向きを合わせる。
+        //    ※ doorPoint は通らない（既存廊下ルートの HallwayPoint_4 から直接ここへ向かう）。
+        //    ここでは Door_Open を再生してドアを全開にする。
+        yield return MoveAndFaceWaypoint(choreApproachPoint_1, choreTurnRotationSpeed, "choreApproachPoint_1");
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
             yield break;
         }
 
-        Debug.Log("[MotherApproachController] 片付けルート：doorPoint到着 — Door_Open でドアを開けます");
+        Debug.Log($"[MotherApproachController] 片付けルート：choreApproachPoint_1('{choreApproachPoint_1.name}')到着 — Door_Open でドアを開けます");
 
-        // 4) Door_Open 再生 + ドアを openAngle まで開く（完了待ち）。
+        // 4) Door_Open 再生 + ドアを全開まで開く（完了待ち）。
         //    開き終わるまで歩行の位置移動を止め、母親が通り抜けないようにする。
         //    isApproach=true（行き）: 完了後に怪しさ加算を開始する。
         yield return ChoreDoorOpenRoutine(DoorController.DoorState.Full, isApproach: true);
@@ -1118,24 +1131,9 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 5) 行きの途中地点（choreApproachPoints）を通過する。
-        //    ・先頭（choreApproachPoints[0]＝choreapproachpoint1）は「行きのドア閉め地点」として
-        //      到着後に一時停止し、ドアを閉めて閉じ終わるまで待つ（Door_Open は再生しない）。
-        //    ・2番目以降は従来どおり登録順に通過する（停止・Idle待機をしない）。
-        //    ・先頭は必須。リストが空／先頭が null の場合は開始前に拒否する（StartChoreRoute で検証済み）。
-        List<Transform> approachPath = BuildChoreApproachPath();
-        if (approachPath.Count == 0)
-        {
-            Debug.LogWarning("[MotherApproachController] 片付けの行き：choreApproachPoints の先頭が未設定のため、" +
-                             "ドア閉め地点を確定できません — 片付けルートを中断します", this);
-            FinishChoreRouteAborted();
-            yield break;
-        }
-
-        // 5-1) 先頭の途中地点（ドア閉め地点）へ移動し、停止して向きを合わせる。
-        Transform approachClosePoint = approachPath[0];
-        yield return MoveAndFaceWaypoint(approachClosePoint, choreTurnRotationSpeed,
-                                         $"choreApproach[0]:DoorClose('{approachClosePoint.name}')");
+        // 5) 行きのドア閉め地点②（choreApproachPoint_2）へ移動し、停止して向きを合わせる。
+        //    ※ ドア閉めは「リストの先頭」ではなく、この明示参照の到着時だけ行う。
+        yield return MoveAndFaceWaypoint(choreApproachPoint_2, choreTurnRotationSpeed, "choreApproachPoint_2");
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1144,8 +1142,7 @@ public class MotherApproachController : MonoBehaviour
 
         // 5-2) 一時停止してドアを閉め、閉じ終わるまで待つ（モデルのアニメーションは再生しない）。
         MovementStateChanged?.Invoke(false);   // ドア閉めのため停止する
-        Debug.Log($"[MotherApproachController] 片付けルート：行きのドア閉め地点 " +
-                  $"'{approachClosePoint.name}' 到着 — ドアを閉めます");
+        Debug.Log($"[MotherApproachController] 片付けルート：choreApproachPoint_2('{choreApproachPoint_2.name}')到着 — ドアを閉めます");
 
         yield return ChoreDoorCloseRoutine();
         if (_choreRouteAborted || _routeExecutionFailed)
@@ -1154,17 +1151,9 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 5-3) 残りの途中地点（2番目以降）を登録順に通過する。
-        //      null要素は警告してスキップする（従来どおり）。
-        for (int i = 1; i < approachPath.Count; i++)
-        {
-            if (_choreRouteAborted || _routeExecutionFailed) break;
-
-            yield return PassThroughWaypoint(approachPath[i], choreTurnRotationSpeed,
-                                             $"choreApproach[{i}]('{approachPath[i].name}')");
-            if (_routeExecutionFailed) break;
-        }
-
+        // 5-3) 自由な途中地点（choreApproachPoints）を登録順に通過する。
+        //      null要素は警告してスキップする。ドア操作は行わない（番号から勝手に決めない）。
+        yield return PassChorePoints(choreApproachPoints, "choreApproach", allowNullSkip: true);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1194,8 +1183,8 @@ public class MotherApproachController : MonoBehaviour
         }
 
         // ══ 帰り：通常の歩きで choreReturnPoint_1（ドア開け）→ choreReturnPoint_2（ドア閉め）
-        //           → HallwayPoint_3 → HallwayPassByPoint（退場） ═══════════════════
-        //   ※ doorPoint と HallwayPoint_4 は通らない。
+        //           → hallwayPassByPoint（退場） ═══════════════════
+        //   ※ HallwayPoint_3 / HallwayPoint_4 / doorPoint は通らない。
         //   ※ choreReturnPoint_1 / _2 到着では片付け完了にしない（hallwayPassBy まで継続）。
         //   ※ ドアを開けるのは _1 到着時のみ、閉めるのは _2 到着時のみ。
         Debug.Log($"[MotherApproachController] 片付けルート：帰り開始 | " +
@@ -1255,16 +1244,7 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 5) HallwayPoint_3（hallwayPointsAfterTurn[0]）へ歩く。
-        //    ※ この地点ではドア操作を行わない（閉めは _2 で完了済み）。
-        yield return ChoreReturnToHallwayPoint3Routine();
-        if (_choreRouteAborted || _routeExecutionFailed)
-        {
-            FinishChoreRouteAborted();
-            yield break;
-        }
-
-        // 6) hallwayPassBy へ歩く。
+        // 5) hallwayPassBy へ歩く（帰りは HallwayPoint_3 / HallwayPoint_4 / doorPoint を通らない）。
         yield return MovePositionOnly(hallwayPassByPoint);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
@@ -1272,7 +1252,7 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 7) 既存の非表示・退場処理を使って消える（初期位置へのリセットは呼び出し側に委ねる）。
+        // 6) 既存の非表示・退場処理を使って消える（初期位置へのリセットは呼び出し側に委ねる）。
         HideMotherForReturn("Chore", "hallwayPassBy到達", success: true);
 
         Debug.Log("[MotherApproachController] 片付けルート：退場完了 — onChoreCompletedを発生");
@@ -1295,71 +1275,9 @@ public class MotherApproachController : MonoBehaviour
     /// <summary>
     /// 片付けの帰り：HallwayPoint_3（hallwayPointsAfterTurn[0]）へ歩く。
     ///  ・HallwayPoint_4 と doorPoint は通らない。
-    ///  ・この地点ではドア操作を行わない（ドア閉めは choreReturnPoint_2 で完了済み）。
-    ///  ・hallwayPointsAfterTurn が未設定の場合は警告してスキップする
-    ///    （完了待ちが永久に続かないようにする）。
-    /// </summary>
-    private IEnumerator ChoreReturnToHallwayPoint3Routine()
-    {
-        List<Transform> hallwayAfterTurn = BuildHallwayPath(hallwayPointsAfterTurn);
-        if (hallwayAfterTurn.Count == 0)
-        {
-            Debug.LogWarning("[MotherApproachController] 片付けの帰り：hallwayPointsAfterTurn（HallwayPoint_3）が" +
-                             "未設定のため、HallwayPoint_3 への移動をスキップします", this);
-            yield break;
-        }
-
-        Transform hallwayPoint3 = hallwayAfterTurn[0];
-        Debug.Log($"[MotherApproachController] 片付けルート：HallwayPoint_3('{hallwayPoint3.name}') へ歩きます");
-
-        yield return MoveAndFaceWaypoint(hallwayPoint3, choreTurnRotationSpeed,
-            $"choreReturn:HallwayPoint_3('{hallwayPoint3.name}')");
-
-        // 到着後のドア操作は行わない（閉めは choreReturnPoint_2 で完了済み）。
-        Debug.Log("[MotherApproachController] 片付けルート：HallwayPoint_3 到着 — ドア操作なしで hallwayPassBy へ進みます");
-    }
-
     // ──────────────────────────────────────────────────────────────────────────
     //  片付けの途中地点（行き／帰り）
     // ──────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// 片付けの行きの途中地点リストを「通過する順」の一時リストにする。
-    ///  ・先頭（index 0）は行きのドア閉め地点として必須。null はスキップせず、
-    ///    そのまま先頭に置く（呼び出し側が中断判定する。勝手に次の地点へ繰り上げない）。
-    ///  ・2番目以降の null 要素は警告してスキップする（従来どおり）。
-    ///  ・同じTransformの連続登録は後に来る方を残す（既存 BuildTransformPath と同じ扱い）。
-    /// </summary>
-    private List<Transform> BuildChoreApproachPath()
-    {
-        var path = new List<Transform>();
-        if (choreApproachPoints == null || choreApproachPoints.Count == 0) return path;
-
-        // 先頭は必須。null でもその位置を保持する（次の地点を勝手にドア閉め地点にしない）。
-        path.Add(choreApproachPoints[0]);
-
-        int nullCount = 0;
-        for (int i = 1; i < choreApproachPoints.Count; i++)
-        {
-            Transform point = choreApproachPoints[i];
-            if (point == null)
-            {
-                nullCount++;
-                Debug.LogWarning($"[ParentApproachController] 片付けの行き：choreApproachPoints[{i}] が未設定（null）のため" +
-                                 "スキップします", this);
-                continue;
-            }
-
-            if (path[path.Count - 1] == point) continue;   // 同じ点の連続登録は除外
-            path.Add(point);
-        }
-
-        if (nullCount > 0)
-            Debug.LogWarning($"[ParentApproachController] 片付けの行き：choreApproachPoints で未設定（null）の要素を " +
-                             $"{nullCount} 件スキップしました（登録数={choreApproachPoints.Count}）", this);
-
-        return path;
-    }
 
     /// <summary>
     /// 片付けの途中地点リストを登録順に通過する。
