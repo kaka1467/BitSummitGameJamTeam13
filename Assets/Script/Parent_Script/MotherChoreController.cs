@@ -91,6 +91,9 @@ public class MotherChoreController : MonoBehaviour
     [Tooltip("発見判定を有効にしたまま維持する秒数。経過後に解除してアニメーション再生は継続する。")] [SerializeField, Min(0f)]
     private float lookDetectionDuration = 1.5f;
 
+    [Tooltip("片付けで視線を分散させるときの最小の片付け区間（秒）。区間がこれ未満になる場合は、滞在時間に収まらない旨を警告する。")] [SerializeField, Min(0f)]
+    private float minChoreSegmentSeconds = 0.5f;
+
     // ── アニメーション ────────────────────────────────────────────────────────
     //   ステート名・パラメーター名・再生方法・再生完了判定は MotherAnimationPlayer が保持する。
     //   ここでは用途別API（RequestChoreStart / RequestChorePeek / RequestChoreEnd /
@@ -123,8 +126,8 @@ public class MotherChoreController : MonoBehaviour
     /// <summary>片付けサイクル進行中か（通常の親イベントを抑止する期間）。</summary>
     public bool IsChoreActive { get; private set; }
 
-    /// <summary>視線アニメーション（3）を再生中か。</summary>
-    public bool IsLooking => _lookRoutine != null;
+    /// <summary>視線アニメーション（Chore_Peek）を再生中か。</summary>
+    public bool IsLooking => _gazeInProgress;
 
     /// <summary>
     /// 片付けの再生が失敗したか（呼び出し元が経路を中断するために参照する）。
@@ -134,20 +137,18 @@ public class MotherChoreController : MonoBehaviour
 
     // ── 内部状態 ──────────────────────────────────────────────────────────────
     private Coroutine _mainRoutine; // 片付け本体（開始待ち＋行き〜帰り）
-    private Coroutine _lookRoutine; // 視線アニメ（3）と発見判定の期間管理
     private bool _choreStartRequested; // このプレイで開始要求を出したか
     private int _choreStartCount; // このプレイで開始した回数
     private bool _manualStartRequested; // 6キーによる手動開始の要求を保持しているか（開始待ちは1件だけ）
     private bool _manualStartPending; // 開始待ちコルーチンが手動要求から動いているか
     private bool _subscribed; // MotherApproachController のイベント購読中か
-    private bool _pendingExit; // 片付け時間満了済み（3 終了後に 4 へ進むためのフラグ）
-    private bool _inChoreLoop; // アニメ2のループ中か（視線抽選の対象期間のみ true）
-    private float _loopElapsed; // アニメ2の経過時間
+    private bool _gazeInProgress; // 視線（Chore_Peek）を再生中か（IsLooking）
+    private int _targetLookCount; // このサイクルの目標視線回数（開始時に抽選して固定）
+    private int _completedLookCount; // 正常終了を確認できた視線の回数
     private bool _detectionActive; // 発見判定（isMotherLookingNow）を有効にしているか
     private float _detectionEndTime; // 発見判定を解除する時刻（Time.time 基準）
     private bool _detectionStartPending; // 発見判定の開始待ちか
     private float _detectionStartTime; // 発見判定を開始する時刻（Time.time 基準）
-    private bool _badItemNotifiedDuringLook; // 視線中に通知が来たか（再開始・予約しないことの確認用）
     private bool _choreArrived; // chorePoint 到着・向き合わせ完了（onChoreArrived）を受けたか
     private bool _choreCompleted; // 退場完了（onChoreCompleted）を受けたか
     private bool _choreApproachSuspicionStarted; // 行きの怪しさ加算を開始済みか（1回だけ発行）
@@ -324,38 +325,16 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// 悪いアイテム取得の通知。片付け中ループ（2）の間だけ視線抽選を行う。
-    /// 1・3・4・入退室の歩き中、および視線（3）再生中は無視する（再開始・予約をしない）。
+    /// 悪いアイテム取得の通知。
+    ///   【重要】片付けの視線は「回数保証の自然視線」（ChorePerformPhase の1つの制御）だけで行う。
+    ///   悪いアイテム由来の視線は使用しない（自然視線に混ざらないようここでは何もしない。再開始・予約もしない）。
     /// </summary>
     public void NotifyBadItemCollected()
     {
         if (!IsChoreActive) return;
 
-        // 視線アニメ再生中の通知：再開始も予約も行わない。
-        if (IsLooking)
-        {
-            _badItemNotifiedDuringLook = true;
-            if (showDebugLogs)
-                Debug.Log("[MotherChore] 視線アニメ再生中のため通知は無視（再開始・予約なし）");
-            return;
-        }
-
-        // アニメ2のループ中以外（1・4・入退室の歩き）は抽選しない。
-        if (!_inChoreLoop) return;
-
-        // 視線発生率は MotherApproachWarning の設定を参照する（重複保持しない）。
-        float probability = ResolveChoreLookProbability();
-        if (Random.value > probability)
-        {
-            if (showDebugLogs)
-                Debug.Log($"[MotherChore] 視線抽選：不発（{probability:P0}）");
-            return;
-        }
-
         if (showDebugLogs)
-            Debug.Log("[MotherChore] 視線抽選：的中 — こっちを見るアニメへ");
-
-        _lookRoutine = StartCoroutine(LookRoutine());
+            Debug.Log("[MotherChore] 悪いアイテム通知を受信しましたが、悪いアイテム由来の視線は使用しません（自然視線のみ）");
     }
 
     /// <summary>
@@ -366,22 +345,14 @@ public class MotherChoreController : MonoBehaviour
     {
         bool wasActive = IsChoreActive;
 
-        if (_lookRoutine != null)
-        {
-            StopCoroutine(_lookRoutine);
-            _lookRoutine = null;
-        }
-
         if (_mainRoutine != null)
         {
             StopCoroutine(_mainRoutine);
             _mainRoutine = null;
         }
 
-        _inChoreLoop = false;
-        _pendingExit = false;
+        _gazeInProgress = false;
         _detectionStartPending = false;
-        _badItemNotifiedDuringLook = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
         _choreEndRequested = false;
@@ -419,12 +390,6 @@ public class MotherChoreController : MonoBehaviour
     /// <summary>再プレイ・シーン開始時に内部状態を初期化する。</summary>
     public void ResetChoreState()
     {
-        if (_lookRoutine != null)
-        {
-            StopCoroutine(_lookRoutine);
-            _lookRoutine = null;
-        }
-
         if (_mainRoutine != null)
         {
             StopCoroutine(_mainRoutine);
@@ -435,10 +400,9 @@ public class MotherChoreController : MonoBehaviour
         _choreStartCount = 0;
         _manualStartRequested = false;
         _manualStartPending = false;
-        _inChoreLoop = false;
-        _pendingExit = false;
-        _loopElapsed = 0f;
-        _badItemNotifiedDuringLook = false;
+        _gazeInProgress = false;
+        _targetLookCount = 0;
+        _completedLookCount = 0;
         _detectionStartPending = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
@@ -548,9 +512,9 @@ public class MotherChoreController : MonoBehaviour
     {
         // ── サイクル開始：通常の親イベントを抑止する ─────────────────────────
         IsChoreActive = true;
-        _pendingExit = false;
-        _inChoreLoop = false;
-        _loopElapsed = 0f;
+        _gazeInProgress = false;
+        _targetLookCount = 0;
+        _completedLookCount = 0;
         SetDetection(false);
         ApplyChoreLocks();
 
@@ -651,10 +615,13 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// chorePoint での片付け演技：Chore（ループ）→ 必要時 Chore_Peek → Chore_End。
-    ///  ・独立した片付け開始アニメーションは再生しない（Chore を直接再生する）。
-    ///  ・Chore のループ中だけ視線抽選を受け付ける（_inChoreLoop が抽選の受付ゲート）。
-    ///  ・視線中に片付け時間が終了した場合は、Chore_Peek 終了後に Chore_End へ進む。
+    /// chorePoint での片付け演技：Chore（ループ）と Chore_Peek（視線）を「1つの制御」で進行する。
+    ///  ・目標視線回数は MotherSuspicionSystem の設定（怪しさ段階別 Min/Max）から開始時に抽選して固定する。
+    ///  ・自然な間隔（滞在時間内に分散）と回数保証を同じ制御でまとめて管理する（競合する別コルーチンを作らない）。
+    ///  ・各視線は Chore_Peek の正常終了を確認してから1回として数える（未開始・失敗・中断は数えない）。
+    ///  ・各視線の後は Chore へ戻り、短い片付け区間を挟む。
+    ///  ・時間満了時に目標未達なら終了要求Boolをまだ立てず、残りの視線を完了してから Chore_End へ進む。
+    ///  ・ゲームオーバー・中断は回数保証より優先する。失敗時は無限リトライしない。
     /// </summary>
     private IEnumerator ChorePerformPhase()
     {
@@ -663,42 +630,77 @@ public class MotherChoreController : MonoBehaviour
         MotherAnimationPlayer player = ResolveAnimationPlayer();
         player?.SetChoreExitRequested(false);
         player?.RequestChoreStart();
-        _inChoreLoop = true;
-        _loopElapsed = 0f;
 
-        // 片付けの滞在時間は MotherApproachWarning の設定を参照する（重複保持しない）。
-        float stayDuration = ResolveChoreStayDuration();
+        float stayDuration = Mathf.Max(0f, ResolveChoreStayDuration());
 
-        while (_loopElapsed < stayDuration && IsChoreActive)
+        // 開始時点の怪しさ段階で設定を固定し、目標回数を Min〜Max の整数から抽選する。
+        // （設定元は MotherSuspicionSystem だけ。ここでは結果だけを使う）
+        int minLooks, maxLooks;
+        ResolveChoreLookCountRange(out minLooks, out maxLooks);
+        _targetLookCount = Random.Range(minLooks, maxLooks + 1);
+        _completedLookCount = 0;
+
+        // 滞在時間内に視線を分散させるための「短い片付け区間」の長さ。
+        float segment = stayDuration / Mathf.Max(1, _targetLookCount + 1);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherChore] 片付け演技開始 | 滞在={stayDuration:F1}s | 目標視線={_targetLookCount}回（{minLooks}〜{maxLooks}）| 区間={segment:F2}s");
+
+        if (segment < minChoreSegmentSeconds)
+            Debug.LogWarning($"[MotherChore] 目標視線 {_targetLookCount}回 は滞在 {stayDuration:F1}s に収まらない可能性があります" +
+                             $"（区間 {segment:F2}s < 最小 {minChoreSegmentSeconds:F2}s）。時間満了後に残りを完了します。", this);
+
+        float phaseStart = Time.time;
+
+        // ── フェーズ1：滞在時間内に分散して視線を再生する ──────────────────
+        while (IsChoreActive && _completedLookCount < _targetLookCount)
         {
-            _loopElapsed += Time.deltaTime;
+            // 短い片付け区間（Chore へ戻って待つ）。滞在時間の満了で打ち切る。
+            float segmentEnd = Time.time + segment;
+            while (IsChoreActive && Time.time < segmentEnd && (Time.time - phaseStart) < stayDuration)
+                yield return null;
 
-            // 片付け時間満了：Chore_Peek の再生中なら「終了要求を保持」し、
-            // 視線の終了を待ってから Chore_End へ進む（Chore を一瞬挟まない）。
-            if (_loopElapsed >= stayDuration)
+            if (!IsChoreActive) break;                              // 中断は回数保証より優先
+            if ((Time.time - phaseStart) >= stayDuration) break;    // 時間満了 → フェーズ2へ
+
+            bool lookOk = false;
+            yield return ChoreLookOnce(ok => lookOk = ok);
+            if (!IsChoreActive) break;
+            if (!lookOk)
             {
-                _pendingExit = true;
-                player?.RequestChoreEnd();   // Bool を立てて保持する
-                break;
+                Debug.LogWarning("[MotherChore] Chore_Peek の再生完了を確認できなかったため、残りの視線を打ち切ります（失敗）", this);
+                break;   // 失敗時に無限リトライしない
             }
-
-            yield return null;
+            _completedLookCount++;
         }
 
-        _inChoreLoop = false; // ここで抽選の受付を閉じる（歩き・Chore_End では抽選しない）
+        // ── フェーズ2：時間満了で目標未達なら、終了要求をまだ立てずに残りを完了する ──
+        while (IsChoreActive && _completedLookCount < _targetLookCount)
+        {
+            // 各視線の後は Chore へ戻る。遷移が落ち着くよう最小の片付け区間を挟む。
+            float segmentEnd = Time.time + minChoreSegmentSeconds;
+            while (IsChoreActive && Time.time < segmentEnd)
+                yield return null;
+            if (!IsChoreActive) break;
 
-        if (!IsChoreActive) yield break;
+            bool lookOk = false;
+            yield return ChoreLookOnce(ok => lookOk = ok);
+            if (!IsChoreActive) break;
+            if (!lookOk)
+            {
+                Debug.LogWarning("[MotherChore] 残りの視線を再生できなかったため打ち切ります（失敗）", this);
+                break;
+            }
+            _completedLookCount++;
+        }
 
-        // ── Chore_Peek（視線）が進行中の場合は、その終了を待つ ──
-        //    終了要求（Bool=true）は保持されているので、視線終了後に Animator が
-        //    Chore_Peek → Chore_End へ遷移する（Chore を挟まない）。
-        while (IsLooking && IsChoreActive)
-            yield return null;
+        if (showDebugLogs)
+            Debug.Log($"[MotherChore] 片付け演技終了 | 視線 {_completedLookCount}/{_targetLookCount}回 | 滞在={stayDuration:F1}s");
 
         if (!IsChoreActive) yield break;
 
         // ── Chore_End（片付け終わって立つ・1回）──────────────────────────────
-        //    Chore から来た場合はまだ Bool が false のため、ここで終了要求を立てる。
+        //    視線がすべて終わってから終了要求Boolを立てる（時間満了で未達でも同じ）。
         if (!_choreEndRequested)
         {
             player?.RequestChoreEnd();
@@ -745,13 +747,17 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// こっちを見る（Chore_Peek）を1回再生する。終了後は Chore へ戻る。
-    /// 発見判定は見た目と別に、開始遅延・継続時間で管理する。
-    /// 視線中に片付け時間が終了した場合は、Chore_Peek 終了後に Chore_End へ進む
-    /// （呼び出し元 ChorePerformPhase が _pendingExit を見て判断する）。
+    /// 片付けの視線（Chore_Peek）を1回だけ再生し、正常終了を確認してから結果を返す。
+    ///  ・同時再生しない（呼び出し元 ChorePerformPhase が1つずつ順番に待つ）。
+    ///  ・再生中の再要求をしない（直列に呼ばれる前提）。
+    ///  ・未消費Triggerは MotherAnimationPlayer.RequestChorePeek が ResetTrigger してから発火する。
+    ///  ・発見判定は見た目とは別に、開始遅延・継続時間で管理する（従来どおり）。
+    ///  ・未開始・失敗・中断は lookOk=false（呼び出し側は回数に数えない）。
     /// </summary>
-    private IEnumerator LookRoutine()
+    private IEnumerator ChoreLookOnce(System.Action<bool> onResult)
     {
+        _gazeInProgress = true;
+
         ResolveAnimationPlayer()?.RequestChorePeek();
 
         // 発見判定：開始遅延後に有効化し、継続時間経過で解除する（見た目は再生し続ける）。
@@ -759,26 +765,15 @@ public class MotherChoreController : MonoBehaviour
         _detectionEndTime = _detectionStartTime + Mathf.Max(0f, lookDetectionDuration);
         _detectionStartPending = true;
 
-        // Chore_Peek の再生終了まで待つ（1回再生ステート）。
+        // Chore_Peek の再生終了（正常終了）を確認する。
         bool lookOk = false;
         yield return WaitForChoreOneShot(ChoreOneShot.ChoreLook, ok => lookOk = ok);
 
         _detectionStartPending = false;
         SetDetection(false);
+        _gazeInProgress = false;
 
-        // 視線中に通知が来ていたら、その旨をログに残す（再開始・予約はしていない）。
-        if (_badItemNotifiedDuringLook && showDebugLogs)
-            Debug.Log("[MotherChore] 視線中に通知を受信済み — 再開始・予約は行っていません");
-
-        _badItemNotifiedDuringLook = false;
-        _lookRoutine = null;
-
-        // 終了後の遷移は Animator に任せる（Bool が保持されている）。
-        //  ・_pendingExit=false（終了要求なし）: Chore_Peek → Chore へ戻る。
-        //  ・_pendingExit=true（終了要求あり）: Chore_Peek → Chore_End へ進む（Chore を挟まない）。
-        if (showDebugLogs)
-            Debug.Log($"[MotherChore] Chore_Peek 終了（ok={lookOk}）— " +
-                      (_pendingExit ? "Chore_End へ進みます" : "Chore へ戻ります"));
+        onResult?.Invoke(lookOk);
     }
 
     /// <summary>
@@ -800,20 +795,21 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// 悪いアイテム取得時の視線発生率（0〜1）を MotherApproachWarning から取得する。
-    /// 設定の唯一の保持元は MotherApproachWarning。接続できない場合は警告して 0 を返す
-    /// （＝視線抽選を発生させない安全側）。
+    /// 片付け開始時の怪しさ段階に応じた視線回数（Min/Max）を取得する。
+    /// 設定元は MotherSuspicionSystem だけ（ここでは保持しない）。
+    /// 接続できない場合は安全側（1〜1）へ倒して警告する。
     /// </summary>
-    private float ResolveChoreLookProbability()
+    private void ResolveChoreLookCountRange(out int min, out int max)
     {
-        if (warningSystem == null)
+        if (parentDetection == null)
         {
-            Debug.LogWarning("[MotherChore] MotherApproachWarning が見つからないため、" +
-                             "視線発生率を取得できません（MotherApproachWarning を Scene に配置してください）", this);
-            return 0f;
+            Debug.LogWarning("[MotherChore] MotherSuspicionSystem が見つからないため、片付け視線回数を1〜1にします", this);
+            min = 1;
+            max = 1;
+            return;
         }
 
-        return warningSystem.ChoreLookProbability;
+        parentDetection.ResolveChoreLookCountRange(out min, out max);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -822,15 +818,8 @@ public class MotherChoreController : MonoBehaviour
 
     private void FinishChoreCycle()
     {
-        if (_lookRoutine != null)
-        {
-            StopCoroutine(_lookRoutine);
-            _lookRoutine = null;
-        }
-
         _mainRoutine = null;
-        _inChoreLoop = false;
-        _pendingExit = false;
+        _gazeInProgress = false;
         _detectionStartPending = false;
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;

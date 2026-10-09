@@ -130,6 +130,42 @@ public class MotherSuspicionSystem : MonoBehaviour
     [SerializeField, Min(0f)]
     private float choreNotificationTimeout = 5f;
 
+    // ── 片付け中の視線回数（怪しさ段階別の Min/Max） ──────────────────────────
+    //   設定元は本クラスだけ。MotherChoreController は片付け開始時に1回だけ取得し、
+    //   その怪しさ段階の Min〜Max から目標回数を抽選して固定する。
+    [Header("片付け中の視線回数（怪しさ段階別）")]
+    [Tooltip("怪しさ段階『低』と判定するゲージ上限（この値以下を低とする）。")]
+    [SerializeField, Min(0)]
+    private int choreLookLowGaugeMax = 3;
+
+    [Tooltip("怪しさ段階『中』と判定するゲージ上限（『低』の上限超〜この値以下を中、超を高とする）。")]
+    [SerializeField, Min(0)]
+    private int choreLookMidGaugeMax = 6;
+
+    [Tooltip("怪しさ『低』の片付け視線回数（最小）。1以上。")]
+    [SerializeField, Min(1)]
+    private int choreLookLowMin = 1;
+
+    [Tooltip("怪しさ『低』の片付け視線回数（最大）。最小以上。")]
+    [SerializeField, Min(1)]
+    private int choreLookLowMax = 1;
+
+    [Tooltip("怪しさ『中』の片付け視線回数（最小）。1以上。")]
+    [SerializeField, Min(1)]
+    private int choreLookMidMin = 1;
+
+    [Tooltip("怪しさ『中』の片付け視線回数（最大）。最小以上。")]
+    [SerializeField, Min(1)]
+    private int choreLookMidMax = 2;
+
+    [Tooltip("怪しさ『高』の片付け視線回数（最小）。1以上。")]
+    [SerializeField, Min(1)]
+    private int choreLookHighMin = 2;
+
+    [Tooltip("怪しさ『高』の片付け視線回数（最大）。最小以上。")]
+    [SerializeField, Min(1)]
+    private int choreLookHighMax = 3;
+
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     public bool isCaught;
     public bool isMotherLookingNow;
@@ -1640,6 +1676,37 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         Debug.Log("[PD] 6キー：MotherChoreController.RequestManualStart() へ開始要求を転送します");
         return motherChoreController.RequestManualStart();
+    }
+
+    /// <summary>
+    /// 片付け開始時点の怪しさ段階に応じた視線回数（Min/Max）を返す。
+    ///  ・設定元は本クラスだけ（MotherChoreController は開始時に1回だけ呼んで回数を確定する）。
+    ///  ・怪しさ段階：ゲージが『低』上限以下→低、『中』上限以下→中、それ超→高。
+    ///  ・検証：Min は1以上、Max は Min 以上（不正値は警告して安全側へ補正する）。
+    /// </summary>
+    public void ResolveChoreLookCountRange(out int min, out int max)
+    {
+        int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
+
+        int rawMin, rawMax;
+        if (gauge <= choreLookLowGaugeMax) { rawMin = choreLookLowMin; rawMax = choreLookLowMax; }
+        else if (gauge <= choreLookMidGaugeMax) { rawMin = choreLookMidMin; rawMax = choreLookMidMax; }
+        else { rawMin = choreLookHighMin; rawMax = choreLookHighMax; }
+
+        if (rawMin < 1)
+        {
+            Debug.LogWarning($"[PD] 片付け視線回数の Min が1未満（{rawMin}）のため1へ補正します", this);
+            rawMin = 1;
+        }
+
+        if (rawMax < rawMin)
+        {
+            Debug.LogWarning($"[PD] 片付け視線回数の Max({rawMax}) が Min({rawMin}) 未満のため Min へ補正します", this);
+            rawMax = rawMin;
+        }
+
+        min = rawMin;
+        max = rawMax;
     }
 
     /// <summary>

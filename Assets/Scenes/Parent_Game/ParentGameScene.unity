@@ -1569,13 +1569,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 364896176}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: -0.9063079, z: 0, w: 0.42261827}
-  m_LocalPosition: {x: -91.7, y: 3.9, z: -281.9}
+  m_LocalRotation: {x: -0, y: -0.8542432, z: -0, w: 0.51987356}
+  m_LocalPosition: {x: -98.6, y: 3.9, z: -282}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 2010855717}
-  m_LocalEulerAnglesHint: {x: 0, y: -130, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: -117.352, z: 0}
 --- !u!1 &395735889
 GameObject:
   m_ObjectHideFlags: 0
@@ -1660,6 +1660,7 @@ MonoBehaviour:
   _footstepCurrentVolume: 0
   _footstepTargetVolume: 0
   _isGrassFootstepRoute: 0
+  _isMotherWalking: 0
 --- !u!1 &434492880
 GameObject:
   m_ObjectHideFlags: 0
@@ -1747,13 +1748,9 @@ MonoBehaviour:
   waitForActiveWarning: 1
   lookDetectionStartDelay: 0.3
   lookDetectionDuration: 1.5
-  choreLoopStateName: Chore
-  choreLookStateName: Chore_Peek
-  choreEndStateName: Chore_End
-  doorOpenStateName: Door_Open
   doorController: {fileID: 1919619509}
-  doorOpenWaitTimeout: 5
-  doorCloseWaitTimeout: 5
+  doorOpenWaitTimeout: 2
+  doorCloseWaitTimeout: 2
   returnSafetyTimeout: 20
   choreEnabled: 1
   showDebugLogs: 1
@@ -2742,7 +2739,7 @@ Transform:
   m_GameObject: {fileID: 727177173}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.35677594, z: -0, w: 0.93419003}
-  m_LocalPosition: {x: -103.9, y: 3.9, z: -294.8}
+  m_LocalPosition: {x: -119.7, y: 3.9, z: -293.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -5968,13 +5965,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1641722592}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: -0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: -103.9, y: 3.9, z: -294.8}
+  m_LocalRotation: {x: -0, y: -0.5930448, z: -0, w: 0.8051695}
+  m_LocalPosition: {x: -119.7, y: 3.9, z: -293.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 2010855717}
-  m_LocalEulerAnglesHint: {x: 0, y: -90, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: -72.747, z: 0}
 --- !u!1 &1671530395
 GameObject:
   m_ObjectHideFlags: 0
