@@ -489,6 +489,7 @@ public class MotherApproachController : MonoBehaviour
     // 片付け専用ルートの状態
     private Coroutine _choreCoroutine; // 片付けルート（行き〜帰り）のコルーチン
     private bool _choreRouteAborted; // 片付けルートを中断したか（帰路の各ループが参照する）
+    private bool _chorePerformanceFinished; // 片付け演技が終了したか（演技待ちを抜ける合図。IsChoreRouteActive は帰りも維持する）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
@@ -1057,6 +1058,7 @@ public class MotherApproachController : MonoBehaviour
         }
 
         _choreRouteAborted = false;
+        _chorePerformanceFinished = false;
         IsChoreRouteActive = false;
     }
 
@@ -1068,7 +1070,9 @@ public class MotherApproachController : MonoBehaviour
     {
         if (!IsChoreRouteActive) return;
         Debug.Log("[MotherApproachController] 片付け演技の終了通知を受信 — 帰りの経路へ進みます");
-        IsChoreRouteActive = false;
+        // IsChoreRouteActive は帰りの経路中も true のまま維持する（Walk・足音・経路ガードに使う）。
+        // 演技待ちループは _chorePerformanceFinished を見て抜ける。
+        _chorePerformanceFinished = true;
     }
 
     /// <summary>
@@ -1083,6 +1087,7 @@ public class MotherApproachController : MonoBehaviour
     {
         IsChoreRouteActive = true;
         _choreRouteAborted = false;
+        _chorePerformanceFinished = false;
 
         // ══ 行き：hallwaypeak と同じ既存廊下ルートを歩く ═══════════════════════
         //   startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn（HallwayPoint_4 まで）
@@ -1120,6 +1125,9 @@ public class MotherApproachController : MonoBehaviour
         }
 
         Debug.Log($"[MotherApproachController] 片付けルート：choreApproachPoint_1('{choreApproachPoint_1.name}')到着 — Door_Open でドアを開けます");
+
+        // ドア操作中は歩行・足音を止める（開け終わってから再開する）。
+        MovementStateChanged?.Invoke(false);
 
         // 4) Door_Open 再生 + ドアを全開まで開く（完了待ち）。
         //    開き終わるまで歩行の位置移動を止め、母親が通り抜けないようにする。
@@ -1169,11 +1177,14 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
+        // 演技（Chore）中は歩行・足音を止める（帰りの移動開始まで）。
+        MovementStateChanged?.Invoke(false);
+
         Debug.Log("[MotherApproachController] 片付けルート：chorePointへ到着・向き合わせ完了 — onChoreArrivedを発生");
         onChoreArrived?.Invoke();
 
-        // ── 演技待ち：外部（MotherChoreController）が IsChoreRouteActive を落とすまで待つ ──
-        while (IsChoreRouteActive && !_choreRouteAborted)
+        // ── 演技待ち：外部（MotherChoreController）が演技終了を通知するまで待つ ──
+        while (!_chorePerformanceFinished && !_choreRouteAborted)
             yield return null;
 
         if (_choreRouteAborted)

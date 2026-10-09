@@ -340,10 +340,9 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         if (isMotherLookingNow) return true;
 
-        // 片付け中は演技／経路がアニメーションを担当する（Walk を書き換えない）。
-        if (_choreOverride) return true;
-
         // Door_Open 中はモデルの再生を守る（位置移動は経路側が止める）。
+        // 片付けの歩行区間（行き・帰り）は Walk を再生する必要があるため、片付け中フラグ
+        // （_choreOverride）では歩行を止めない（演技・ドア開けは別の経路で Walk を落とす）。
         if (_choreWalkingOverrideSuppressed) return true;
 
         return approachController != null && approachController.IsGardenPeeking;

@@ -931,12 +931,15 @@ public class MotherApproachWarning : MonoBehaviour
     [SerializeField] private float _footstepTargetVolume;
     [Tooltip("現在の足音が庭ルート（草）か。")]
     [SerializeField] private bool _isGrassFootstepRoute;
+    [Tooltip("現在、母親が歩行中か（MotherApproachController.MovementStateChanged の通知を保持）。")]
+    [SerializeField] private bool _isMotherWalking;
 
     /// <summary>足音の初期化（Start時に一度）。ループ設定・停止・初期音量を適用する。</summary>
     public void InitializeMotherFootsteps()
     {
         _footstepCurrentVolume = farVolume;
         _footstepTargetVolume = farVolume;
+        _isMotherWalking = false;
         InitializeFootstepAudioSource(hallwayFootstepAudioSource);
         InitializeFootstepAudioSource(gardenFootstepAudioSource);
     }
@@ -950,18 +953,28 @@ public class MotherApproachWarning : MonoBehaviour
         StopFootstepAudioSources();
         _footstepCurrentVolume = farVolume;
         _footstepTargetVolume = farVolume;
+        _isMotherWalking = false;
+    }
+
+    /// <summary>
+    /// MotherApproachController の歩行状態通知（MovementStateChanged）を受けて、
+    /// 現在の歩行状態を保持する。通常の接近と片付けの行き・帰りの両方で使う。
+    /// </summary>
+    private void HandleMovementStateChanged(bool isWalking)
+    {
+        _isMotherWalking = isWalking;
     }
 
     /// <summary>
     /// 足音の音量を毎フレーム更新する（Update から呼ばれる）。
-    ///  ・MotherApproachController の歩行状態（IsApproaching / IsRushIn / IsGardenRoute）と
-    ///     位置段階（ReachedDoor / IsInHallwayPhase）を参照する。
+    ///  ・歩行状態は MotherApproachController.MovementStateChanged の通知で追跡し、
+    ///     通常の接近に加えて片付けの行き・帰りの歩行も対象にする。
+    ///  ・位置段階（ReachedDoor / IsInHallwayPhase）を参照して音量を変える。
     ///  ・歩行していない・突入中・AudioSource未設定の場合は停止する。
     /// </summary>
     private void UpdateMotherFootsteps()
     {
-        bool shouldPlay = approachController != null && approachController.IsApproaching &&
-                          !approachController.IsRushIn;
+        bool shouldPlay = _isMotherWalking && approachController != null && !approachController.IsRushIn;
         _isGrassFootstepRoute = approachController != null && approachController.IsGardenRoute;
 
         AudioSource activeSource = _isGrassFootstepRoute
@@ -1087,6 +1100,8 @@ public class MotherApproachWarning : MonoBehaviour
         approachController.onReachedDoor.AddListener(HandleReachedDoor);
         approachController.onStoppedAtDoor.AddListener(HandleStoppedAtDoor);
         approachController.onPassedByDoor.AddListener(HandlePassedByDoor);
+        approachController.MovementStateChanged += HandleMovementStateChanged;
+        HandleMovementStateChanged(false);
 
         _eventsSubscribed = true;
         Debug.Log("[MotherApproachWarning] Subscribed to MotherApproachController events");
@@ -1100,6 +1115,7 @@ public class MotherApproachWarning : MonoBehaviour
         approachController.onReachedDoor.RemoveListener(HandleReachedDoor);
         approachController.onStoppedAtDoor.RemoveListener(HandleStoppedAtDoor);
         approachController.onPassedByDoor.RemoveListener(HandlePassedByDoor);
+        approachController.MovementStateChanged -= HandleMovementStateChanged;
 
         _eventsSubscribed = false;
     }
