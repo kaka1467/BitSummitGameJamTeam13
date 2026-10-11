@@ -415,6 +415,22 @@ public class MotherApproachController : MonoBehaviour
 
     public event Action<bool> MovementStateChanged;
 
+    /// <summary>
+    /// ウェイポイント到着の通知（既存の到着成功判定と同じタイミングで1回だけ）。
+    ///  ・引数1：到着したTransform
+    ///  ・引数2：帰路中か（通常の帰路＝ReturnHomePhase.Running／片付けの帰り＝演技終了後の片付けルート）
+    ///  ・移動失敗・中断・未到達では通知しない（到着として扱わない）。
+    ///  ・本クラスは AudioSource.volume を操作しない（音量の適用は MotherApproachWarning が担当）。
+    /// </summary>
+    public event Action<Transform, bool> WaypointArrived;
+
+    /// <summary>
+    /// 帰路（通常の帰路・片付けの帰り）を移動中か。
+    /// 到着通知の行き／帰り判定に使い、帰路の到着を行きの段階切替として扱わせない。
+    /// </summary>
+    public bool IsReturnTripActive =>
+        IsReturningHome || (IsChoreRouteActive && _chorePerformanceFinished);
+
     // ── 公開読み取り専用状態 ──────────────────────────────────────────────────
     public bool IsApproaching { get; private set; }
     public bool ReachedDoor { get; private set; }
@@ -1212,7 +1228,9 @@ public class MotherApproachController : MonoBehaviour
         //   ※ ドアを開けるのは _1 到着時のみ、閉めるのは _2 到着時のみ。
         Debug.Log($"[MotherApproachController] 片付けルート：帰り開始 | " +
                   $"choreReturnPoint_1='{(choreReturnPoint_1 != null ? choreReturnPoint_1.name : "NULL")}' | " +
-                  $"choreReturnPoint_2='{(choreReturnPoint_2 != null ? choreReturnPoint_2.name : "NULL")}'");
+                  $"choreReturnPoint_2='{(choreReturnPoint_2 != null ? choreReturnPoint_2.name : "NULL")}' | " +
+                  $"choreEndPoints={(choreEndPoints != null ? choreEndPoints.Count : 0)}件 | " +
+                  $"現在位置={transform.position.ToString("F2")} → hallwayPassByPoint='{(hallwayPassByPoint != null ? hallwayPassByPoint.name : "NULL")}'");
 
         MovementStateChanged?.Invoke(true);
 
@@ -2389,6 +2407,25 @@ public class MotherApproachController : MonoBehaviour
     }
 
     /// <summary>
+    /// 到着通知（1回だけ）。既存の到着処理（MoveAndFaceWaypoint／PassThroughWaypoint）から呼ぶ。
+    ///  ・位置到達を確認できた場合だけ通知する（失敗・中断・未到達を到着として扱わない）。
+    ///  ・Transform間の距離を毎フレーム見る判定ではなく、この到着時点の1回だけの確認。
+    ///  ・到着しきい値は既存の stopDistance をそのまま使う（新しい判定基準を増やさない）。
+    /// </summary>
+    private void NotifyWaypointArrived(Transform waypoint)
+    {
+        if (waypoint == null) return;
+
+        // 経路の失敗・中断中は到着として扱わない（既存の失敗判定と同じ条件を使う）。
+        if (_routeExecutionFailed || _choreRouteAborted || IsReturnHomeAborted) return;
+
+        // 位置到達の確認（中断で途中のまま戻ってきた場合は到達していない）。
+        if (Vector3.Distance(transform.position, OffsetGoalPosition(waypoint.position)) > stopDistance) return;
+
+        WaypointArrived?.Invoke(waypoint, IsReturnTripActive);
+    }
+
+    /// <summary>
     /// 【新仕様の共通処理】対象Waypointへ位置移動し、到着してから「そのWaypointの＋Z」へ旋回する。
     ///   1. 位置のみ移動（MovePositionOnly）
     ///   2. 到着判定
@@ -2405,6 +2442,9 @@ public class MotherApproachController : MonoBehaviour
         // 1-2. 位置のみ移動（向きは変えない）
         yield return MovePositionOnly(waypoint);
         if (_routeExecutionFailed) yield break;
+
+        // 到着成功の通知（1回だけ・行き／帰りを区別して通知する）。
+        NotifyWaypointArrived(waypoint);
 
         // 3-4. 到着したWaypointの＋Zへ旋回し、完了を待つ
         yield return RotateToWaypointForward(waypoint, turnSpeed, routeLabel);
@@ -2428,6 +2468,9 @@ public class MotherApproachController : MonoBehaviour
         // 位置のみ移動。到着しても歩行は止めない（Idle待機も挟まない）。
         yield return MovePositionOnlyForPassThrough(waypoint);
         if (_routeExecutionFailed) yield break;
+
+        // 到着成功の通知（1回だけ・行き／帰りを区別して通知する）。
+        NotifyWaypointArrived(waypoint);
 
         // 到着したWaypointの＋Zを、次の区間と並行して向く（完了は待たない）。
         StartRotateTowardsWaypoint(waypoint, turnSpeed, routeLabel);

@@ -51,6 +51,34 @@ public class CatFeintController : MonoBehaviour
     [Tooltip("ドアを閉じる前に猫を非表示にしておく秒数（ドアを閉じるX秒前に消す）。")]
     [SerializeField] private float catHideBeforeCloseSeconds;
 
+    // ── ドア開放時間（猫フェイント） ──────────────────────────────────────────
+    [Header("ドア開放時間")]
+    [Tooltip("猫フェイントでドアを開けておく時間（秒）。\n" +
+             "ドアの開く・閉じる速度は変更しない。\n" +
+             "・カウントは「ドアが目標開度（Full）に実際に到達した時点」から始めます。\n" +
+             "・怪しさゲージ分（MotherSuspicionSystem の現在ゲージ）が加算されます（従来と同じ扱い）。\n" +
+             "・猫は閉める前に必ず非表示になります（catHideBeforeCloseSeconds はこの時間のうちに\n" +
+             "  猫を隠すタイミングで、待ち時間は加算されません）。\n" +
+             "・猫のジャンプ動作がこの時間より長い場合は、ジャンプを見せ終えるまで\n" +
+             "  ドアを開けたままにします（その分、実際の開放時間は長くなります）。\n" +
+             "・catHideBeforeCloseSeconds がこの値より大きい場合だけ、その時間までドアが開いたままになります。")]
+    [SerializeField, Min(0f)] private float catDoorHoldOpenSeconds = 7f;
+
+    [Tooltip("ドアが目標開度（Full）へ到達するのを待つ上限（秒）。\n" +
+             "超えた場合は到達失敗として扱い、開放時間は数えません\n" +
+             "（猫を隠す→ドアを閉める→状態解除の安全な失敗終了。通常終了とはログで区別）。")]
+    [SerializeField, Min(0.1f)] private float doorReachWaitTimeoutSeconds = 5f;
+
+    // ── ジャンプの完了判定 ────────────────────────────────────────────────────
+    [Header("ジャンプの完了判定")]
+    [Tooltip("猫のジャンプ状態名（Animator Controller 側の名前）。\n" +
+             "ジャンプを見せ終えてから猫を隠す判定に使う（固定秒数では断定しない）。")]
+    [SerializeField] private string jumpStateName = "Armature_001|Cat Jump";
+
+    [Tooltip("ジャンプの終了（待機状態へ戻る）を待つ上限（秒）。\n" +
+             "超えた場合はアニメ完了と断定せず、警告を出して猫を隠します（ドアは閉じます）。")]
+    [SerializeField, Min(0.1f)] private float jumpWaitTimeoutSeconds = 3f;
+
     private Vector3 _homePosition;
     private Quaternion _homeRotation;
     private Coroutine _meowCoroutine;
@@ -61,9 +89,25 @@ public class CatFeintController : MonoBehaviour
     private bool _hasIdleState;
     private bool _animatorWarningLogged;
 
+    // ジャンプ観測（TriggerJump の時点から開始／終了を区別して記録する）
+    private bool _jumpRequested;   // TriggerJump でジャンプを要求した（観測対象）
+    private bool _jumpStarted;     // Jump状態への遷移開始、または Jump状態の開始を確認した
+    private bool _jumpExited;      // 開始を確認した後に Jump状態と終了遷移から抜けた
+
     private const string WalkParameter = "Walk";
     private const string JumpParameter = "Jump";
     private const string IdleState = "Idle";
+
+    /// <summary>
+    /// Inspectorで0以下が入った場合に下限へ補正する（開放時間0以下・待ち上限0以下を防ぐ）。
+    ///  ・実行時も DoorHoldOpenSeconds / DoorReachWaitTimeoutSeconds / JumpWaitTimeoutSeconds で再検証する。
+    /// </summary>
+    private void OnValidate()
+    {
+        catDoorHoldOpenSeconds = Mathf.Max(0f, catDoorHoldOpenSeconds);
+        doorReachWaitTimeoutSeconds = Mathf.Max(0.1f, doorReachWaitTimeoutSeconds);
+        jumpWaitTimeoutSeconds = Mathf.Max(0.1f, jumpWaitTimeoutSeconds);
+    }
 
     private void Start()
     {
@@ -81,6 +125,125 @@ public class CatFeintController : MonoBehaviour
 
     /// <summary>ドアを閉じる前に猫を隠しておく秒数（MotherSuspicionSystemのドア閉鎖タイミング計算に使う）。</summary>
     public float HideBeforeCloseSeconds => Mathf.Max(0f, catHideBeforeCloseSeconds);
+
+    /// <summary>
+    /// 猫フェイントでドアを開けておく時間（秒）。0以上。
+    ///  ・MotherSuspicionSystem が「ドアがFullへ到達した時点」からこの時間を数えてドアを閉める。
+    ///  ・怪しさゲージ分の加算は呼び出し側（MotherSuspicionSystem）が行う（従来と同じ扱い）。
+    ///  ・ドアの回転速度・開度は変更しない（既存 DoorController の通常速度を使う）。
+    /// </summary>
+    public float DoorHoldOpenSeconds => Mathf.Max(0f, catDoorHoldOpenSeconds);
+
+    /// <summary>ドアが目標開度（Full）へ到達するのを待つ上限（秒）。</summary>
+    public float DoorReachWaitTimeoutSeconds => Mathf.Max(0.1f, doorReachWaitTimeoutSeconds);
+
+    /// <summary>
+    /// ジャンプ完了待ちの観測結果。
+    ///  ・bool と違い「ジャンプ設定なし（待機対象なし）」と「完了」「タイムアウト失敗」を区別する。
+    /// </summary>
+    public enum JumpWaitResult
+    {
+        /// <summary>Jump パラメーターが無い、または今回のフェイントでジャンプ要求が無い＝待機対象なし（「完了」とは区別）。</summary>
+        NotConfigured,
+
+        /// <summary>開始（Jump状態への遷移開始を含む）を確認し、その後に Jump状態と終了遷移から抜けた。</summary>
+        Completed,
+
+        /// <summary>上限時間内に開始または終了を確認できなかった（開始できない場合を含む）。呼び出し側は失敗として安全終了する。</summary>
+        TimedOut,
+    }
+
+    /// <summary>ジャンプ状態（jumpStateName）を再生中か。Animator 未解決なら false。</summary>
+    public bool IsJumpPlaying
+    {
+        get
+        {
+            if (_animator == null || string.IsNullOrEmpty(jumpStateName)) return false;
+            return _animator.GetCurrentAnimatorStateInfo(0).IsName(jumpStateName);
+        }
+    }
+
+    /// <summary>Jump状態へ向かう遷移中か（＝開始の観測に使う。遷移完了を待たずに「開始した」と判断できる）。</summary>
+    public bool IsJumpStarting
+    {
+        get
+        {
+            if (_animator == null || string.IsNullOrEmpty(jumpStateName)) return false;
+            return _animator.IsInTransition(0) && _animator.GetNextAnimatorStateInfo(0).IsName(jumpStateName);
+        }
+    }
+
+    /// <summary>Jump状態へ向かう遷移中、または Jump状態を再生中か（＝ジャンプが始まっている）。</summary>
+    public bool IsJumpEntering => IsJumpPlaying || IsJumpStarting;
+
+    /// <summary>ジャンプの終了を待つ上限（秒）。</summary>
+    public float JumpWaitTimeoutSeconds => Mathf.Max(0.1f, jumpWaitTimeoutSeconds);
+
+    /// <summary>
+    /// ジャンプの進行を1フレーム分観測する。TriggerJump の時点から、猫フェイントの待機ループと
+    /// WaitForJumpFinished が毎フレーム呼ぶ（開放時間内に終わったジャンプも「完了」として記録するため）。
+    ///  ・開始＝「Jump状態への遷移開始」または「Jump状態」を確認したこと。
+    ///  ・終了＝開始を確認した後に、Jump状態でも Jump状態への遷移中でもなくなったこと
+    ///    （＝終了遷移も抜けた。既存 Animator の ExitTime=0.8889 は変更しない／「クリップの最後まで再生」とは断定しない）。
+    ///  ・未開始のうちは「Jump状態でない」ことを終了とみなさない（開始前の即完了を防ぐ）。
+    /// </summary>
+    public void ObserveJumpProgress()
+    {
+        if (!_jumpRequested || _jumpExited) return;
+        if (_animator == null || !_hasJumpParameter) return;
+
+        if (IsJumpEntering)
+        {
+            _jumpStarted = true;
+            return;
+        }
+
+        if (_jumpStarted)
+            _jumpExited = true;
+    }
+
+    /// <summary>
+    /// ジャンプ動作を見せ終えるまで待つ。判定は Animator の状態で行い、固定秒数で完了と断定しない。
+    ///  ・開始を確認していない状態で「Jump状態でない」ことを完了とみなさない（開放時間0秒でも開始前に即成功しない）。
+    ///  ・開始（遷移開始を含む）と、その後の終了遷移からの退出の両方を確認できた場合のみ Completed。
+    ///  ・開始できない／終了遷移を抜けない場合は timeoutSeconds 内で TimedOut（待機を無制限に増やさない）。
+    ///  ・Jump パラメーターが無い／ジャンプ要求が無い場合は NotConfigured（「ジャンプ完了」とは区別）。
+    ///  ・観測は TriggerJump の時点から始まっており、開放時間内に完了したジャンプは即 Completed になる。
+    ///  ・中断時は呼び出し側がこの待機を行わない（安全に終了してよい）。
+    /// </summary>
+    public IEnumerator WaitForJumpFinished(float timeoutSeconds, Action<JumpWaitResult> onResult = null)
+    {
+        if (_animator == null || !_hasJumpParameter || !_jumpRequested)
+        {
+            onResult?.Invoke(JumpWaitResult.NotConfigured);   // ジャンプ設定なし・待機対象なし
+            yield break;
+        }
+
+        ObserveJumpProgress();
+        if (_jumpExited)
+        {
+            onResult?.Invoke(JumpWaitResult.Completed);   // 開放時間の待機中に終了まで観測済み
+            yield break;
+        }
+
+        float timeout = Mathf.Max(0.1f, timeoutSeconds);
+        float elapsed = 0f;
+
+        while (elapsed < timeout)
+        {
+            ObserveJumpProgress();
+            if (_jumpExited)
+            {
+                onResult?.Invoke(JumpWaitResult.Completed);
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        onResult?.Invoke(JumpWaitResult.TimedOut);   // 開始できない／終了遷移を抜けない（呼び出し側が警告して安全終了）
+    }
 
     /// <summary>
     /// 猫をStartPointに出現させ、母親のDoorRoutineと同じwaypoint順でDoorPointまで移動させる。
@@ -158,6 +321,11 @@ public class CatFeintController : MonoBehaviour
         SetWalking(false);
         _animator.ResetTrigger(JumpParameter);
         _animator.SetTrigger(JumpParameter);
+
+        // この「ジャンプ要求」の時点から開始／終了の観測を始める（開放時間の待機中も観測を続ける）。
+        _jumpRequested = true;
+        _jumpStarted = false;
+        _jumpExited = false;
     }
 
     /// <summary>ドアが開いたタイミングで鳴き声を再生する（meowDelaySecondsだけ遅らせられる）。</summary>
@@ -188,7 +356,20 @@ public class CatFeintController : MonoBehaviour
     /// <summary>猫を次回用の開始状態へ戻す（ホーム位置・向きに戻して非表示。高さはcatHeightOffsetを1回だけ加算）。</summary>
     public void ReturnToStartPosition()
     {
+        // ジャンプ観測を次回サイクル用にクリア（前回の「開始／終了」を今回の猫フェイントへ持ち越さない）。
+        _jumpRequested = false;
+        _jumpStarted = false;
+        _jumpExited = false;
+
         if (catObject == null) return;
+
+        // 鳴き声待ち（meowDelaySeconds）が残っていても、戻した後に遅れて鳴らないように必ず止める。
+        if (_meowCoroutine != null)
+        {
+            StopCoroutine(_meowCoroutine);
+            _meowCoroutine = null;
+        }
+
         StopCatFootsteps();
         ResetAnimationState();
         catObject.transform.SetPositionAndRotation(CatGoalPosition(_homePosition), _homeRotation);

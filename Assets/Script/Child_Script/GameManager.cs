@@ -257,11 +257,10 @@ public class GameManager : MonoBehaviour
         // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
         Time.timeScale = 0f;
 
-        string udpMsg = resultType == ResultType.GameOver
-            ? $"CHILD_SCORE:GAME_OVER:{score}"
-            : $"CHILD_SCORE:TIME_UP:{score}";
+        // 最終結果は親機へ「プレイID付き」で送る（親機の保存確認 ACK が来るまで子機側で保持・再送される）
+        string resultTypeName = resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP";
         string targetScene = resultType == ResultType.GameOver ? gameOverSceneName : timeUpSceneName;
-        StartCoroutine(HandleGameOver(udpMsg, targetScene));
+        StartCoroutine(HandleGameOver(resultTypeName, score, targetScene));
     }
 
     // 【追加】PlayerPrefsを用いたランキング保存メソッド
@@ -325,14 +324,15 @@ public class GameManager : MonoBehaviour
         StopFeverEffects();
     }
 
-    private IEnumerator HandleGameOver(string udpMessage, string targetScene)
+    private IEnumerator HandleGameOver(string resultTypeName, int finalScore, string targetScene)
     {
         EnsureUdpReceiver();
         if (udpReceiver != null)
         {
-            // リザルト通知は取りこぼすと親機にリザルトが出ないため、再送付きで送る。
-            udpReceiver.SendStateRepeated(udpMessage);
-            Debug.Log($"[GameManager] Sent UDP (with retries): '{udpMessage}'");
+            // 結果確定後、子機を唯一の基準としてランキング／スコアのスナップショットを親機へ同期する。
+            // （親機の確認返信は待たず、子機側の保存はここで完了している）
+            udpReceiver.NotifyRankingChanged(resultTypeName);
+            Debug.Log($"[GameManager] Notified ranking change (snapshot sync): {resultTypeName}:{finalScore}");
         }
         else
         {

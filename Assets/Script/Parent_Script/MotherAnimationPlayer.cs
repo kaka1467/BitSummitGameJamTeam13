@@ -48,6 +48,10 @@ public class MotherAnimationPlayer : MonoBehaviour
     private const string DoorOpenParameter = "Door_OpenTrigger";
     // Door_Open ステート専用の速度パラメーター（Animator全体の speed は変更しない）。
     private const string DoorOpenSpeedParameter = "Door_OpenSpeed";
+    // 歩行ステート（Walk / Walk_Fast）専用の速度パラメーター（Animator全体の speed は変更しない）。
+    //  ・Animator Controller 側で Walk / Walk_Fast の Speed Multiplier に割り当てる。
+    //  ・移動（waypoints）側の速度は変更しない（アニメーション再生だけを倍率で調整する）。
+    private const string WalkSpeedParameter = "WalkSpeed";
 
     // ── 参照 ──────────────────────────────────────────────────────────────────
     [Header("参照")]
@@ -83,6 +87,13 @@ public class MotherAnimationPlayer : MonoBehaviour
              "速度パラメーター（Door_OpenSpeed）を設定する。1=等倍。行き／帰りの両方に適用する。")]
     [SerializeField, Min(0.01f)] private float doorOpenSpeedMultiplier = 1.5f;
 
+    // ── 歩行アニメーション速度 ────────────────────────────────────────────────
+    //   歩行ステート（Walk / Walk_Fast）だけに効く倍率。Animator全体の speed は変更しない。
+    //   移動（waypoints）の移動速度・旋回速度・ルートには影響しない（アニメーション再生だけ）。
+    [Tooltip("歩行アニメーションだけの再生速度倍率。\n" +
+             "1で通常速度。waypoints間の移動速度は変更しない。")]
+    [SerializeField, Min(0.01f)] private float walkAnimationSpeedMultiplier = 1.15f;
+
     // ── 片付けのドア開け「開始タイミング」 ────────────────────────────────────
     //   Door_Open の「手がドアを押す」位置でドア本体を開き始めるための判定を本クラスで持つ。
     //   ※推測の遅延秒数は入れていない。Unity の Animation ウィンドウで押すフレームを確認し、
@@ -97,6 +108,29 @@ public class MotherAnimationPlayer : MonoBehaviour
 
     /// <summary>押すタイミングが通知されたか（Animation Event 用の任意フック）。</summary>
     private bool _doorOpenPushSignaled;
+
+    // ── Unity ライフサイクル ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// 起動時（再プレイのシーン読み込みを含む）に、歩行アニメーションの倍率を一度適用する。
+    ///  ・歩行ステート専用の Float パラメーター（WalkSpeed）だけを設定する。
+    ///  ・Animator 全体の speed と、歩行以外のステート（覗き／片付け／ドア開け／捕獲／Idle）の
+    ///    再生速度は変更しない。
+    /// </summary>
+    private void Start()
+    {
+        ApplyWalkAnimationSpeed();
+    }
+
+    /// <summary>
+    /// Inspector で 0 以下が入った場合に下限（0.01）へ補正する。
+    ///  ・再生速度 0 で歩行が止まらないようにするための検証。
+    ///  ・実行時も ApplyWalkAnimationSpeed 内で Mathf.Max により再検証する。
+    /// </summary>
+    private void OnValidate()
+    {
+        walkAnimationSpeedMultiplier = Mathf.Max(0.01f, walkAnimationSpeedMultiplier);
+    }
 
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     /// <summary>解決済みの Animator（未解決なら null）。</summary>
@@ -121,6 +155,125 @@ public class MotherAnimationPlayer : MonoBehaviour
         return a.GetCurrentAnimatorStateInfo(Layer).IsName(stateName);
     }
 
+    /// <summary>
+    /// 【片付け】Chore（片付けループ）へ戻りつつあるか。
+    ///  ・現在ステートが Chore、または遷移中で遷移先が Chore のとき true。
+    ///  ・MotherChoreController の復帰待ちが使う既存の判定（挙動は変えない）。
+    ///  ・ステート名は本クラスに閉じる（呼び出し側は名前を渡さない）。
+    /// </summary>
+    public bool IsPlayingChoreLoop => IsCurrentStateChoreLoop || IsTransitionDestinationChoreLoop;
+
+    /// <summary>
+    /// 【診断】現在のステート（遷移中は遷移元）が Chore ループか。
+    ///  ・IsPlayingChoreLoop は「遷移先が Chore」でも true になるため、
+    ///    ログではこのプロパティで「現在状態が Chore」と「遷移先が Chore のみ」を区別する。
+    ///  ・状態は変更しない（読み取り専用）。
+    /// </summary>
+    public bool IsCurrentStateChoreLoop
+    {
+        get
+        {
+            Animator a = ResolveAnimator();
+            return a != null && a.GetCurrentAnimatorStateInfo(Layer).IsName(choreLoopStateName);
+        }
+    }
+
+    /// <summary>
+    /// 【診断】遷移先（GetNextAnimatorStateInfo）が Chore ループか。
+    ///  ・遷移中のみ意味を持つ。true でも「Chore へ戻り終えた」ことではない（遷移中である）。
+    ///  ・状態は変更しない（読み取り専用）。
+    /// </summary>
+    public bool IsTransitionDestinationChoreLoop
+    {
+        get
+        {
+            Animator a = ResolveAnimator();
+            return a != null && a.IsInTransition(Layer) && a.GetNextAnimatorStateInfo(Layer).IsName(choreLoopStateName);
+        }
+    }
+
+    /// <summary>
+    /// 【診断】Animator 状態の変化検出用シグネチャ（ログの間引きに使う）。
+    ///  ・「現在ステート・遷移先ステート・遷移中か・enabled・activeInHierarchy」のみ。
+    ///  ・normalizedTime は含めない（毎フレーム変化させない＝同じログを出さないため）。
+    ///  ・状態は変更しない（読み取り専用）。
+    /// </summary>
+    public bool TryGetChoreAnimatorSignature(out int currentStateHash, out int nextStateHash,
+        out bool isInTransition, out bool enabled, out bool activeInHierarchy)
+    {
+        currentStateHash = 0;
+        nextStateHash = 0;
+        isInTransition = false;
+        enabled = false;
+        activeInHierarchy = false;
+
+        Animator a = ResolveAnimator();
+        if (a == null) return false;
+
+        isInTransition = a.IsInTransition(Layer);
+        currentStateHash = a.GetCurrentAnimatorStateInfo(Layer).fullPathHash;
+        nextStateHash = isInTransition ? a.GetNextAnimatorStateInfo(Layer).fullPathHash : 0;
+        enabled = a.enabled;
+        activeInHierarchy = (a.gameObject != null) && a.gameObject.activeInHierarchy;
+        return true;
+    }
+
+    /// <summary>
+    /// 【診断】Animator の実行状態を1行で返す（ログ専用。状態は変更しない）。
+    /// 参照している Animator の実体・コントローラー・層・現在／次状態・遷移・クリップ・関連パラメータを含む。
+    /// 文字列生成と GetCurrent/GetNextAnimatorClipInfo の確保が発生するため、
+    /// 段階が変わったときだけ呼ぶ（毎フレーム呼ばない）。
+    /// </summary>
+    public string DescribeChoreAnimatorState()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null)
+            return "[AnimDiag] Animator未解決（animator も approachController.MotherAnimator も null）";
+
+        AnimatorStateInfo cur = a.GetCurrentAnimatorStateInfo(Layer);
+        bool inTransition = a.IsInTransition(Layer);
+        AnimatorStateInfo next = inTransition ? a.GetNextAnimatorStateInfo(Layer) : default;
+        string controllerName = (a.runtimeAnimatorController != null) ? a.runtimeAnimatorController.name : "NULL";
+        bool activeInHierarchy = (a.gameObject != null) && a.gameObject.activeInHierarchy;
+
+        return "[AnimDiag]" +
+               $" Animator='{a.name}'(InstanceID={a.GetInstanceID()}) enabled={a.enabled} activeInHierarchy={activeInHierarchy} speed={a.speed:F2} layer={Layer}" +
+               $" controller='{controllerName}' choreLoopStateName='{choreLoopStateName}'" +
+               $" | current: fullPathHash={cur.fullPathHash} shortNameHash={cur.shortNameHash} normalizedTime={cur.normalizedTime:F3} length={cur.length:F2} loop={cur.loop} isChoreLoop={cur.IsName(choreLoopStateName)}" +
+               $" clips(cur)={DescribeClipInfos(a.GetCurrentAnimatorClipInfo(Layer))}" +
+               $" | isInTransition={inTransition}" +
+               $" next: fullPathHash={(inTransition ? next.fullPathHash.ToString() : "-")} shortNameHash={(inTransition ? next.shortNameHash.ToString() : "-")}" +
+               $" normalizedTime={(inTransition ? next.normalizedTime.ToString("F3") : "-")} isChoreLoop={(inTransition && next.IsName(choreLoopStateName))}" +
+               $" clips(next)={(inTransition ? DescribeClipInfos(a.GetNextAnimatorClipInfo(Layer)) : "(遷移なし)")}" +
+               $" | params: {ChoreExitRequestedParameter}={DescribeBoolParameter(a, ChoreExitRequestedParameter)}" +
+               $" {WalkParameter}={DescribeBoolParameter(a, WalkParameter)}" +
+               $" {ChorePeekParameter}(Trigger)={(HasParameterOn(a, ChorePeekParameter, AnimatorControllerParameterType.Trigger) ? "登録あり" : "未登録")}" +
+               $" {ChoreStartParameter}(Trigger)={(HasParameterOn(a, ChoreStartParameter, AnimatorControllerParameterType.Trigger) ? "登録あり" : "未登録")}" +
+               $" {DoorOpenParameter}(Trigger)={(HasParameterOn(a, DoorOpenParameter, AnimatorControllerParameterType.Trigger) ? "登録あり" : "未登録")}";
+    }
+
+    /// <summary>【診断】Bool パラメータの値を文字列化する（未登録なら N/A）。読み取り専用。</summary>
+    private static string DescribeBoolParameter(Animator a, string name)
+    {
+        if (!HasParameterOn(a, name, AnimatorControllerParameterType.Bool)) return "N/A";
+        return a.GetBool(name).ToString();
+    }
+
+    /// <summary>【診断】再生中のクリップ名と重み（現在／次状態のどちらにも使う）。読み取り専用。</summary>
+    private static string DescribeClipInfos(AnimatorClipInfo[] infos)
+    {
+        if (infos == null || infos.Length == 0) return "(クリップなし)";
+
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < infos.Length; i++)
+        {
+            if (i > 0) sb.Append(" + ");
+            sb.Append(infos[i].clip != null ? infos[i].clip.name : "(clipなし)");
+            sb.Append(" w=").Append(infos[i].weight.ToString("F2"));
+        }
+        return sb.ToString();
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     //  基本操作
     // ──────────────────────────────────────────────────────────────────────────
@@ -139,6 +292,9 @@ public class MotherAnimationPlayer : MonoBehaviour
             Debug.LogWarning($"[MotherAnimationPlayer] Animator に {WalkParameter}(bool) が無いため歩行状態を設定できません", this);
             return;
         }
+
+        // 歩行アニメーションの倍率を併せて適用する（歩行ステート専用。移動速度は変更しない）。
+        ApplyWalkAnimationSpeed();
 
         a.SetBool(WalkParameter, walking);
     }
@@ -303,6 +459,33 @@ public class MotherAnimationPlayer : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log($"[MotherAnimationPlayer] Door_Open 速度パラメーター {DoorOpenSpeedParameter} = {speed:F2}");
+    }
+
+    /// <summary>
+    /// 歩行アニメーション（Walk / Walk_Fast）の再生速度倍率を Animator へ適用する。
+    ///  ・Animator 全体の speed は変更しない（歩行ステート専用の Float パラメーターだけを設定する）。
+    ///  ・移動（waypoints）の移動速度・旋回速度・ルート、および歩行以外のステートの再生速度は変更しない。
+    ///  ・1.0 を設定すれば従来と同じ再生速度（パラメーターの既定値も 1）。
+    ///  ・0 以下は 0.01 に補正する（歩行が完全に止まらないようにする）。
+    /// </summary>
+    private void ApplyWalkAnimationSpeed()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null) return;
+
+        if (!HasParameterOn(a, WalkSpeedParameter, AnimatorControllerParameterType.Float))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Animator に Float '{WalkSpeedParameter}' がありません。" +
+                             "歩行アニメーションの速度調整をスキップします（Animator Controller の" +
+                             "Walk / Walk_Fast へ Speed Multiplier として登録してください）", this);
+            return;
+        }
+
+        float speed = Mathf.Max(0.01f, walkAnimationSpeedMultiplier);
+        a.SetFloat(WalkSpeedParameter, speed);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] 歩行アニメーション速度パラメーター {WalkSpeedParameter} = {speed:F2}（移動速度は変更しない）");
     }
 
     /// <summary>【片付け】Chore_Peek の再生完了を待つ（成功/失敗を onResult で返す）。</summary>

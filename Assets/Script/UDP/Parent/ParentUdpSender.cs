@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -22,13 +23,15 @@ using UnityEngine.UI;
 ///   TEAM13_SLEEP_UNLOCK — parent awake; re-enable child input
 ///   TEAM13_PING         — heartbeat
 ///   TEAM13_RETURN_TO_TITLE — return-to-title sync → child also returns
+///   TEAM13_RANK_SYNC_ACK:<version>:<sourceId>:<updateNo> — parent applied the child's ranking snapshot
 ///
 /// Inbound messages (child → parent, port 8002):
 ///   TEAM13_PING              — heartbeat from child
 ///   TEAM13_START_GAME        — child requests game start
 ///   TEAM13_TIME_UP           — child timer expired → parent game over
 ///   TEAM13_CHILD_DEAD        — child died → parent game over
-///   TEAM13_CHILD_SCORE:&lt;val&gt; — child final score, write to PlayerPrefs for ranking
+///   TEAM13_RANK_SYNC:<version>:<sourceId>:<updateNo>:<GOlast>:<GO0..GO4>:<TUlast>:<TU0..TU4>:<latestPlayId>:<latestType>
+///                            — 子機を唯一の基準とするランキング／スコアのスナップショット（親機は表示用コピーとして保持。旧 CHILD_SCORE は使用しない）
 ///   TEAM13_LOUD_ITEM         — child picked up loud item → trigger rush-in
 ///   TEAM13_RETURN_TO_TITLE   — child returned to title → parent also returns
 /// </summary>
@@ -167,13 +170,29 @@ public class ParentUdpSender : MonoBehaviour
     private bool      _resultProcessed    = false; // GAME_OVER wins race
     private float     _returnToTitleHeld = 0f;
     private bool      _returningToTitle  = false;
-    private bool      _gameOverScoreHandled = false; // 子機からの CHILD_SCORE:GAME_OVER の再送（重複）を無視するため
     public  bool      ChildLoadingComplete { get; set; } = false;
     private bool      _shouldTriggerLoudItem = false;
     // ── 片付け演出：ゲーム進行率の保留フラグ ─────────────────────────────────
     //   受信スレッドからメインスレッドへ渡す既存方式（_shouldTriggerLoudItem）と同じ扱い。
     private bool      _hasPendingGameProgress = false;
     private float     _pendingGameProgress = 0f;
+
+    // ── 最終結果（CHILD_SCORE）のプレイ紐付け・重複防止 ──────────────────────
+    // 「現在のプレイ」または「既知の終了プレイ」の結果だけを受理し、
+    // 保存（1プレイにつき1結果・捕獲優先）と画面遷移（現在プレイのみ）を分けて扱う。
+    // ── 子機ランキングの表示用コピー ────────────────────────────────────────
+    // 親機は独自にランキングを持たない（子機が唯一の基準）。古い ParentResult_* は残すが新表示には使わない。
+    private const string PrefRankSyncData = "RankSync_Data";        // 子機から受信した最新スナップショット
+    private const string PrefRankSyncAt   = "RankSync_ReceivedAt";  // 鮮度表示用（Unix秒）
+
+    private readonly RankSyncStore _rankSync = new RankSyncStore();
+    private readonly RankSyncPeerGate _peerGate = new RankSyncPeerGate();   // 今接続している子機の同期元（接続確認で確定）
+    // 今回の接続でスナップショット適用／同一コピー確認まで進んだか（Current 判定に使う）
+    private bool _syncVerifiedThisConnection = false;
+    // 表示状態が変わったときだけ ResultScoreUI へ更新通知を出すための直前値
+    private RankSyncDisplayState _lastSyncDisplayState = RankSyncDisplayState.NoData;
+    private Coroutine _challengeResendRoutine;
+    private string _captureConfirmedPlayId = "";   // 捕獲（CAUGHT）が確定したプレイID（TIME_UPを最終結果として受理しない）
 
     public static ParentUdpSender Instance { get; private set; }
 
@@ -248,6 +267,7 @@ public class ParentUdpSender : MonoBehaviour
         // 単体開始は親機が起点なので、親機が新しいプレイ識別子を発行する。
         // （子機接続済みで START_GAME を送る場合も、この識別子を共有させる）
         _currentPlaySessionId = CreatePlaySessionId();
+        _captureConfirmedPlayId = "";
 
         Debug.Log($"[ParentUdpSender] OnSoloStartButtonClicked — starting without waiting for child connection. playSessionId={_currentPlaySessionId}");
 
@@ -267,6 +287,7 @@ public class ParentUdpSender : MonoBehaviour
     {
         // 親機が起点の開始でも、プレイ識別子を親機が発行して子機と共有する。
         _currentPlaySessionId = CreatePlaySessionId();
+        _captureConfirmedPlayId = "";
         SendState($"{CmdStart}:{_currentPlaySessionId}");
         Debug.Log($"[ParentUdpSender] Sent START_GAME (playSessionId={_currentPlaySessionId}) to child at {targetIP}:{normalPort}");
         yield return new WaitForSeconds(0.1f);
@@ -337,6 +358,9 @@ public class ParentUdpSender : MonoBehaviour
         // Force result scenes to shared names across parent/child.
         gameOverSceneName = ResultGameOverScene;
         timeUpSceneName = ResultTimeUpScene;
+
+        // 親機再起動後も、以前の正当な結果（既知プレイ・保存済み）を受理できるよう復元する。
+        LoadRankSyncFromPrefs();
 
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
@@ -505,7 +529,6 @@ public class ParentUdpSender : MonoBehaviour
         if (scene.name == gameSceneName || scene.name == soloGameSceneName)
         {
             _resultProcessed = false;
-            _gameOverScoreHandled = false;
             _shouldTriggerLoudItem = false;
             // 片付け演出用の保留通知もリセットする（再プレイで前の通知を持ち越さない）。
             _hasPendingGameProgress = false;
@@ -581,15 +604,16 @@ public class ParentUdpSender : MonoBehaviour
     /// 親機起点で「タイトルへ戻る」ことを子機へ通知する（TEAM13_RETURN_TO_TITLE、再送付き）。
     /// 親機のリザルト画面（ResultSceneChamger）とキーボードのタイトル復帰（ReturnToTitle）から呼ばれる。
     /// </summary>
-    public void NotifyReturnToTitleToChild()
+    public void NotifyReturnToTitleToChild(bool fast = false)
     {
-        NotifyReturnToTitle();
+        // 再送は「同じ文字列（同じ sid・seq・復帰モード）」を送る。
+        string message = NotifyReturnToTitle(fast);
 
         if (_returnToTitleNotifyCoroutine != null)
         {
             StopCoroutine(_returnToTitleNotifyCoroutine);
         }
-        _returnToTitleNotifyCoroutine = StartCoroutine(ReturnToTitleNotifyRoutine());
+        _returnToTitleNotifyCoroutine = StartCoroutine(ReturnToTitleNotifyRoutine(message));
     }
 
     /// <summary>
@@ -597,20 +621,20 @@ public class ParentUdpSender : MonoBehaviour
     /// 0.15秒間隔で計3回再送（即時送信と合わせて計4回送信）。
     /// 再送は同じ連番（直近の _returnToTitleSendSeq）で行うため、受信側は2回目以降を重複として正しく無視できる。
     /// </summary>
-    private IEnumerator ReturnToTitleNotifyRoutine()
+    private IEnumerator ReturnToTitleNotifyRoutine(string message)
     {
         const int retryCount = 3;
         const float retryInterval = 0.15f;
 
-        // 再送は「同じ識別子・同じ番号」で送る（受信側は2回目以降を重複として無視できる）。
-        int seq = _returnToTitleSendSeq;
-        string sid = _currentPlaySessionId;
+        // 再送は「同じ文字列＝同じ識別子・同じ番号・同じ復帰モード」で送る
+        // （受信側は2回目以降を重複として無視できる）。
+        // DDOL の本コンポーネント上で走り、実時間で待機する（Time.timeScale=0 でも継続）。
         for (int i = 0; i < retryCount; i++)
         {
             yield return new WaitForSecondsRealtime(retryInterval);
             if (showDebugLogs)
-                Debug.Log($"[ParentUdpSender] Sending RETURN_TO_TITLE retry ({i + 1}/{retryCount}) sid={sid} seq={seq}...");
-            SendState($"{parentReturnToTitle}:{sid}:{seq}");
+                Debug.Log($"[ParentUdpSender] Sending RETURN_TO_TITLE retry ({i + 1}/{retryCount}) — '{message}'");
+            SendState(message);
         }
 
         _returnToTitleNotifyCoroutine = null;
@@ -624,7 +648,7 @@ public class ParentUdpSender : MonoBehaviour
     /// リザルト画面にいる場合は ResultSceneChamger のフェード演出を流用し、
     /// ゲームプレイ中などの演出がない場合は即座に遷移する。
     /// </summary>
-    private void HandleTeamReturnToTitle(string playSessionId, int seq)
+    private void HandleTeamReturnToTitle(string playSessionId, int seq, bool fast)
     {
         // 旧フォーマット（識別子なし）は、こちらに識別子が無い場合のみ受け付ける（後方互換）。
         bool sessionMatches = !string.IsNullOrEmpty(playSessionId)
@@ -665,8 +689,8 @@ public class ParentUdpSender : MonoBehaviour
             }
 
             if (showDebugLogs)
-                Debug.Log("[ParentUdpSender] RETURN_TO_TITLE received — starting result fade to title.");
-            changer.StartFadeToTitle(notifyPeer: false);
+                Debug.Log($"[ParentUdpSender] RETURN_TO_TITLE received — starting result fade to title (fast={fast}).");
+            changer.StartFadeToTitle(notifyPeer: false, skipWaits: fast);
             return;
         }
 
@@ -726,7 +750,6 @@ public class ParentUdpSender : MonoBehaviour
         _lastReceiveTime = 0f;
         _gameStarted = false;
         _resultProcessed = false;
-        _gameOverScoreHandled = false;
         ChildLoadingComplete = false;
         _shouldTriggerLoudItem = false;
         // 片付け演出用の保留通知もクリアする（前プレイの通知を次プレイへ持ち越さない）。
@@ -837,11 +860,18 @@ public class ParentUdpSender : MonoBehaviour
     /// 子機のリザルト画面（ResultSceneChamger）や親機のキーボード復帰から呼ばれる。
     /// 連番はこのプロセス起動後ただただ単調増加し、前回プレイの再送・遅延パケットの識別に使う。
     /// </summary>
-    public void NotifyReturnToTitle()
+    public string NotifyReturnToTitle(bool fast = false)
     {
         _returnToTitleSendSeq++;
-        SendState($"{parentReturnToTitle}:{_currentPlaySessionId}:{_returnToTitleSendSeq}");
-        Debug.Log($"[ParentUdpSender] Sent RETURN_TO_TITLE (playSessionId={_currentPlaySessionId}, seq={_returnToTitleSendSeq}) to child.");
+
+        // ボタン起点は ":FAST" を付けて送る（受信側も短いフェードにする）。
+        string message = fast
+            ? $"{parentReturnToTitle}:{_currentPlaySessionId}:{_returnToTitleSendSeq}:FAST"
+            : $"{parentReturnToTitle}:{_currentPlaySessionId}:{_returnToTitleSendSeq}";
+
+        SendState(message);
+        Debug.Log($"[ParentUdpSender] Sent RETURN_TO_TITLE (playSessionId={_currentPlaySessionId}, seq={_returnToTitleSendSeq}, fast={fast}) to child.");
+        return message;
     }
 
     /// <summary>
@@ -854,6 +884,13 @@ public class ParentUdpSender : MonoBehaviour
             return;
 
         _resultProcessed = true;
+
+        // 捕獲（CAUGHT）が確定したプレイを記録する。
+        // このプレイの TIME_UP は最終結果ではない（GAME_OVER が最終結果）ため受理しない。
+        if (!string.IsNullOrEmpty(_currentPlaySessionId))
+        {
+            _captureConfirmedPlayId = _currentPlaySessionId;
+        }
 
         if (showDebugLogs)
             Debug.Log($"[ParentUdpSender] NotifyGameOverFromParentCatch: 親機の捕獲によるゲームオーバー確定。CAUGHT送信・再送を開始します。targetIP='{targetIP}', targetPort={normalPort}, connectionState={currentState}, message='TEAM13_CAUGHT'");
@@ -970,6 +1007,7 @@ public class ParentUdpSender : MonoBehaviour
                 _currentPlaySessionId = string.IsNullOrEmpty(message.PlaySessionId)
                     ? CreatePlaySessionId()
                     : message.PlaySessionId;
+                _captureConfirmedPlayId = "";
 
                 if (showDebugLogs)
                 {
@@ -1004,51 +1042,27 @@ public class ParentUdpSender : MonoBehaviour
 
         if (message.Type == ParentMessageType.ChildScore)
         {
-            if (message.ResultType == ChildGameResultType.GameOver)
-            {
-                // 子機はパケットロス対策で同じリザルトを複数回送ってくる。2回目以降は無視する
-                // （無視しないとランキングに同じスコアが重複登録されてしまう）。
-                if (_gameOverScoreHandled)
-                {
-                    if (showDebugLogs)
-                        Debug.Log("[ParentUdpSender] CHILD_SCORE GAME_OVER ignored — already handled (retransmission).");
-                    return;
-                }
-                _gameOverScoreHandled = true;
+            // 旧形式のスコア通知。ランキング全件を持たないため「同期完了」とは扱わない。
+            // 親機は独自にランキングを更新しない（子機の RANK_SYNC が唯一の基準）。
+            Debug.LogWarning("[ParentUdpSender] Legacy CHILD_SCORE received — ignored (RANK_SYNC is authoritative). Both ends must be updated.");
+            return;
+        }
 
-                // GAME_OVER wins the race unconditionally
-                _resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] CHILD_SCORE GAME_OVER {message.Score} — saving and loading {ResultGameOverScene}.");
-                PlayerPrefs.SetInt(KeyGameOverScore, message.Score);
-                UpdateRanking(KeyGameOverRank, message.Score);
-                PlayerPrefs.Save();
-                ResultDataCommitted?.Invoke();
-                if (SceneManager.GetActiveScene().name != ResultGameOverScene)
-                {
-                    SceneManager.LoadScene(ResultGameOverScene);
-                }
-            }
-            else // TIME_UP
-            {
-                if (_resultProcessed)
-                {
-                    Debug.Log("[ParentUdpSender] TIME_UP result ignored — result (e.g. GAME_OVER) already processed.");
-                    return;
-                }
-                _resultProcessed = true;
-                Debug.Log($"[ParentUdpSender] CHILD_SCORE TIME_UP {message.Score} — saving and loading {ResultTimeUpScene}.");
-                PlayerPrefs.SetInt(KeyTimeUpScore, message.Score);
-                UpdateRanking(KeyTimeUpRank, message.Score);
-                PlayerPrefs.Save();
-                ResultDataCommitted?.Invoke();
-                SceneManager.LoadScene(ResultTimeUpScene);
-            }
+        if (message.Type == ParentMessageType.RankSyncHello)
+        {
+            HandleRankSyncHello(message.Hello);
+            return;
+        }
+
+        if (message.Type == ParentMessageType.RankingSync)
+        {
+            HandleRankSync(message.Snapshot);
             return;
         }
 
         if (message.Type == ParentMessageType.TeamReturnToTitle)
         {
-            HandleTeamReturnToTitle(message.PlaySessionId, message.Score);
+            HandleTeamReturnToTitle(message.PlaySessionId, message.Score, message.ReturnToTitleFast);
             return;
         }
 
@@ -1110,6 +1124,263 @@ public class ParentUdpSender : MonoBehaviour
 
         if (message.Type == ParentMessageType.Unknown)
             Debug.Log($"[ParentUdpSender] Unhandled message: '{message.RawPayload}'");
+    }
+
+    // ── Final result (CHILD_SCORE): 保存と画面遷移の分離 ──────────────────────
+
+    /// <summary>
+    // ── 子機ランキングの表示用コピー（同期）─────────────────────────────────
+
+    /// <summary>
+    /// 子機から受信したランキング／スコアのスナップショットを適用する。
+    /// ・親機は独自にランキングへ挿入・合体・修復・点数削除をしない（表示用コピーのみ）
+    /// ・同じ同期元の古い更新は適用しない。同じ更新の再送は適用せず ACK だけ返す
+    /// ・同期を受けただけで結果画面へ勝手に遷移しない（現在プレイの結果のときだけ）
+    /// </summary>
+    private void HandleRankSync(RankingSnapshot snap)
+    {
+        string activeScene = SceneManager.GetActiveScene().name;
+        bool onTitle = IsTitleScene(activeScene);
+
+        // 接続確認（RANK_SYNC_HELLO）で確定した「今の接続相手」と一致する同期だけを適用する。
+        // 一致しない（未確定・旧同期元の遅延）場合は適用もACKもしない。
+        if (!_peerGate.AcceptsSnapshot(snap.SourceId))
+        {
+            Debug.LogWarning($"[ParentUdpSender] RANK_SYNC ignored — source='{snap.SourceId}' does not match the confirmed peer ('{_peerGate.ConnectedSourceId}'). 接続確認前・旧同期元のデータは適用しません。");
+            return;
+        }
+
+        RankSyncApply result = _rankSync.Apply(snap);
+
+        if (result == RankSyncApply.Mismatch)
+        {
+            // 同じ sourceId・updateNo なのに内容が違う: 適用もACKもしない（保存成功と誤認させない）
+            Debug.LogError($"[ParentUdpSender] RANK_SYNC MISMATCH — source='{snap.SourceId}', update={snap.UpdateNo} は同じ更新番号で内容が違います。適用せずACKも返しません。");
+            return;
+        }
+
+        if (result == RankSyncApply.Duplicate || result == RankSyncApply.Stale)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] RANK_SYNC {result} — source='{snap.SourceId}', update={snap.UpdateNo} (copy stays at update={_rankSync.UpdateNo}).");
+
+            // Duplicate は「同じ保存コピーを今回の接続で確認した」ことなので Current になり得る
+            if (result == RankSyncApply.Duplicate) _syncVerifiedThisConnection = true;
+
+            SendRankSyncAck(snap);   // 適用はしないが ACK は返す（子機の再送終了）。画面遷移もしない。
+            NotifySyncStateChanged();
+            return;
+        }
+
+        PlayerPrefs.SetString(PrefRankSyncData, _rankSync.Serialize());
+        PlayerPrefs.SetInt(PrefRankSyncAt, (int)System.DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        PlayerPrefs.Save();
+
+        Debug.Log($"[ParentUdpSender] RANK_SYNC {result} — source='{_rankSync.SourceId}', update={_rankSync.UpdateNo}, "
+                + $"GO(last={_rankSync.GameOverLastScore}, top=[{string.Join(",", _rankSync.GameOverTop)}]), "
+                + $"TU(last={_rankSync.TimeUpLastScore}, top=[{string.Join(",", _rankSync.TimeUpTop)}]), "
+                + $"latest={_rankSync.LatestResultType}:{_rankSync.LatestResultPlayId}");
+
+        _syncVerifiedThisConnection = true;
+
+        // 表示更新（結果画面が開いていれば再表示される）＋ 表示状態の記録
+        ResultDataCommitted?.Invoke();
+        _lastSyncDisplayState = GetSyncDisplayState();
+
+        TryNavigateForSyncedResult(result, onTitle);
+
+        SendRankSyncAck(snap);
+    }
+
+    /// <summary>
+    /// 同期内容に「現在のプレイ」の最新結果が含まれる場合だけ、対応する結果シーンへ進める。
+    /// 遷移可否の判定は RankSyncNavigation（純粋）に集約し、ランキングコピー更新とは分離している。
+    /// Stale / Duplicate / Mismatch では遷移しない。
+    /// </summary>
+    private void TryNavigateForSyncedResult(RankSyncApply result, bool onTitle)
+    {
+        bool shouldNavigate = RankSyncNavigation.ShouldNavigate(
+            result, onTitle, _peerGate.AcceptsSnapshot(_rankSync.SourceId),
+            _rankSync.LatestResultPlayId, _rankSync.LatestResultType,
+            _currentPlaySessionId, _captureConfirmedPlayId);
+
+        if (!shouldNavigate)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] RANK_SYNC no screen transition (apply={result}, onTitle={onTitle}, latest={_rankSync.LatestResultType}:{_rankSync.LatestResultPlayId}, current='{_currentPlaySessionId}').");
+            return;
+        }
+
+        string targetScene = _rankSync.LatestResultType == RankingSnapshot.TypeGameOver
+            ? ResultGameOverScene : ResultTimeUpScene;
+        if (SceneManager.GetActiveScene().name != targetScene)
+        {
+            SceneManager.LoadScene(targetScene);
+        }
+    }
+
+    /// <summary>
+    /// 接続確認の応答（RANK_SYNC_HELLO）。親機が今待っている challengeId と一致する応答だけを受理し、
+    /// 今接続している子機の同期元を確定する。
+    /// ・古い接続の応答は sourceId や起動回数に関係なく拒否する（巻き戻さない）
+    /// ・同じ確認への再応答は冪等（Duplicate）
+    /// </summary>
+    private void HandleRankSyncHello(RankSyncHello hello)
+    {
+        RankSyncPeerGate.HelloResult r = _peerGate.OnHello(hello.ChallengeId, hello.SourceId, hello.SessionSeq);
+
+        switch (r)
+        {
+            case RankSyncPeerGate.HelloResult.Accepted:
+                Debug.Log($"[ParentUdpSender] RANK_SYNC_HELLO accepted — peer sourceId confirmed: '{_peerGate.ConnectedSourceId}' (challenge='{hello.ChallengeId}', sessionSeq={hello.SessionSeq}).");
+                break;
+            case RankSyncPeerGate.HelloResult.Duplicate:
+                if (showDebugLogs)
+                    Debug.Log($"[ParentUdpSender] RANK_SYNC_HELLO duplicate — peer sourceId stays '{_peerGate.ConnectedSourceId}'.");
+                break;
+            case RankSyncPeerGate.HelloResult.StaleResponse:
+                Debug.LogWarning($"[ParentUdpSender] RANK_SYNC_HELLO ignored — challenge='{hello.ChallengeId}' is not the pending one ('{_peerGate.PendingChallengeId}'). 古い接続の応答は受理しません。");
+                break;
+            case RankSyncPeerGate.HelloResult.NoPending:
+                Debug.LogWarning($"[ParentUdpSender] RANK_SYNC_HELLO ignored — no pending challenge (sourceId='{hello.SourceId}').");
+                break;
+            default:
+                Debug.LogWarning($"[ParentUdpSender] RANK_SYNC_HELLO invalid — challengeId='{hello.ChallengeId}', sourceId='{hello.SourceId}', sessionSeq={hello.SessionSeq}.");
+                break;
+        }
+
+        // 接続確認の結果は表示状態（前回同期データ／同期完了）に影響するので UI へ通知する
+        if (r == RankSyncPeerGate.HelloResult.Accepted) NotifySyncStateChanged();
+    }
+
+    /// <summary>今接続している子機の同期元（未確定なら空）。</summary>
+    public string ConnectedPeerSourceId => _peerGate.ConnectedSourceId;
+
+    /// <summary>
+    /// 表示用コピーの状態（未同期／前回同期データ／同期完了）。
+    /// Current は「今の接続相手が確定済み」「コピーの sourceId がそれと一致」
+    /// 「今回の接続で適用または同一コピーを確認済み」のすべてを満たすときだけ。
+    /// </summary>
+    public RankSyncDisplayState GetSyncDisplayState()
+        => RankSyncDisplay.Evaluate(
+            _rankSync.HasData,
+            _peerGate.IsConfirmed,
+            _peerGate.ConnectedSourceId,
+            _rankSync.SourceId,
+            _syncVerifiedThisConnection);
+
+    /// <summary>表示用コピーの状態ラベル（「未同期」「前回同期データ」「同期完了」）。</summary>
+    public string GetSyncDisplayLabel() => RankSyncDisplay.ToLabel(GetSyncDisplayState());
+
+    /// <summary>
+    /// 表示用コピーが「今の接続相手の最新」と言えるか。
+    /// false のときは前回同期データ／未同期であり、最新の子機データとして見せてはいけない。
+    /// </summary>
+    public bool IsSyncCurrent => GetSyncDisplayState() == RankSyncDisplayState.Current;
+
+    /// <summary>スナップショット受信の確認返信（子機はこれで再送を終了する）。</summary>
+    private void SendRankSyncAck(RankingSnapshot snap)
+    {
+        SendState($"RANK_SYNC_ACK:{RankingSnapshot.VersionName}:{snap.SourceId}:{snap.UpdateNo}");
+    }
+
+    /// <summary>接続確認の要求（チャレンジ）を子機へ送る。</summary>
+    private void SendRankSyncChallenge(string ip, string challengeId)
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(MagicNumber + RankSyncChallenge.Format(challengeId));
+            _udpClient.Send(data, data.Length, ip, normalPort);
+            if (showDebugLogs)
+                Debug.Log($"[ParentUdpSender] Sent RANK_SYNC_CHALLENGE '{challengeId}' to {ip}:{normalPort} ({_peerGate.ChallengeSendCount}/{RankSyncPeerGate.MaxChallengeSends}).");
+        }
+        catch (Exception e) { Debug.LogError($"[ParentUdpSender] SendRankSyncChallenge error: {e.Message}"); }
+    }
+
+    /// <summary>
+    /// 接続確認の再送（回数と間隔を決めて有限回）。
+    /// 確定したら／上限に達したら止める。無期限には待たず、未確定のままなら同期待ち表示のままにする。
+    /// </summary>
+    private void StartChallengeResend(string ip, string challengeId)
+    {
+        if (_challengeResendRoutine != null) StopCoroutine(_challengeResendRoutine);
+        _challengeResendRoutine = StartCoroutine(ChallengeResendRoutine(ip, challengeId));
+    }
+
+    private IEnumerator ChallengeResendRoutine(string ip, string challengeId)
+    {
+        const float interval = 0.5f;
+
+        while (_isRunning && _peerGate.HasPendingChallenge && _peerGate.PendingChallengeId == challengeId)
+        {
+            yield return new WaitForSeconds(interval);
+
+            if (_peerGate.ChallengeExhausted)
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[ParentUdpSender] RANK_SYNC_CHALLENGE '{challengeId}' 自動再送の上限（{RankSyncPeerGate.MaxChallengeSends}回）に達しました。" +
+                              "接続確認できていないため同期待ちとして扱います（子機が接続要求を再送すれば同じ ID で応えます）。");
+                break;
+            }
+
+            SendRankSyncChallenge(ip, challengeId);
+            _peerGate.NoteChallengeSent();
+        }
+
+        _challengeResendRoutine = null;
+    }
+
+    /// <summary>
+    /// 表示状態が変わったときだけ ResultScoreUI へ更新通知を出す（結果画面を開いたままでも反映される）。
+    /// </summary>
+    public void NotifySyncStateChanged()
+    {
+        RankSyncDisplayState state = GetSyncDisplayState();
+        if (!RankSyncDisplay.ShouldNotify(_lastSyncDisplayState, state)) return;
+
+        RankSyncDisplayState previous = _lastSyncDisplayState;
+        _lastSyncDisplayState = state;
+
+        if (showDebugLogs)
+            Debug.Log($"[ParentUdpSender] Sync display state {previous} → {state} — notifying ResultScoreUI.");
+
+        ResultDataCommitted?.Invoke();
+    }
+
+    /// <summary>親機再起動後も最新の表示用コピーを復元する。</summary>
+    private void LoadRankSyncFromPrefs()
+    {
+        if (_rankSync.Deserialize(PlayerPrefs.GetString(PrefRankSyncData, "")))
+        {
+            Debug.Log($"[ParentUdpSender] RankSync copy restored: source='{_rankSync.SourceId}', update={_rankSync.UpdateNo}.");
+        }
+        else if (showDebugLogs)
+        {
+            Debug.Log("[ParentUdpSender] RankSync copy: no data (未同期).");
+        }
+    }
+
+    /// <summary>表示用コピーの有無（「未同期」を判別するため）。</summary>
+    public bool HasRankSyncData => _rankSync.HasData;
+
+    /// <summary>表示用コピーの更新番号・同期元・受信時刻（診断／鮮度表示用）。</summary>
+    public int RankSyncUpdateNo => _rankSync.UpdateNo;
+    public string RankSyncSourceId => _rankSync.SourceId;
+    public int RankSyncReceivedAtUnix => PlayerPrefs.GetInt(PrefRankSyncAt, 0);
+
+    /// <summary>表示用コピーから、指定種別の最新スコアとTOP5を取り出す（ResultScoreUI 用）。</summary>
+    public bool TryGetSyncedResult(bool gameOver, out int lastScore, out int[] top5)
+    {
+        if (!_rankSync.HasData)
+        {
+            lastScore = 0;
+            top5 = null;
+            return false;
+        }
+
+        lastScore = gameOver ? _rankSync.GameOverLastScore : _rankSync.TimeUpLastScore;
+        top5 = (int[])(gameOver ? _rankSync.GameOverTop : _rankSync.TimeUpTop).Clone();
+        return true;
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────
@@ -1185,6 +1456,29 @@ public class ParentUdpSender : MonoBehaviour
                         currentState     = ConnectionState.Connected;
                         _lastReceiveTime  = Time.time;
                         _gameStarted      = false;
+
+                        // 接続確認: 同じ子機（同じ sourceId・起動世代）の Discovery 再送では確定状態を壊さず、
+                        // 同じ challengeId を再送する。本当に新しい接続確認のときだけ新 ID を発行し、
+                        // その間は未確定＝「前回同期データ」表示。IPでは同期元を確定しない。
+                        RankSyncPeerGate.DiscoveryResult dr =
+                            _peerGate.OnDiscovery(message.PlaySessionId, message.Score, out string challengeId);
+
+                        if (dr == RankSyncPeerGate.DiscoveryResult.NewChallenge)
+                        {
+                            _syncVerifiedThisConnection = false;
+                            NotifySyncStateChanged();
+                        }
+
+                        if (!string.IsNullOrEmpty(challengeId))
+                        {
+                            SendRankSyncChallenge(senderIP, challengeId);
+                            _peerGate.NoteChallengeSent();
+                            StartChallengeResend(senderIP, challengeId);
+                        }
+
+                        if (showDebugLogs)
+                            Debug.Log($"[ParentUdpSender] Discovery({dr}) — challenge='{challengeId}', confirmed='{_peerGate.ConnectedSourceId}', childSource='{message.PlaySessionId}', sessionSeq={message.Score}.");
+
                         if (showDebugLogs)
                             Debug.Log($"[ParentUdpSender][Diag] DISCOVERY_REQUEST受信により state {oldState} → Connected, targetIP '{oldIP}' → '{targetIP}'");
                         SendDiscoveryAccept(senderIP);

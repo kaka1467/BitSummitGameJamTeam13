@@ -95,6 +95,15 @@ public class MotherChoreController : MonoBehaviour
     [Tooltip("片付けで視線を分散させるときの最小の片付け区間（秒）。区間がこれ未満になる場合は、滞在時間に収まらない旨を警告する。")] [SerializeField, Min(0f)]
     private float minChoreSegmentSeconds = 0.5f;
 
+    [Tooltip("最後の視線（Chore_Peek）の後、Chore（片付けループ）へ戻ってから片付けを続ける秒数。" +
+             "正常退出はこの時間を満たしてから行う。正常完走時はこの時間のため滞在時間より滞在が延長されることがある" +
+             "（すでにこの時間以上片付けていれば追加では待たない。中断時は適用しない）。")] [SerializeField, Min(0f)]
+    private float postLastLookChoreSeconds = 3f;
+
+    [Tooltip("最後の視線の後、Chore（片付けループ）へ実際に戻るのを待つ最大秒数。" +
+             "超過した場合は正常完了とせず、安全に中断する（Chore_End は要求しない）。")] [SerializeField, Min(0.1f)]
+    private float choreLoopResumeTimeoutSeconds = 3f;
+
     // ── アニメーション ────────────────────────────────────────────────────────
     //   ステート名・パラメーター名・再生方法・再生完了判定は MotherAnimationPlayer が保持する。
     //   ここでは用途別API（RequestChoreStart / RequestChorePeek / RequestChoreEnd /
@@ -720,6 +729,84 @@ public class MotherChoreController : MonoBehaviour
             _completedLookCount++;
         }
 
+        // ── 最後の視線後：Chore へ戻って片付けを続けてから正常退出する ──────────
+        //   正常退出は次の両方を満たしてから行う（中断は常に優先）。
+        //     A. 既存の予定した片付け時間（滞在設定）を満たしている
+        //     B. 最後の視線の後、実際に Chore へ戻ってから postLastLookChoreSeconds 以上片付けている
+        //   目標回数に達しても予定時間が残っていれば、追加の視線はせず片付けだけを続ける。
+        //   すでに B を満たしていれば追加では待たない（同じ時間を二重に加算しない）。
+        float postLookChoreSeconds = 0f;
+
+        if (IsChoreActive && _completedLookCount > 0)
+        {
+            // 【診断】最終視線の直後（復帰待ち開始時点）の Animator 実行状態。
+            //  ・状態は変更しない。段階が変わるときだけ出す（毎フレームは出さない）。
+            MotherAnimationPlayer diagPlayer = ResolveAnimationPlayer();
+            if (diagPlayer != null)
+                Debug.Log($"[MotherChore][AnimDiag] 最終視線の直後・復帰待ち開始（完了={_completedLookCount}/{_targetLookCount}回）{diagPlayer.DescribeChoreAnimatorState()}");
+
+            // ChoreLookOnce の完了は「Chore に戻った」ことを保証しない（再生完了と復帰は別）ため、
+            // Player の確認APIで復帰を待つ。ステート名・Animator 操作は Player 側に閉じる。
+            // 最後の視線が終わった時刻（復帰を確認できない場合の計測開始点に使う）。
+            float lastLookEndTime = Time.time;
+            bool resumed = false;
+            yield return WaitForChoreLoopResume(choreLoopResumeTimeoutSeconds, ok => resumed = ok);
+
+            if (!IsChoreActive)
+            {
+                Debug.LogWarning($"[MotherChore] 片付け演技：中断（最終視線後の片付け待ち） | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回");
+                yield break;
+            }
+
+            float choreResumedAt;
+            if (resumed)
+            {
+                // 復帰を確認できた時刻から計測する（視線アニメの再生完了直後ではない）。
+                choreResumedAt = Time.time;
+            }
+            else
+            {
+                // 復帰を確認できなかった。
+                //  【重要】ここで中断しない（中断すると正常な帰路＝waypoints が失われる）。
+                //  復帰は「未確認」であることを明示して記録し、計測は最終視線の終了時点から行う
+                //  （＝待機時間。実際に片付けポーズが再生されていたかは AnimDiag の状態で判断する）。
+                choreResumedAt = lastLookEndTime;
+                Debug.LogWarning($"[MotherChore] Chore復帰は未確認のまま続行します（{choreLoopResumeTimeoutSeconds:F1}s 待って「現在状態=Chore」も「遷移先=Chore」も観測できず）" +
+                                 $" — 帰路は維持します（最終視線の終了時点から待機で計測）" +
+                                 $" | 目標視線={_targetLookCount}回 | 完了={_completedLookCount}回");
+            }
+
+            // A: 既存の予定した片付け時間を満たす（追加の視線はしない）。
+            while (IsChoreActive && (Time.time - phaseStart) < stayDuration)
+                yield return null;
+
+            if (!IsChoreActive)
+            {
+                Debug.LogWarning($"[MotherChore] 片付け演技：中断（予定時間の片付け待ち） | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回");
+                yield break;
+            }
+
+            // B: 最後の視線後に Chore で片付けた時間（A の待機分も含めて数える＝二重に待たない）。
+            float choreElapsedAfterLook = Time.time - choreResumedAt;
+            bool postLookWaitNeeded = choreElapsedAfterLook < Mathf.Max(0f, postLastLookChoreSeconds);
+
+            while (IsChoreActive && (Time.time - choreResumedAt) < Mathf.Max(0f, postLastLookChoreSeconds))
+                yield return null;
+
+            if (!IsChoreActive)
+            {
+                Debug.LogWarning($"[MotherChore] 片付け演技：中断（最後の片付け時間の待ち） | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回");
+                yield break;
+            }
+
+            postLookChoreSeconds = Time.time - choreResumedAt;
+
+            if (showDebugLogs)
+                Debug.Log($"[MotherChore] 最終視線後の経過時間 {postLookChoreSeconds:F1}s" +
+                          $"（設定 {postLastLookChoreSeconds:F1}s / {(postLookWaitNeeded ? "不足分のみ待機" : "すでに満たしていたため追加待機なし")}" +
+                          " ／ 実際に片付けポーズが再生されていたかは AnimDiag の状態で確認）");
+        }
+
         // ── 演技フェーズの結果を記録する（目標・正常完了・実時間を明示。失敗/中断と正常完走を区別）──
         float actualSeconds = Time.time - phaseStart;
 
@@ -730,19 +817,38 @@ public class MotherChoreController : MonoBehaviour
             yield break;
         }
 
+        // 片付け終了条件の記録（A: 予定時間 / B: 最後の視線後の片付け時間）。
+        // 失敗・中断・復帰未確認と、正常完走をはっきり区別する。
+        if (showDebugLogs)
+            Debug.Log($"[MotherChore] 片付け終了条件の待機を満たしました | A(予定時間 {stayDuration:F1}s)=経過{(Time.time - phaseStart >= stayDuration ? "済" : "前")} | " +
+                      $"B(最終視線後の待機 {postLastLookChoreSeconds:F1}s)=経過{postLookChoreSeconds:F1}s | 完了={_completedLookCount}/{_targetLookCount}回" +
+                      " ／ 片付けポーズの再生有無はAnimDiagの状態で確認");
+
         if (_completedLookCount < _targetLookCount)
             Debug.LogWarning($"[MotherChore] 片付け演技：失敗（目標未達） | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回 | " +
                              $"実時間={actualSeconds:F1}s（滞在設定={stayDuration:F1}s）");
         else if (showDebugLogs)
             Debug.Log($"[MotherChore] 片付け演技：正常完走 | 目標視線={_targetLookCount}回 | 正常完了={_completedLookCount}回 | " +
-                      $"実時間={actualSeconds:F1}s（滞在設定={stayDuration:F1}s。回数保証のため超える場合あり）");
+                      $"実時間={actualSeconds:F1}s（滞在設定={stayDuration:F1}s。回数保証・最終視線後の片付けのため超える場合あり）");
 
         // ── Chore_End（片付け終わって立つ・1回）──────────────────────────────
         //    視線がすべて終わってから終了要求Boolを立てる（時間満了で未達でも同じ）。
+        //    Chore_End の完了を確認できた場合だけ帰路へ進む（判定は MotherAnimationPlayer が持つ）。
         if (!_choreEndRequested)
         {
+            if (showDebugLogs)
+                Debug.Log("[MotherChore] Chore_End を開始します（片付け終了）— 完了後に帰路のwaypointsへ進みます");
+
+            // 【診断】Chore_End 要求の直前の Animator 実行状態（要求は Bool。反映はアニメーターの遷移次第）。
+            if (player != null)
+                Debug.Log($"[MotherChore][AnimDiag] Chore_End要求（直前）{player.DescribeChoreAnimatorState()}");
+
             player?.RequestChoreEnd();
             _choreEndRequested = true;
+
+            // 【診断】要求直後（同一フレーム。まだ遷移していない場合が多い）の状態。
+            if (player != null)
+                Debug.Log($"[MotherChore][AnimDiag] Chore_End要求（直後・同一フレーム）{player.DescribeChoreAnimatorState()}");
         }
 
         bool choreEndOk = false;
@@ -999,6 +1105,77 @@ public class MotherChoreController : MonoBehaviour
             case ChoreOneShot.ChoreEnd:  yield return player.WaitForChoreEnd(onResult);  break;
             case ChoreOneShot.DoorOpen:  yield return player.WaitForDoorOpen(onResult);  break;
         }
+    }
+
+    /// <summary>
+    /// 最後の視線の後、実際に Chore（片付けループ）へ戻るまで待つ。
+    ///  ・ChoreLookOnce（＝Chore_Peek の再生完了待ち）は「Chore へ戻った」ことを保証しないため、
+    ///    MotherAnimationPlayer の確認APIで復帰を確認する（ステート名はここでは扱わない）。
+    ///  ・タイムアウトしたら false を返す（呼び出し側は正常完了とせず安全に中断する）。
+    ///  ・中断（IsChoreActive=false）を検知した場合も false を返す（待ち続けない）。
+    /// </summary>
+    private IEnumerator WaitForChoreLoopResume(float timeoutSeconds, System.Action<bool> onResult)
+    {
+        MotherAnimationPlayer player = ResolveAnimationPlayer();
+        if (player == null)
+        {
+            Debug.LogWarning("[MotherChore] MotherAnimationPlayer が未設定のため Chore 復帰を確認できません（未確認）", this);
+            yield return new WaitForSeconds(1f);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        float elapsed = 0f;
+
+        // 【診断】状態／遷移先が変わったときだけ出す（毎フレームは出さない）。
+        //   シグネチャは「現在ステート・遷移先ステート・遷移中・enabled・activeInHierarchy」のみで、
+        //   normalizedTime は含めない（時間経過だけでは変化と見なさない）。
+        int lastCur = int.MinValue, lastNext = int.MinValue;
+        bool lastInTransition = false, lastEnabled = false, lastActive = false;
+        bool hasLast = false;
+
+        while (IsChoreActive && elapsed < timeoutSeconds && !player.IsPlayingChoreLoop)
+        {
+            int cur, next;
+            bool inTransition, enabled, active;
+            if (player.TryGetChoreAnimatorSignature(out cur, out next, out inTransition, out enabled, out active))
+            {
+                bool changed = !hasLast || cur != lastCur || next != lastNext ||
+                               inTransition != lastInTransition || enabled != lastEnabled || active != lastActive;
+                if (changed)
+                {
+                    hasLast = true;
+                    lastCur = cur;
+                    lastNext = next;
+                    lastInTransition = inTransition;
+                    lastEnabled = enabled;
+                    lastActive = active;
+                    Debug.Log($"[MotherChore][AnimDiag] 復帰待ち中の状態/遷移先の変化（経過 {elapsed:F2}s / 上限 {timeoutSeconds:F1}s）" +
+                              $"{player.DescribeChoreAnimatorState()}");
+                }
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        bool ok = IsChoreActive && player.IsPlayingChoreLoop;
+        if (ok)
+        {
+            // 「現在状態が Chore」と「遷移先が Chore のみ（遷移中）」を区別する。
+            // 遷移先が Chore だけの場合は「Chore へ復帰完了」ではない（遷移中）。
+            string how = player.IsCurrentStateChoreLoop
+                ? "現在状態=Chore を確認"
+                : "遷移先=Chore のみ確認（遷移中。復帰完了ではない）";
+            Debug.Log($"[MotherChore][AnimDiag] 復帰待ち成立（{how} / 経過 {elapsed:F2}s）{player.DescribeChoreAnimatorState()}");
+        }
+        else if (IsChoreActive)
+        {
+            Debug.LogWarning($"[MotherChore] 最後の視線後に Chore へ戻れませんでした（{timeoutSeconds:F1}s タイムアウト）", this);
+            Debug.LogWarning($"[MotherChore][AnimDiag] 復帰待ちタイムアウト時の最終状態（経過 {elapsed:F2}s）{player.DescribeChoreAnimatorState()}");
+        }
+
+        onResult?.Invoke(ok);
     }
 
     /// <summary>

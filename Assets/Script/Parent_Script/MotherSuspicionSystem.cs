@@ -178,8 +178,25 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// <summary>片付け中フラグ（SetChoreOverride）。true の間は通常の親イベント入口を抑止する。</summary>
     private bool _choreOverride;
 
+    /// <summary>
+    /// 無敵モードで捕獲要求が抑止されたか（＝通常は捕獲で終わる覗きを、通常の終了処理へ進めるための印）。
+    ///  ・isCaught / _hasPermanentGameOver とは別物。捕獲は実行していないので「捕獲済み」にはしない。
+    ///  ・サイクル開始（OnApproachReachedDoor）と ResetCycle で必ず解除し、次イベントへ持ち越さない。
+    /// </summary>
+    private bool _captureSuppressedDuringPeek;
+
     /// <summary>片付けの「行き」の歩行中に怪しさを加算するコルーチン（既存の継続疑惑と同じ仕組み）。</summary>
     private Coroutine _choreSuspicionCoroutine;
+    /// <summary>
+    /// 片付けの視線（Chore_Peek）期間に怪しさを加算するコルーチン。
+    /// 歩行加算とは排他（二重に加算しない）。
+    /// </summary>
+    private Coroutine _choreLookSuspicionCoroutine;
+    /// <summary>
+    /// 上のコルーチンが実走中か。
+    /// 加算の途中で捕獲・中断が起きた場合でも、古いコルーチン／ハンドルを残さないために持つ。
+    /// </summary>
+    private bool _choreLookSuspicionRunning;
     /// <summary>片付けのドア開け（Door_Open）中、歩きアニメーションの上書きを抑止しているか。</summary>
     private bool _choreWalkingOverrideSuppressed;
     /// <summary>片付けのドア開け（Door_Open）中、歩行による位置移動を止めているか。</summary>
@@ -303,6 +320,20 @@ public class MotherSuspicionSystem : MonoBehaviour
         SubscribeApproachEvents();
     }
 
+    /// <summary>
+    /// コンポーネントが無効化されたときの後始末。
+    ///  ・Unity は「コンポーネントの enabled=false」ではコルーチンを止めないため、
+    ///    捕獲演出などで MotherSuspicionSystem が無効化されても視線加算が残らないよう明示的に停止する。
+    ///    （GameObject の非アクティブ化・破棄ではコルーチン自体が止まるが、ハンドルはここで解除する）
+    ///  ・_choreOverride は触らない（片付け側の解除処理 ReleaseChoreLocks→SetChoreOverride(false) が
+    ///    歩行加算の停止などを行うため、ここで先に false にすると抑止解除の後始末が走らなくなる）。
+    /// </summary>
+    private void OnDisable()
+    {
+        StopChoreLookSuspicion();
+        _choreLooking = false;
+    }
+
     private void OnDestroy()
     {
         // 偽ドア音の予約は MotherApproachWarning 側が管理する（ここでは触らない）。
@@ -312,6 +343,12 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         UnsubscribeApproachEvents();
+
+        // 片付け視線の加算コルーチンは、このオブジェクトの破棄で自動停止する。
+        // 破棄後に古いハンドル／走行フラグが残らないようにここで解除する
+        // （破棄後の StopCoroutine は呼ばない）。
+        _choreLookSuspicionCoroutine = null;
+        _choreLookSuspicionRunning = false;
     }
 
     public void SetApproachSpeed(float speed)
@@ -579,7 +616,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// </summary>
     public void OnApproachReachedDoor()
     {
-        Debug.Log($"[PD] OnApproachReachedDoor | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
+        Debug.Log($"[PD] OnApproachReachedDoor | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver} | invincible={IsInvincible}");
 
         // 片付け演出のサイクル中は通常のドア分岐・疑惑・捕獲を行わない（重複防止）。
         if (IsChoreOverrideActive)
@@ -627,6 +664,8 @@ public class MotherSuspicionSystem : MonoBehaviour
         _roomEntryAccepted = false;
         _roomEntryStarted = false;
         _roomExitCompleted = false;
+        // 無敵による「捕獲抑止」の印もサイクル開始で解除する（次イベントへ持ち越さない）。
+        _captureSuppressedDuringPeek = false;
 
         // Primaryの場合のみ、親機へ部屋入室を要求する。
         // 受理された場合は、疑惑（バースト／継続疑惑）の開始を「部屋入室完了（OnEnteredRoom）」まで遅らせる。
@@ -764,8 +803,10 @@ public class MotherSuspicionSystem : MonoBehaviour
 
             if (motherGauge.currentGauge >= motherGauge.maxGauge)
             {
-                OnPlayerCaught();
-                return;
+                // 捕獲が成立した場合だけ突入演出を打ち切る（以降はゲームオーバー処理へ委ねる）。
+                // 無敵で抑止された場合は捕獲済みにせず、通常どおり突入（ラッシュイン）演出を続行する。
+                if (OnPlayerCaught()) return;
+                Debug.Log("[PD] 無敵で捕獲を抑止したため、突入（ラッシュイン）演出を続行します");
             }
         }
 
@@ -886,7 +927,27 @@ public class MotherSuspicionSystem : MonoBehaviour
                 yield break;
             }
 
+            // 【無敵モード】通常は「捕獲（ゲームオーバー）」で終わる状況では、捕獲が終了の役割を担う。
+            //   無敵中は捕獲されないため、次のいずれかでは待ち続けずに通常の終了処理
+            //   （退出待ち→ドア閉め→帰路→終了通知）へ進める。捕獲済みにはしない（isCaught は立てない）。
+            //     ・捕獲要求が実際に抑止された（ゲージ上限に到達したが無敵で抑止された）
+            //     ・無敵中でプレイヤーが起きている（加算が抑止されてゲージが上がらず、
+            //       通常なら捕獲に至る状況のまま捕獲要求そのものが発生しない）
             bool sleeping = (sleepingController != null) && sleepingController.IsSleeping;
+
+            if (_captureSuppressedDuringPeek)
+            {
+                Debug.Log("[PD] 無敵で捕獲を抑止したため、通常の覗き終了処理（退出・ドア閉め・帰路・終了通知）へ進みます");
+                break;
+            }
+
+            if (IsInvincible && !sleeping)
+            {
+                Debug.Log("[PD] 無敵モード中でプレイヤーが起きているため（通常なら捕獲に至る状況）、" +
+                          "捕獲せずに通常の覗き終了処理（退出・ドア閉め・帰路・終了通知）へ進みます");
+                break;
+            }
+
             if (sleeping)
             {
                 Debug.Log("[PD] player fell asleep — mother will leave");
@@ -1108,10 +1169,10 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     /// <summary>
     /// 猫フェイント：猫だけを母親のドア側と同じwaypoint順でStartPoint→DoorPointへ移動させ、
-    /// DoorPoint到着後にドアを隙間だけ開け（既存DoorController APIを再利用）、猫を見せて鳴き声を再生する。
+    /// DoorPoint到着後にドアを全開にし（既存DoorController APIを再利用）、猫を見せて鳴き声を再生する。
     /// 母親は移動せず、母親のドア到着イベント・本チェック・疑惑加算・捕獲判定は発生しない。
     /// 鳴き声は猫専用のAudioSource（CatFeintController）から再生し、既存の親の音源やUDPには触れない。
-    /// 覗き時間はドア覗き（ダミー）と同じ式 peekDurationBase+currentGauge。
+    /// ドアを開けておく時間は CatFeintController の catDoorHoldOpenSeconds（＋現在ゲージ）で調整する。
     /// </summary>
     public bool TriggerCatFeintEvent()
     {
@@ -1130,19 +1191,28 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
-        float duration = Mathf.Max(0f, peekDurationBase) + gauge;
+
+        // ドアを開けておく時間の管理元は CatFeintController のみ（catDoorHoldOpenSeconds）。
+        //   怪しさゲージ分の加算は従来どおり行う（＝旧 peekDurationBase + gauge と同じ扱いを維持）。
+        float holdOpenSeconds = catFeintController.DoorHoldOpenSeconds + gauge;
 
         Debug.Log(
-            $"[PD] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door PEEK open for {duration:F1}s（母親は登場しない）");
-        _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence(duration));
+            $"[PD] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door FULL open for {holdOpenSeconds:F1}s" +
+            $"（CatFeintController.catDoorHoldOpenSeconds={catFeintController.DoorHoldOpenSeconds:F1}s + gauge={gauge}／母親は登場しない）" +
+            "（開放時間はFull到達から計測・ジャンプ動作が長い場合は完了まで延長）");
+        _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence(holdOpenSeconds));
         return true;
     }
 
     /// <summary>
-    /// 猫フェイントの本体。猫の移動 → ドア隙間開け＋鳴き声 → 待機 → 猫を隠す → ドアを閉める → 猫を開始状態へ戻す。
-    /// 終了・中断（警告終了）どちらでも猫・ドア・警告状態を必ず戻す。
+    /// 猫フェイントの本体。猫の移動 → ドアを全開（目標開度へ到達まで待つ）＋鳴き声 → 設定時間待機
+    /// → ジャンプ動作の完了を待つ → 猫を隠す → ドアを閉める → 猫を開始状態へ戻す。
+    /// ドアを開けておく時間は「Full到達時点」から holdOpenSeconds（CatFeintController 設定＋ゲージ）だけ数える。
+    ///  ・Full へ到達しなかった場合は開放時間を数えず、猫を隠す→ドアを閉める→状態解除の安全な失敗終了（警告ログで区別）。
+    ///  ・ジャンプ動作が設定時間より長い場合は、見せ終えるまでドアを開けたままにする（実測をログ出力）。
+    ///  ・中断（警告終了）時はジャンプ完了を待たず、猫・ドア・警告状態を必ず戻す。
     /// </summary>
-    private IEnumerator HandleCatFeintSequence(float duration)
+    private IEnumerator HandleCatFeintSequence(float holdOpenSeconds)
     {
         // 2. 猫オブジェクトだけを母親と同じwaypoint順で移動させる（母親・母親イベントは発火しない）。
         yield return
@@ -1161,26 +1231,109 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         // 3. DoorPoint到着後：ドアを全開にし、猫を見せて鳴き声を再生する。
+        //    【開放時間の計測開始点】猫フェイント用の目標開度（Full）へ「実際に到達した時点」から数える。
+        //     ・ドアの回転速度・開度は変更しない（既存 DoorController の通常速度のまま）。
+        //     ・到達の成否は WaitForDoorReached のコールバックで区別する（タイムアウトを到達成功と混同しない）。
+        bool doorReached = true;
         if (targetDoorController != null)
-            targetDoorController.SetDoorState(DoorController.DoorState.Full);
+        {
+            targetDoorController.SetDoorState(DoorController.DoorState.Full);   // 通常速度のまま開き始める
+            yield return targetDoorController.WaitForDoorReached(
+                catFeintController.DoorReachWaitTimeoutSeconds, ok => doorReached = ok);
+
+            // 到達待ちの間に中断された場合は猫とドアを戻して終了する（警告状態は既に解除済み）。
+            if (warningSystem == null || !warningSystem.isWarningActive)
+            {
+                Debug.Log("[PD] HandleCatFeintSequence: ドア到達待ち中に中断検出 — 猫とドアを戻す");
+                catFeintController.HideCat();
+                catFeintController.ReturnToStartPosition();
+                targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+                _catFeintCoroutine = null;
+                yield break;
+            }
+
+            if (!doorReached)
+            {
+                // 【失敗終了】Full 未到達を「Full到達後の開放時間」として数えない。
+                //   猫を隠し、ドアを閉め、イベント状態を解除して次の猫フェイントを実行できる状態に戻す。
+                Debug.LogWarning("[PD] 猫フェイント: ドアが Full へ到達しませんでした" +
+                                 $"（{catFeintController.DoorReachWaitTimeoutSeconds:F1}s タイムアウト）" +
+                                 " — 開放時間は数えず、安全に失敗終了します（猫を隠す→ドアを閉める→状態解除）");
+                catFeintController.HideCat();
+                catFeintController.ReturnToStartPosition();
+                targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+                _catFeintCoroutine = null;
+                ResetCycle();
+                if (warningSystem != null)
+                    warningSystem.EndWarningSequence();
+                yield break;
+            }
+        }
+
+        // 開放時間の計測開始（Full 到達後）。以降のジャンプ完了待ちもこの時間に含めて実測する。
+        float holdStartTime = Time.time;
 
         catFeintController.TriggerJump();
         catFeintController.PlayMeow();
 
         warningSystem?.PlayDummyDoor();
 
-        // 4. 所定時間後に猫を隠し、ドアを閉める。中断があればループを抜けて後始末する。
-        float catVisibleDuration = Mathf.Max(0f, duration - catFeintController.HideBeforeCloseSeconds);
+        // 4. 設定した開放時間（Full到達後・怪しさゲージ分込み）が過ぎるまで待つ。
+        //    catHideBeforeCloseSeconds は「この開放時間のうちに猫を隠すタイミング」であり、
+        //    合計は設定時間のまま（同じ待ち時間を二重に加算しない）。
+        //    中断があればループを抜けて後始末する。
+        float hideBeforeClose = catFeintController.HideBeforeCloseSeconds;
+        float catVisibleDuration = Mathf.Max(0f, Mathf.Max(0f, holdOpenSeconds) - hideBeforeClose);
         float elapsed = 0f;
         while (elapsed < catVisibleDuration && warningSystem != null && warningSystem.isWarningActive)
         {
+            // TriggerJump の時点から、この既存の待機ループ内でジャンプの開始／終了を観測する
+            //（開放時間内に終わったジャンプを「未完了」と誤判定しないため）。
+            catFeintController.ObserveJumpProgress();
             elapsed += Time.deltaTime;
             yield return null;
         }
 
+        // 5. 正常終了では、猫のジャンプ動作を見せ終えてから隠す（固定秒数で完了と断定せず Animator 状態で判定）。
+        //    中断時は動作完了を待たずに安全終了する（後始末はこの下の共通処理で実施）。
+        if (warningSystem != null && warningSystem.isWarningActive)
+        {
+            CatFeintController.JumpWaitResult jumpResult = CatFeintController.JumpWaitResult.NotConfigured;
+            yield return catFeintController.WaitForJumpFinished(
+                catFeintController.JumpWaitTimeoutSeconds, result => jumpResult = result);
+
+            float actualHold = Time.time - holdStartTime;
+            if (jumpResult == CatFeintController.JumpWaitResult.TimedOut)
+            {
+                // 開始できない／終了遷移を抜けない＝タイムアウト失敗。アニメ完了と断定せず猫を隠して安全終了。
+                Debug.LogWarning("[PD] 猫フェイント: ジャンプ動作の開始／終了を確認できませんでした" +
+                                 $"（{catFeintController.JumpWaitTimeoutSeconds:F1}s タイムアウト）" +
+                                 " — アニメ完了と断定せず、猫を隠して安全終了します（ドアは閉じます）");
+            }
+            else if (jumpResult == CatFeintController.JumpWaitResult.NotConfigured)
+            {
+                // ジャンプ設定なし（Jumpパラメーター無し等）＝待機対象なし。「ジャンプ完了」とは区別してログする。
+                Debug.Log("[PD] 猫フェイント: ジャンプ設定なし・待機対象なし（ジャンプ完了とは区別）" +
+                          $" — 開放時間 実測 {actualHold:F1}s（設定 {holdOpenSeconds:F1}s）");
+            }
+            else if (actualHold > Mathf.Max(0f, holdOpenSeconds) + 0.05f)
+            {
+                Debug.Log($"[PD] 猫フェイント: ジャンプ動作の完了を待つため開放時間が延長されました" +
+                          $"（設定 {holdOpenSeconds:F1}s → 実測 {actualHold:F1}s）");
+            }
+            else
+            {
+                // 通常終了（ジャンプ完了待ち込みの実測をログに残す：設定時間と実測を区別できるようにする）。
+                Debug.Log($"[PD] 猫フェイント: 開放時間 実測 {actualHold:F1}s（設定 {holdOpenSeconds:F1}s／ジャンプ完了待ち込み）");
+            }
+        }
+        else
+        {
+            Debug.Log("[PD] 猫フェイント: 中断のためジャンプ動作の完了を待たずに安全終了します（猫を隠す→ドアを閉める）");
+        }
+
         catFeintController.HideCat();
 
-        float hideBeforeClose = catFeintController.HideBeforeCloseSeconds;
         if (hideBeforeClose > 0f)
             yield return new WaitForSeconds(hideBeforeClose);
 
@@ -1189,7 +1342,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
 
-        // 5. 次回用に猫を開始状態へ戻す（ホーム位置へ戻して非表示）。
+        // 6. 次回用に猫を開始状態へ戻す（ホーム位置へ戻して非表示）。
         catFeintController.ReturnToStartPosition();
 
         _catFeintCoroutine = null;
@@ -1440,6 +1593,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             _choreWalkingOverrideSuppressed = false;
             _choreMovementSuppressed = false;
             DisableChoreSuspicion();
+            StopChoreLookSuspicion();   // 片付け解除：視線期間の加算もハンドルごと解除する
         }
     }
 
@@ -1448,18 +1602,153 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// アニメーションの見た目（再生）とは独立に、開始・終了タイミングをここで管理する。
     /// 【重要】歩行による怪しさ加算（EnableChoreSuspicion 中）と二重に加算しないよう、
     ///         ここで視線を有効化するときは歩行加算を止める。
+    /// 【追加】視線の開始（false→true）で、通常の覗きと同じ条件（寝たふり中は加算しない）の
+    ///         視線期間加算を開始する。true→true の再通知では再開始も開始時加算もしない。
     /// </summary>
     public void SetChoreLooking(bool looking)
     {
+        bool wasLooking = _choreLooking;
         _choreLooking = looking;
         // 通常イベントの覗き判定と競合しないよう、片付け抑止中だけ反映する。
         if (_choreOverride)
             isMotherLookingNow = looking;
 
-        // 視線（3）では既存の視線判定期間だけ加算する。
-        // 歩行加算と二重にならないよう、視線の開始／終了で歩行加算の側を止める。
         if (looking)
+        {
+            // 視線（3）では既存の視線判定期間だけ加算する。
+            // 歩行加算と二重にならないよう、視線の開始／終了で歩行加算の側を止める。
             DisableChoreSuspicion();
+
+            // false→true のときだけ開始する（true→true の再通知では再開始・開始時加算をしない）。
+            if (!wasLooking)
+                StartChoreLookSuspicion();
+        }
+        else
+        {
+            // 視線終了：加算コルーチンとハンドルを確実に解除する（減少処理は行わない）。
+            StopChoreLookSuspicion();
+        }
+    }
+
+    /// <summary>
+    /// 片付けの視線（Chore_Peek）期間の怪しさ加算を開始する。
+    ///  ・条件は通常の覗き（部屋内の継続疑惑）と同じ
+    ///    （enableContinuousRoomSuspicion を尊重／寝たふり中は加算しない）
+    ///  ・加算量・間隔も同じフィールド（continuousRoomSuspicionAmount /
+    ///    continuousRoomSuspicionTickInterval）を使う（片付け専用の値は増やさない）
+    ///  ・既に走っているときは再開始しない（true→true の再通知で二重加算しない）
+    /// </summary>
+    private void StartChoreLookSuspicion()
+    {
+        if (!enableContinuousRoomSuspicion)
+        {
+            Debug.Log("[PD] 片付け視線の怪しさ加算なし — enableContinuousRoomSuspicion=false（通常の覗きと同じ設定に従う）");
+            return;
+        }
+
+        if (_choreLookSuspicionCoroutine != null) return;
+
+        // 【重要】StartCoroutine は「コルーチンの最初の yield まで」を同期実行してから戻る。
+        //   コルーチン先頭の開始時加算で上限到達すると OnPlayerCaught → AbortChore
+        //   （＝SetDetection(false) → SetChoreLooking(false) → StopChoreLookSuspicion()）が
+        //   この代入より先に走り、コルーチンは開始時に終了している。
+        //   その場合に「終了済みハンドル」を保持すると、次回の StartChoreLookSuspicion が
+        //   二重起動ガードで早期 return し、以降の視線加算が始まらなくなる。
+        //   走行中フラグ（コルーチンが生きている間だけ true）で確認してから代入する。
+        Coroutine handle = StartCoroutine(ContinuousChoreLookSuspicionCoroutine());
+        _choreLookSuspicionCoroutine = _choreLookSuspicionRunning ? handle : null;
+
+        Debug.Log($"[PD] 片付け視線の怪しさ加算を開始（amount={continuousRoomSuspicionAmount} / interval={continuousRoomSuspicionTickInterval:F2}s）");
+    }
+
+    /// <summary>
+    /// 片付けの視線による怪しさ加算を停止し、ハンドルを必ず解除する。
+    /// 視線終了・片付け解除・正常終了・中断・無効化で呼ぶ（疑惑の減少は行わない）。
+    /// 加算の途中で捕獲・中断が起きて自分自身から停止される場合もあるため、
+    /// ハンドルを先に null にしてから停止する（古いコルーチン・古いハンドルを残さない）。
+    /// </summary>
+    private void StopChoreLookSuspicion()
+    {
+        Coroutine running = _choreLookSuspicionCoroutine;
+        _choreLookSuspicionCoroutine = null;
+        _choreLookSuspicionRunning = false;
+
+        if (running == null) return;
+
+        StopCoroutine(running);
+        Debug.Log("[PD] 片付け視線の怪しさ加算を停止（減少処理は行わない）");
+    }
+
+    /// <summary>
+    /// 片付けの視線（Chore_Peek）期間の加算本体。
+    ///  ・検知開始時に、その時点で寝たふり中でなければ1回加算する
+    ///  ・以降は continuousRoomSuspicionTickInterval ごとに、その時点の寝たふり状態を見て加算する
+    ///  ・上限到達は既存の OnPlayerCaught() へつなぐ（既存の捕獲・ゲームオーバー処理を変えない）
+    ///  ・視線終了（_choreLooking=false）／片付け解除（_choreOverride=false）でも自分を終了させる
+    /// </summary>
+    private IEnumerator ContinuousChoreLookSuspicionCoroutine()
+    {
+        _choreLookSuspicionRunning = true;
+
+        // 検知開始時の1回（寝たふり中なら加算しない）
+        if (!ApplyChoreLookSuspicionTick("検知開始"))
+        {
+            _choreLookSuspicionRunning = false;
+            _choreLookSuspicionCoroutine = null;
+            yield break;
+        }
+
+        while (_choreLookSuspicionRunning && _choreLooking && _choreOverride)
+        {
+            yield return new WaitForSeconds(continuousRoomSuspicionTickInterval);
+
+            if (!_choreLookSuspicionRunning || !_choreLooking || !_choreOverride) break;
+            if (!ApplyChoreLookSuspicionTick("定期")) break;
+        }
+
+        _choreLookSuspicionRunning = false;
+        _choreLookSuspicionCoroutine = null;
+    }
+
+    /// <summary>
+    /// 片付け視線の加算を1回試みる。
+    ///  ・続行してよければ true、停止すべきなら false を返す
+    ///  ・条件は通常の覗き（継続疑惑）と同じ: 寝たふり中は加算しない
+    ///  ・ゲームオーバー・捕獲・ゲージ未設定・上限到達では停止する
+    /// </summary>
+    private bool ApplyChoreLookSuspicionTick(string reason)
+    {
+        if (_hasPermanentGameOver || isCaught)
+        {
+            Debug.Log($"[PD] 片付け視線の怪しさ加算 停止 — game over or caught（{reason}）");
+            return false;
+        }
+
+        if (motherGauge == null)
+        {
+            Debug.Log($"[PD] 片付け視線の怪しさ加算 停止 — motherGauge is null（{reason}）");
+            return false;
+        }
+
+        // その時点の寝たふり状態で判定する（通常の覗きの継続疑惑と同じ条件）。
+        bool sleeping = (sleepingController != null) && sleepingController.IsSleeping;
+        if (sleeping)
+        {
+            Debug.Log($"[PD] 片付け視線の怪しさ加算 スキップ — プレイヤーが寝たふり中（{reason}）");
+            return true;
+        }
+
+        motherGauge.AddGauge(continuousRoomSuspicionAmount);
+        Debug.Log($"[PD] 片付け視線の怪しさ加算 {reason} +{continuousRoomSuspicionAmount} | gauge now {motherGauge.currentGauge}");
+
+        if (motherGauge.currentGauge >= motherGauge.maxGauge)
+        {
+            Debug.Log($"[PD] 片付け視線の怪しさ加算 停止 — gauge reached max（{reason} / 既存の捕獲処理へ）");
+            OnPlayerCaught();
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -1774,6 +2063,12 @@ public class MotherSuspicionSystem : MonoBehaviour
             _rushInPeekCoroutine = null;
         }
 
+        // サイクルリセット時も、片付け視線の加算コルーチン・ハンドルを残さない（無効化・再プレイ対策）。
+        StopChoreLookSuspicion();
+
+        // 無敵による「捕獲抑止」の印もここで解除する（サイクル終了で必ず消える）。
+        _captureSuppressedDuringPeek = false;
+
         isMotherLookingNow = false;
         _activePeekDuration = peekDurationBase;
 
@@ -1785,15 +2080,33 @@ public class MotherSuspicionSystem : MonoBehaviour
     //  ゲームオーバー
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void OnPlayerCaught()
+    /// <summary>
+    /// 捕獲・ゲームオーバーの共通入口（ゲージ上限到達・大きな音などから呼ばれる）。
+    /// 戻り値：true = 捕獲を実行した ／ false = 無敵モードで抑止した。
+    ///  ・呼び出し元は戻り値で「捕獲で終わった」と「捕獲は抑止された＝通常の終了処理へ進むべき」を区別する。
+    ///  ・抑止時に isCaught / _hasPermanentGameOver は立てない（捕獲済みにはしない）。
+    /// </summary>
+    private bool OnPlayerCaught()
     {
         // 【無敵モード】テスト用無敵（Lキー）がONの間は捕獲・ゲームオーバーを抑止する。
         //   最大ゲージ到達から呼ばれる唯一の捕獲入口のため、ここで一括ガードする。
         //   抑止中でも移動・アニメーション・覗き・片付け・音・照明は止めない。
         if (ShouldBlockCapture())
         {
-            Debug.Log("[PD] OnPlayerCaught: 無敵モード中のため捕獲とゲームオーバーを抑止します");
-            return;
+            // 覗き中（＝通常は捕獲で終わる覗き）に抑止した場合は、通常の覗き終了処理
+            // （ドア閉め・帰路・終了通知）へ進めるための印を立てる。
+            // 捕獲は実行していないので isCaught / ゲームオーバーは立てない。
+            if (_primaryResetCoroutine != null || _roomEntryStarted)
+            {
+                _captureSuppressedDuringPeek = true;
+                Debug.Log("[PD] OnPlayerCaught: 無敵モード中のため捕獲を抑止 — 通常の覗き終了処理（ドア閉め・帰路・終了通知）へ進めます。" +
+                          "isCaught/ゲームオーバーは立てません");
+            }
+            else
+            {
+                Debug.Log("[PD] OnPlayerCaught: 無敵モード中のため捕獲とゲームオーバーを抑止します");
+            }
+            return false;
         }
 
         Debug.Log("[PD] OnPlayerCaught — GAME OVER");
@@ -1810,5 +2123,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (caughtReactionController != null)
             caughtReactionController.ForceGameOver();
+
+        return true;
     }
 }
