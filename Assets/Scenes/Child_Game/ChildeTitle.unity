@@ -2963,6 +2963,68 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 967381525}
   m_CullTransparentMesh: 1
+--- !u!1 &991000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 991000002}
+  - component: {fileID: 991000003}
+  m_Layer: 0
+  m_Name: TitleConnectionUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &991000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 991000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &991000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 991000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 65072293c22464c0ba5e9882f45b370a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChildTitleConnectionUI
+  connectButton: {fileID: 1463660737}
+  connectButtonLabel: {fileID: 1893753028}
+  connectButtonDefaultPosition: {x: 314, y: -158}
+  connectButtonStartPosition: {x: 489.3, y: -281.7}
+  cancelUiObject: {fileID: 716815019}
+  cancelButton: {fileID: 1707610820}
+  connectLabel: connect
+  connectingLabel: connecting
+  creditsPanel: {fileID: 1036910372}
+  creditsButton: {fileID: 1550034692}
+  creditsCloseButton: {fileID: 228826732}
+  settingsPanel: {fileID: 1503059194}
+  settingsButton: {fileID: 857611890}
+  settingsCloseButton: {fileID: 862824614}
+  titleImageObject: {fileID: 118420765}
+  animatedSpriteObjects:
+  - {fileID: 2010241166}
+  - {fileID: 1238464460}
 --- !u!1 &1030482003
 GameObject:
   m_ObjectHideFlags: 0
@@ -6279,7 +6341,7 @@ GameObject:
   - component: {fileID: 1749223012}
   - component: {fileID: 1749223011}
   m_Layer: 5
-  m_Name: Canvas (1)
+  m_Name: Title
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8731,68 +8793,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2116612425}
   m_CullTransparentMesh: 1
---- !u!1 &991000001
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 991000002}
-  - component: {fileID: 991000003}
-  m_Layer: 0
-  m_Name: TitleConnectionUI
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &991000002
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 991000001}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &991000003
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 991000001}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 65072293c22464c0ba5e9882f45b370a, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::ChildTitleConnectionUI
-  connectButton: {fileID: 1463660737}
-  connectButtonLabel: {fileID: 1893753028}
-  connectButtonDefaultPosition: {x: 314, y: -158}
-  connectButtonStartPosition: {x: 489.3, y: -281.7}
-  cancelUiObject: {fileID: 716815019}
-  cancelButton: {fileID: 1707610820}
-  connectLabel: connect
-  connectingLabel: connecting
-  creditsPanel: {fileID: 1036910372}
-  creditsButton: {fileID: 1550034692}
-  creditsCloseButton: {fileID: 228826732}
-  settingsPanel: {fileID: 1503059194}
-  settingsButton: {fileID: 857611890}
-  settingsCloseButton: {fileID: 862824614}
-  titleImageObject: {fileID: 118420765}
-  animatedSpriteObjects:
-  - {fileID: 2010241166}
-  - {fileID: 1238464460}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

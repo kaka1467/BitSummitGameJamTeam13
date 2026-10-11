@@ -4879,10 +4879,6 @@ MonoBehaviour:
   parentReceivePort: 8002
   targetIP: 127.0.0.1
   currentState: 0
-  connectButton: {fileID: 0}
-  connectButtonLabel: {fileID: 0}
-  startButtonObject: {fileID: 0}
-  soloStartButtonObject: {fileID: 0}
   gameSceneName: ParentLoading
   soloGameSceneName: ParentGameScene
   gameplaySceneName: ParentGameScene
@@ -4893,7 +4889,6 @@ MonoBehaviour:
   titleSceneName: ChildeTitle
   gameOverSceneName: ParentGameOver
   timeUpSceneName: ParentGameClear
-  cancelButton: {fileID: 0}
   parentDetection: {fileID: 1951468137}
   showDebugLogs: 1
 --- !u!4 &1385247219
