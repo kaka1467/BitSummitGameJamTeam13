@@ -65,6 +65,13 @@ public class ChildUdpReceiver : MonoBehaviour
     // 子機が現在適用している睡眠ロック状態（重複パケット処理の抑制用）
     private bool isSleepInputLocked = false;
     private bool caughtHandled = false;
+    // 購読者（ゲーム側の受信担当＝GameManager）がまだ準備できていない間に受理したCAUGHTを1件だけ保留する。
+    //  ・caughtHandled（=現在プレイで受理済み）とは別に管理する。
+    //    受理済みでも保留が残っていれば、購読成立後にその1件を消費して通知する。
+    //  ・保留には「受理時のプレイ識別子」を記録し、同一プレイでのみ消費する（次プレイへ持ち越さない）。
+    //  ・履歴は持たない（再送で増やさない／上書きして別イベントにしない）。
+    private bool _hasPendingCaught = false;
+    private string _pendingCaughtPlayId = "";
 
     // ── RETURN_TO_TITLE のプレイ識別（古い再送・遅延パケットの無視用） ─────────────────────
     // 連番だけでは「前回プレイの、まだ届いていない番号の通知」を区別できない。
@@ -152,6 +159,22 @@ public class ChildUdpReceiver : MonoBehaviour
     /// <summary>現在の睡眠ロック状態（購読前の初期同期用の読み取りAPI）。true=親機が睡眠中でロック中。</summary>
     public bool IsSleepInputLocked => isSleepInputLocked;
 
+    // ── CAUGHT（親機の捕獲）の通知 ────────────────────────────────────────────
+    /// <summary>
+    /// 親機の捕獲（CAUGHT）を受理したときにメインスレッドで発火する。
+    /// ゲーム側の受信担当（GameManager）が購読し、結果処理（TriggerResult）を行う。
+    ///  ・受理（caughtHandled）はUDP側が持つ（シーンをまたぐ「現在プレイで一度だけ」の状態）。
+    ///  ・購読者が居ない間の受理は1件だけ保留し、購読成立後に通知する（取りこぼさない）。
+    ///  ・再送は caughtHandled で無視する（保留を増やさない・別イベントにしない）。
+    /// </summary>
+    public event Action CaughtReceived;
+
+    /// <summary>ゲーム側の受信担当（購読者）が準備済みか。</summary>
+    public bool HasCaughtSubscriber => CaughtReceived != null;
+
+    /// <summary>購読前に受理したCAUGHTの保留が残っているか（ゲーム側の初期同期の問い合わせ用）。</summary>
+    public bool HasPendingCaught => _hasPendingCaught;
+
     /// <summary>
     /// 睡眠ロック状態を更新し、変化があった場合だけ購読者へ通知する（同値では何もしない・通知しない）。
     /// 購読者が居ない場合も状態は正しく更新する（購読成立時の初期同期は IsSleepInputLocked を使う）。
@@ -213,6 +236,10 @@ public class ChildUdpReceiver : MonoBehaviour
         // 以降の RETURN_TO_TITLE はこの識別子で「どのプレイの通知か」を判定する。
         _playSessionId = CreatePlaySessionId();
         _lastPeerReturnToTitleSeq = 0;
+
+        // 子機起点の新しいプレイ開始でも、前プレイの受理済み状態と保留を持ち越さない。
+        caughtHandled = false;
+        ClearPendingCaught("新プレイ開始（子機起点）");
 
         if (showDebugLogs)
             Debug.Log($"[StartTrace][子機] OnStartButtonClicked → START_GAME 送信へ (sessionId={_playSessionId}, 送信先={targetIP}:{parentReceivePort})", this);
@@ -608,6 +635,31 @@ public class ChildUdpReceiver : MonoBehaviour
 
         ProcessLogQueue();
 
+        // ── CAUGHT：購読前受信の保留を、ゲーム側の受信担当が準備できたら1回だけ通知する ────────
+        //   消費条件：子機ゲームシーン ／ 保留したプレイIDが現在プレイIDと一致 ／ 購読者が準備済み。
+        //   消費の前に保留フラグと保留IDをクリアし、その後に通知する。
+        if (_hasPendingCaught)
+        {
+            string pendingScene = SceneManager.GetActiveScene().name;
+            if (IsTitleScene(pendingScene) || pendingScene == "ChildGameOver" || pendingScene == "ChildGameClear")
+            {
+                // タイトル・結果シーンへ移行したら破棄する（次プレイへ持ち越さない）。
+                ClearPendingCaught("非ゲームシーンへ移行");
+            }
+            else if (IsGameplayScene(pendingScene) &&
+                     CaughtReceived != null &&
+                     _pendingCaughtPlayId == (_playSessionId ?? ""))
+            {
+                // クリアしてから通知する（通知側で状態を消す構造にしない）。
+                _hasPendingCaught = false;
+                _pendingCaughtPlayId = "";
+                if (showDebugLogs)
+                    Debug.Log("[ChildUdpReceiver] 保留していた CAUGHT を購読者へ通知します（メインスレッド・同一プレイ）。");
+                CaughtReceived?.Invoke();
+            }
+            // ロード中・プレイID不一致・購読者未準備の場合は保留を維持する（無制限リトライではなく1件のみ）。
+        }
+
         // Timeout
         if (currentState == ConnectionState.Connected &&
             Time.time - lastReceiveTime > timeoutLimit)
@@ -665,6 +717,13 @@ public class ChildUdpReceiver : MonoBehaviour
             ResetForNewSession();
             Debug.Log($"[ChildUdpReceiver] Title scene loaded ('{scene.name}') — reset state for next round.");
         }
+        else if (scene.name == "ChildGameOver" || scene.name == "ChildGameClear")
+        {
+            // 結果シーンでは遅延CAUGHTを二重処理しない。
+            // 受理済み状態（caughtHandled）は維持したまま、未消費の保留だけを破棄する。
+            ClearPendingCaught("結果シーン読込");
+        }
+        // ChildLoading→ゲームシーンの読込では保留を維持する（購読成立後に消費する）。
         // ゲームシーンでの睡眠ロックの適用（入力停止・画像表示）は ChildSleepLockApplier（シーン側）が
         // 購読成立時の初期同期（IsSleepInputLocked の取得）で行う。ここではUDP側の状態を勝手に解除しない
         // （親機が寝たままでも維持する）。
@@ -691,6 +750,8 @@ public class ChildUdpReceiver : MonoBehaviour
         targetIP = "127.0.0.1";
         gameSceneLoaded = false;
         caughtHandled = false;
+        // 購読前に受理したCAUGHTの保留もリセットする（次プレイへ持ち越さない）。
+        ClearPendingCaught("ResetForNewSession（タイトル復帰）");
 
         // 睡眠ロックを解除し、購読者がいれば変更を通知する（シーン側が解除を適用できるように）。
         // 購読者が居ない場合もUDP側の保持状態は正しく解除される。
@@ -751,18 +812,39 @@ public class ChildUdpReceiver : MonoBehaviour
         {
             // 親機が起点で開始した場合、親機が発行したプレイ識別子を採用する
             // （子機起点の場合は OnStartButtonClicked で既に発行済み）。
+            // 「新しいプレイの開始」が確定した場合だけ、前プレイの受理済み／保留をリセットする。
+            // 同じプレイIDのSTART_GAME再受信ではリセットしない（再送で受理済み状態を消さない）。
+            bool isNewPlay = false;
+
             if (msg.StartsWith(CMD_START + ":", StringComparison.Ordinal))
             {
                 string sid = msg.Substring(CMD_START.Length + 1);
                 if (!string.IsNullOrEmpty(sid))
                 {
+                    isNewPlay = (sid != _playSessionId);
                     _playSessionId = sid;
                     _lastPeerReturnToTitleSeq = 0;
                 }
+                else
+                {
+                    // IDが空の付き形式はレガシー扱い（ゲーム未開始なら新プレイ）。
+                    isNewPlay = !gameSceneLoaded;
+                }
+            }
+            else
+            {
+                // 旧形式（IDなし）はゲーム未開始なら新プレイとして扱う。
+                isNewPlay = !gameSceneLoaded;
+            }
+
+            if (isNewPlay)
+            {
+                caughtHandled = false;
+                ClearPendingCaught("新プレイ開始（START_GAME）");
             }
 
             if (showDebugLogs)
-                Debug.Log($"[ChildUdpReceiver] Received START_GAME from parent — loading game scene. playSessionId={_playSessionId}");
+                Debug.Log($"[ChildUdpReceiver] Received START_GAME from parent — loading game scene. playSessionId={_playSessionId}, isNewPlay={isNewPlay}");
             LoadGameScene();
             return;
         }
@@ -773,54 +855,35 @@ public class ChildUdpReceiver : MonoBehaviour
             if (showDebugLogs)
                 Debug.Log($"[ChildUdpReceiver] Received TEAM13_CAUGHT — scene='{activeScene}', GameManager.instance={(GameManager.instance != null ? "present" : "NULL")}, playerMove={(playerMove != null ? playerMove.gameObject.name : "NULL")}, sleepingManager={(sleepingManager != null ? sleepingManager.gameObject.name : "NULL")}.");
 
-            if (caughtHandled)
+            // タイトル・結果シーンではCAUGHTを破棄する（受理済みにしない＝次プレイの捕獲を無効化しない）。
+            if (IsTitleScene(activeScene) || activeScene == "ChildGameOver" || activeScene == "ChildGameClear")
             {
                 if (showDebugLogs)
-                    Debug.Log($"[ChildUdpReceiver] TEAM13_CAUGHT ignored — scene='{activeScene}', game-over handling already started.");
+                    Debug.Log($"[ChildUdpReceiver] TEAM13_CAUGHT discarded — scene='{activeScene}'（タイトル／結果のため破棄）");
                 return;
             }
 
-            caughtHandled = true;
-
-            // GameManagerフローを優先し、スコア保存とUDP送信の整合性を保つ
-            if (GameManager.instance != null)
+            // ロード中は「現在プレイが開始済みで有効なプレイIDを持つ場合」だけ受理する。
+            if (activeScene == gameSceneName && string.IsNullOrEmpty(_playSessionId))
             {
                 if (showDebugLogs)
-                    Debug.Log($"[ChildUdpReceiver] CAUGHT fallback skipped — scene='{activeScene}', GameManager.instance is present.");
-                GameManager.instance.TriggerResult(GameManager.ResultType.GameOver);
+                    Debug.Log($"[ChildUdpReceiver] TEAM13_CAUGHT discarded — scene='{activeScene}'（ロード中かつ有効なプレイIDが無い）");
+                return;
             }
-            else
+
+            if (caughtHandled)
             {
-                // フォールバック：既に結果画面やタイトル画面にいる場合の二重ロードを防止
-                bool shouldRunFallback = activeScene != "ChildGameOver" &&
-                                         activeScene != "ChildGameClear" &&
-                                         activeScene != "ChildLoading" &&
-                                         !IsTitleScene(activeScene);
-                if (shouldRunFallback)
-                {
-                    if (showDebugLogs)
-                        Debug.Log($"[ChildUdpReceiver] CAUGHT fallback executed — scene='{activeScene}', loading 'ChildGameOver'.");
-                    // GameManager.instance が未設定でも、シーン内に実体があればそこから実スコアを取得する。
-                    // それも見つからない場合のみ 0 点として扱う（最終手段）。
-                    int finalScore = 0;
-                    GameManager gm = GameManager.instance != null ? GameManager.instance : FindFirstObjectByType<GameManager>();
-                    if (gm != null)
-                    {
-                        finalScore = gm.score;
-                    }
-                    PlayerPrefs.SetInt("LastGameOverScore", finalScore);
-                    PlayerPrefs.Save();
-                    NotifyRankingChanged(RankingSnapshot.TypeGameOver);
-                    SceneManager.LoadScene("ChildGameOver");
-                }
-                else if (showDebugLogs)
-                {
-                    Debug.Log($"[ChildUdpReceiver] CAUGHT fallback skipped — scene='{activeScene}'.");
-                }
+                if (showDebugLogs)
+                    Debug.Log($"[ChildUdpReceiver] TEAM13_CAUGHT ignored — scene='{activeScene}', 既に受理済み（再送を無視）");
+                return;
             }
+
+            // 受理済みにしてから通知／フォールバックへ進む（再送はここで弾かれる）。
+            HandleCaughtAccepted(activeScene);
 
             return;
         }
+
         if (msg.StartsWith("RETURN_TO_TITLE:", StringComparison.Ordinal))
         {
             // RETURN_TO_TITLE:<playSessionId>:<seq>[:FAST]（旧: RETURN_TO_TITLE:<seq>）
@@ -958,6 +1021,115 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (showDebugLogs)
             Debug.Log($"[ChildUdpReceiver] Unhandled message: '{msg}'");
+    }
+
+    // ── CAUGHT（親機の捕獲）の受理・保留 ─────────────────────────────────────
+
+    /// <summary>
+    /// 子機のゲームシーン（ロード・タイトル・結果以外）かどうか。
+    /// 従来フォールバックが使っていた判定と同じ（特定のシーン名に依存しない）。
+    /// </summary>
+    private bool IsGameplayScene(string sceneName)
+    {
+        return sceneName != "ChildGameOver" &&
+               sceneName != "ChildGameClear" &&
+               sceneName != gameSceneName &&
+               !IsTitleScene(sceneName);
+    }
+
+    /// <summary>
+    /// CAUGHTを受理した（caughtHandled=true）うえで、
+    /// 「購読者へ通知」「GameManager不在時のフォールバック」「1件保留」のいずれか1つだけを行う。
+    /// 同じCAUGHTを通知とフォールバックの両方で処理しない。
+    /// </summary>
+    private void HandleCaughtAccepted(string activeScene)
+    {
+        // 受理済みは「通知やフォールバックの前」に立てる（再送を弾く。保留の消費は妨げない）。
+        caughtHandled = true;
+
+        // 1) ゲーム側の受信担当（GameManager）が準備済みなら通知する。
+        if (CaughtReceived != null)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ChildUdpReceiver] CAUGHTを購読者へ通知します（メインスレッド, scene='{activeScene}'）。");
+            CaughtReceived?.Invoke();
+            return;
+        }
+
+        // 2) GameManagerが存在しないゲームシーンでは、従来のフォールバックを実行する。
+        //    （ロード・タイトル・結果では実行しない＝従来どおり）
+        if (IsGameplayScene(activeScene) && GameManager.instance == null)
+        {
+            RunCaughtFallback(activeScene);
+            return;
+        }
+
+        // 3) それ以外（ロード中／GameManagerが存在するが購読準備中）は1件保留する。
+        EnqueuePendingCaught();
+    }
+
+    /// <summary>
+    /// 【従来フォールバック】GameManager不在のゲームシーンでの保存・ランキング通知・結果シーン遷移。
+    /// 対象シーンと内容は従来どおり維持する（ロード・タイトル・結果では実行しない）。
+    /// </summary>
+    private void RunCaughtFallback(string activeScene)
+    {
+        // フォールバック：既に結果画面やタイトル画面にいる場合の二重ロードを防止
+        bool shouldRunFallback = activeScene != "ChildGameOver" &&
+                                 activeScene != "ChildGameClear" &&
+                                 activeScene != "ChildLoading" &&
+                                 !IsTitleScene(activeScene);
+        if (shouldRunFallback)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ChildUdpReceiver] CAUGHT fallback executed — scene='{activeScene}', loading 'ChildGameOver'.");
+            // GameManager.instance が未設定でも、シーン内に実体があればそこから実スコアを取得する。
+            // それも見つからない場合のみ 0 点として扱う（最終手段）。
+            int finalScore = 0;
+            GameManager gm = GameManager.instance != null ? GameManager.instance : FindFirstObjectByType<GameManager>();
+            if (gm != null)
+            {
+                finalScore = gm.score;
+            }
+            PlayerPrefs.SetInt("LastGameOverScore", finalScore);
+            PlayerPrefs.Save();
+            NotifyRankingChanged(RankingSnapshot.TypeGameOver);
+            SceneManager.LoadScene("ChildGameOver");
+        }
+        else if (showDebugLogs)
+        {
+            Debug.Log($"[ChildUdpReceiver] CAUGHT fallback skipped — scene='{activeScene}'.");
+        }
+    }
+
+    /// <summary>
+    /// 購読者が居ない間に受理したCAUGHTを1件だけ保留する（履歴は持たない・再送で増やさない）。
+    /// 保留には受理時のプレイ識別子を記録し、同一プレイでのみ消費する。
+    /// </summary>
+    private void EnqueuePendingCaught()
+    {
+        if (_hasPendingCaught)
+        {
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] CAUGHT は既に1件保留済みのため追加しません（再送は無視）。");
+            return;
+        }
+
+        _hasPendingCaught = true;
+        _pendingCaughtPlayId = _playSessionId ?? "";
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] CAUGHT を1件保留します（playId='{_pendingCaughtPlayId}'、購読成立後に通知）。");
+    }
+
+    /// <summary>CAUGHTの保留を破棄する（次プレイ・非ゲームシーンへ持ち越さない）。</summary>
+    private void ClearPendingCaught(string reason)
+    {
+        if (!_hasPendingCaught) return;
+
+        _hasPendingCaught = false;
+        _pendingCaughtPlayId = "";
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] CAUGHT の保留を破棄しました（{reason}）。");
     }
 
     /// <summary>

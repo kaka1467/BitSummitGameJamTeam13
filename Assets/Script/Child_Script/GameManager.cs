@@ -89,17 +89,95 @@ public class GameManager : MonoBehaviour
     public bool IsGameOver => isGameOver;
     private bool isTutorialMode = false;
 
+    // ── CAUGHT（親機の捕獲）の購読 ────────────────────────────────────────────
+    //   受信後の結果処理（TriggerResult(GameOver)）は本クラスが担当する。
+    //   UDP側（ChildUdpReceiver）は「受理した」ことを通知するだけ（保留・受理済みはUDP側が保持）。
+    //   ・購読は生存個体（ChildUdpReceiver.instance）を基準にする。
+    //   ・結果処理に必要な初期化（Awake）が終わった「Start完了後」に購読を開始し、
+    //     初期化途中に TriggerResult を実行して Start に上書きされる構造を避ける。
+    //   ・Instance取得遅延には Update で再試行する。
+    //   ・GameManager.instance に対応する正当な担当だけが購読する（二重購読しない）。
+    private ChildUdpReceiver _caughtReceiver;
+    private bool _caughtSubscribed;
+    private bool _started;   // Start完了フラグ（初回の購読をStart後へ遅らせるため）
+
     public enum ResultType { GameOver, TimeUp }
+
+    private void OnEnable()
+    {
+        // 初回は Start 完了まで購読しない（結果処理に必要な初期化が終わってから受け取る）。
+        // 再有効化（disable→enable）では Start が再実行されないため、ここで購読を再開する。
+        if (_started) TrySubscribeCaught();
+    }
 
     private void Start()
     {
         EnsureUdpReceiver();
+
+        // 初期化完了を記録してから CAUGHT の購読を開始する。
+        _started = true;
+        TrySubscribeCaught();
+    }
+
+    private void OnDisable()
+    {
+        UnsubscribeCaught();
+    }
+
+    private void OnDestroy()
+    {
+        UnsubscribeCaught();
     }
 
     private void EnsureUdpReceiver()
     {
         if (udpReceiver == null)
             udpReceiver = UnityEngine.Object.FindFirstObjectByType<ChildUdpReceiver>();
+    }
+
+    /// <summary>
+    /// CAUGHT（親機の捕獲）を購読する。Start完了後の正当な GameManager だけが購読する。
+    /// Instance が未取得の場合は購読せず false を返す（Update で再試行する）。
+    /// </summary>
+    private bool TrySubscribeCaught()
+    {
+        if (_caughtSubscribed) return true;
+        if (!isActiveAndEnabled) return false;
+        if (instance != this) return false;   // GameManager.instance に対応する正当な担当だけ
+
+        ChildUdpReceiver receiver = ChildUdpReceiver.instance;
+        if (receiver == null) return false;   // 取得できたら Update で再試行する
+
+        _caughtReceiver = receiver;
+        _caughtReceiver.CaughtReceived += HandleCaughtReceived;
+        _caughtSubscribed = true;
+        Debug.Log($"[GameManager] CAUGHT の購読を開始しました（receiver='{receiver.gameObject.name}'）。");
+        return true;
+    }
+
+    /// <summary>CAUGHT の購読を解除する（OnDisable/OnDestroy から呼ぶ。二重に呼んでも安全）。</summary>
+    private void UnsubscribeCaught()
+    {
+        if (_caughtSubscribed)
+        {
+            if (_caughtReceiver != null)
+                _caughtReceiver.CaughtReceived -= HandleCaughtReceived;
+
+            _caughtSubscribed = false;
+        }
+
+        _caughtReceiver = null;
+    }
+
+    /// <summary>
+    /// 親機の捕獲（CAUGHT）を受理したときに、メインスレッドで1回だけ呼ばれる。
+    /// 既存の TriggerResult(GameOver) をそのまま呼ぶ（本体・保存・ランキング・遷移は変更しない）。
+    /// </summary>
+    private void HandleCaughtReceived()
+    {
+        if (!isActiveAndEnabled) return;
+        if (isGameOver) return;   // TriggerResult 側のガードと同じ（無駄な再入を避けるだけ）
+        TriggerResult(ResultType.GameOver);
     }
 
     void Awake()
@@ -131,6 +209,10 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
+        // CAUGHT の購読がまだ張れていない場合は再試行する（ChildUdpReceiver.Instance の取得遅延）。
+        if (_started && !_caughtSubscribed)
+            TrySubscribeCaught();
+
         if (isGameOver) return;
 
         if (!isTutorialMode)
