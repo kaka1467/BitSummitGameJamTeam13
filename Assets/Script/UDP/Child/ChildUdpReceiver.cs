@@ -55,14 +55,8 @@ public class ChildUdpReceiver : MonoBehaviour
     public SleepingManager sleepingManager;
 
     [Header("Game References")]
-    [Tooltip("Auto-found at Start if not assigned. Used for SLEEP_LOCK / SLEEP_UNLOCK.")]
+    [Tooltip("診断ログ用のPlayerMove参照（Inspector割当のみ。睡眠ロックの適用は ChildSleepLockApplier が担当）。")]
     public PlayerMove playerMove;
-
-    [Header("Sleep Lock Image")]
-    [Tooltip("親機が睡眠中のとき、子機側に表示する画像UI。GameObjectをアサインしてください。")]
-    [SerializeField] private GameObject sleepLockImageObject;
-    [Tooltip("未設定の場合に自動検索するGameObject名。")]
-    [SerializeField] private string sleepLockImageObjectName = "SleepLockImage";
 
     [Header("Debug")]
     [Tooltip("通信ログなどの詳細出力を有効にする")]
@@ -146,6 +140,29 @@ public class ChildUdpReceiver : MonoBehaviour
 
     /// <summary>現在の接続状態（タイトルUIの初回同期用の読み取りAPI）。</summary>
     public ConnectionState CurrentConnectionState => currentState;
+
+    // ── 睡眠ロックの通知（SLEEP_LOCK / SLEEP_UNLOCK）─────────────────────────
+    /// <summary>
+    /// 親機の睡眠ロック状態（SLEEP_LOCK=true / SLEEP_UNLOCK=false）が変化したときに
+    /// メインスレッドで発火する。同値（冗長なLOCK/UNLOCK・同値の再送）では発火しない。
+    /// 適用（入力停止・PlayerMove・睡眠中画像）は購読者が行う。
+    /// </summary>
+    public event Action<bool> SleepLockChanged;
+
+    /// <summary>現在の睡眠ロック状態（購読前の初期同期用の読み取りAPI）。true=親機が睡眠中でロック中。</summary>
+    public bool IsSleepInputLocked => isSleepInputLocked;
+
+    /// <summary>
+    /// 睡眠ロック状態を更新し、変化があった場合だけ購読者へ通知する（同値では何もしない・通知しない）。
+    /// 購読者が居ない場合も状態は正しく更新する（購読成立時の初期同期は IsSleepInputLocked を使う）。
+    /// </summary>
+    private void SetSleepInputLocked(bool next)
+    {
+        if (isSleepInputLocked == next) return;
+
+        isSleepInputLocked = next;
+        SleepLockChanged?.Invoke(next);
+    }
 
     /// <summary>
     /// 接続状態を更新し、変化があった場合だけ通知する。
@@ -648,16 +665,9 @@ public class ChildUdpReceiver : MonoBehaviour
             ResetForNewSession();
             Debug.Log($"[ChildUdpReceiver] Title scene loaded ('{scene.name}') — reset state for next round.");
         }
-        else if (scene.name == gameSceneName)
-        {
-            // シーン遷移時にSLEEP_LOCK状態を勝手に解除しない。
-            // 親機がすでに寝ている場合は、子機側の入力停止と画像表示を維持する。
-            PlayerInputLock.SetLocked(isSleepInputLocked);
-            if (playerMove != null)
-                playerMove.SetInputEnabled(!isSleepInputLocked);
-
-            StartCoroutine(RefreshSleepLockImageNextFrame());
-        }
+        // ゲームシーンでの睡眠ロックの適用（入力停止・画像表示）は ChildSleepLockApplier（シーン側）が
+        // 購読成立時の初期同期（IsSleepInputLocked の取得）で行う。ここではUDP側の状態を勝手に解除しない
+        // （親機が寝たままでも維持する）。
     }
 
     // タイトルUIの再取得・初期化・リスナー再登録は ChildTitleConnectionUI へ移した。
@@ -681,15 +691,16 @@ public class ChildUdpReceiver : MonoBehaviour
         targetIP = "127.0.0.1";
         gameSceneLoaded = false;
         caughtHandled = false;
-        isSleepInputLocked = false;
+
+        // 睡眠ロックを解除し、購読者がいれば変更を通知する（シーン側が解除を適用できるように）。
+        // 購読者が居ない場合もUDP側の保持状態は正しく解除される。
+        SetSleepInputLocked(false);
 
         // プレイ識別子をクリアする。タイトルに戻った時点で前のプレイは終了しているため、
         // 以降に届く前回プレイの RETURN_TO_TITLE は識別子不一致で無視される
         // （次プレイ開始時に OnStartButtonClicked で新しい識別子を必ず発行する）。
         _playSessionId = "";
         _lastPeerReturnToTitleSeq = 0;
-        PlayerInputLock.SetLocked(false);
-        SetSleepLockImageVisible(false);
 
         if (discoveryCoroutine != null)
         {
@@ -703,35 +714,20 @@ public class ChildUdpReceiver : MonoBehaviour
             heartbeatCoroutine = null;
         }
 
-        if (playerMove != null)
-            playerMove.SetInputEnabled(true);
-
         if (sleepingManager != null)
             Debug.Log("[ChildUdpReceiver] ResetForNewSession: sleepingManager remains as reference for next round.");
     }
 
     private void RefreshSceneReferences()
     {
-        playerMove = UnityEngine.Object.FindFirstObjectByType<PlayerMove>();
-        if (playerMove != null)
-            Debug.Log($"[ChildUdpReceiver] playerMove found: '{playerMove.gameObject.name}'.");
-        else
-            Debug.Log("[ChildUdpReceiver] playerMove not found in current scene (OK on title/loading scenes).");
+        // 睡眠ロックの適用対象（PlayerMove・睡眠中画像）の取得は ChildSleepLockApplier（シーン側）が行う。
+        // ここではUDP側が別用途で参照するものだけを取得する（playerMove は診断ログ用のInspector割当のみ）。
 
         sleepingManager = UnityEngine.Object.FindFirstObjectByType<SleepingManager>();
         if (sleepingManager != null)
             Debug.Log($"[ChildUdpReceiver] sleepingManager found: '{sleepingManager.gameObject.name}'.");
         else
             Debug.Log("[ChildUdpReceiver] sleepingManager not found in current scene (OK on game/loading scenes).");
-
-        // シーンごとにUIオブジェクトが作り直されるため、毎回取り直す。
-        sleepLockImageObject = FindGameObject(null, sleepLockImageObjectName,
-            "SleepLockImage", "SleepLockUI", "SleepImage", "SleepLockPanel");
-
-        if (sleepLockImageObject != null && showDebugLogs)
-            Debug.Log($"[ChildUdpReceiver] Sleep lock image found: '{sleepLockImageObject.name}' | active={sleepLockImageObject.activeSelf}");
-
-        SetSleepLockImageVisible(isSleepInputLocked);
     }
 
     // タイトルUIの参照取得は ChildTitleConnectionUI が担当する（Inspector参照のみ・名前検索なし）。
@@ -932,24 +928,12 @@ public class ChildUdpReceiver : MonoBehaviour
                 return;
             }
 
-            isSleepInputLocked = true;
+            // 状態を更新し、購読者（シーン側の適用担当）へメインスレッドで通知する。
+            // 入力停止・PlayerMove・睡眠中画像の適用は購読者が行う（UDP側では行わない）。
+            SetSleepInputLocked(true);
+
             if (showDebugLogs)
                 Debug.Log("[ChildUdpReceiver] Received SLEEP_LOCK — locking input.");
-
-            PlayerInputLock.SetLocked(true);
-
-            // 親機が寝ている間は、子機側にも睡眠中画像を表示する。
-            SetSleepLockImageVisible(true);
-
-            if (playerMove != null)
-            {
-                playerMove.SetInputEnabled(false);
-            }
-            else
-            {
-                if (showDebugLogs)
-                    Debug.LogWarning("[ChildUdpReceiver] SLEEP_LOCK received but playerMove is null.");
-            }
 
             return;
         }
@@ -963,24 +947,11 @@ public class ChildUdpReceiver : MonoBehaviour
                 return;
             }
 
-            isSleepInputLocked = false;
+            // 状態を更新し、購読者（シーン側の適用担当）へメインスレッドで通知する。
+            SetSleepInputLocked(false);
+
             if (showDebugLogs)
                 Debug.Log("[ChildUdpReceiver] Received SLEEP_UNLOCK — unlocking input.");
-
-            PlayerInputLock.SetLocked(false);
-
-            // 親機が起きたら、子機側の睡眠中画像を非表示にする。
-            SetSleepLockImageVisible(false);
-
-            if (playerMove != null)
-            {
-                playerMove.SetInputEnabled(true);
-            }
-            else
-            {
-                if (showDebugLogs)
-                    Debug.LogWarning("[ChildUdpReceiver] SLEEP_UNLOCK received but playerMove is null.");
-            }
 
             return;
         }
@@ -1162,43 +1133,6 @@ public class ChildUdpReceiver : MonoBehaviour
     // タイトルUIの表示更新（ラベル・位置・Cancel表示・クレジット/設定ボタン）は
     // ChildTitleConnectionUI が ChildUdpReceiver.ConnectionStateChanged を受けて行う。
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// 親機のSLEEP_LOCK状態に合わせて、子機側の睡眠中画像を表示／非表示にする。
-    /// </summary>
-    private void SetSleepLockImageVisible(bool visible)
-    {
-        // シーン遷移後などで参照が切れていた場合は再検索する。
-        if (sleepLockImageObject == null)
-            sleepLockImageObject = FindGameObject(null, sleepLockImageObjectName,
-                "SleepLockImage", "SleepLockUI", "SleepImage", "SleepLockPanel");
-
-        if (sleepLockImageObject != null)
-        {
-            sleepLockImageObject.SetActive(visible);
-
-            if (showDebugLogs)
-                Debug.Log($"[ChildUdpReceiver] Sleep lock image {(visible ? "shown" : "hidden")}.");
-        }
-        else if (showDebugLogs && visible)
-        {
-            Debug.LogWarning(
-                $"[ChildUdpReceiver] Sleep lock image not found. " +
-                $"Assign it in Inspector or create a GameObject named '{sleepLockImageObjectName}'.");
-        }
-    }
-
-    private IEnumerator RefreshSleepLockImageNextFrame()
-    {
-        // Canvas/UIがシーンロード直後に生成される場合に備えて1フレーム待つ。
-        yield return null;
-
-        sleepLockImageObject = FindGameObject(null, sleepLockImageObjectName,
-            "SleepLockImage", "SleepLockUI", "SleepImage", "SleepLockPanel");
-        SetSleepLockImageVisible(isSleepInputLocked);
-    }
-
     private void LoadGameScene()
     {
         if (showDebugLogs)
@@ -1216,26 +1150,6 @@ public class ChildUdpReceiver : MonoBehaviour
         if (showDebugLogs)
             Debug.Log($"[StartTrace][子機] LoadGameScene → SceneManager.LoadScene('{gameSceneName}') 直前", this);
         SceneManager.LoadScene(gameSceneName);
-    }
-
-    private static GameObject FindGameObject(GameObject current, params string[] candidateNames)
-    {
-        if (current != null)
-            return current;
-
-        foreach (string candidateName in candidateNames)
-        {
-            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
-            {
-                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
-                    continue;
-
-                if (candidate.name == candidateName)
-                    return candidate;
-            }
-        }
-
-        return null;
     }
 
     private static void CloseClient(ref UdpClient client, string label)
