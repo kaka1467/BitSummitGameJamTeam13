@@ -88,10 +88,6 @@ public class ParentUdpSender : MonoBehaviour
     private const string KeyTimeUpRank     = "TimeUpRank_";
     private const int    RankingSize       = 5;
 
-    [Header("Game References")]
-    [Tooltip("Auto-found at Start if not assigned. Used to trigger rush-in on LOUD_ITEM.")]
-    public MotherSuspicionSystem parentDetection;
-
     [Header("Debug")]
     [Tooltip("通信ログなどの詳細出力を有効にする")]
     [SerializeField] private bool showDebugLogs = true;
@@ -184,13 +180,23 @@ public class ParentUdpSender : MonoBehaviour
     // （受信処理 HandleIncoming は Update から呼ばれるため、この通知もメインスレッドで発火する）。
     public event System.Action LoudItemReceived;
 
+    // ── GAME_PROGRESS（子機のゲーム進行率）の通知 ─────────────────────────────
+    // 受信後の反応（片付け演出の開始条件判定など）はゲームシーン側の購読者が行う。
+    // 本クラスは「受信した進行率」だけをメインスレッドで通知する（MotherSuspicionSystemの直接呼び出しは行わない）。
+    //  ・進行率の変換・範囲（Clamp01(Score/1000f)）は従来どおり。通信形式は変更しない。
+    //  ・ゲームシーン以外の受信は従来どおり破棄する。
+    public event System.Action<float> GameProgressReceived;
+
     // 購読者がまだ居ないときに受信した LOUD_ITEM を1件だけ保留する（購読準備前の受信を落とさない）。
     //   ・消費は Update で「ゲームシーン」かつ「有効な購読者が居る」ことを確認してから1回だけ。
     //   ・シーン読込／タイトル復帰でクリアし、次シーン・次プレイへ持ち越さない。
     private bool      _hasPendingLoudItem = false;
 
-    // ── 片付け演出：ゲーム進行率の保留フラグ ─────────────────────────────────
-    //   受信スレッドからメインスレッドへ渡す既存方式（_hasPendingLoudItem）と同じ扱い。
+    // ── 片付け演出：ゲーム進行率の保留 ───────────────────────────────────────
+    //   購読者（ゲームシーン側）が準備できる前に受信した進行率の「最新値」を1件だけ保持する。
+    //   ・履歴は蓄積しない（保留中に新値が届いたら上書き＝常に最新のみ）。
+    //   ・消費は Update で「ゲームシーン」かつ「有効な購読者が居る」ことを確認してから1回だけ。
+    //   ・シーン読込／タイトル復帰でクリアし、次シーン・次プレイへ持ち越さない。
     private bool      _hasPendingGameProgress = false;
     private float     _pendingGameProgress = 0f;
 
@@ -414,7 +420,6 @@ public class ParentUdpSender : MonoBehaviour
         LoadRankSyncFromPrefs();
 
         SceneManager.sceneLoaded += OnSceneLoaded;
-        RefreshSceneReferences();
 
         _isRunning = true;
 
@@ -463,23 +468,28 @@ public class ParentUdpSender : MonoBehaviour
         }
 
         // ── 片付け演出：ゲーム進行率の保留通知（メインスレッドで処理）────────
+        //   購読者（ゲームシーン側）が準備できる前に受信した進行率の「最新値」を、
+        //   購読が成立した最初の Update で1回だけ通知する（履歴は通知しない）。
         if (_hasPendingGameProgress)
         {
             string activeScene = SceneManager.GetActiveScene().name;
             if (!IsGameplayScene(activeScene))
             {
+                // ゲームシーン以外では保留しない（次シーン・次プレイへ持ち越さない）
                 _hasPendingGameProgress = false;
+                _pendingGameProgress = 0f;
             }
-            else if (parentDetection != null)
+            else if (GameProgressReceived != null)
             {
+                // 保持している最新値だけを1回通知する（古い保留値を後から通知しない）。
                 float pendingRate = _pendingGameProgress;
                 _hasPendingGameProgress = false;
-                parentDetection.OnGameProgress(pendingRate);
+                _pendingGameProgress = 0f;
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] 保留していた GAME_PROGRESS を購読者へ通知します（メインスレッド・最新値のみ）。");
+                GameProgressReceived?.Invoke(pendingRate);
             }
-            else
-            {
-                _hasPendingGameProgress = false;
-            }
+            // 購読者がまだ居ない場合は、同じゲームシーン内に限って保留を維持する（常に最新値のみ保持）
         }
 
         // Timeout check
@@ -557,7 +567,6 @@ public class ParentUdpSender : MonoBehaviour
             Debug.Log($"[ParentUdpSender] Scene loaded: '{scene.name}' — refreshing scene references.");
             Debug.Log($"[StartTrace][親機] ParentUdpSender.OnSceneLoaded 到着 — scene='{scene.name}', mode={mode}, currentState={currentState}, _gameStarted={_gameStarted}, ChildLoadingComplete={ChildLoadingComplete}, isTitle={IsTitleScene(scene.name)}, sessionId={_currentPlaySessionId}, id={GetInstanceID()}", this);
         }
-        RefreshSceneReferences();
 
         if (IsTitleScene(scene.name))
         {
@@ -819,30 +828,6 @@ public class ParentUdpSender : MonoBehaviour
         Debug.Log("[ParentUdpSender] ResetForNewSession: session flags cleared.");
     }
 
-    private void RefreshSceneReferences()
-    {
-        string currentScene = SceneManager.GetActiveScene().name;
-        if (IsGameplayScene(currentScene))
-        {
-            parentDetection = UnityEngine.Object.FindFirstObjectByType<MotherSuspicionSystem>();
-            if (parentDetection != null)
-            {
-                if (showDebugLogs)
-                    Debug.Log($"[ParentUdpSender] parentDetection found: '{parentDetection.gameObject.name}'.");
-            }
-            else
-            {
-                if (showDebugLogs)
-                    Debug.LogWarning("[ParentUdpSender] parentDetection not found in GameScene.");
-            }
-        }
-        else
-        {
-            parentDetection = null;
-            // GameScene以外ではparentDetectionを探さずログも出さない（Missingログの大量出力を防止）
-        }
-    }
-
     // タイトルUIの参照取得は ParentTitleConnectionUI が担当する（Inspector参照のみ・名前検索なし）。
 
     // ── Public send API ───────────────────────────────────────────────────────
@@ -1001,7 +986,7 @@ public class ParentUdpSender : MonoBehaviour
         }
 
         if (message.Type != ParentMessageType.Ping && showDebugLogs)
-            Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | parentDetection={(parentDetection != null ? parentDetection.gameObject.name : "NULL")} | _resultProcessed={_resultProcessed}");
+            Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | loudItemSubscribers={(LoudItemReceived != null)} | gameProgressSubscribers={(GameProgressReceived != null)} | _resultProcessed={_resultProcessed}");
 
         // 子機から何か届いた＝子機は生きている。PING 以外のメッセージでも生存時刻を更新する。
         _lastReceiveTime = Time.time;
@@ -1133,9 +1118,40 @@ public class ParentUdpSender : MonoBehaviour
             // ここでは「受信した」ことだけをメインスレッドで通知する（直接呼び出しは行わない）。
             if (LoudItemReceived != null)
             {
-                if (showDebugLogs)
-                    Debug.Log("[ParentUdpSender] LOUD_ITEM を購読者へ通知します（メインスレッド）。");
-                LoudItemReceived?.Invoke();
+                // 購読準備前に受信して保留していた分（A）がある場合は、「A → 新規B」の受信順で通知する。
+                // 新規受信を理由に保留Aを捨てない。フラグは通知の前にクリアし、
+                // Update 後段の保留処理で二重通知されないようにする。
+                if (_hasPendingLoudItem)
+                {
+                    _hasPendingLoudItem = false;
+                    if (showDebugLogs)
+                        Debug.Log("[ParentUdpSender] 保留していた LOUD_ITEM を購読者へ通知します（メインスレッド・受信順を保持）。");
+                    LoudItemReceived?.Invoke();
+                }
+
+                // 保留分の通知でシーン遷移・購読解除が起きた可能性があるため、新規分を通知する前に再確認する。
+                string sceneAfterPending = SceneManager.GetActiveScene().name;
+                if (!IsGameplayScene(sceneAfterPending))
+                {
+                    // 非ゲームシーンへ移った場合は新規分を持ち越さない（破棄）。
+                    if (showDebugLogs)
+                        Debug.Log($"[ParentUdpSender] LOUD_ITEM（新規分）は非ゲームシーンへ移ったため破棄します (active='{sceneAfterPending}')。");
+                    return;
+                }
+
+                if (LoudItemReceived != null)
+                {
+                    if (showDebugLogs)
+                        Debug.Log("[ParentUdpSender] LOUD_ITEM を購読者へ通知します（メインスレッド）。");
+                    LoudItemReceived?.Invoke();
+                }
+                else
+                {
+                    // 同じゲームシーンだが購読者がいなくなった場合は、既存の1件保留ルールに従う。
+                    _hasPendingLoudItem = true;
+                    if (showDebugLogs)
+                        Debug.Log("[ParentUdpSender] LOUD_ITEM（新規分）の購読者が居ないため1件保留します（購読成立後に通知）。");
+                }
             }
             else
             {
@@ -1156,12 +1172,20 @@ public class ParentUdpSender : MonoBehaviour
                 return;
 
             float progressRate = Mathf.Clamp01(message.Score / 1000f);
-            if (parentDetection != null)
+            if (GameProgressReceived != null)
             {
-                parentDetection.OnGameProgress(progressRate);
+                // 購読者へ即通知する「前に」、古い保留（購読準備前に受信した値）を必ずクリアする。
+                // クリアしないと、同じ Update の後段にある保留処理が古い値を後から通知してしまう。
+                _hasPendingGameProgress = false;
+                _pendingGameProgress = 0f;
+
+                // メインスレッド（HandleIncoming は Update から呼ばれる）で購読者へ通知する。
+                // 直接 MotherSuspicionSystem.OnGameProgress は呼ばない（通知経由に一本化する）。
+                GameProgressReceived?.Invoke(progressRate);
             }
             else
             {
+                // 購読者がまだ居ない場合は最新値を1件だけ保持する（履歴は蓄積しない）。
                 _pendingGameProgress = progressRate;
                 _hasPendingGameProgress = true;
             }

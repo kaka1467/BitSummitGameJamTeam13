@@ -268,6 +268,16 @@ public class MotherSuspicionSystem : MonoBehaviour
     private bool _loudItemSubscribed;
     private ParentUdpSender _loudItemSender;                  // 購読解除を確実にするため保持する
 
+    // ── GAME_PROGRESS（子機のゲーム進行率）の購読 ────────────────────────────
+    //  ・受信後の反応（OnGameProgress）は本クラスが担当する。
+    //    UDP側（ParentUdpSender）は「受信した進行率」だけを通知する。
+    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・同じ通知を複数の実体が処理しないよう、購読する実体は1つに限定する（_gameProgressSubscriber）。
+    //  ・LOUD_ITEM とは別の静的な担当スロットで管理する（互いのガードに影響しない）。
+    private static MotherSuspicionSystem _gameProgressSubscriber; // 二重処理防止：現在購読している実体
+    private bool _gameProgressSubscribed;
+    private ParentUdpSender _gameProgressSender;                  // 購読解除を確実にするため保持する
+
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
@@ -277,6 +287,9 @@ public class MotherSuspicionSystem : MonoBehaviour
         // LOUD_ITEM（子機の大きな音）の受信購読を張る。
         // ParentUdpSender.Instance がまだ無い場合は購読せず、Start/Update で再試行する。
         TrySubscribeLoudItem();
+
+        // GAME_PROGRESS（子機のゲーム進行率）の受信購読を張る（同じ再試行方式）。
+        TrySubscribeGameProgress();
     }
 
     private void Start()
@@ -337,6 +350,9 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         // LOUD_ITEM の購読（OnEnable の時点で Instance が未生成だった場合の保険。取得は再試行できる）。
         TrySubscribeLoudItem();
+
+        // GAME_PROGRESS の購読も同様に保険を張る（再試行は Update）。
+        TrySubscribeGameProgress();
     }
 
     /// <summary>
@@ -351,6 +367,9 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         // LOUD_ITEM の購読を外す（捕獲演出などで enabled=false になった時点から通知を受けない）。
         UnsubscribeLoudItem();
+
+        // GAME_PROGRESS の購読も同じ理由で外す。
+        UnsubscribeGameProgress();
 
         StopChoreLookSuspicion();
         _choreLooking = false;
@@ -374,6 +393,9 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         // LOUD_ITEM の購読も外す（破棄後に通知を受けない）。
         UnsubscribeLoudItem();
+
+        // GAME_PROGRESS の購読も外す（破棄後に通知を受けない）。
+        UnsubscribeGameProgress();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -447,6 +469,78 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         if (!isActiveAndEnabled) return;   // 無効化中は反応しない（購読解除済みだが念のため）
         OnLoudItemTriggered();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  GAME_PROGRESS（子機のゲーム進行率）の受信購読
+    //  ・受信後の反応は本クラス（OnGameProgress）が担当し、UDP側は受信を通知するだけ。
+    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・同じ通知を複数の実体が処理しないよう、購読する実体は1つに限定する。
+    //  ・enabled=false（捕獲演出など）で購読を外し、再有効化で購読を再開する。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// ParentUdpSender.Instance の GameProgressReceived を購読する。
+    /// Instance が未生成の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
+    /// </summary>
+    private bool TrySubscribeGameProgress()
+    {
+        if (_gameProgressSubscribed) return true;
+        if (!isActiveAndEnabled) return false;
+
+        // 二重処理防止：先に購読している有効な実体が居る場合は購読しない。
+        // （破棄済みの実体は Unity の null 判定で外れるため、その場合は引き継ぐ）
+        if (_gameProgressSubscriber != null && _gameProgressSubscriber != this && _gameProgressSubscriber._gameProgressSubscribed)
+        {
+            Debug.LogWarning("[PD] GAME_PROGRESS の購読は既に別の MotherSuspicionSystem が担当しています（二重処理防止のため購読しません）。", this);
+            return false;
+        }
+
+        ParentUdpSender sender = ParentUdpSender.Instance;
+        if (sender == null) return false;
+
+        _gameProgressSender = sender;
+        _gameProgressSender.GameProgressReceived += HandleGameProgressReceived;
+        _gameProgressSubscribed = true;
+        _gameProgressSubscriber = this;
+
+        Debug.Log($"[PD] GAME_PROGRESS の購読を開始しました（sender='{sender.gameObject.name}', id={sender.GetInstanceID()}）。", this);
+        return true;
+    }
+
+    /// <summary>
+    /// GAME_PROGRESS の購読を解除する（OnDisable/OnDestroy から呼ぶ。二重に呼んでも安全）。
+    /// </summary>
+    private void UnsubscribeGameProgress()
+    {
+        if (_gameProgressSubscribed)
+        {
+            if (_gameProgressSender != null)
+            {
+                _gameProgressSender.GameProgressReceived -= HandleGameProgressReceived;
+            }
+
+            _gameProgressSubscribed = false;
+            Debug.Log("[PD] GAME_PROGRESS の購読を解除しました。", this);
+        }
+
+        // 担当から外れる（別の実体が購読できるようにする）。
+        if (_gameProgressSubscriber == this)
+        {
+            _gameProgressSubscriber = null;
+        }
+
+        _gameProgressSender = null;
+    }
+
+    /// <summary>
+    /// 子機のゲーム進行率を受信したときに、メインスレッドで1回だけ呼ばれる。
+    /// 既存の OnGameProgress をそのまま1回呼ぶ（本体は変更しない）。
+    /// </summary>
+    private void HandleGameProgressReceived(float progressRate)
+    {
+        if (!isActiveAndEnabled) return;   // 無効化中は反応しない（購読解除済みだが念のため）
+        OnGameProgress(progressRate);
     }
 
     public void SetApproachSpeed(float speed)
@@ -681,6 +775,12 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (!_loudItemSubscribed)
         {
             TrySubscribeLoudItem();
+        }
+
+        // GAME_PROGRESS の購読も同じ理由で再試行する（購読成立後の最初の Update で保留分が通知される）。
+        if (!_gameProgressSubscribed)
+        {
+            TrySubscribeGameProgress();
         }
 
         // 足音の更新は MotherApproachWarning.UpdateMotherFootsteps が担当する（移管済み）。

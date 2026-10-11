@@ -4889,7 +4889,6 @@ MonoBehaviour:
   titleSceneName: ChildeTitle
   gameOverSceneName: ParentGameOver
   timeUpSceneName: ParentGameClear
-  parentDetection: {fileID: 1951468137}
   showDebugLogs: 1
 --- !u!4 &1385247219
 Transform:
@@ -5284,13 +5283,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1464248145}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: 0.843855, z: -0, w: -0.5365713}
-  m_LocalPosition: {x: -63.1, y: 2, z: -268.7}
+  m_LocalRotation: {x: -0, y: 0.8741835, z: -0, w: -0.48559582}
+  m_LocalPosition: {x: -64.4, y: 2, z: -266.9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1464225317}
-  m_LocalEulerAnglesHint: {x: 0, y: 244.901, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 238.103, z: 0}
 --- !u!1 &1474122164
 GameObject:
   m_ObjectHideFlags: 0
