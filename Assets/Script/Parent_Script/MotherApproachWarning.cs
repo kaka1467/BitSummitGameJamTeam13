@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
@@ -619,6 +620,8 @@ public class MotherApproachWarning : MonoBehaviour
 
         Debug.Log("[MotherApproachWarning] WARNING STOPPED");
         TurnOffAllLights();
+        // 中断：足音の到着段階と片付けClose固定を解除する（EndWarningSequenceが早期returnでも残さない）。
+        ResetFootstepStages("警告の強制停止");
         EndWarningSequence();
     }
 
@@ -627,6 +630,8 @@ public class MotherApproachWarning : MonoBehaviour
         _gameplayClockActive = false;
         // ゲームオーバー時は片付け抑止も解除しておく（停止状態を残さない）。
         _choreBlocked = false;
+        // 捕獲（ゲームオーバー）：足音の到着段階と片付けClose固定も解除する。
+        ResetFootstepStages("ゲームオーバー");
     }
 
     public void EndWarningSequence()
@@ -636,6 +641,9 @@ public class MotherApproachWarning : MonoBehaviour
         isWarningActive = false;
         ActiveRoute = RouteState.None;
         Debug.Log("[MotherApproachWarning] WARNING ENDED — resetting approach controller");
+
+        // 正常終了：足音の到着段階と片付けClose固定を解除する（次イベントへ持ち越さない）。
+        ResetFootstepStages("イベント終了");
 
         TurnOffAllLights();
 
@@ -929,12 +937,31 @@ public class MotherApproachWarning : MonoBehaviour
     [Tooltip("現在、母親が歩行中か（MotherApproachController.MovementStateChanged の通知を保持）。")]
     [SerializeField] private bool _isMotherWalking;
 
+    // ── 足音の到着段階（行きのみ。帰りは既存ルールを維持） ────────────────────
+    /// <summary>行きの足音段階。イベント開始時に Far へ初期化する。</summary>
+    public enum FootstepStage { Far = 0, Mid = 1, Close = 2 }
+
+    [Tooltip("現在の到着段階（読み取り専用・デバッグ表示用）。")]
+    [SerializeField] private FootstepStage _footstepStage = FootstepStage.Far;
+
+    [Tooltip("片付け：ChoreApproachPoint_1 到着で true になり、イベント終了まで Close 固定を優先する（読み取り専用）。")]
+    [SerializeField] private bool _choreCloseLocked;
+
+    // 段階切替に使う到着地点（MotherApproachController から解決する。新しいInspector項目は増やさない）
+    private Transform _stageTurnPoint;
+    private Transform _stageHallwayClosePoint;
+    private Transform _stageGardenClosePoint;
+    private Transform _stageChoreClosePoint;
+    private bool _stageWaypointsResolved;
+
     /// <summary>足音の初期化（Start時に一度）。ループ設定・停止・初期音量を適用する。</summary>
     public void InitializeMotherFootsteps()
     {
         _footstepCurrentVolume = farVolume;
         _footstepTargetVolume = farVolume;
         _isMotherWalking = false;
+        // 再プレイ・シーン再読み込みで前回の段階・Close固定を持ち越さない。
+        ResetFootstepStages("足音の初期化");
         InitializeFootstepAudioSource(hallwayFootstepAudioSource);
         InitializeFootstepAudioSource(gardenFootstepAudioSource);
     }
@@ -942,6 +969,7 @@ public class MotherApproachWarning : MonoBehaviour
     /// <summary>
     /// 足音を停止する（中断・ゲームオーバー・再プレイ・退場時に呼ぶ）。
     /// 音量状態も遠方へ戻し、次回開始時に違和感が出ないようにする。
+    /// 到着段階・片付けClose固定もここで解除する（次イベントへ持ち越さない）。
     /// </summary>
     public void StopMotherFootsteps()
     {
@@ -949,6 +977,7 @@ public class MotherApproachWarning : MonoBehaviour
         _footstepCurrentVolume = farVolume;
         _footstepTargetVolume = farVolume;
         _isMotherWalking = false;
+        ResetFootstepStages("足音の停止");
     }
 
     /// <summary>
@@ -964,7 +993,10 @@ public class MotherApproachWarning : MonoBehaviour
     /// 足音の音量を毎フレーム更新する（Update から呼ばれる）。
     ///  ・歩行状態は MotherApproachController.MovementStateChanged の通知で追跡し、
     ///     通常の接近に加えて片付けの行き・帰りの歩行も対象にする。
-    ///  ・位置段階（ReachedDoor / IsInHallwayPhase）を参照して音量を変える。
+    ///  ・目標音量は次の優先順で決める（音量値・フェード速度は従来のまま）。
+    ///      1) 片付け：ChoreApproachPoint_1 到着後は帰路を含めイベント終了まで Close 固定
+    ///      2) 行き：到着通知で決まる段階（Far → TurnPoint=Mid → 各Close地点=Close）
+    ///      3) 帰り：既存ルール（ReachedDoor／IsInHallwayPhase）を維持
     ///  ・歩行していない・突入中・AudioSource未設定の場合は停止する。
     /// </summary>
     private void UpdateMotherFootsteps()
@@ -976,14 +1008,28 @@ public class MotherApproachWarning : MonoBehaviour
             ? gardenFootstepAudioSource
             : hallwayFootstepAudioSource;
 
-        // 距離段階に応じた目標音量（従来の変化を維持）。
+        // 目標音量（切替条件のみ変更。値・フェード速度は従来どおり）。
         if (approachController != null)
         {
-            _footstepTargetVolume = approachController.ReachedDoor
-                ? nearDoorVolume
-                : approachController.IsInHallwayPhase
-                    ? midVolume
-                    : farVolume;
+            if (_choreCloseLocked)
+            {
+                // 片付け：ChoreApproachPoint_1 到着後は帰路も含めて Close 固定を優先する。
+                _footstepTargetVolume = nearDoorVolume;
+            }
+            else if (!approachController.IsReturnTripActive)
+            {
+                // 行き：到着通知で決まる段階を使う。
+                _footstepTargetVolume = VolumeForStage(_footstepStage);
+            }
+            else
+            {
+                // 帰り：既存ルールを変更せず維持する。
+                _footstepTargetVolume = approachController.ReachedDoor
+                    ? nearDoorVolume
+                    : approachController.IsInHallwayPhase
+                        ? midVolume
+                        : farVolume;
+            }
         }
 
         if (!shouldPlay || activeSource == null)
@@ -1027,6 +1073,195 @@ public class MotherApproachWarning : MonoBehaviour
     {
         if (hallwayFootstepAudioSource != null) hallwayFootstepAudioSource.Stop();
         if (gardenFootstepAudioSource != null) gardenFootstepAudioSource.Stop();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  足音の到着段階（行きのみ）
+    //   ・MotherApproachController の到着通知（WaypointArrived）だけで段階を進める。
+    //     Transform間の距離を毎フレーム判定しない。
+    //   ・帰路の到着通知は行きの切替として処理しない（帰りは既存ルールを維持）。
+    //   ・片付けは ChoreApproachPoint_1 到着で「イベント終了までClose固定」へ移行する。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 段階切替に使う到着地点を MotherApproachController から解決する（Inspector項目は増やさない）。
+    ///  ・共通TurnPoint          = turnPoint
+    ///  ・廊下のClose地点        = hallwayPointsAfterTurn の 'HallwayPoint_4'
+    ///  ・庭のClose地点          = gardenRoutePoints の 'GardenPoint_4'
+    ///  ・片付けのClose固定地点  = choreApproachPoint_1
+    /// 名前が一致しない地点は null のままにし、その地点による切替は行わない（別地点・配列indexで推測しない）。
+    /// その場合は警告を1回だけ出す（解決は購読時の1回のみ）。
+    /// </summary>
+    private void ResolveFootstepStageWaypoints()
+    {
+        if (_stageWaypointsResolved || approachController == null) return;
+
+        _stageTurnPoint = approachController.turnPoint;
+        _stageHallwayClosePoint = FindStageWaypoint(approachController.hallwayPointsAfterTurn, "HallwayPoint_4");
+        _stageGardenClosePoint = FindStageWaypoint(approachController.gardenRoutePoints, "GardenPoint_4");
+        _stageChoreClosePoint = approachController.choreApproachPoint_1;
+
+        _stageWaypointsResolved = true;
+
+        Debug.Log(
+            "[MotherApproachWarning] 足音段階の切替地点を解決 | " +
+            $"TurnPoint={NameOrNull(_stageTurnPoint)} | 廊下Close={NameOrNull(_stageHallwayClosePoint)} | " +
+            $"庭Close={NameOrNull(_stageGardenClosePoint)} | 片付けClose固定={NameOrNull(_stageChoreClosePoint)}");
+
+        // 指定地点が見つからない場合は、その地点の切替を行わない（別地点での代用はしない）。
+        if (_stageTurnPoint == null)
+        {
+            Debug.LogWarning("[MotherApproachWarning] 足音段階：共通TurnPoint（approachController.turnPoint）が未設定のため、" +
+                             "TurnPoint到着での Mid 切替は行いません");
+        }
+
+        if (_stageHallwayClosePoint == null)
+        {
+            Debug.LogWarning("[MotherApproachWarning] 足音段階：廊下のClose地点 'HallwayPoint_4' が hallwayPointsAfterTurn に見つからないため、" +
+                             "廊下のClose切替は行いません（別地点・配列indexでの推測はしません）");
+        }
+
+        if (_stageGardenClosePoint == null)
+        {
+            Debug.LogWarning("[MotherApproachWarning] 足音段階：庭のClose地点 'GardenPoint_4' が gardenRoutePoints に見つからないため、" +
+                             "庭のClose切替は行いません（別地点・配列indexでの推測はしません）");
+        }
+
+        if (_stageChoreClosePoint == null)
+        {
+            Debug.LogWarning("[MotherApproachWarning] 足音段階：片付けのClose固定地点（approachController.choreApproachPoint_1）が未設定のため、" +
+                             "片付けのClose固定は行いません");
+        }
+    }
+
+    private static string NameOrNull(Transform t) => t != null ? t.name : "NULL";
+
+    /// <summary>
+    /// 経路リストから指定名のTransformを探す。
+    ///  ・見つからない場合は null を返す（別地点や配列indexでの推測はしない）。
+    ///  ・この場合、その地点による段階切替は行わない（呼び出し元が警告を1回出す）。
+    /// </summary>
+    private static Transform FindStageWaypoint(IList<Transform> points, string waypointName)
+    {
+        if (points == null) return null;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            Transform point = points[i];
+            if (point != null && point.name == waypointName) return point;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 到着通知の受信（MotherApproachController.WaypointArrived）。
+    ///  ・帰路（isReturnTrip=true）は行きの段階切替として扱わない。
+    ///  ・同じ段階の再通知では状態変更もログも行わない。
+    /// </summary>
+    private void HandleWaypointArrived(Transform waypoint, bool isReturnTrip)
+    {
+        if (waypoint == null) return;
+
+        // 帰路の到着通知は行きの切替として処理しない（帰りは既存ルールのまま）。
+        if (isReturnTrip) return;
+
+        // 片付け：ChoreApproachPoint_1 到着は「終了までClose固定」の契機（音量の再変更ではない）。
+        if (_stageChoreClosePoint != null && waypoint == _stageChoreClosePoint)
+        {
+            LockChoreCloseUntilEventEnd(waypoint);
+            return;
+        }
+
+        // Close固定中は段階を変更しない（固定を優先）。
+        if (_choreCloseLocked) return;
+
+        if (_stageTurnPoint != null && waypoint == _stageTurnPoint)
+            ApplyFootstepStage(FootstepStage.Mid, waypoint, "共通");
+        else if (_stageHallwayClosePoint != null && waypoint == _stageHallwayClosePoint)
+            ApplyFootstepStage(FootstepStage.Close, waypoint, "廊下");
+        else if (_stageGardenClosePoint != null && waypoint == _stageGardenClosePoint)
+            ApplyFootstepStage(FootstepStage.Close, waypoint, "庭");
+    }
+
+    /// <summary>段階を進める（同じ段階・逆行では何もしない＝ログも増やさない）。</summary>
+    private void ApplyFootstepStage(FootstepStage stage, Transform waypoint, string routeLabel)
+    {
+        if (stage <= _footstepStage) return;
+
+        _footstepStage = stage;
+
+        Debug.Log(
+            $"[MotherApproachWarning] 足音段階：{routeLabel} {waypoint.name}到着 → {FootstepStageLabel(stage)}" +
+            $" | 到着地点='{waypoint.name}' | イベント={CurrentEventLabel()} | 進行=行き | 固定={_choreCloseLocked}");
+    }
+
+    /// <summary>片付け：Close固定を開始する（イベント終了まで解除しない）。</summary>
+    private void LockChoreCloseUntilEventEnd(Transform waypoint)
+    {
+        bool stageChanged = _footstepStage != FootstepStage.Close;
+
+        // 同じ通知の繰り返しではログを増やさない。
+        if (_choreCloseLocked && !stageChanged) return;
+
+        _footstepStage = FootstepStage.Close;
+        _choreCloseLocked = true;
+
+        Debug.Log(
+            $"[MotherApproachWarning] 足音段階：片付け {waypoint.name}到着 → 終了までClose固定" +
+            $" | 到着地点='{waypoint.name}' | イベント={CurrentEventLabel()} | 進行=行き | 段階=Close | 固定=true");
+    }
+
+    /// <summary>
+    /// 段階とClose固定を初期化・解除する（イベント開始／正常終了／捕獲／中断／無効化／再プレイ）。
+    /// 実際に変化があったときだけログを出す（同じ段階の再通知ではログを増やさない）。
+    /// </summary>
+    private void ResetFootstepStages(string reason)
+    {
+        bool wasLocked = _choreCloseLocked;
+        bool hadStage = _footstepStage != FootstepStage.Far;
+
+        _footstepStage = FootstepStage.Far;
+        _choreCloseLocked = false;
+
+        if (wasLocked)
+        {
+            Debug.Log($"[MotherApproachWarning] 足音段階：片付けClose固定を解除（{reason}） | 段階=Far | 固定=false");
+        }
+        else if (hadStage)
+        {
+            Debug.Log($"[MotherApproachWarning] 足音段階をリセット（{reason}） → Far | 固定=false");
+        }
+    }
+
+    /// <summary>段階に対応する音量を返す（値そのものはInspector設定のまま変更しない）。</summary>
+    private float VolumeForStage(FootstepStage stage)
+    {
+        switch (stage)
+        {
+            case FootstepStage.Mid: return midVolume;
+            case FootstepStage.Close: return nearDoorVolume;
+            default: return farVolume;
+        }
+    }
+
+    private static string FootstepStageLabel(FootstepStage stage)
+    {
+        switch (stage)
+        {
+            case FootstepStage.Mid: return "Mid";
+            case FootstepStage.Close: return "Close";
+            default: return "Far";
+        }
+    }
+
+    /// <summary>ログ用のイベント種別（通常は RouteState。片付けルート進行中は +Chore を付ける）。</summary>
+    private string CurrentEventLabel()
+    {
+        string label = ActiveRoute.ToString();
+        if (approachController != null && approachController.IsChoreRouteActive)
+            label += "+Chore";
+        return label;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1091,11 +1326,16 @@ public class MotherApproachWarning : MonoBehaviour
     {
         if (_eventsSubscribed || approachController == null) return;
 
+        // 段階切替に使う到着地点を先に解決する（新しいInspector項目は増やさない）。
+        ResolveFootstepStageWaypoints();
+
         approachController.onApproachStarted.AddListener(HandleApproachStarted);
         approachController.onReachedDoor.AddListener(HandleReachedDoor);
         approachController.onStoppedAtDoor.AddListener(HandleStoppedAtDoor);
         approachController.onPassedByDoor.AddListener(HandlePassedByDoor);
         approachController.MovementStateChanged += HandleMovementStateChanged;
+        // 到着通知：行きの段階切替だけに使う（帰路は通知側が区別して無視する）。
+        approachController.WaypointArrived += HandleWaypointArrived;
         HandleMovementStateChanged(false);
 
         _eventsSubscribed = true;
@@ -1111,12 +1351,16 @@ public class MotherApproachWarning : MonoBehaviour
         approachController.onStoppedAtDoor.RemoveListener(HandleStoppedAtDoor);
         approachController.onPassedByDoor.RemoveListener(HandlePassedByDoor);
         approachController.MovementStateChanged -= HandleMovementStateChanged;
+        approachController.WaypointArrived -= HandleWaypointArrived;
 
         _eventsSubscribed = false;
     }
 
     private void HandleApproachStarted()
     {
+        // イベント開始：足音の到着段階を Far・Close固定=false へ初期化する（前イベントのCloseを残さない）。
+        ResetFootstepStages("イベント開始");
+
         Debug.Log("[MotherApproachWarning] EVENT: Approach started");
 
         if (parentDetection != null)

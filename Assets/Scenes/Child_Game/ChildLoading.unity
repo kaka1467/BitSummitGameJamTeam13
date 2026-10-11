@@ -1311,23 +1311,7 @@ MonoBehaviour:
   lastMessage: 
   gameSceneName: ChildLoading
   sleepingManager: {fileID: 0}
-  connectButton: {fileID: 0}
-  connectButtonLabel: {fileID: 0}
-  creditsButton: {fileID: 0}
-  settingsButton: {fileID: 0}
-  startButton: {fileID: 0}
-  statusText: {fileID: 0}
-  cancelButton: {fileID: 0}
-  connectButtonDefaultPosition: {x: 0, y: 0}
-  connectButtonStartPosition: {x: 0, y: 0}
-  cancelUiObject: {fileID: 0}
   playerMove: {fileID: 0}
-  creditsPanel: {fileID: 0}
-  settingsPanel: {fileID: 0}
-  animatedSpriteObjects: []
-  titleImageObject: {fileID: 0}
-  connectLabel: Connect
-  connectingLabel: "\u63A5\u7D9A\u4E2D"
 --- !u!4 &1725544854
 Transform:
   m_ObjectHideFlags: 0

@@ -1,3 +1,17 @@
+VERSION 2 - 2026-10-10
+Gosogoso_03 replaced from the revised 1005_BRUSHUP_MASTER5.blend.
+The other nine animations, rig, materials, prefab and controller are retained.
+
+UPDATING VERSION 1
+Back up your Unity project before import. This update uses the SAME asset
+folder and asset GUIDs as version 1 to preserve existing references.
+Import all items and allow Unity to update Assets/Hahaoya_All_Master_20261008.
+The folder name remains 20261008 intentionally. Do not delete the old folder.
+Custom edits to these shared assets can be overwritten; scene-instance
+overrides and unrelated project assets are not included in this package.
+Gosogoso_03 is now 5.300 seconds (previously 5.067); check gameplay timing.
+Clip parameter numbers remain unchanged (Gosogoso_03 = 9).
+
 HAHAOYA - ALL ANIMATIONS ON ONE MASTER RIG
 
 Tested: Unity 6.3 LTS (6000.3.25f1), Universal Render Pipeline.
@@ -7,7 +21,7 @@ Original animation timing is preserved. The Blender master uses 120 fps to
 represent the original 24/30 fps timing exactly; Unity plays in seconds.
 
 IMPORT AND FIRST TEST
-1. Import Hahaoya_All_Master_20261008.unitypackage using:
+1. Import Hahaoya_All_Master_V2_20261010.unitypackage using:
    Assets > Import Package > Custom Package. Import all items.
 2. Open Assets/Hahaoya_All_Master_20261008.
 3. Drag Hahaoya_All_Master.prefab into an empty test scene Hierarchy.
@@ -28,7 +42,7 @@ Clip 5: Jumpscare_02   2.667 seconds
 Clip 6: Jumpscare_03   3.375 seconds
 Clip 7: Gosogoso_01    5.667 seconds
 Clip 8: Gosogoso_02    1.233 seconds
-Clip 9: Gosogoso_03    5.067 seconds
+Clip 9: Gosogoso_03    5.300 seconds
 
 One-shot clips hold the final pose. To replay the same clip, select another
 Clip value and then return, or use Animator.Play with normalizedTime=0.

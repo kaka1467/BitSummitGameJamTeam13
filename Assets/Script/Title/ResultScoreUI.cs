@@ -31,11 +31,18 @@ public class ResultScoreUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI crossRank2Text;
     [SerializeField] private TextMeshProUGUI crossRank3Text;
 
+    [Header("親機: 同期状態の表示（任意）")]
+    [Tooltip("「未同期」「前回同期データ」「同期完了」を表示する小さなテキスト。未設定でも値は正しく扱います。")]
+    [SerializeField] private TextMeshProUGUI syncStateText;
+
     private const string KeyGameOverScore = "LastGameOverScore";
     private const string KeyTimeUpScore   = "LastTimeUpScore";
     private const string KeyGameOverRank  = "GameOverRank_";
     private const string KeyTimeUpRank    = "TimeUpRank_";
     private const int    RankingSize      = 5;
+
+    // 親機で子機データ未同期のときに表示する文字（「最新の子機データ」と誤解させない）
+    private const string NoDataText = "------";
 
     private void OnEnable()
     {
@@ -73,6 +80,14 @@ public class ResultScoreUI : MonoBehaviour
 
     private void RefreshResultData()
     {
+        // 親機では「子機データの表示用コピー」だけを表示する（親機の独自ランキングは使わない）。
+        // 子機では従来どおり自分のランキング（唯一の基準）を表示する。
+        if (ParentUdpSender.Instance != null)
+        {
+            RefreshFromParentSyncCopy();
+            return;
+        }
+
         string scoreKey   = resultType == DisplayResultType.GameOver ? KeyGameOverScore  : KeyTimeUpScore;
         string rankKey    = resultType == DisplayResultType.GameOver ? KeyGameOverRank   : KeyTimeUpRank;
         string crossKey   = resultType == DisplayResultType.GameOver ? KeyTimeUpRank     : KeyGameOverRank;
@@ -87,13 +102,86 @@ public class ResultScoreUI : MonoBehaviour
         ApplyRankingTexts(primaryTexts, ranking);
 
         // 2位がどこで0になるかを追えるように、UIへ渡した順位をログに出す。
-        UnityEngine.Debug.Log($"[ResultScoreUI] resultType={resultType}, scoreKey='{scoreKey}', score={score}, " +
+        UnityEngine.Debug.Log($"[ResultScoreUI] (child) resultType={resultType}, scoreKey='{scoreKey}', score={score}, " +
                               $"rankKey='{rankKey}', ranking=[{string.Join(", ", ranking)}], " +
                               $"rankTextsCount={(primaryTexts != null ? primaryTexts.Length : 0)}");
 
         int[] crossRanking = GetRanking(crossKey);
         TextMeshProUGUI[] otherTexts = ResolveTexts(crossRankTexts, crossRank1Text, crossRank2Text, crossRank3Text);
         ApplyRankingTexts(otherTexts, crossRanking);
+    }
+
+    /// <summary>
+    /// 親機: 子機から同期した表示用コピーを表示する。
+    /// ・GAME_OVER と TIME_UP は別々に読む（混ぜない）
+    /// ・未同期（未接続・同期前）は「------」を表示し、古い親機ランキングを最新として出さない
+    /// </summary>
+    private void RefreshFromParentSyncCopy()
+    {
+        var sender = ParentUdpSender.Instance;
+        bool isGameOver = resultType == DisplayResultType.GameOver;
+
+        RankSyncDisplayState state = sender.GetSyncDisplayState();
+
+        bool hasGo = sender.TryGetSyncedResult(true, out int goLast, out int[] goTop);
+        bool hasTu = sender.TryGetSyncedResult(false, out int tuLast, out int[] tuTop);
+        bool hasThis = isGameOver ? hasGo : hasTu;
+
+        TextMeshProUGUI[] primaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
+        TextMeshProUGUI[] otherTexts = ResolveTexts(crossRankTexts, crossRank1Text, crossRank2Text, crossRank3Text);
+
+        // 理由が分かるように状態を表示（未設定ならログのみ）
+        if (syncStateText != null)
+        {
+            syncStateText.text = RankSyncDisplay.ToLabel(state);
+        }
+
+        // 初回同期前（一度も受信していない）
+        if (state == RankSyncDisplayState.NoData || !hasThis)
+        {
+            if (resultScoreText != null) resultScoreText.text = NoDataText;
+            ApplyNoDataTexts(primaryTexts);
+            ApplyNoDataTexts(otherTexts);
+            UnityEngine.Debug.LogWarning($"[ResultScoreUI] (parent) {RankSyncDisplay.ToLabel(state)}: 子機データがまだありません。'{NoDataText}' を表示 (resultType={resultType}).");
+            return;
+        }
+
+        // 前回同期データ（未接続・切替確認中）: 最新の子機データと誤表示しない。
+        // 状態ラベル（syncStateText）が未設定の場合は値を伏せて『------』表示にする（誤表示防止を優先）。
+        // Current（同期完了）ならラベル未割当でも値を表示する。判定は RankSyncDisplay に集約。
+        if (!RankSyncDisplay.ShouldShowValues(state, syncStateText != null))
+        {
+            if (resultScoreText != null) resultScoreText.text = NoDataText;
+            ApplyNoDataTexts(primaryTexts);
+            ApplyNoDataTexts(otherTexts);
+            UnityEngine.Debug.LogWarning($"[ResultScoreUI] (parent) 前回同期データ（最新の接続相手ではありません）。" +
+                                         $"状態表示先(syncStateText)が未設定のため値を伏せます (resultType={resultType}). " +
+                                         "値を表示する場合は ResultScoreUI.syncStateText を割り当ててください。");
+            return;
+        }
+
+        int score = isGameOver ? goLast : tuLast;
+        int[] ranking = isGameOver ? goTop : tuTop;
+        int[] crossRanking = isGameOver ? tuTop : goTop;
+
+        if (resultScoreText != null)
+            resultScoreText.text = score.ToString("000000");
+
+        ApplyRankingTexts(primaryTexts, ranking);
+        ApplyRankingTexts(otherTexts, crossRanking);
+
+        UnityEngine.Debug.Log($"[ResultScoreUI] (parent {RankSyncDisplay.ToLabel(state)}) resultType={resultType}, score={score}, " +
+                              $"ranking=[{string.Join(", ", ranking)}], source='{sender.RankSyncSourceId}', update={sender.RankSyncUpdateNo}, peer='{sender.ConnectedPeerSourceId}'");
+    }
+
+    private static void ApplyNoDataTexts(TextMeshProUGUI[] texts)
+    {
+        if (texts == null) return;
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i] == null) continue;
+            texts[i].text = NoDataText;
+        }
     }
 
     private static int[] GetRanking(string keyPrefix)

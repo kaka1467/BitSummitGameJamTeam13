@@ -20,7 +20,8 @@ using UnityEngine.UI;
 ///   TEAM13_START_GAME        — child requests game start
 ///   TEAM13_TIME_UP           — child timer expired
 ///   TEAM13_CHILD_DEAD        — child died
-///   TEAM13_CHILD_SCORE:<val> — child final score for parent ranking
+///   TEAM13_RANK_SYNC:<version>:<sourceId>:<updateNo>:<GOlast>:<GO0..GO4>:<TUlast>:<TU0..TU4>:<latestPlayId>:<latestType>
+///                            — 子機を唯一の基準とするランキング／スコアのスナップショット（親機は表示用コピーとして保持）
 ///   TEAM13_LOUD_ITEM         — child picked up loud item
 ///   TEAM13_PING              — heartbeat
 ///   TEAM13_RETURN_TO_TITLE   — child returned to title → parent also returns
@@ -32,6 +33,7 @@ using UnityEngine.UI;
 ///   TEAM13_SLEEP_UNLOCK — re-enable child player input
 ///   TEAM13_PING         — heartbeat from parent
 ///   TEAM13_RETURN_TO_TITLE — parent returned to title → child also returns
+///   TEAM13_RANK_SYNC_ACK:<version>:<sourceId>:<updateNo> — parent applied the snapshot → child stops resending
 /// </summary>
 public class ChildUdpReceiver : MonoBehaviour
 {
@@ -51,23 +53,6 @@ public class ChildUdpReceiver : MonoBehaviour
     public string titleSceneName = "ChildeTitle";
 
     public SleepingManager sleepingManager;
-    public Button connectButton;
-    public TextMeshProUGUI connectButtonLabel;
-    public Button creditsButton;
-    public Button settingsButton;
-    public Button startButton;
-    public TextMeshProUGUI statusText;
-    public Button cancelButton;
-
-    [Header("Connect Button Position Settings")]
-    [Tooltip("Disconnected/Connecting状態のときのconnectButtonの位置")]
-    public Vector2 connectButtonDefaultPosition = new Vector2(0f, 0f);
-    [Tooltip("Connected（START!）状態のときのconnectButtonの位置")]
-    public Vector2 connectButtonStartPosition = new Vector2(0f, 0f);
-
-    [Header("New Cancel UI Object Support")]
-    [Tooltip("Cancelの背景画像や枠など、消したい装飾がすべて含まれている一番外側の親オブジェクトをアサインしてください")]
-    public GameObject cancelUiObject;
 
     [Header("Game References")]
     [Tooltip("Auto-found at Start if not assigned. Used for SLEEP_LOCK / SLEEP_UNLOCK.")]
@@ -99,12 +84,26 @@ public class ChildUdpReceiver : MonoBehaviour
     private int _returnToTitleSendSeq = 0;
     private int _lastPeerReturnToTitleSeq = 0;
 
-    [SerializeField] private GameObject creditsPanel;
-    [SerializeField] private GameObject settingsPanel;
-    [SerializeField] private GameObject[] animatedSpriteObjects;
-    [SerializeField] private GameObject titleImageObject;
-    [SerializeField] private string connectLabel = "Connect";
-    [SerializeField] private string connectingLabel = "接続中";
+    // ── ランキング同期（スナップショット）────────────────────────────────────
+    // 子機が唯一の基準。最新スナップショットをACKまで保持し、回数・間隔を決めて再送する。
+    // 消さない設計にすることで、復帰や切断、アプリ終了をまたいでも同期を取りこぼさない。
+    private const float RankSyncResendInterval = 0.5f;
+    private const int   RankSyncMaxAttempts = 6;   // 0.5s x 6 = 約3秒で一旦停止（保持は継続）
+
+    private const string PrefRankSyncSourceId  = "RankSync_SourceId";   // 同期元ID（この子機データの識別）
+    private const string PrefRankSyncUpdateNo  = "RankSync_UpdateNo";   // 更新番号（単調増加・永続）
+    private const string PrefRankSyncConfirmed = "RankSync_Confirmed";  // 現在の更新番号がACK済みか
+    private const string PrefRankSyncPending   = "RankSync_PendingMessage"; // 未確認スナップショット全文（そのまま再送するため）
+    private const string PrefRankSyncSessionSeq = "RankSync_SessionSeq";    // 接続確認の世代（起動ごとに+1）
+
+    private string _rankSyncSourceId = "";
+    private int    _rankSyncUpdateNo = 0;
+    private int    _rankSyncSessionSeq = 0;
+    private bool   _rankSyncConfirmed = true;
+    private string _pendingRankSyncMessage = "";
+    // 親機が今の接続確認用に発行した ID。これを受信してから接続確認の応答（HELLO）を返す。
+    private string _rankSyncChallengeId = "";
+    private Coroutine _rankSyncResendCoroutine;
 
     // ── Private networking ────────────────────────────────────────────────────
     private UdpClient udpClient;
@@ -136,10 +135,31 @@ public class ChildUdpReceiver : MonoBehaviour
     private float timeoutLimit = 3.0f;
     private bool gameSceneLoaded = false;
 
-    // 最後にUIに反映した接続状態（状態変更時のみUI更新を行うためのキャッシュ）
-    private ConnectionState? lastAppliedUiState = null;
-
     public static ChildUdpReceiver instance { get; private set; }
+
+    // ── 接続状態の通知（タイトルUIなどへ状態変化だけを伝える）─────────────────
+    /// <summary>
+    /// 接続状態が変化したときにメインスレッドで発火する（同値では発火しない）。
+    /// 受信スレッドからUIイベントを直接呼ばないよう、状態変更は必ず SetConnectionState 経由で行う。
+    /// </summary>
+    public event Action<ConnectionState> ConnectionStateChanged;
+
+    /// <summary>現在の接続状態（タイトルUIの初回同期用の読み取りAPI）。</summary>
+    public ConnectionState CurrentConnectionState => currentState;
+
+    /// <summary>
+    /// 接続状態を更新し、変化があった場合だけ通知する。
+    ///  ・同値なら何もしない（通知もログも出さない）。
+    ///  ・受信スレッドから変更する場合は actionQueue 経由（メインスレッド）で呼ぶこと。
+    ///  ・既存の public フィールド currentState は従来どおりの名前・型のまま残す。
+    /// </summary>
+    private void SetConnectionState(ConnectionState next)
+    {
+        if (currentState == next) return;
+
+        currentState = next;
+        ConnectionStateChanged?.Invoke(next);
+    }
 
     // ── Button callbacks ──────────────────────────────────────────────────────
     public void OnConnectButtonClicked()
@@ -155,55 +175,16 @@ public class ChildUdpReceiver : MonoBehaviour
         }
         else
         {
-            currentState = ConnectionState.Connecting;
+            SetConnectionState(ConnectionState.Connecting);
             if (showDebugLogs)
                 Debug.Log($"[StartTrace][子機] OnConnectButtonClicked → 分岐=Connect (Connected ではないため Connecting にして接続操作へ。currentState={currentState})", this);
         }
     }
 
-    public void OnCancelButtonClicked() { currentState = ConnectionState.Disconnected; }
+    public void OnCancelButtonClicked() { SetConnectionState(ConnectionState.Disconnected); }
 
-    public void OnCreditsButtonClicked()
-    {
-        creditsPanel = FindGameObject(null, "Credits");
-        if (creditsPanel == null)
-        {
-            Debug.LogWarning("[ChildUdpReceiver] Credits panel was not found.");
-            return;
-        }
-
-        creditsPanel.SetActive(!creditsPanel.activeSelf);
-        Debug.Log($"[ChildUdpReceiver] Credits panel active: {creditsPanel.activeSelf}");
-        UpdateAnimatedSpritesVisibility();
-    }
-
-    public void OnCloseCreditsClicked()
-    {
-        if (creditsPanel == null) return;
-        creditsPanel.SetActive(false);
-        UpdateAnimatedSpritesVisibility();
-    }
-
-    public void OnSettingsButtonClicked()
-    {
-        settingsPanel = FindGameObject(null, "SettingsPanel");
-        if (settingsPanel == null)
-        {
-            Debug.LogWarning("[ChildUdpReceiver] Settings panel was not found.");
-            return;
-        }
-
-        settingsPanel.SetActive(!settingsPanel.activeSelf);
-        Debug.Log($"[ChildUdpReceiver] Settings panel active: {settingsPanel.activeSelf}");
-        UpdateAnimatedSpritesVisibility();
-    }
-
-    public void OnCloseSettingsClicked()
-    {
-        if (settingsPanel == null) return;
-        settingsPanel.SetActive(false);
-        UpdateAnimatedSpritesVisibility();
-    }
+    // クレジット／設定パネルの開閉（タイトルUI）は ChildTitleConnectionUI へ移した。
+    // 本クラスには接続・START・Cancel（通信と開始）の入口だけを残す。
 
     public void OnStartButtonClicked()
     {
@@ -230,6 +211,234 @@ public class ChildUdpReceiver : MonoBehaviour
     private static string CreatePlaySessionId()
     {
         return $"{System.Guid.NewGuid():N}";
+    }
+
+    /// <summary>
+    /// <summary>
+    /// ランキング／今回スコアが変化したときに、最新スナップショットを作成して親機へ送る。
+    /// GameManager.TriggerResult（結果確定後）と RankingResetButton（リセット後）から呼ぶ。
+    /// latestResultType は "GAME_OVER" / "TIME_UP" / "NONE"（リセット時）。
+    /// 子機側のランキング保存は親機の ACK を待たない（ここでは送信だけを管理する）。
+    /// </summary>
+    public void NotifyRankingChanged(string latestResultType)
+    {
+        string type = string.IsNullOrEmpty(latestResultType) ? RankingSnapshot.TypeNone : latestResultType;
+        string latestPlayId = (type == RankingSnapshot.TypeNone) ? "" : (_playSessionId ?? "");
+
+        if (type != RankingSnapshot.TypeNone && string.IsNullOrEmpty(latestPlayId))
+        {
+            Debug.LogWarning("[ChildUdpReceiver] NotifyRankingChanged: playId is empty — sending snapshot with latestType=NONE.");
+            type = RankingSnapshot.TypeNone;
+        }
+
+        _rankSyncUpdateNo++;
+        _rankSyncConfirmed = false;
+        _pendingRankSyncMessage = BuildRankSyncMessage(latestPlayId, type);
+        PersistRankSyncState();
+
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] RankSync update={_rankSyncUpdateNo} latest={type}:{latestPlayId} queued.");
+
+        StartRankSyncResend("changed");
+    }
+
+    /// <summary>
+    /// 接続完了・再接続時に最新スナップショットを送る（親機の再起動後もこれで表示が復元される）。
+    /// 未確認のスナップショットがあれば「同じ更新番号・同じ内容」を再送する。
+    /// </summary>
+    public void SendRankSyncOnConnect()
+    {
+        if (!_rankSyncConfirmed && !string.IsNullOrEmpty(_pendingRankSyncMessage))
+        {
+            StartRankSyncResend("reconnect");
+            return;
+        }
+
+        // 接続時は表示用の同期のみ（latestType=NONE）。画面遷移は結果確定時の同期でのみ行う。
+        _rankSyncUpdateNo++;
+        _rankSyncConfirmed = false;
+        _pendingRankSyncMessage = BuildRankSyncMessage("", RankingSnapshot.TypeNone);
+        PersistRankSyncState();
+
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] RankSync update={_rankSyncUpdateNo} sent on connect.");
+
+        StartRankSyncResend("connect");
+    }
+
+    /// <summary>子機の既存キー（不変）から、送信用スナップショットを組み立てる。</summary>
+    private string BuildRankSyncMessage(string latestPlayId, string latestResultType)
+    {
+        int goLast = PlayerPrefs.GetInt("LastGameOverScore", 0);
+        int[] goTop = ReadRankingKeys("GameOverRank_");
+        int tuLast = PlayerPrefs.GetInt("LastTimeUpScore", 0);
+        int[] tuTop = ReadRankingKeys("TimeUpRank_");
+
+        return RankingSnapshot.Format(_rankSyncSourceId, _rankSyncUpdateNo, goLast, goTop, tuLast, tuTop, latestPlayId, latestResultType);
+    }
+
+    private static int[] ReadRankingKeys(string keyPrefix)
+    {
+        int[] r = new int[RankingSnapshot.TopSize];
+        for (int i = 0; i < r.Length; i++)
+        {
+            r[i] = PlayerPrefs.GetInt(keyPrefix + i, 0);
+        }
+        return r;
+    }
+
+    /// <summary>ACKが来るまで、同じスナップショットを回数・間隔を決めて再送する（毎フレーム送らない）。</summary>
+    private void StartRankSyncResend(string reason)
+    {
+        if (string.IsNullOrEmpty(_pendingRankSyncMessage)) return;
+
+        // 接続確認の要求が未受信なら、もう一度要求する（親機は同じ challengeId を再送する）
+        RequestChallengeIfNeeded();
+
+        // 接続確認の応答（HELLO）→ スナップショットの順で送る。再送でも同じ処理を繰り返す。
+        SendRankSyncHello();
+        SendState(_pendingRankSyncMessage);
+
+        if (_rankSyncResendCoroutine != null)
+        {
+            StopCoroutine(_rankSyncResendCoroutine);
+        }
+        _rankSyncResendCoroutine = StartCoroutine(RankSyncResendRoutine(reason));
+    }
+
+    /// <summary>
+    /// 接続確認要求（RANK_SYNC_CHALLENGE）がまだ届いていないときだけ、接続元識別つきの
+    /// DISCOVERY_REQUEST を1回送って要求し直す（親機は同じ接続確認なら同じ ID を再送する）。
+    /// </summary>
+    private void RequestChallengeIfNeeded()
+    {
+        if (!string.IsNullOrEmpty(_rankSyncChallengeId)) return;
+
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + BuildDiscoveryRequest());
+            sendClient.Send(data, data.Length, "255.255.255.255", broadcastPort);
+            if (showDebugLogs)
+                Debug.Log("[ChildUdpReceiver] RANK_SYNC_CHALLENGE 未受信のため DISCOVERY_REQUEST を再送（同じ challengeId が再送されます）。");
+        }
+        catch (Exception e) { Debug.LogError($"[ChildUdpReceiver] Challenge request error: {e.Message}"); }
+    }
+
+    /// <summary>接続元識別つき DISCOVERY_REQUEST（親機が再送と新規接続を区別するために使う）。</summary>
+    private string BuildDiscoveryRequest()
+        => "DISCOVERY_REQUEST:" + _rankSyncSourceId + ":" + _rankSyncSessionSeq;
+
+    /// <summary>接続確認の応答（親機が今の接続で発行した challengeId をそのまま返す）。</summary>
+    private void SendRankSyncHello()
+    {
+        if (string.IsNullOrEmpty(_rankSyncChallengeId)) return;   // 要求受信前は応答しない
+        SendState(RankSyncHello.Format(_rankSyncChallengeId, _rankSyncSourceId, _rankSyncSessionSeq));
+    }
+
+    private IEnumerator RankSyncResendRoutine(string reason)
+    {
+        for (int attempt = 0; attempt < RankSyncMaxAttempts; attempt++)
+        {
+            yield return new WaitForSecondsRealtime(RankSyncResendInterval);
+
+            if (_rankSyncConfirmed || string.IsNullOrEmpty(_pendingRankSyncMessage))
+            {
+                _rankSyncResendCoroutine = null;
+                yield break;
+            }
+            RequestChallengeIfNeeded();
+            SendRankSyncHello();
+            SendState(_pendingRankSyncMessage);
+        }
+
+        // 上限到達。毎フレーム送らない。未確認のまま保持し、再接続時に再送する。
+        if (showDebugLogs)
+            Debug.LogWarning($"[ChildUdpReceiver] RankSync update={_rankSyncUpdateNo} still unconfirmed after {RankSyncMaxAttempts} resends ({reason}) — kept for reconnect resend.");
+        _rankSyncResendCoroutine = null;
+    }
+
+    /// <summary>親機からの同期確認（RANK_SYNC_ACK）。自分の同期元・自分の更新番号のときだけ確定する。</summary>
+    private void HandleRankSyncAck(string sourceId, int updateNo)
+    {
+        // 自分の同期元・今保持している更新番号・未確認のときだけ解除（古いACKで新しい未確認更新を消さない）
+        if (!ChildRankSyncPolicy.ShouldAcceptAck(sourceId, updateNo, _rankSyncSourceId, _rankSyncUpdateNo, _rankSyncConfirmed))
+            return;
+
+        _rankSyncConfirmed = true;
+        _pendingRankSyncMessage = "";
+        PersistRankSyncState();
+
+        if (_rankSyncResendCoroutine != null)
+        {
+            StopCoroutine(_rankSyncResendCoroutine);
+            _rankSyncResendCoroutine = null;
+        }
+
+        if (showDebugLogs)
+            Debug.Log($"[ChildUdpReceiver] RankSync confirmed: update={updateNo}.");
+    }
+
+    private void PersistRankSyncState()
+    {
+        PlayerPrefs.SetString(PrefRankSyncSourceId, _rankSyncSourceId);
+        PlayerPrefs.SetInt(PrefRankSyncUpdateNo, _rankSyncUpdateNo);
+        PlayerPrefs.SetInt(PrefRankSyncConfirmed, _rankSyncConfirmed ? 1 : 0);
+        PlayerPrefs.SetString(PrefRankSyncPending, _pendingRankSyncMessage ?? "");
+        PlayerPrefs.Save();
+    }
+
+    /// <summary>
+    /// 同期元ID・更新番号・確認状態を復元する。
+    /// 未確認のまま終了していた場合は、同じ更新番号で再送対象に戻す（次の接続時に送る）。
+    /// </summary>
+    /// <summary>
+    /// 同期元ID・更新番号・確認状態・未確認全文を復元する。
+    /// ・未確認の全文が保存されている場合は、検証したうえで「そのまま（同じ sourceId・updateNo・内容）」再送する
+    /// ・全文保存が無い旧状態からの起動時は、現在の子機データから「新しい更新番号」で作り直す
+    ///   （古い updateNo を使って別内容を送らない）
+    /// </summary>
+    private void LoadRankSyncState()
+    {
+        _rankSyncSourceId = PlayerPrefs.GetString(PrefRankSyncSourceId, "");
+        if (string.IsNullOrEmpty(_rankSyncSourceId))
+        {
+            _rankSyncSourceId = System.Guid.NewGuid().ToString("N");
+            Debug.LogWarning($"[ChildUdpReceiver] RankSync sourceId generated: {_rankSyncSourceId}");
+        }
+
+        // 接続確認の世代を進める（起動ごとに +1）。古い接続確認が遅延しても親機が巻き戻らないようにする。
+        _rankSyncSessionSeq = PlayerPrefs.GetInt(PrefRankSyncSessionSeq, 0) + 1;
+        PlayerPrefs.SetInt(PrefRankSyncSessionSeq, _rankSyncSessionSeq);
+
+        _rankSyncUpdateNo = PlayerPrefs.GetInt(PrefRankSyncUpdateNo, 0);
+        _rankSyncConfirmed = PlayerPrefs.GetInt(PrefRankSyncConfirmed, 1) != 0;
+
+        string pending = PlayerPrefs.GetString(PrefRankSyncPending, "");
+        _pendingRankSyncMessage = "";
+
+        if (!_rankSyncConfirmed)
+        {
+            if (ChildRankSyncPolicy.CanResendVerbatim(pending, _rankSyncSourceId, _rankSyncUpdateNo))
+            {
+                // 同じ全文をそのまま再送する（sourceId・updateNo・内容を変えない）
+                _pendingRankSyncMessage = pending;
+                Debug.LogWarning($"[ChildUdpReceiver] RankSync update={_rankSyncUpdateNo} pending restored verbatim — will resend on connect.");
+            }
+            else
+            {
+                // 旧状態（全文保存なし／不一致）からの移行: 現在のデータから新しい更新番号で作り直す
+                _rankSyncUpdateNo++;
+                _rankSyncConfirmed = false;
+                _pendingRankSyncMessage = BuildRankSyncMessage("", RankingSnapshot.TypeNone);
+                Debug.LogWarning($"[ChildUdpReceiver] RankSync migrated to a new update={_rankSyncUpdateNo} (no valid persisted full text). 古いupdateNoでは送りません。");
+            }
+        }
+        else
+        {
+            PlayerPrefs.SetString(PrefRankSyncPending, "");
+        }
+
+        PersistRankSyncState();
     }
 
     // ── Public send API ───────────────────────────────────────────────────────
@@ -319,11 +528,18 @@ public class ChildUdpReceiver : MonoBehaviour
     /// 完全なメッセージは "TEAM13_RETURN_TO_TITLE:&lt;プレイ識別子&gt;:&lt;連番&gt;"（SendState が MAGIC_NUMBER を前置する）。
     /// 取りこぼすと親機がリザルト画面に取り残されるため、再送付きで送る。識別子・連番は再送でも同じ値を送る。
     /// </summary>
-    public void notifyReturnToTitle()
+    public void notifyReturnToTitle(bool fast = false)
     {
         _returnToTitleSendSeq++;
-        SendStateRepeated($"RETURN_TO_TITLE:{_playSessionId}:{_returnToTitleSendSeq}");
-        Debug.Log($"[ChildUdpReceiver] Sent RETURN_TO_TITLE (playSessionId={_playSessionId}, seq={_returnToTitleSendSeq}) with retries to parent.");
+
+        // ボタン起点は ":FAST" を付けて送る（受信側も短いフェードにする）。
+        // 再送は SendStateRepeated が「同じ文字列＝同じ sid・seq・復帰モード」を送る。
+        string message = fast
+            ? $"RETURN_TO_TITLE:{_playSessionId}:{_returnToTitleSendSeq}:FAST"
+            : $"RETURN_TO_TITLE:{_playSessionId}:{_returnToTitleSendSeq}";
+
+        SendStateRepeated(message);
+        Debug.Log($"[ChildUdpReceiver] Sent RETURN_TO_TITLE (playSessionId={_playSessionId}, seq={_returnToTitleSendSeq}, fast={fast}) with retries to parent.");
     }
 
     // ── Unity lifecycle ───────────────────────────────────────────────────────
@@ -343,15 +559,16 @@ public class ChildUdpReceiver : MonoBehaviour
     {
         Debug.Log("[ChildUdpReceiver] Start");
 
+        // 同期元ID・更新番号・確認状態を復元（未確認なら次の接続で再送する）
+        LoadRankSyncState();
+
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
 
         if (IsTitleScene(SceneManager.GetActiveScene().name))
         {
-            RefreshUiReferences();
-            AttachUiListeners();
+            // タイトルUIの初期化は ChildTitleConnectionUI が行う（本クラスはセッション状態のリセットのみ）。
             ResetForNewSession();
-            InitializeTitleUi();
         }
 
         isRunning = true;
@@ -378,7 +595,7 @@ public class ChildUdpReceiver : MonoBehaviour
         if (currentState == ConnectionState.Connected &&
             Time.time - lastReceiveTime > timeoutLimit)
         {
-            currentState = ConnectionState.Disconnected;
+            SetConnectionState(ConnectionState.Disconnected);
             Debug.LogWarning("[ChildUdpReceiver] Connection timed out — parent heartbeat lost.");
         }
 
@@ -400,7 +617,7 @@ public class ChildUdpReceiver : MonoBehaviour
             heartbeatCoroutine = null;
         }
 
-        UpdateUi();
+        // タイトルUIの更新は ChildTitleConnectionUI が ConnectionStateChanged を受けて行う。
     }
 
     void OnDestroy()
@@ -427,9 +644,8 @@ public class ChildUdpReceiver : MonoBehaviour
 
         if (IsTitleScene(scene.name))
         {
+            // タイトルUI（再取得・初期化・リスナー再登録）は ChildTitleConnectionUI が担当する。
             ResetForNewSession();
-            ClearTitleUiReferences();
-            StartCoroutine(RebindTitleUiNextFrame());
             Debug.Log($"[ChildUdpReceiver] Title scene loaded ('{scene.name}') — reset state for next round.");
         }
         else if (scene.name == gameSceneName)
@@ -444,51 +660,8 @@ public class ChildUdpReceiver : MonoBehaviour
         }
     }
 
-    private IEnumerator RebindTitleUiNextFrame()
-    {
-        yield return null;
-
-        if (!IsTitleScene(SceneManager.GetActiveScene().name))
-            yield break;
-
-        RefreshUiReferences();
-        AttachUiListeners();
-        UpdateAnimatedSpritesVisibility();
-        InitializeTitleUi();
-    }
-
-    private void ClearTitleUiReferences()
-    {
-        connectButton = null;
-        connectButtonLabel = null;
-        creditsButton = null;
-        settingsButton = null;
-        cancelButton = null;
-        creditsPanel = null;
-        settingsPanel = null;
-        titleImageObject = null;
-        cancelUiObject = null;
-        lastAppliedUiState = null;
-    }
-
-    private void InitializeTitleUi()
-    {
-        creditsPanel = FindGameObject(creditsPanel, "Credits");
-        settingsPanel = FindGameObject(settingsPanel, "SettingsPanel");
-        cancelUiObject = FindGameObject(cancelUiObject, "Cancel");
-
-        if (creditsPanel != null)
-            creditsPanel.SetActive(false);
-
-        if (settingsPanel != null)
-            settingsPanel.SetActive(false);
-
-        if (cancelUiObject != null)
-            cancelUiObject.SetActive(false);
-
-        UpdateAnimatedSpritesVisibility();
-        UpdateUi(true);
-    }
+    // タイトルUIの再取得・初期化・リスナー再登録は ChildTitleConnectionUI へ移した。
+    // 本クラスはタイトルシーン判定だけを通信ロジック用に保持する。
 
     private bool IsTitleScene(string sceneName)
     {
@@ -498,59 +671,11 @@ public class ChildUdpReceiver : MonoBehaviour
                sceneName.Contains("Title");
     }
 
-    private void AttachUiListeners()
-    {
-        // シーン遷移後にリスナーを再登録する。
-        // RemoveAllListeners() はInspectorで設定した他の処理まで消してしまうため使用しない。
-
-        AttachButtonListener(connectButton, OnConnectButtonClicked, nameof(OnConnectButtonClicked));
-        AttachButtonListener(cancelButton, OnCancelButtonClicked, nameof(OnCancelButtonClicked));
-        AttachButtonListener(creditsButton, OnCreditsButtonClicked, nameof(OnCreditsButtonClicked));
-        AttachButtonListener(settingsButton, OnSettingsButtonClicked, nameof(OnSettingsButtonClicked));
-
-        AttachCloseButtonListener(creditsPanel, OnCloseCreditsClicked);
-        AttachCloseButtonListener(settingsPanel, OnCloseSettingsClicked);
-    }
-
-    private void AttachButtonListener(Button button, UnityEngine.Events.UnityAction action, string methodName)
-    {
-        if (button == null)
-            return;
-
-        // On the first title load, the Inspector already calls this receiver.
-        // Adding the same callback again toggles panels twice (off -> on -> off).
-        // After returning to the title, the Inspector target is the destroyed
-        // scene-local receiver, so a runtime callback is required instead.
-        button.onClick.RemoveListener(action);
-        for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
-        {
-            if (button.onClick.GetPersistentTarget(i) == this &&
-                button.onClick.GetPersistentMethodName(i) == methodName)
-                return;
-        }
-
-        button.onClick.AddListener(action);
-    }
-
-    private void AttachCloseButtonListener(GameObject panel, UnityEngine.Events.UnityAction action)
-    {
-        if (panel == null) return;
-
-        bool isSettingsPanel = panel == settingsPanel;
-        Button closeBtn = panel.GetComponentsInChildren<Button>(true)
-            .FirstOrDefault(button =>
-                button.name.Equals("CloseButton", StringComparison.OrdinalIgnoreCase) ||
-                (isSettingsPanel && button.name.Equals("CancelButton", StringComparison.OrdinalIgnoreCase)));
-
-        if (closeBtn != null)
-        {
-            AttachButtonListener(closeBtn, action, action.Method.Name);
-        }
-    }
+    // タイトルのボタンへのリスナー登録は ChildTitleConnectionUI が担当する（本クラスでは行わない）。
 
     public void ResetForNewSession()
     {
-        currentState = ConnectionState.Disconnected;
+        SetConnectionState(ConnectionState.Disconnected);
         lastReceiveTime = 0f;
         lastMessage = "";
         targetIP = "127.0.0.1";
@@ -609,50 +734,7 @@ public class ChildUdpReceiver : MonoBehaviour
         SetSleepLockImageVisible(isSleepInputLocked);
     }
 
-    private void RefreshUiReferences()
-    {
-        if (!IsTitleScene(SceneManager.GetActiveScene().name))
-            return;
-
-        connectButton = FindButton(connectButton, "ConnectButton", "Connect Button");
-        if (connectButtonLabel == null && connectButton != null)
-            connectButtonLabel = connectButton.GetComponentInChildren<TextMeshProUGUI>(true);
-
-        if (connectButtonLabel == null)
-        {
-            GameObject tmpGo = FindGameObject(null, "Connect TMP");
-            if (tmpGo != null)
-                connectButtonLabel = tmpGo.GetComponent<TextMeshProUGUI>();
-        }
-
-        // The title scene currently uses names with a trailing space. The
-        // receiver survives scene loads, so these references must be reacquired
-        // whenever the title scene is loaded.
-        creditsButton = FindButton(creditsButton, "CrediButton ", "Credit", "CrediButton", "CreditsButton", "CreditButton");
-        settingsButton = FindButton(settingsButton, "SettingButton ", "Setting", "SettingsButton", "SettingButton");
-        cancelButton = FindButton(cancelButton, "CancelButton", "cancel button");
-        cancelUiObject = FindGameObject(cancelUiObject, "Cancel");
-
-        creditsPanel = FindGameObject(creditsPanel, "Credits");
-        settingsPanel = FindGameObject(settingsPanel, "SettingsPanel");
-        titleImageObject = FindGameObject(titleImageObject, "Title", "TitleImage", "TitleImageObject");
-
-        if (IsTitleScene(SceneManager.GetActiveScene().name))
-        {
-            animatedSpriteObjects = new[]
-            {
-                FindGameObject(null, "BackStar"),
-                FindGameObject(null, "Character")
-            }.Where(go => go != null).ToArray();
-        }
-
-        DisableRaycastTargets(titleImageObject);
-        if (animatedSpriteObjects != null)
-        {
-            foreach (GameObject go in animatedSpriteObjects)
-                DisableRaycastTargets(go);
-        }
-    }
+    // タイトルUIの参照取得は ChildTitleConnectionUI が担当する（Inspector参照のみ・名前検索なし）。
 
     // ── Incoming message dispatch (main thread) ───────────────────────────────
     private void HandleIncoming(string raw)
@@ -732,7 +814,7 @@ public class ChildUdpReceiver : MonoBehaviour
                     }
                     PlayerPrefs.SetInt("LastGameOverScore", finalScore);
                     PlayerPrefs.Save();
-                    SendState($"CHILD_SCORE:GAME_OVER:{finalScore}");
+                    NotifyRankingChanged(RankingSnapshot.TypeGameOver);
                     SceneManager.LoadScene("ChildGameOver");
                 }
                 else if (showDebugLogs)
@@ -745,23 +827,99 @@ public class ChildUdpReceiver : MonoBehaviour
         }
         if (msg.StartsWith("RETURN_TO_TITLE:", StringComparison.Ordinal))
         {
-            // RETURN_TO_TITLE:<playSessionId>:<seq>（旧: RETURN_TO_TITLE:<seq> / RETURN_TO_TITLE）
+            // RETURN_TO_TITLE:<playSessionId>:<seq>[:FAST]（旧: RETURN_TO_TITLE:<seq>）
+            // 3つ目の値は "FAST" のみ許可し、それ以外の追加値は推測で処理せず不正として拒否する。
             string rest = msg.Substring("RETURN_TO_TITLE:".Length);
-            string sid = "";
-            string seqText = rest;
+            string[] parts = rest.Split(':');
 
-            int sep = rest.IndexOf(':');
-            if (sep >= 0)
+            string sid = "";
+            string seqText;
+            bool fast = false;
+
+            if (parts.Length == 1)
             {
-                sid = rest.Substring(0, sep);
-                seqText = rest.Substring(sep + 1);
+                // 旧形式: <seq>（識別子なし）
+                seqText = parts[0];
+            }
+            else if (parts.Length == 2)
+            {
+                // <playSessionId>:<seq>
+                sid = parts[0];
+                seqText = parts[1];
+            }
+            else if (parts.Length == 3 && parts[2] == "FAST")
+            {
+                // <playSessionId>:<seq>:FAST（ボタン起点）
+                sid = parts[0];
+                seqText = parts[1];
+                fast = true;
+            }
+            else
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning($"[ChildUdpReceiver] RETURN_TO_TITLE ignored — invalid format (only 'FAST' is allowed as 3rd field): '{msg}'");
+                return;
             }
 
-            int seq = 0;
-            if (!int.TryParse(seqText, out seq))
-                seq = 0;
+            if (!int.TryParse(seqText, out int seq))
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning($"[ChildUdpReceiver] RETURN_TO_TITLE ignored — could not parse seq: '{seqText}'");
+                return;
+            }
 
-            HandleTeamReturnToTitle(sid, seq);
+            HandleTeamReturnToTitle(sid, seq, fast);
+            return;
+        }
+
+        if (msg.StartsWith("RANK_SYNC_CHALLENGE:", StringComparison.Ordinal))
+        {
+            // RANK_SYNC_CHALLENGE:<version>:<challengeId>
+            if (RankSyncChallenge.TryParse(msg, out RankSyncChallenge challenge, out string challengeError))
+            {
+                _rankSyncChallengeId = challenge.ChallengeId;
+                if (showDebugLogs)
+                    Debug.Log($"[ChildUdpReceiver] RANK_SYNC_CHALLENGE received — challenge='{challenge.ChallengeId}'. 接続確認の応答を返します。");
+
+                // 応答（HELLO）を返す。未確認スナップショットがあれば同じ更新番号・同じ内容で再送も行う。
+                // 本文・更新番号は接続確認では書き換えない（接続情報は HELLO 側で運ぶ）。
+                if (!string.IsNullOrEmpty(_pendingRankSyncMessage)) StartRankSyncResend("challenge");
+                else SendRankSyncHello();
+            }
+            else if (showDebugLogs)
+            {
+                Debug.LogWarning($"[ChildUdpReceiver] RANK_SYNC_CHALLENGE ignored — {challengeError}: '{msg}'");
+            }
+            return;
+        }
+
+        if (msg.StartsWith("RANK_SYNC_ACK:", StringComparison.Ordinal))
+        {
+            // RANK_SYNC_ACK:<version>:<sourceId>:<updateNo>
+            string[] ackParts = msg.Substring("RANK_SYNC_ACK:".Length).Split(':');
+
+            if (ackParts.Length != 3)
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning($"[ChildUdpReceiver] RANK_SYNC_ACK ignored — invalid format: '{msg}'");
+                return;
+            }
+
+            if (ackParts[0] != RankingSnapshot.VersionName)
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning($"[ChildUdpReceiver] RANK_SYNC_ACK ignored — unsupported version: '{ackParts[0]}'");
+                return;
+            }
+
+            if (!int.TryParse(ackParts[2], out int ackUpdate))
+            {
+                if (showDebugLogs)
+                    Debug.LogWarning($"[ChildUdpReceiver] RANK_SYNC_ACK ignored — invalid updateNo: '{ackParts[2]}'");
+                return;
+            }
+
+            HandleRankSyncAck(ackParts[1], ackUpdate);
             return;
         }
 
@@ -839,7 +997,7 @@ public class ChildUdpReceiver : MonoBehaviour
     /// リザルト画面にいる場合は ResultSceneChamger のフェード演出を流用し、
     /// ゲームプレイ中などの演出がない場合は即座に遷移する。
     /// </summary>
-    private void HandleTeamReturnToTitle(string playSessionId, int seq)
+    private void HandleTeamReturnToTitle(string playSessionId, int seq, bool fast)
     {
         // 旧フォーマット（識別子なし）は、こちらに識別子が無い場合のみ受け付ける（後方互換）。
         bool sessionMatches = !string.IsNullOrEmpty(playSessionId)
@@ -880,8 +1038,8 @@ public class ChildUdpReceiver : MonoBehaviour
             }
 
             if (showDebugLogs)
-                Debug.Log("[ChildUdpReceiver] RETURN_TO_TITLE received — starting result fade to title.");
-            changer.StartFadeToTitle(notifyPeer: false);
+                Debug.Log($"[ChildUdpReceiver] RETURN_TO_TITLE received — starting result fade to title (fast={fast}).");
+            changer.StartFadeToTitle(notifyPeer: false, skipWaits: fast);
             return;
         }
 
@@ -896,9 +1054,9 @@ public class ChildUdpReceiver : MonoBehaviour
         {
             try
             {
-                byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + "DISCOVERY_REQUEST");
+                byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + BuildDiscoveryRequest());
                 sendClient.Send(data, data.Length, "255.255.255.255", broadcastPort);
-                Debug.Log($"[ChildUdpReceiver] Sent DISCOVERY_REQUEST (broadcast)");
+                Debug.Log($"[ChildUdpReceiver] Sent DISCOVERY_REQUEST (broadcast) source='{_rankSyncSourceId}' sessionSeq={_rankSyncSessionSeq}");
             }
             catch (Exception e) { Debug.LogError($"[ChildUdpReceiver] Discovery send error: {e.Message}"); }
             yield return new WaitForSeconds(0.5f);
@@ -980,9 +1138,12 @@ public class ChildUdpReceiver : MonoBehaviour
                     actionQueue.Enqueue(() =>
                     {
                         targetIP = parentIP;
-                        currentState = ConnectionState.Connected;
+                        SetConnectionState(ConnectionState.Connected);
                         lastReceiveTime = Time.time;
                         gameSceneLoaded = false;
+
+                        // 再接続時: 最新スナップショットを送る（未確認があれば同じ更新番号・同じ内容を再送）
+                        SendRankSyncOnConnect();
                     });
                 }
 
@@ -998,85 +1159,8 @@ public class ChildUdpReceiver : MonoBehaviour
         }
     }
 
-    // ── UI ────────────────────────────────────────────────────────────────────
-    /// <summary>
-    /// タイトル画面の接続UI表示を更新する。
-    /// タイトル画面以外では実行されず、状態変化があった時（またはforceUpdate時）のみ更新を行う。
-    /// </summary>
-    private void UpdateUi(bool forceUpdate = false)
-    {
-        // タイトル画面以外ではUI更新を行わない
-        if (!IsTitleScene(SceneManager.GetActiveScene().name))
-            return;
-
-        // 状態変化がなく、強制更新でもない場合はスキップ
-        if (!forceUpdate && lastAppliedUiState.HasValue && lastAppliedUiState.Value == currentState)
-            return;
-
-        lastAppliedUiState = currentState;
-
-        // Connectボタンのラベル更新
-        if (connectButtonLabel != null)
-        {
-            switch (currentState)
-            {
-                case ConnectionState.Disconnected:
-                    connectButtonLabel.text = connectLabel;
-                    break;
-                case ConnectionState.Connecting:
-                    connectButtonLabel.text = connectingLabel;
-                    break;
-                case ConnectionState.Connected:
-                    connectButtonLabel.text = "START!";
-                    break;
-            }
-        }
-
-        // Connectボタンの表示・位置更新
-        if (connectButton != null)
-        {
-            connectButton.gameObject.SetActive(true);
-            connectButton.interactable = currentState != ConnectionState.Connecting;
-
-            Transform moveTarget = connectButton.transform.parent != null
-                ? connectButton.transform.parent
-                : connectButton.transform;
-            RectTransform rt = moveTarget.GetComponent<RectTransform>();
-            if (rt != null)
-            {
-                rt.anchoredPosition = currentState == ConnectionState.Connected
-                    ? connectButtonStartPosition
-                    : connectButtonDefaultPosition;
-            }
-        }
-
-        // Cancelボタン / Cancel UIオブジェクトの更新
-        if (cancelUiObject != null)
-        {
-            cancelUiObject.SetActive(currentState == ConnectionState.Connecting);
-        }
-        else if (cancelButton != null)
-        {
-            cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
-        }
-
-        // クレジット・設定ボタンの更新
-        SetActiveForButton(creditsButton, currentState != ConnectionState.Connected);
-        SetActiveForButton(settingsButton, currentState != ConnectionState.Connected);
-    }
-
-    private void UpdateAnimatedSpritesVisibility()
-    {
-        bool shouldShow = !(creditsPanel != null && creditsPanel.activeSelf) &&
-                          !(settingsPanel != null && settingsPanel.activeSelf);
-
-        if (titleImageObject != null)
-            titleImageObject.SetActive(shouldShow);
-
-        if (animatedSpriteObjects == null) return;
-        foreach (GameObject go in animatedSpriteObjects)
-            if (go != null) go.SetActive(shouldShow);
-    }
+    // タイトルUIの表示更新（ラベル・位置・Cancel表示・クレジット/設定ボタン）は
+    // ChildTitleConnectionUI が ChildUdpReceiver.ConnectionStateChanged を受けて行う。
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -1134,39 +1218,6 @@ public class ChildUdpReceiver : MonoBehaviour
         SceneManager.LoadScene(gameSceneName);
     }
 
-    private static void SetActiveForButton(Button button, bool active)
-    {
-        if (button == null) return;
-        GameObject target = button.transform.parent != null
-            ? button.transform.parent.gameObject
-            : button.gameObject;
-        target.SetActive(active);
-    }
-
-    private static Button FindButton(Button current, params string[] candidateNames)
-    {
-        if (current != null)
-            return current;
-
-        foreach (string candidateName in candidateNames)
-        {
-            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
-            {
-                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
-                    continue;
-
-                if (candidate.name != candidateName)
-                    continue;
-
-                Button button = candidate.GetComponent<Button>();
-                if (button != null)
-                    return button;
-            }
-        }
-
-        return null;
-    }
-
     private static GameObject FindGameObject(GameObject current, params string[] candidateNames)
     {
         if (current != null)
@@ -1185,15 +1236,6 @@ public class ChildUdpReceiver : MonoBehaviour
         }
 
         return null;
-    }
-
-    private static void DisableRaycastTargets(GameObject target)
-    {
-        if (target == null)
-            return;
-
-        foreach (Graphic graphic in target.GetComponentsInChildren<Graphic>(true))
-            graphic.raycastTarget = false;
     }
 
     private static void CloseClient(ref UdpClient client, string label)
