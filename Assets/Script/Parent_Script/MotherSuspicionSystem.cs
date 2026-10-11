@@ -259,9 +259,38 @@ public class MotherSuspicionSystem : MonoBehaviour
     private bool _animatorWarningLogged;
     public float CurrentApproachSpeed => _approachSpeed;
 
+    // ── LOUD_ITEM（子機の大きな音）の購読 ────────────────────────────────────
+    //  ・受信後の反応（OnLoudItemTriggered）は本クラスが担当する。
+    //    UDP側（ParentUdpSender）は「受信した」ことだけを通知する。
+    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・同じ通知で二重に反応しないよう、購読する実体は1つに限定する（_loudItemSubscriber）。
+    private static MotherSuspicionSystem _loudItemSubscriber; // 二重発火防止：現在購読している実体
+    private bool _loudItemSubscribed;
+    private ParentUdpSender _loudItemSender;                  // 購読解除を確実にするため保持する
+
+    // ── GAME_PROGRESS（子機のゲーム進行率）の購読 ────────────────────────────
+    //  ・受信後の反応（OnGameProgress）は本クラスが担当する。
+    //    UDP側（ParentUdpSender）は「受信した進行率」だけを通知する。
+    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・同じ通知を複数の実体が処理しないよう、購読する実体は1つに限定する（_gameProgressSubscriber）。
+    //  ・LOUD_ITEM とは別の静的な担当スロットで管理する（互いのガードに影響しない）。
+    private static MotherSuspicionSystem _gameProgressSubscriber; // 二重処理防止：現在購読している実体
+    private bool _gameProgressSubscribed;
+    private ParentUdpSender _gameProgressSender;                  // 購読解除を確実にするため保持する
+
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
+
+    private void OnEnable()
+    {
+        // LOUD_ITEM（子機の大きな音）の受信購読を張る。
+        // ParentUdpSender.Instance がまだ無い場合は購読せず、Start/Update で再試行する。
+        TrySubscribeLoudItem();
+
+        // GAME_PROGRESS（子機のゲーム進行率）の受信購読を張る（同じ再試行方式）。
+        TrySubscribeGameProgress();
+    }
 
     private void Start()
     {
@@ -318,6 +347,12 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 部屋入室（案B）：入室完了／退室完了の通知を受け取る。
         // approachControllerはコード上で解決するため、OnEnable()ではなくStart()末尾で購読する。
         SubscribeApproachEvents();
+
+        // LOUD_ITEM の購読（OnEnable の時点で Instance が未生成だった場合の保険。取得は再試行できる）。
+        TrySubscribeLoudItem();
+
+        // GAME_PROGRESS の購読も同様に保険を張る（再試行は Update）。
+        TrySubscribeGameProgress();
     }
 
     /// <summary>
@@ -330,6 +365,12 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// </summary>
     private void OnDisable()
     {
+        // LOUD_ITEM の購読を外す（捕獲演出などで enabled=false になった時点から通知を受けない）。
+        UnsubscribeLoudItem();
+
+        // GAME_PROGRESS の購読も同じ理由で外す。
+        UnsubscribeGameProgress();
+
         StopChoreLookSuspicion();
         _choreLooking = false;
     }
@@ -349,6 +390,157 @@ public class MotherSuspicionSystem : MonoBehaviour
         // （破棄後の StopCoroutine は呼ばない）。
         _choreLookSuspicionCoroutine = null;
         _choreLookSuspicionRunning = false;
+
+        // LOUD_ITEM の購読も外す（破棄後に通知を受けない）。
+        UnsubscribeLoudItem();
+
+        // GAME_PROGRESS の購読も外す（破棄後に通知を受けない）。
+        UnsubscribeGameProgress();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  LOUD_ITEM（子機の大きな音）の受信購読
+    //  ・受信後の反応は本クラスが担当し、UDP側（ParentUdpSender）は受信を通知するだけ。
+    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・同じ通知で二重に反応しないよう、購読する実体は1つに限定する。
+    //  ・enabled=false（捕獲演出など）で購読を外し、再有効化で購読を再開する。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// ParentUdpSender.Instance の LoudItemReceived を購読する。
+    /// Instance が未生成の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
+    /// </summary>
+    private bool TrySubscribeLoudItem()
+    {
+        if (_loudItemSubscribed) return true;
+        if (!isActiveAndEnabled) return false;
+
+        // 二重発火防止：先に購読している有効な実体が居る場合は購読しない。
+        // （破棄済みの実体は Unity の null 判定で外れるため、その場合は引き継ぐ）
+        if (_loudItemSubscriber != null && _loudItemSubscriber != this && _loudItemSubscriber._loudItemSubscribed)
+        {
+            Debug.LogWarning("[PD] LOUD_ITEM の購読は既に別の MotherSuspicionSystem が担当しています（二重発火防止のため購読しません）。", this);
+            return false;
+        }
+
+        ParentUdpSender sender = ParentUdpSender.Instance;
+        if (sender == null) return false;
+
+        _loudItemSender = sender;
+        _loudItemSender.LoudItemReceived += HandleLoudItemReceived;
+        _loudItemSubscribed = true;
+        _loudItemSubscriber = this;
+
+        Debug.Log($"[PD] LOUD_ITEM の購読を開始しました（sender='{sender.gameObject.name}', id={sender.GetInstanceID()}）。", this);
+        return true;
+    }
+
+    /// <summary>
+    /// LOUD_ITEM の購読を解除する（OnDisable/OnDestroy から呼ぶ。二重に呼んでも安全）。
+    /// </summary>
+    private void UnsubscribeLoudItem()
+    {
+        if (_loudItemSubscribed)
+        {
+            if (_loudItemSender != null)
+            {
+                _loudItemSender.LoudItemReceived -= HandleLoudItemReceived;
+            }
+
+            _loudItemSubscribed = false;
+            Debug.Log("[PD] LOUD_ITEM の購読を解除しました。", this);
+        }
+
+        // 担当から外れる（別の実体が購読できるようにする）。
+        if (_loudItemSubscriber == this)
+        {
+            _loudItemSubscriber = null;
+        }
+
+        _loudItemSender = null;
+    }
+
+    /// <summary>
+    /// 子機の大きな音（LOUD_ITEM）を受信したときに、メインスレッドで1回だけ呼ばれる。
+    /// 既存の条件判定（enableLoudItemFeature／捕獲済み／警告中の扱い／無敵時の捕獲抑止と突入継続）は
+    /// OnLoudItemTriggered 側のまま変更しない。
+    /// </summary>
+    private void HandleLoudItemReceived()
+    {
+        if (!isActiveAndEnabled) return;   // 無効化中は反応しない（購読解除済みだが念のため）
+        OnLoudItemTriggered();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  GAME_PROGRESS（子機のゲーム進行率）の受信購読
+    //  ・受信後の反応は本クラス（OnGameProgress）が担当し、UDP側は受信を通知するだけ。
+    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・同じ通知を複数の実体が処理しないよう、購読する実体は1つに限定する。
+    //  ・enabled=false（捕獲演出など）で購読を外し、再有効化で購読を再開する。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// ParentUdpSender.Instance の GameProgressReceived を購読する。
+    /// Instance が未生成の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
+    /// </summary>
+    private bool TrySubscribeGameProgress()
+    {
+        if (_gameProgressSubscribed) return true;
+        if (!isActiveAndEnabled) return false;
+
+        // 二重処理防止：先に購読している有効な実体が居る場合は購読しない。
+        // （破棄済みの実体は Unity の null 判定で外れるため、その場合は引き継ぐ）
+        if (_gameProgressSubscriber != null && _gameProgressSubscriber != this && _gameProgressSubscriber._gameProgressSubscribed)
+        {
+            Debug.LogWarning("[PD] GAME_PROGRESS の購読は既に別の MotherSuspicionSystem が担当しています（二重処理防止のため購読しません）。", this);
+            return false;
+        }
+
+        ParentUdpSender sender = ParentUdpSender.Instance;
+        if (sender == null) return false;
+
+        _gameProgressSender = sender;
+        _gameProgressSender.GameProgressReceived += HandleGameProgressReceived;
+        _gameProgressSubscribed = true;
+        _gameProgressSubscriber = this;
+
+        Debug.Log($"[PD] GAME_PROGRESS の購読を開始しました（sender='{sender.gameObject.name}', id={sender.GetInstanceID()}）。", this);
+        return true;
+    }
+
+    /// <summary>
+    /// GAME_PROGRESS の購読を解除する（OnDisable/OnDestroy から呼ぶ。二重に呼んでも安全）。
+    /// </summary>
+    private void UnsubscribeGameProgress()
+    {
+        if (_gameProgressSubscribed)
+        {
+            if (_gameProgressSender != null)
+            {
+                _gameProgressSender.GameProgressReceived -= HandleGameProgressReceived;
+            }
+
+            _gameProgressSubscribed = false;
+            Debug.Log("[PD] GAME_PROGRESS の購読を解除しました。", this);
+        }
+
+        // 担当から外れる（別の実体が購読できるようにする）。
+        if (_gameProgressSubscriber == this)
+        {
+            _gameProgressSubscriber = null;
+        }
+
+        _gameProgressSender = null;
+    }
+
+    /// <summary>
+    /// 子機のゲーム進行率を受信したときに、メインスレッドで1回だけ呼ばれる。
+    /// 既存の OnGameProgress をそのまま1回呼ぶ（本体は変更しない）。
+    /// </summary>
+    private void HandleGameProgressReceived(float progressRate)
+    {
+        if (!isActiveAndEnabled) return;   // 無効化中は反応しない（購読解除済みだが念のため）
+        OnGameProgress(progressRate);
     }
 
     public void SetApproachSpeed(float speed)
@@ -578,6 +770,19 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     private void Update()
     {
+        // LOUD_ITEM の購読がまだ張れていない場合は再試行する
+        // （ParentUdpSender.Instance の取得が遅れた場合。以降の早期 return より前に置く）。
+        if (!_loudItemSubscribed)
+        {
+            TrySubscribeLoudItem();
+        }
+
+        // GAME_PROGRESS の購読も同じ理由で再試行する（購読成立後の最初の Update で保留分が通知される）。
+        if (!_gameProgressSubscribed)
+        {
+            TrySubscribeGameProgress();
+        }
+
         // 足音の更新は MotherApproachWarning.UpdateMotherFootsteps が担当する（移管済み）。
 
         // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
@@ -767,9 +972,19 @@ public class MotherSuspicionSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// 子機の大きな音のアイテムが発生したとき（または0キーのデバッグ時）に呼び出される。
-    /// 突入音を再生し、ゲージを加算してからMotherApproachWarning.StartLoudItemRushInSequence()へ引き渡す。
-    /// 警告シーケンスがすでに進行中の場合は完全に抑制する。
+    /// 子機の大きな音のアイテムが発生したとき（LOUD_ITEM 受信時）に、メインスレッドで1回だけ呼ばれる。
+    ///
+    ///  A) イベントが始まっていない：RushInを1回開始する。
+    ///  B) イベントが進行中：現在のイベントを即時中断し（帰宅移動・Peek終了を待たない）、
+    ///     表示中の母親を即座に消してから、新しいRushInを1回開始する。
+    ///
+    /// 「進行中」の判定は実際の警告／RushInシーケンス状態（warningSystem.isWarningActive）を使う。
+    /// RushInの開始は既存のRushIn用シーケンス（StartLoudItemRushInSequence）を再利用し、
+    /// 速度はRushIn本来の基準速度（loudItemRushInMoveSpeed）を使う。
+    /// （通常の予告灯付き接近イベント＝ForeshadowAndApproachCoroutine は開始しない）
+    ///
+    /// ゲージ加算・捕獲判定は移動3倍速化より前のLOUD_ITEM処理と同じ順序・回数（1回だけ加算）で行う。
+    /// 順序：進行中なら即時中断 → 突入音 → ゲージ加算（1回） → 捕獲判定 → 新RushInを1回開始。
     /// </summary>
     public void OnLoudItemTriggered()
     {
@@ -781,24 +996,25 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (isCaught || _hasPermanentGameOver) return;
 
-        if (warningSystem != null && warningSystem.isWarningActive)
-        {
-            if (!forceLoudItemDuringWarning)
-            {
-                Debug.Log("[PD] Loud item ignored — warning sequence already active");
-                return;
-            }
+        // イベントが進行中か（実際の警告／RushInシーケンス状態で判定）。
+        bool eventInProgress = warningSystem != null && warningSystem.isWarningActive;
 
-            Debug.Log("[PD] Loud item overriding active warning — forcing rush-in");
-            warningSystem.StopWarningSequence();
+        if (eventInProgress)
+        {
+            // B：現在のイベントを即時中断し、表示中の母親を消し、開始位置・姿勢を整える。
+            InterruptActiveSequenceForLoudItem();
+
+            // 中断中に捕獲確定・ゲームオーバーになっていないことを確認（なっていれば新RushInを開始しない）。
+            if (isCaught || _hasPermanentGameOver) return;
         }
 
-        Debug.Log($"[PD] Loud item triggered rush-in request — adding {loudItemGaugeAmount} gauge stages");
+        Debug.Log($"[PD] Loud item → rush-in request — adding {loudItemGaugeAmount} gauge stage(s) (once)");
 
         warningSystem?.PlayRushIn();
 
         if (motherGauge != null)
         {
+            // ゲージ加算は1回だけ（中断処理側では加算しない）。
             motherGauge.AddGauge(loudItemGaugeAmount);
 
             if (motherGauge.currentGauge >= motherGauge.maxGauge)
@@ -810,8 +1026,67 @@ public class MotherSuspicionSystem : MonoBehaviour
             }
         }
 
+        // 新しいRushInを1回だけ開始する（isWarningActiveは上記の中断でfalseになっており、
+        // StartLoudItemRushInSequence 側でも二重起動をガードしている）。
         if (warningSystem != null)
             warningSystem.StartLoudItemRushInSequence();
+    }
+
+    /// <summary>
+    /// LOUD_ITEM用：進行中の旧イベントを即時中断する。
+    ///  ・帰宅移動やPeek終了は待たない（既存の停止・終了処理を再利用する）。
+    ///  ・旧イベントのコルーチンが後から「母親を再表示」「新RushInを終了」「帰宅」「警告フラグ書き換え」を
+    ///    しないよう、関連コルーチンを停止し、開始位置・姿勢へ整える。
+    ///  ・MotherSuspicionSystem / UDP購読を持つルートは無効化しない（見た目＝motherModelRoot のみ非表示）。
+    ///  ・無関係なコルーチンは一括停止しない（対象のコルーチンだけを個別に停止する）。
+    ///  ・中断と開始の間に通常イベントが割り込まないよう、本処理とStartLoudItemRushInSequenceは同一フレームで連続実行する。
+    /// </summary>
+    private void InterruptActiveSequenceForLoudItem()
+    {
+        Debug.Log($"[PD] LOUD_ITEM: 進行中の旧イベントを即時中断します" +
+                  $"（legacy forceLoudItemDuringWarning={forceLoudItemDuringWarning}: 新仕様では進行中は常に中断するため未使用）");
+
+        // 1) 母を見た目だけ即座に消す（以降の位置リセット・再表示を見せないため最初に行う）。
+        approachController?.HideMotherModelImmediate();
+
+        // 2) 警告シーケンス（予告コルーチン・灯り・警告フラグ）を既存の停止処理で止める。
+        //    StopWarningSequence → EndWarningSequence（isWarningActive=false / ActiveRoute=None /
+        //    approachController.ResetApproach()＝接近コルーチン停止＋開始位置・姿勢へリセット）。
+        warningSystem?.StopWarningSequence();
+
+        // 3) 猫フェイント（3キー）が進行中なら停止し、猫とドアを後始末する。
+        //    HandleCatFeintSequence は終了時に ResetCycle/EndWarningSequence を呼ぶため、
+        //    放置すると後から新RushInを終了させてしまう。
+        StopCatFeintForLoudItemInterrupt();
+
+        // 4) このサイクルの疑惑加算・覗き・リセット用コルーチンを止め、ドアを閉める（既存の ResetCycle を再利用）。
+        //    片付け視線の加算（ContinuousChoreLookSuspicionCoroutine）も ResetCycle 内の StopChoreLookSuspicion で止まる。
+        ResetCycle();
+
+        // 5) 念のため開始位置・姿勢を再確認する（冪等。新RushInは BeginApproach でここから開始する）。
+        approachController?.ResetApproach();
+
+        Debug.Log("[PD] LOUD_ITEM: 旧イベントの中断が完了（表示OFF→開始位置/姿勢を準備→新RushIn開始へ）");
+    }
+
+    /// <summary>
+    /// LOUD_ITEMの即時中断用：猫フェイントのコルーチンを止め、猫とドアを後始末する。
+    /// （HandleCatFeintSequence 自身の中断時と同じ処理を行う）
+    /// </summary>
+    private void StopCatFeintForLoudItemInterrupt()
+    {
+        if (_catFeintCoroutine != null)
+        {
+            StopCoroutine(_catFeintCoroutine);
+            _catFeintCoroutine = null;
+            Debug.Log("[PD] LOUD_ITEM中断: 猫フェイントのコルーチンを停止しました");
+        }
+
+        if (catFeintController != null)
+        {
+            catFeintController.HideCat();
+            catFeintController.ReturnToStartPosition();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

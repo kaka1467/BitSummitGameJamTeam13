@@ -1,6 +1,7 @@
 using UnityEngine;
 using System;
 using System.Collections.Generic;
+using UnityEngine.InputSystem;
 
 public class ItemSpawner : MonoBehaviour
 {
@@ -51,6 +52,23 @@ public class ItemSpawner : MonoBehaviour
     [SerializeField, Min(0)] private int hugeObstacleSpawnCount = 1;
     [SerializeField] private float hugeObstacleSpawnY = 1.929803e-08f;
 
+    // ── BGMの通常出現条件 ─────────────────────────────────────────────────────
+    //   BGMは「子機のゲームタイマーの残り時間がこの値(秒)未満」のときだけ通常出現を許可する。
+    //   ゲーム開始からの経過時間ではなく、GameManager が管理する実際の残り時間を参照する
+    //   （時間の加算・減算があれば、その現在値に従う）。
+    [Header("BGM Spawn Condition")]
+    [Tooltip("BGMアイテムを通常出現させてよい残り時間のしきい値（秒）。残り時間がこの値未満のときだけ通常出現を許可する。")]
+    [SerializeField, Min(0f)] private float bgmNormalSpawnRemainingSeconds = 90f;
+
+    // ── デバッグ出現キー（数字1〜6） ──────────────────────────────────────────
+    //   子機のゲーム中のみ有効。タイトル・ロード中・ゲーム終了後は出現させない。
+    //   1:Score / 2:Boost / 3:Fever / 4:Clock / 5:BGM / 6:HugeObstacle
+    [Header("Debug Spawn Keys")]
+    [Tooltip("数字キー(1〜6)によるデバッグ出現を有効にする。")]
+    [SerializeField] private bool enableDebugSpawnKeys = true;
+    [Tooltip("デバッグ出現に関するログを出力する。")]
+    [SerializeField] private bool showDebugSpawnKeyLogs = true;
+
     [Header("Overlap Avoidance")]
     [SerializeField, Min(0f)] private float minSpawnDistanceX = 1.2f;
     [SerializeField, Min(0f)] private float minSpawnDistanceY = 0.6f;
@@ -95,6 +113,9 @@ public class ItemSpawner : MonoBehaviour
     public float[] lanesY;
     [UnityEngine.SerializeField] private float hugeInitialDelay = 30f;
     [UnityEngine.SerializeField] private float hugeCooldownAfterQte = 20f;
+    // フィーバー中に通常のHugeObstacle出現タイミングが来たとき、次の再判定まで先延ばしする秒数。
+    // 予定は消費せず（出現機会を恒久的に失わず）、フィーバー終了後に再開する（毎フレーム再試行はしない）。
+    [UnityEngine.SerializeField, Min(0.5f)] private float hugeFeverDeferralSeconds = 5f;
 
     private float nextHugeSpawnTime = -1f;
     private bool isHugeSpawnScheduled = false;
@@ -103,6 +124,10 @@ public class ItemSpawner : MonoBehaviour
 
     // ★ 追加: 同一Update内で仮登録した配置済み位置（フレーム終わりにクリア）
     private readonly List<RecentSpawnRecord> pendingFrameRecords = new List<RecentSpawnRecord>();
+
+    // デバッグ出現キーの診断ログ用（初回のみ／警告は1回のみ出力して毎フレームのログ氾濫を防ぐ）
+    private bool _debugInitLogged;
+    private bool _debugKeyWarningLogged;
 
     private const float SpawnZ = 609.47f;
 
@@ -147,10 +172,13 @@ public class ItemSpawner : MonoBehaviour
 
     private void Update()
     {
-        if (!spawnEnabled) return;
-
         // ★ フレーム先頭で仮レコードをクリア
         pendingFrameRecords.Clear();
+
+        // デバッグ出現キー（数字1〜6）。通常スポーンの有効/無効(spawnEnabled)とは独立に動作する。
+        HandleDebugSpawnKeys();
+
+        if (!spawnEnabled) return;
 
         HandleScheduledNormalSpawns();
 
@@ -159,8 +187,21 @@ public class ItemSpawner : MonoBehaviour
 
         if (Time.unscaledTime >= nextHugeSpawnTime)
         {
-            SpawnHugeObstacle();
-            isHugeSpawnScheduled = false;
+            if (IsFeverActiveForSpawn())
+            {
+                // フィーバー中は通常のHugeObstacleを出現させない。
+                // 予定は消費せず、次の再判定まで先延ばしする（毎フレーム再試行はしない）。
+                // これによりフィーバー終了後に通常出現が再開できる（出現機会を恒久的に失わない）。
+                float deferral = Mathf.Max(0.5f, hugeFeverDeferralSeconds);
+                nextHugeSpawnTime = Time.unscaledTime + deferral;
+                if (showDebugLogs)
+                    Debug.Log($"[ItemSpawner] フィーバー中のため通常のHugeObstacle出現を {deferral:F1}s 先へ延期します（予定は保持）。");
+            }
+            else
+            {
+                SpawnHugeObstacle();
+                isHugeSpawnScheduled = false;
+            }
         }
     }
 
@@ -181,6 +222,15 @@ public class ItemSpawner : MonoBehaviour
         if (!spawnEnabled)
         {
             pendingFrameRecords.Clear();
+        }
+
+        // フィーバー中は HugeObstacle を出現させない（通常予定・6キー・他APIと同じ。抜け道を作らない）。
+        Item prefabItem = prefab.GetComponent<Item>();
+        if (prefabItem != null && prefabItem.itemType == ItemType.HugeObstacle && IsFeverActiveForSpawn())
+        {
+            if (showDebugLogs)
+                Debug.Log($"[ItemSpawner] フィーバー中のため HugeObstacle を出現させません（TrySpawnByPrefab: {prefab.name}）。");
+            return false;
         }
 
         GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
@@ -216,6 +266,15 @@ public class ItemSpawner : MonoBehaviour
         {
             pendingFrameRecords.Clear();
         }
+
+        // フィーバー中は HugeObstacle を出現させない（通常予定・6キーと同じ禁止条件。別APIからも抜け道を作らない）。
+        if (IsFeverActiveForSpawn())
+        {
+            if (showDebugLogs)
+                Debug.Log("[ItemSpawner] フィーバー中のため HugeObstacle を出現させません（TrySpawnHugeObstacle）。");
+            return false;
+        }
+
         GameObject item = ItemPool.Instance.GetFromPoolByItemType(ItemType.HugeObstacle);
         if (item == null) return false;
 
@@ -517,6 +576,16 @@ public class ItemSpawner : MonoBehaviour
             return true;
         }
 
+        // BGM は「子機のタイマーの残り時間がしきい値(既定90秒)未満」のときだけ通常出現を許可する。
+        // 解禁前の予定はここで消費する（保留・毎フレーム再試行・解禁時のまとめ出現はしない）。
+        if (itemComp.itemType == ItemType.BGM && !IsBgmNormalSpawnAllowed())
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            if (showDebugLogs)
+                Debug.Log($"[ItemSpawner] BGMは残り時間がしきい値({bgmNormalSpawnRemainingSeconds:F0}秒)未満でのみ通常出現します — 今回の予定は見送ります。");
+            return true;
+        }
+
         float maxExtraX = GetAllowedExtraXForVisibleDeadline(prefab, visibleByTime, Time.unscaledTime);
         if (TryPlaceItemWithoutOverlap(item, preferHugeLane: false, maxExtraX))
         {
@@ -808,5 +877,211 @@ public class ItemSpawner : MonoBehaviour
         {
             ItemPool.Instance.ReturnToPool(item);
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  デバッグ出現（数字キー1〜6）
+    //  ・子機のゲーム中のみ。タイトル・ロード中・ゲーム終了後は出現させない。
+    //  ・キーを押した瞬間だけ（wasPressedThisFrame）。長押しの連続出現はしない。
+    //  ・通常スポーンと同じ画面右側のX位置に、中央レーン(lanesY[1])のYで1個だけ出す。
+    //  ・重なり回避で別レーンへ逃がさない。配置できなければその入力分は失敗として扱う。
+    //  ・取得時の効果・回収・移動は既存処理（Item/ItemEffect/ItemMove/ItemPool）を使う。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 数字キー1〜6（上段・テンキー共通）の押下（その瞬間のみ）を検出し、対応する種類をデバッグ出現させる。
+    /// Inspector の enableDebugSpawnKeys が false のときは何もしない。
+    /// どの段階で止まったか切り分けられるよう、初回のみ初期化状態をログ出力する（毎フレームは出さない）。
+    /// </summary>
+    private void HandleDebugSpawnKeys()
+    {
+        LogDebugInitOnce();
+
+        if (!enableDebugSpawnKeys) return;
+
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null)
+        {
+            LogDebugKeyWarningOnce("Keyboard.current が取得できません（Input System 未初期化の可能性）。");
+            return;
+        }
+
+        // ゲーム終了後はデバッグ出現させない。
+        // タイトル・ロード・結果シーンには ItemSpawner 自体が存在しないため、シーン名ではなく状態で判定する。
+        // GameManager が取得できない場合でもこの経路は動かす（ChildGameScene 直接Play の初期化差を許容する）。
+        GameManager gm = GameManager.instance;
+        if (gm != null && gm.IsGameOver)
+        {
+            LogDebugKeyWarningOnce("ゲーム終了後のためデバッグ出現を停止します。");
+            return;
+        }
+
+        // 押した瞬間だけ判定する（長押しで毎フレーム出現させない）。
+        // 上段数字キーとテンキーのどちらかを押した瞬間に「1回だけ」出現させ、同フレームの二重出現を防ぐ。
+        if (IsDebugKeyPressedThisFrame(keyboard, 1)) SpawnDebugItemByKey(1, ItemType.Score);
+        if (IsDebugKeyPressedThisFrame(keyboard, 2)) SpawnDebugItemByKey(2, ItemType.Boost);
+        if (IsDebugKeyPressedThisFrame(keyboard, 3)) SpawnDebugItemByKey(3, ItemType.Fever);
+        if (IsDebugKeyPressedThisFrame(keyboard, 4)) SpawnDebugItemByKey(4, ItemType.Clock);
+        if (IsDebugKeyPressedThisFrame(keyboard, 5)) SpawnDebugItemByKey(5, ItemType.BGM);
+        if (IsDebugKeyPressedThisFrame(keyboard, 6)) SpawnDebugItemByKey(6, ItemType.HugeObstacle);
+    }
+
+    /// <summary>
+    /// 上段数字キー(1〜6)またはテンキー(1〜6)のどちらかを「このフレームで押した」かを返す。
+    /// 両方を同時に押しても1回だけ true になり、同じ種類を二重に出現させない。
+    /// </summary>
+    private static bool IsDebugKeyPressedThisFrame(Keyboard keyboard, int number)
+    {
+        if (keyboard == null) return false;
+
+        switch (number)
+        {
+            case 1: return keyboard.digit1Key.wasPressedThisFrame || keyboard.numpad1Key.wasPressedThisFrame;
+            case 2: return keyboard.digit2Key.wasPressedThisFrame || keyboard.numpad2Key.wasPressedThisFrame;
+            case 3: return keyboard.digit3Key.wasPressedThisFrame || keyboard.numpad3Key.wasPressedThisFrame;
+            case 4: return keyboard.digit4Key.wasPressedThisFrame || keyboard.numpad4Key.wasPressedThisFrame;
+            case 5: return keyboard.digit5Key.wasPressedThisFrame || keyboard.numpad5Key.wasPressedThisFrame;
+            case 6: return keyboard.digit6Key.wasPressedThisFrame || keyboard.numpad6Key.wasPressedThisFrame;
+            default: return false;
+        }
+    }
+
+    /// <summary>
+    /// デバッグ出現の初期化状態を初回だけ出力する（原因切り分け用。毎フレームは出さない）。
+    /// </summary>
+    private void LogDebugInitOnce()
+    {
+        if (_debugInitLogged) return;
+        _debugInitLogged = true;
+
+        GameManager gm = GameManager.instance;
+        Camera cam = Camera.main;
+        int laneCount = (lanesY != null) ? lanesY.Length : 0;
+        float midLane = (laneCount >= 2) ? lanesY[1] : 0f;
+
+        Debug.Log($"[ItemSpawner] デバッグ出現キー初期化 | enableDebugSpawnKeys={enableDebugSpawnKeys} | " +
+                  $"itemPool={(ItemPool.Instance != null)} | gameManager={(gm != null)} | " +
+                  $"gameManagerIsGameOver={(gm != null && gm.IsGameOver)} | keyboard={(Keyboard.current != null)} | " +
+                  $"lanes={laneCount} | midLaneY={midLane:F3} | cameraMain={(cam != null)} | spawnEnabled={spawnEnabled}");
+    }
+
+    /// <summary>デバッグ出現キーの警告を1回だけ出力する（毎フレームのログ氾濫を防ぐ）。</summary>
+    private void LogDebugKeyWarningOnce(string message)
+    {
+        if (_debugKeyWarningLogged) return;
+        _debugKeyWarningLogged = true;
+        Debug.LogWarning($"[ItemSpawner] デバッグ出現キー: {message}");
+    }
+
+    /// <summary>
+    /// デバッグキー1つ分の出現処理。
+    /// フィーバー中の HugeObstacle は出現させない（通常出現と同じ禁止条件・既存のフィーバー状態を参照）。
+    /// </summary>
+    private void SpawnDebugItemByKey(int keyNumber, ItemType itemType)
+    {
+        if (itemType == ItemType.HugeObstacle && IsFeverActiveForSpawn())
+        {
+            Debug.Log($"[ItemSpawner] デバッグ出現キー{keyNumber}: フィーバー中のため {itemType} は出現させません。");
+            return;
+        }
+
+        if (!TrySpawnDebugItemAtMiddleLane(itemType, out _))
+        {
+            Debug.LogWarning($"[ItemSpawner] デバッグ出現キー{keyNumber}: {itemType} の出現に失敗しました（中央レーン固定。別レーンへは逃がしません）。");
+        }
+    }
+
+    /// <summary>
+    /// 指定した ItemType を、通常スポーンと同じ画面右側のX位置を起点に「中央レーン(lanesY[1])」のYで1個だけ出現させる。
+    ///  ・レーンは中央固定（別レーンへは逃がさない）。
+    ///  ・重なり回避は既存の overlapAvoidanceXStep × maxPlacementAttempts を使い X 方向にのみ行う
+    ///    （通常スポーンの TryPlaceItemWithoutOverlap と同じ考え方。無制限のリトライはしない）。
+    ///  ・HugeObstacle もこのデバッグ経路では中央レーンを使う（通常出現の hugeObstacleSpawnY は変更しない）。
+    ///  ・BGM はこの経路では通常出現の残り時間制限(90秒)を受けない（LOUD_ITEM経路の確認用）。
+    /// </summary>
+    private bool TrySpawnDebugItemAtMiddleLane(ItemType itemType, out GameObject spawnedItem)
+    {
+        spawnedItem = null;
+
+        if (ItemPool.Instance == null)
+        {
+            Debug.LogWarning("[ItemSpawner] デバッグ出現: ItemPool.Instance がありません。");
+            return false;
+        }
+
+        // 中央レーンの座標は既存レーン設定(lanesY)を参照する。
+        if (lanesY == null || lanesY.Length < 2)
+        {
+            Debug.LogWarning("[ItemSpawner] デバッグ出現: 中央レーン(lanesY[1])が設定されていません（lanesY未設定）。");
+            return false;
+        }
+
+        GameObject item = ItemPool.Instance.GetFromPoolByItemType(itemType);
+        if (item == null)
+        {
+            Debug.LogWarning($"[ItemSpawner] デバッグ出現: ItemPool から {itemType} を取得できませんでした（プレハブ未登録の可能性）。");
+            return false;
+        }
+
+        Item itemComp = item.GetComponent<Item>();
+        if (itemComp == null || itemComp.itemType != itemType)
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            Debug.LogWarning($"[ItemSpawner] デバッグ出現: 取得したアイテムの種類が {itemType} と一致しません。");
+            return false;
+        }
+
+        float y = lanesY[1];                // 中央レーン固定（別レーンへは逃がさない）
+        float baseX = GetSpawnXWorld();
+        float now = Time.unscaledTime;
+        float xStep = Mathf.Max(0f, overlapAvoidanceXStep);
+        int attempts = Mathf.Max(1, maxPlacementAttempts);
+
+        for (int attempt = 0; attempt < attempts; attempt++)
+        {
+            // 重なり回避は X 方向のみ（中央レーンのYは固定）。通常スポーンと同じ考え方で右へずらす。
+            float x = baseX + xStep * attempt;
+            Vector3 candidate = new Vector3(x, y, SpawnZ);
+
+            if (IsSpawnPositionOccupied(candidate, now, item))
+                continue;
+
+            item.transform.position = candidate;
+            RegisterRecentSpawn(item, candidate, now);
+            RegisterPendingFrameRecord(item, candidate, now);
+
+            spawnedItem = item;
+            if (showDebugSpawnKeyLogs)
+                Debug.Log($"[ItemSpawner] デバッグ出現: {itemType} を中央レーン (x={x:F2}, y={y:F2}, attempt={attempt}) に1個出現させました。");
+            return true;
+        }
+
+        // 中央レーンに配置できなかった（別レーンへは逃がさない）。
+        ItemPool.Instance.ReturnToPool(item);
+        Debug.LogWarning($"[ItemSpawner] デバッグ出現: 中央レーン(y={y:F3})に配置できませんでした（{attempts}回試行 / {itemType}）。" +
+                         "重なり回避はX方向のみで、別レーンへは逃がしません。");
+        return false;
+    }
+
+    /// <summary>
+    /// 既存のフィーバー状態（GameManager.IsFeverMagnetActive）を参照する。
+    /// デバッグ専用のフィーバーフラグは作らない。
+    /// </summary>
+    private static bool IsFeverActiveForSpawn()
+    {
+        GameManager gm = GameManager.instance;
+        return gm != null && gm.IsFeverMagnetActive;
+    }
+
+    /// <summary>
+    /// BGMアイテムが通常出現できるか。子機のゲームタイマーの残り時間(GameManager.time)が
+    /// しきい値(bgmNormalSpawnRemainingSeconds, 既定90秒)未満のときだけ許可する。
+    /// ゲーム開始からの経過時間ではなく、実際の残り時間（時間の加算・減算の現在値）を参照する。
+    /// </summary>
+    private bool IsBgmNormalSpawnAllowed()
+    {
+        GameManager gm = GameManager.instance;
+        if (gm == null) return false; // 残り時間を取得できない場合は許可しない
+        return gm.time < bgmNormalSpawnRemainingSeconds;
     }
 }
