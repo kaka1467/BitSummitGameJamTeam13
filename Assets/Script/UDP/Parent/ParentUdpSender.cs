@@ -58,13 +58,7 @@ public class ParentUdpSender : MonoBehaviour
     public string targetIP         = "127.0.0.1";
     public ConnectionState currentState = ConnectionState.Disconnected;
 
-    public Button             connectButton;
-    public TextMeshProUGUI    connectButtonLabel;
-    public GameObject         startButtonObject;
-
     [Header("Solo Start（子機接続なしで開始）")]
-    [Tooltip("子機の接続・START_GAME受信を待たずに、親機だけでゲームを開始するボタン。未設定でも動作するが、割り当てると押した瞬間に自動で非表示になる。")]
-    public GameObject         soloStartButtonObject;
     public string             gameSceneName    = "ParentLoading";
     [Tooltip("Solo Start（子機接続なし）の遷移先シーン。ParentLoadingは子機を無期限に待つため経由せず、直接このシーンへ行く。")]
     public string             soloGameSceneName = "ParentGameScene";
@@ -84,7 +78,6 @@ public class ParentUdpSender : MonoBehaviour
     public string             titleSceneName   = "ChildeTitle";
     public string             gameOverSceneName = "ParentGameOver";
     public string             timeUpSceneName   = "ParentGameClear";
-    public Button             cancelButton;
 
     // ── PlayerPrefs Keys（結果・ランキング保存用） ─────────────────────────────
     // 親機・子機で同じPlayerPrefs保存形式（キー文字列・降順TOP5）を使用します。
@@ -170,7 +163,20 @@ public class ParentUdpSender : MonoBehaviour
     private bool      _resultProcessed    = false; // GAME_OVER wins race
     private float     _returnToTitleHeld = 0f;
     private bool      _returningToTitle  = false;
-    public  bool      ChildLoadingComplete { get; set; } = false;
+    // ── 子機のロード完了（現在プレイの受信記録）────────────────────────────────
+    // LOADING_COMPLETE の受信結果そのもの（＝通信層が受け取った事実）。待機するかどうかの判断はロード側が持つ。
+    //   ・購読前に届いた通知も参照できるよう、現在プレイの記録として暫定保持する（読み取り専用）。
+    //   ・書き込みは本クラス内のみ（公開setterは無い）。新しいロード処理からは記録を書き換えない。
+    //   ・初期化は「プレイの開始を受理した時点（ParentLoadingへ進む前）」と「タイトル復帰時」に行う。
+    public  bool      ChildLoadingComplete { get; private set; } = false;
+
+    /// <summary>
+    /// 子機の LOADING_COMPLETE を受信して、現在プレイの受信記録が false→true になったときに
+    /// メインスレッドで発火する通知（同値＝再送では発火しない）。
+    /// 購読前に届いていた通知は ChildLoadingComplete の初回読み取りで同期する。
+    /// 受信処理（HandleIncoming）は Update から呼ばれるため、この通知もメインスレッドで発火する。
+    /// </summary>
+    public event System.Action LoadingCompleteReceived;
     private bool      _shouldTriggerLoudItem = false;
     // ── 片付け演出：ゲーム進行率の保留フラグ ─────────────────────────────────
     //   受信スレッドからメインスレッドへ渡す既存方式（_shouldTriggerLoudItem）と同じ扱い。
@@ -196,6 +202,33 @@ public class ParentUdpSender : MonoBehaviour
 
     public static ParentUdpSender Instance { get; private set; }
 
+    // ── 接続状態の通知（タイトルUIなどへ状態変化だけを伝える）─────────────────
+    /// <summary>
+    /// 接続状態が変化したときにメインスレッドで発火する（同値では発火しない）。
+    /// 受信スレッドからUIイベントを直接呼ばないよう、状態変更は必ず SetConnectionState 経由で行う。
+    /// </summary>
+    public event System.Action<ConnectionState> ConnectionStateChanged;
+
+    /// <summary>現在の接続状態（タイトルUIの初回同期用の読み取りAPI）。</summary>
+    public ConnectionState CurrentConnectionState => currentState;
+
+    /// <summary>開始済みか（診断ログ用の読み取りAPI。UI側からは書き換えない）。</summary>
+    public bool IsGameStarted => _gameStarted;
+
+    /// <summary>
+    /// 接続状態を更新し、変化があった場合だけ通知する。
+    ///  ・同値なら何もしない（通知もログも出さない）。
+    ///  ・受信スレッドから変更する場合は actionQueue 経由（メインスレッド）で呼ぶこと。
+    ///  ・既存の public フィールド currentState は従来どおりの名前・型のまま残す。
+    /// </summary>
+    private void SetConnectionState(ConnectionState next)
+    {
+        if (currentState == next) return;
+
+        currentState = next;
+        ConnectionStateChanged?.Invoke(next);
+    }
+
     // ── Singleton / DontDestroyOnLoad ──────────────────────────────────────────
     void Awake()
     {
@@ -213,14 +246,14 @@ public class ParentUdpSender : MonoBehaviour
     public void OnConnectButtonClicked()
     {
         ConnectionState before = currentState;
-        currentState = ConnectionState.Connecting;
+        SetConnectionState(ConnectionState.Connecting);
         Debug.Log($"[ParentUdpSender][Diag] OnConnectButtonClicked called — scene='{SceneManager.GetActiveScene().name}', " +
                   $"state {before} → Connecting, _gameStarted={_gameStarted}, listening on broadcastPort={broadcastPort}.");
     }
     public void OnCancelButtonClicked()
     {
         Debug.Log($"[ParentUdpSender][Diag] OnCancelButtonClicked called — scene='{SceneManager.GetActiveScene().name}', state {currentState} → Disconnected.");
-        currentState = ConnectionState.Disconnected;
+        SetConnectionState(ConnectionState.Disconnected);
     }
     public void OnStartButtonClicked()
     {
@@ -235,6 +268,10 @@ public class ParentUdpSender : MonoBehaviour
             return;
         }
         _gameStarted = true;
+
+        // 新しいプレイを受理した時点で、現在プレイの受信記録を初期化する（ParentLoading へ進む前）。
+        ResetChildLoadingCompleteRecord("親機START受理");
+
         if (showDebugLogs)
             Debug.Log($"[StartTrace][親機] OnStartButtonClicked → StartGameRoutine 開始 (遷移先='{gameSceneName}')", this);
         StartCoroutine(StartGameRoutine());
@@ -252,8 +289,7 @@ public class ParentUdpSender : MonoBehaviour
 
         // 単体開始が押されたことと、その時点の状態を必ず記録する（「Connecting表示」診断用）。
         Debug.Log($"[ParentUdpSender][Diag] OnSoloStartButtonClicked called — scene='{SceneManager.GetActiveScene().name}', " +
-                  $"state={currentState}, _gameStarted={_gameStarted}, " +
-                  $"soloStartButtonObject={(soloStartButtonObject != null ? soloStartButtonObject.activeSelf.ToString() : "null")}.");
+                  $"state={currentState}, _gameStarted={_gameStarted}.");
 
         if (_gameStarted)
         {
@@ -263,6 +299,10 @@ public class ParentUdpSender : MonoBehaviour
             return;
         }
         _gameStarted = true;
+
+        // 単独開始も「新しいプレイの受理」なので、現在プレイの受信記録を初期化する。
+        // （単独開始は ParentLoading を経由しないため、この記録は以降ゲーム中まで読まれない）
+        ResetChildLoadingCompleteRecord("単独開始受理");
 
         // 単体開始は親機が起点なので、親機が新しいプレイ識別子を発行する。
         // （子機接続済みで START_GAME を送る場合も、この識別子を共有させる）
@@ -274,7 +314,7 @@ public class ParentUdpSender : MonoBehaviour
         // 子機がたまたま接続済みなら合わせて開始通知を送る（未接続時はSendState内で無視される）
         SendState($"{CmdStart}:{_currentPlaySessionId}");
 
-        // soloStartButtonObject の非表示は TitleMenuHighlight.FlashAndDeactivate 側が
+        // SoloStartButton の非表示は TitleMenuHighlight.FlashAndDeactivate 側が
         // フラッシュ演出の完了後に行う（ここで即座に隠すと演出が表示されないため、外してある）。
 
         // ParentLoading（子機を無期限に待つ）は経由せず、直接ゲームシーンへ遷移する
@@ -364,8 +404,6 @@ public class ParentUdpSender : MonoBehaviour
 
         SceneManager.sceneLoaded += OnSceneLoaded;
         RefreshSceneReferences();
-        RefreshUiReferences();
-        AttachUiListeners();
 
         _isRunning = true;
 
@@ -449,7 +487,7 @@ public class ParentUdpSender : MonoBehaviour
             }
             else
             {
-                currentState = ConnectionState.Disconnected;
+                SetConnectionState(ConnectionState.Disconnected);
                 Debug.LogWarning("[ParentUdpSender] Connection timed out — child heartbeat lost.");
             }
         }
@@ -463,8 +501,7 @@ public class ParentUdpSender : MonoBehaviour
             _heartbeatCoroutine = null;
         }
 
-        // UI
-        UpdateUI();
+        // タイトルUIの更新は ParentTitleConnectionUI が ConnectionStateChanged を受けて行う。
 
         // 親機デバッグキー（I／Y／U）は親機デバッグキー整理により削除した。
         // NotifyGameOverFromParentCatch / SendStateSLEEP_LOCK / SendStateSLEEP_UNLOCK の
@@ -514,8 +551,6 @@ public class ParentUdpSender : MonoBehaviour
             Debug.Log($"[StartTrace][親機] ParentUdpSender.OnSceneLoaded 到着 — scene='{scene.name}', mode={mode}, currentState={currentState}, _gameStarted={_gameStarted}, ChildLoadingComplete={ChildLoadingComplete}, isTitle={IsTitleScene(scene.name)}, sessionId={_currentPlaySessionId}, id={GetInstanceID()}", this);
         }
         RefreshSceneReferences();
-        RefreshUiReferences();
-        AttachUiListeners();
 
         if (IsTitleScene(scene.name))
         {
@@ -716,41 +751,32 @@ public class ParentUdpSender : MonoBehaviour
                sceneName.Contains("Title");
     }
 
-    private void AttachUiListeners()
-    {
-        if (connectButton != null)
-        {
-            connectButton.onClick.RemoveAllListeners();
-            connectButton.onClick.AddListener(OnConnectButtonClicked);
-            if (showDebugLogs)
-                Debug.Log($"[StartTrace][親機] AttachUiListeners: '{connectButton.gameObject.name}'.onClick → OnConnectButtonClicked を動的登録 (id={GetInstanceID()}, scene='{SceneManager.GetActiveScene().name}')", this);
-        }
-        else if (showDebugLogs)
-        {
-            Debug.LogWarning($"[StartTrace][親機] AttachUiListeners: connectButton が null のため登録なし (scene='{SceneManager.GetActiveScene().name}')", this);
-        }
+    // タイトルのボタンへのリスナー登録は ParentTitleConnectionUI が担当する
+    // （旧実装は RemoveAllListeners で他コンポーネントの永続リスナーまで消していたため、
+    //   本クラスからは一切登録しない）。
 
-        if (cancelButton != null)
-        {
-            cancelButton.onClick.RemoveAllListeners();
-            cancelButton.onClick.AddListener(OnCancelButtonClicked);
-            if (showDebugLogs)
-                Debug.Log($"[StartTrace][親機] AttachUiListeners: '{cancelButton.gameObject.name}'.onClick → OnCancelButtonClicked を動的登録 (id={GetInstanceID()})", this);
-        }
-        else if (showDebugLogs)
-        {
-            Debug.LogWarning($"[StartTrace][親機] AttachUiListeners: cancelButton が null のため登録なし (scene='{SceneManager.GetActiveScene().name}')", this);
-        }
+    /// <summary>
+    /// 現在プレイの受信記録（ChildLoadingComplete）を初期化する。
+    /// 「プレイの開始を受理した時点（ParentLoading へ進む前）」と「タイトル復帰時」に呼ぶ。
+    ///  ・START_GAME の再送（同じプレイ識別子）では呼ばない ＝ 受理済みの記録を消さない。
+    ///  ・ロード側（ParentLoadingController）からは呼ばない（受信記録の書き換えはUDP側に閉じる）。
+    /// </summary>
+    private void ResetChildLoadingCompleteRecord(string reason)
+    {
+        bool previous = ChildLoadingComplete;
+        ChildLoadingComplete = false;
+        Debug.Log($"[ParentUdpSender] 現在プレイの受信記録(ChildLoadingComplete)を初期化 — {previous} → false, 理由={reason}");
     }
 
     public void ResetForNewSession()
     {
-        currentState = ConnectionState.Disconnected;
+        SetConnectionState(ConnectionState.Disconnected);
         targetIP = "127.0.0.1";
         _lastReceiveTime = 0f;
         _gameStarted = false;
         _resultProcessed = false;
-        ChildLoadingComplete = false;
+        // タイトル復帰時のリセットは維持する（前プレイの受信記録を次プレイへ持ち越さない）。
+        ResetChildLoadingCompleteRecord("タイトル復帰");
         _shouldTriggerLoudItem = false;
         // 片付け演出用の保留通知もクリアする（前プレイの通知を次プレイへ持ち越さない）。
         _hasPendingGameProgress = false;
@@ -807,23 +833,7 @@ public class ParentUdpSender : MonoBehaviour
         }
     }
 
-    private void RefreshUiReferences()
-    {
-        connectButton = FindButton(connectButton, "Connect Button", "ConnectButton");
-        if (connectButtonLabel == null && connectButton != null)
-            connectButtonLabel = connectButton.GetComponentInChildren<TextMeshProUGUI>(true);
-
-        cancelButton = FindButton(cancelButton, "cancel button", "CancelButton");
-
-        if (startButtonObject == null)
-        {
-            GameObject startButton = GameObject.Find("Start Button");
-            if (startButton == null)
-                startButton = GameObject.Find("StartButton");
-            if (startButton != null)
-                startButtonObject = startButton;
-        }
-    }
+    // タイトルUIの参照取得は ParentTitleConnectionUI が担当する（Inspector参照のみ・名前検索なし）。
 
     // ── Public send API ───────────────────────────────────────────────────────
     public void SendState(string message)
@@ -965,7 +975,7 @@ public class ParentUdpSender : MonoBehaviour
         if (currentState != ConnectionState.Disconnected) return;
         if (IsTitleScene(SceneManager.GetActiveScene().name)) return;
 
-        currentState = ConnectionState.Connected;
+        SetConnectionState(ConnectionState.Connected);
         Debug.LogWarning("[ParentUdpSender] PING resumed after timeout — connection restored.");
     }
 
@@ -1004,10 +1014,21 @@ public class ParentUdpSender : MonoBehaviour
 
                 // 子機が発行したプレイ識別子を採用する（旧フォーマットで未付与なら親機側で発行）。
                 // これで両端末が同じ識別子を共有し、次プレイの RETURN_TO_TITLE と区別できる。
+                // ・START_GAME の再送は同じ識別子を運ぶため、その場合は「新しいプレイ」ではないと判断して
+                //   受信記録を初期化しない（受理済みの記録を消さない）。
+                bool isRepeatOfAcceptedPlay = !string.IsNullOrEmpty(message.PlaySessionId) &&
+                                              message.PlaySessionId == _currentPlaySessionId;
+
                 _currentPlaySessionId = string.IsNullOrEmpty(message.PlaySessionId)
                     ? CreatePlaySessionId()
                     : message.PlaySessionId;
                 _captureConfirmedPlayId = "";
+
+                // 現在プレイの受信記録は、開始を受理したこの時点（ParentLoading へ進む前）で初期化する。
+                if (!isRepeatOfAcceptedPlay)
+                {
+                    ResetChildLoadingCompleteRecord("START_GAME受理");
+                }
 
                 if (showDebugLogs)
                 {
@@ -1073,6 +1094,14 @@ public class ParentUdpSender : MonoBehaviour
             Debug.Log("[ParentUdpSender] Received LOADING_COMPLETE from child. Property set to true.");
             if (showDebugLogs)
                 Debug.Log($"[StartTrace][親機] ParentUdpSender.HandleIncoming LOADING_COMPLETE — ChildLoadingComplete: {previous} → {ChildLoadingComplete}, scene='{SceneManager.GetActiveScene().name}', id={GetInstanceID()}", this);
+
+            // 受信記録を更新した後に通知する（購読済みのロード側はローカル状態へ反映する）。
+            // 再送（false→true 以外）では発火しない＝同じ処理を繰り返さない。
+            if (!previous)
+            {
+                LoadingCompleteReceived?.Invoke();
+            }
+
             return;
         }
 
@@ -1534,40 +1563,8 @@ public class ParentUdpSender : MonoBehaviour
         catch (Exception e) { Debug.LogError($"[ParentUdpSender] SendDiscoveryAccept error: {e.Message}"); }
     }
 
-    // ── UI ────────────────────────────────────────────────────────────────────
-    // 診断用: 直前に connectButtonLabel へ書き込んだ文字列。変化時のみログを出す（毎フレームの出力を防ぐ）。
-    private string _lastAppliedConnectLabel = null;
-
-    private void UpdateUI()
-    {
-        if (connectButtonLabel != null)
-        {
-            string newLabel;
-            switch (currentState)
-            {
-                case ConnectionState.Disconnected: newLabel = "Connect";     break;
-                case ConnectionState.Connecting:   newLabel = "Connecting..."; break;
-                case ConnectionState.Connected:    newLabel = "STARTING...";  break;
-                default:                           newLabel = connectButtonLabel.text; break;
-            }
-
-            // 「Connecting...」がどのタイミングで表示されたかを追えるようにする（単体開始の診断用）。
-            if (newLabel != _lastAppliedConnectLabel)
-            {
-                Debug.Log($"[ParentUdpSender][Diag] connectButtonLabel: '{_lastAppliedConnectLabel}' → '{newLabel}' " +
-                          $"| state={currentState} | scene='{SceneManager.GetActiveScene().name}' " +
-                          $"| soloStartButtonObject={(soloStartButtonObject != null ? soloStartButtonObject.activeSelf.ToString() : "null")} " +
-                          $"| _gameStarted={_gameStarted}");
-                _lastAppliedConnectLabel = newLabel;
-            }
-
-            connectButtonLabel.text = newLabel;
-        }
-
-        if (connectButton   != null) connectButton.gameObject.SetActive(true);
-        if (cancelButton    != null) cancelButton.gameObject.SetActive(currentState == ConnectionState.Connecting);
-        if (startButtonObject != null) startButtonObject.SetActive(currentState == ConnectionState.Connected);
-    }
+    // タイトルUIの表示更新（ラベル・Connect/Cancelボタンの表示）は ParentTitleConnectionUI が
+    // ParentUdpSender.ConnectionStateChanged を受けて行う。
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     // 挿入ロジック本体は RankingUtil に集約（子機と共有・単体テスト可能）。挙動は従来と同一。
@@ -1587,29 +1584,5 @@ public class ParentUdpSender : MonoBehaviour
         try   { client.Close(); client.Dispose(); }
         catch (Exception e) { Debug.LogWarning($"[ParentUdpSender] Error closing {label}: {e.Message}"); }
         client = null;
-    }
-
-    private static Button FindButton(Button current, params string[] candidateNames)
-    {
-        if (current != null)
-            return current;
-
-        foreach (string candidateName in candidateNames)
-        {
-            foreach (GameObject candidate in Resources.FindObjectsOfTypeAll<GameObject>())
-            {
-                if (!candidate.scene.IsValid() || !candidate.scene.isLoaded)
-                    continue;
-
-                if (candidate.name != candidateName)
-                    continue;
-
-                Button button = candidate.GetComponent<Button>();
-                if (button != null)
-                    return button;
-            }
-        }
-
-        return null;
     }
 }

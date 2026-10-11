@@ -1169,9 +1169,9 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
-      - m_Target: {fileID: 1657176101}
-        m_TargetAssemblyTypeName: ParentUdpSender, Assembly-CSharp
-        m_MethodName: OnSoloStartButtonClicked
+      - m_Target: {fileID: 993000003}
+        m_TargetAssemblyTypeName: ParentTitleConnectionUI, Assembly-CSharp
+        m_MethodName: OnSoloStartClicked
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -1540,10 +1540,6 @@ MonoBehaviour:
   parentReceivePort: 8002
   targetIP: 127.0.0.1
   currentState: 0
-  connectButton: {fileID: 1745125928}
-  connectButtonLabel: {fileID: 1849547969}
-  startButtonObject: {fileID: 0}
-  soloStartButtonObject: {fileID: 1417649033}
   gameSceneName: ParentLoading
   soloGameSceneName: ParentGameScene
   gameplaySceneName: ParentGameScene
@@ -1554,7 +1550,6 @@ MonoBehaviour:
   titleSceneName: ChildeTitle
   gameOverSceneName: ParentGameOver
   timeUpSceneName: ParentGameClear
-  cancelButton: {fileID: 1900922101}
   parentDetection: {fileID: 0}
   showDebugLogs: 1
 --- !u!4 &1657176102
@@ -1667,9 +1662,9 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
-      - m_Target: {fileID: 1657176101}
-        m_TargetAssemblyTypeName: ParentUdpSender, Assembly-CSharp
-        m_MethodName: OnConnectButtonClicked
+      - m_Target: {fileID: 993000003}
+        m_TargetAssemblyTypeName: ParentTitleConnectionUI, Assembly-CSharp
+        m_MethodName: OnConnectClicked
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -2143,9 +2138,9 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1657176101}
-        m_TargetAssemblyTypeName: ParentUdpSender, Assembly-CSharp
-        m_MethodName: OnCancelButtonClicked
+      - m_Target: {fileID: 993000003}
+        m_TargetAssemblyTypeName: ParentTitleConnectionUI, Assembly-CSharp
+        m_MethodName: OnCancelClicked
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -2566,10 +2561,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &993000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 993000002}
+  - component: {fileID: 993000003}
+  m_Layer: 0
+  m_Name: TitleConnectionUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &993000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 993000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &993000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 993000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5332f3cd5a3f4a56b8b0c9474bd122a, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::ParentTitleConnectionUI
+  connectButton: {fileID: 1745125928}
+  connectButtonLabel: {fileID: 1849547969}
+  cancelButton: {fileID: 1900922101}
+  soloStartButtonObject: {fileID: 1417649033}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
+  - {fileID: 993000002}
   - {fileID: 1220020924}
   - {fileID: 1227494975}
   - {fileID: 1998481033}
