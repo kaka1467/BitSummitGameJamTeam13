@@ -497,6 +497,10 @@ public class MotherApproachController : MonoBehaviour
     // 部屋入室（案B）の状態
     private bool _cycleStartedAsRushIn; // このサイクルが突入（大きな音）として開始されたか — BeginApproach()で捕捉する
     private bool _doorRoutineActive; // DoorRoutine()が実行中か（入室要求の受付条件）
+
+    // 【LOUD_ITEM 即時中断用】見た目を消すために無効化したRenderer（ShowMotherModel/ResetStateFlagsで戻す）。
+    //   モデルルートの SetActive(false) は使わない（Animator を止めないため）。
+    private Renderer[] _immediateHiddenRenderers;
     private bool _roomEntryRequested; // OnStoppedAtDoor中にPDから入室要求を受けたか
     private bool _roomPhaseActive; // 入室フェーズ（部屋内部への移動〜doorPoint復帰）が進行中か
     private bool _leaveRoomRequested; // 部屋内部からの退室要求を受けたか
@@ -1554,18 +1558,20 @@ public class MotherApproachController : MonoBehaviour
         Debug.Log("[MotherApproachController] ドアで停止 — OnStoppedAtDoorを発生");
         onStoppedAtDoor?.Invoke();
 
-        // 【Door Peek 横スライド】
+        // 【Door Peek 横スライド／共通の配置処理】
         // PD側がこの直後に Peek_Door を発火して Door Peek State に入るため、
         // スライドは「実際に Peek State へ入った瞬間」から時間を数え始める
         // （BeginDoorPeekSlide 内で待ってから開始する）。
-        // 通常Door Peek（入室なし・突入でない）だけに適用する。
-        SlideLog("CALLSITE",
-            $"roomEntryRequested={_roomEntryRequested} isRushIn={IsRushIn} " +
-            $"doorRoutineActive={_doorRoutineActive}");
-        if (!_roomEntryRequested && !IsRushIn)
+        // 通常Door Peekの位置・向きの適用処理（BeginDoorPeekSlide）を、RushInのドア覗きでも
+        // 同じタイミングで再利用する（RushInだけ別配置にしない）。
+        // 入室ルート（_roomEntryRequested）だけはドア前停止をしないため対象外。
+        Debug.Log($"[MotherApproachController] Door Peek 配置処理の呼び出し | " +
+                  $"roomEntryRequested={_roomEntryRequested} isRushIn={IsRushIn} rushInCycle={_cycleStartedAsRushIn} " +
+                  $"doorRoutineActive={_doorRoutineActive}");
+        if (!_roomEntryRequested)
             BeginDoorPeekSlide();
         else
-            SlideLog("CALLSITE_SKIP", "入室要求またはRushInのためスライド対象外");
+            SlideLog("CALLSITE_SKIP", "入室要求のためスライド対象外");
 
         // OnStoppedAtDoorの処理中にPDが入室を要求した場合のみ、部屋内部へ移動する。
         // 要求がない場合は従来どおりドア前で停止したままコルーチンを終了する。
@@ -2389,6 +2395,70 @@ public class MotherApproachController : MonoBehaviour
     }
 
     /// <summary>
+    /// 【LOUD_ITEM 即時中断用】母親の「見た目だけ」を即座に非表示にする。
+    ///  ・モデルルートの SetActive(false) は行わない（Animator を停止・初期化させず、次のRushInの
+    ///    ドア覗き位置・姿勢が通常DoorPeekとずれる要因を作らない）。Renderer を無効化して見た目だけ消す。
+    ///  ・MotherSuspicionSystem / UDP購読を持つルートは無効化せず、歩行モデルの見た目だけを消す。
+    ///  ・帰路確定（ReturnHomePhase）や onReturnedHome などの「正常終了／帰宅完了」処理は一切行わない。
+    ///  ・非表示にした後、Peekスライドのずれを元位置へそろえる（次のRushInの開始姿勢を汚さない）。
+    ///  ・位置そのもののリセット（開始点へ戻す）は呼び出し側（ResetApproach）が非表示後に実行する。
+    /// </summary>
+    public void HideMotherModelImmediate()
+    {
+        // 回転の指示元・歩行状態を残さない。
+        StopRotateCoroutine();
+        MovementStateChanged?.Invoke(false);
+
+        // 目の発光・顔ライトを消灯する。
+        SetPeekLighting(false);
+        SetMotherStageLighting(false);
+
+        // 覗き状態を解除する。
+        _isGardenPeeking = false;
+
+        // 横スライドの予約を止める。
+        StopDoorPeekSlideCoroutine();
+
+        // 見た目だけを消す（モデルルートの SetActive(false) はしない ＝ Animator を止めない）。
+        _immediateHiddenRenderers = motherModelRoot != null
+            ? motherModelRoot.GetComponentsInChildren<Renderer>(true)
+            : null;
+
+        if (_immediateHiddenRenderers != null)
+        {
+            foreach (var r in _immediateHiddenRenderers)
+            {
+                if (r != null) r.enabled = false;
+            }
+        }
+
+        // Inspector指定の子Renderer（例：LOD）も従来どおり消す。
+        if (motherModelRenderers != null)
+        {
+            foreach (var r in motherModelRenderers)
+            {
+                if (r != null) r.enabled = false;
+            }
+        }
+
+        Debug.Log("[MotherApproachController] LOUD_ITEM即時中断: 母親の見た目のみ非表示にしました" +
+                  $"（renderers={(_immediateHiddenRenderers != null ? _immediateHiddenRenderers.Length : 0)}, rootSetActive=false）");
+
+        // 非表示にした後でスライドのずれを元位置へそろえる。
+        // （スライドの元位置が未確定＝スライド未実行なら、原点(0,0)への誤った移動を避けるため触らない。
+        //   位置そのものは呼び出し側の ResetApproach が開始点へ戻す。）
+        if (_peekSlideOriginValid)
+        {
+            ApplyHorizontalPosition(_peekSlideOriginPosition);
+        }
+        ResetDoorPeekSlideState();
+
+        IsApproaching = false;
+        IsInHallwayPhase = false;
+        _doorRoutineActive = false;
+    }
+
+    /// <summary>
     /// 【タイムアウト／強制中断用】帰路を失敗として確定し、移動・旋回を止めて非表示と後始末を行う。
     /// PDが returnHomeSafetyTimeout を超えた場合や、ゲームオーバーで打ち切る場合に呼ぶ。
     /// 画面内で初期位置へ瞬間移動しない（リセットは呼び出し側が非表示後に実行する）。
@@ -2917,7 +2987,9 @@ public class MotherApproachController : MonoBehaviour
     //  「IdleでもPeek_Windowでもない」といった消去法は使わない
     //  （Walk / Gosogoso なども該当してしまうため）。
     //
-    //  Window Peek・Pass By・猫・入室・Rush Inでは呼ばない（Door Peek専用）。
+    //  Window Peek・Pass By・猫・入室では呼ばない（Door Peek専用）。
+    //  RushInのドア覗きは「通常Door Peekと同じ位置・向き」に揃えるため、
+    //  通常Door Peekと同じ配置処理（BeginDoorPeekSlide）を同じタイミングで呼ぶ。
 
     /// <summary>
     /// Door Peek用のスライドを開始する。呼び出しはDoor Peekの経路から1回だけ。
@@ -3882,6 +3954,25 @@ public class MotherApproachController : MonoBehaviour
                 Debug.Log($"[MotherApproachController] 親機モデルの表示を復元 | renderer='{r.name}'");
             }
         }
+
+        // 【LOUD_ITEM 即時中断】で見た目だけ消したRendererを戻す（SetActive(false)を使っていないため必須）。
+        RestoreImmediateHiddenRenderers();
+    }
+
+    /// <summary>
+    /// 【LOUD_ITEM 即時中断用】見た目を消すために無効化したRendererを元に戻す（未使用時は何もしない）。
+    /// </summary>
+    private void RestoreImmediateHiddenRenderers()
+    {
+        if (_immediateHiddenRenderers == null) return;
+
+        foreach (var r in _immediateHiddenRenderers)
+        {
+            if (r != null) r.enabled = true;
+        }
+
+        Debug.Log($"[MotherApproachController] 親機モデルの見た目を復元 | renderers={_immediateHiddenRenderers.Length}");
+        _immediateHiddenRenderers = null;
     }
 
     private void ResetStateFlags()
@@ -3925,6 +4016,9 @@ public class MotherApproachController : MonoBehaviour
 
         // 進行中の旋回コルーチンを止め、リセット後に回転指示が残らないようにする。
         StopRotateCoroutine();
+
+        // 【LOUD_ITEM 即時中断】で見た目だけ消したRendererを戻す（サイクル／RushIn開始で見た目を必ず戻す）。
+        RestoreImmediateHiddenRenderers();
     }
 
     private bool ValidateWaypoints()

@@ -570,9 +570,9 @@ public class MotherApproachWarning : MonoBehaviour
 
     /// <summary>
     /// 大きな音による突入：1階の灯りと予告遅延を省略する。
-    /// 2階の灯りだけを点灯し、速度をloudItemRushInMoveSpeedに設定してDoorPeekルートを強制する。
+    /// 2階の灯りだけを点灯し、RushIn本来の速度（loudItemRushInMoveSpeed）でDoorPeekルートを強制する。
     /// 音声とゲージの処理後にMotherSuspicionSystem.OnLoudItemTriggered()から呼び出される。
-    /// 警告シーケンスがすでに進行中の場合は何もしない。
+    /// 警告シーケンスがすでに進行中の場合は何もしない（二重起動防止）。
     /// </summary>
     public void StartLoudItemRushInSequence()
     {
@@ -601,10 +601,12 @@ public class MotherApproachWarning : MonoBehaviour
         TurnOnSecondStageLights();
         if (lightSwitchAudioSource != null) lightSwitchAudioSource.Play();
 
+        // 移動速度は RushIn 本来の制御箇所（メガホン専用の loudItemRushInMoveSpeed）を再び有効にする。
+        // 通常接近（ApplyApproachSpeed）とは混同しない。
         if (parentDetection != null)
             parentDetection.SetLoudItemRushInSpeed(parentDetection.loudItemRushInMoveSpeed);
 
-        Debug.Log($"[MotherApproachWarning] LOUD-ITEM RUSH-IN | speed={parentDetection.loudItemRushInMoveSpeed} | route=DoorPeek");
+        Debug.Log($"[MotherApproachWarning] LOUD-ITEM RUSH-IN | speed={parentDetection?.loudItemRushInMoveSpeed} (loudItemRushInMoveSpeed) | route=DoorPeek");
         approachController.StartApproachDoorOnly();
     }
 

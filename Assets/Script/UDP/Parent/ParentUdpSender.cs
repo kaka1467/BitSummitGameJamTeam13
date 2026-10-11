@@ -177,9 +177,20 @@ public class ParentUdpSender : MonoBehaviour
     /// 受信処理（HandleIncoming）は Update から呼ばれるため、この通知もメインスレッドで発火する。
     /// </summary>
     public event System.Action LoadingCompleteReceived;
-    private bool      _shouldTriggerLoudItem = false;
+
+    // ── LOUD_ITEM（子機の大きな音）の通知 ─────────────────────────────────────
+    // 受信後の反応（親機の突入演出など）はゲームシーン側の購読者が行う。
+    // 本クラスは「LOUD_ITEM を受信した」ことだけをメインスレッドで通知する
+    // （受信処理 HandleIncoming は Update から呼ばれるため、この通知もメインスレッドで発火する）。
+    public event System.Action LoudItemReceived;
+
+    // 購読者がまだ居ないときに受信した LOUD_ITEM を1件だけ保留する（購読準備前の受信を落とさない）。
+    //   ・消費は Update で「ゲームシーン」かつ「有効な購読者が居る」ことを確認してから1回だけ。
+    //   ・シーン読込／タイトル復帰でクリアし、次シーン・次プレイへ持ち越さない。
+    private bool      _hasPendingLoudItem = false;
+
     // ── 片付け演出：ゲーム進行率の保留フラグ ─────────────────────────────────
-    //   受信スレッドからメインスレッドへ渡す既存方式（_shouldTriggerLoudItem）と同じ扱い。
+    //   受信スレッドからメインスレッドへ渡す既存方式（_hasPendingLoudItem）と同じ扱い。
     private bool      _hasPendingGameProgress = false;
     private float     _pendingGameProgress = 0f;
 
@@ -431,28 +442,24 @@ public class ParentUdpSender : MonoBehaviour
 
         HandleReturnToTitleKey();
 
-        if (_shouldTriggerLoudItem)
+        // ── LOUD_ITEM：購読準備前の受信を、購読成立後に1回だけ通知する ─────────
+        //   消費の前に「対象シーン（ゲームシーン）」と「有効な購読者」を確認する。
+        if (_hasPendingLoudItem)
         {
             string activeScene = SceneManager.GetActiveScene().name;
             if (!IsGameplayScene(activeScene))
             {
-                // GameScene以外ではLOUD_ITEM処理を行わずリセット
-                _shouldTriggerLoudItem = false;
+                // ゲームシーン以外では保留しない（次シーン・次プレイへ持ち越さない）
+                _hasPendingLoudItem = false;
             }
-            else if (parentDetection != null)
+            else if (LoudItemReceived != null)
             {
-                _shouldTriggerLoudItem = false;
+                _hasPendingLoudItem = false;
                 if (showDebugLogs)
-                    Debug.Log("[ParentUdpSender] Executing OnLoudItemTriggered on Main Thread!");
-                parentDetection.OnLoudItemTriggered();
+                    Debug.Log("[ParentUdpSender] 保留していた LOUD_ITEM を購読者へ通知します（メインスレッド）。");
+                LoudItemReceived?.Invoke();
             }
-            else
-            {
-                // GameScene内で万が一parentDetectionがnullの場合は毎フレーム再検索せず1度だけ警告して破棄
-                _shouldTriggerLoudItem = false;
-                if (showDebugLogs)
-                    Debug.LogWarning("[ParentUdpSender] LOUD_ITEM triggered but parentDetection is null in GameScene.");
-            }
+            // 購読者がまだ居ない場合は、同じゲームシーン内に限って保留を維持する
         }
 
         // ── 片付け演出：ゲーム進行率の保留通知（メインスレッドで処理）────────
@@ -564,7 +571,8 @@ public class ParentUdpSender : MonoBehaviour
         if (scene.name == gameSceneName || scene.name == soloGameSceneName)
         {
             _resultProcessed = false;
-            _shouldTriggerLoudItem = false;
+            // 前プレイの LOUD_ITEM 保留は持ち越さない（購読者はゲームシーン側で解決される）。
+            _hasPendingLoudItem = false;
             // 片付け演出用の保留通知もリセットする（再プレイで前の通知を持ち越さない）。
             _hasPendingGameProgress = false;
             if (_caughtRetryCoroutine != null)
@@ -577,8 +585,9 @@ public class ParentUdpSender : MonoBehaviour
         }
         else
         {
-            // GameScene 以外へ遷移したときは _shouldTriggerLoudItem を安全に初期化
-            _shouldTriggerLoudItem = false;
+            // GameScene 以外へ遷移したときは LOUD_ITEM の保留を安全に初期化する
+            // （購読者が居ないまま別シーンへ移った保留を残さない）。
+            _hasPendingLoudItem = false;
             // 片付け演出用の保留通知も同様に初期化する（シーン変更で状態を残さない）。
             _hasPendingGameProgress = false;
         }
@@ -777,7 +786,8 @@ public class ParentUdpSender : MonoBehaviour
         _resultProcessed = false;
         // タイトル復帰時のリセットは維持する（前プレイの受信記録を次プレイへ持ち越さない）。
         ResetChildLoadingCompleteRecord("タイトル復帰");
-        _shouldTriggerLoudItem = false;
+        // LOUD_ITEM の保留もクリアする（前プレイの通知を次プレイへ持ち越さない）。
+        _hasPendingLoudItem = false;
         // 片付け演出用の保留通知もクリアする（前プレイの通知を次プレイへ持ち越さない）。
         _hasPendingGameProgress = false;
         _pendingGameProgress = 0f;
@@ -1113,20 +1123,27 @@ public class ParentUdpSender : MonoBehaviour
             string activeScene = SceneManager.GetActiveScene().name;
             if (!IsGameplayScene(activeScene))
             {
+                // ゲームシーン以外の受信は従来どおり破棄する（保留もしない）。
                 if (showDebugLogs)
                     Debug.Log($"[ParentUdpSender] LOUD_ITEM received outside gameplay scene (active='{activeScene}', expected='{gameplaySceneName}') — ignored.");
                 return;
             }
 
-            if (parentDetection != null)
+            // 受信後の反応（MotherSuspicionSystem.OnLoudItemTriggered など）はゲームシーン側の購読者が行う。
+            // ここでは「受信した」ことだけをメインスレッドで通知する（直接呼び出しは行わない）。
+            if (LoudItemReceived != null)
             {
-                parentDetection.OnLoudItemTriggered();
+                if (showDebugLogs)
+                    Debug.Log("[ParentUdpSender] LOUD_ITEM を購読者へ通知します（メインスレッド）。");
+                LoudItemReceived?.Invoke();
             }
             else
             {
+                // 購読準備前（シーン側の OnEnable/Start が未実行など）の受信は1件だけ保留する。
+                // 購読が成立した最初の Update で通知するため、ここでは破棄しない。
+                _hasPendingLoudItem = true;
                 if (showDebugLogs)
-                    Debug.LogWarning("[ParentUdpSender] LOUD_ITEM received but parentDetection is null in GameScene — will retry in Update.");
-                _shouldTriggerLoudItem = true;
+                    Debug.Log("[ParentUdpSender] LOUD_ITEM の購読者がまだ居ないため1件保留します（購読成立後に通知）。");
             }
             return;
         }

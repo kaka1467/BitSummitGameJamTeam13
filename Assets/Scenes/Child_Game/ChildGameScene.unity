@@ -3152,7 +3152,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ItemPool
   itemPrefabs:
   - {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-  - {fileID: 8010092503364828236, guid: 3015bb1018b73f841a8134e083d36d07, type: 3}
+  - {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
   - {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
   - {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
   - {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
@@ -4674,8 +4674,6 @@ MonoBehaviour:
     loopEnabled: 0
     loopCycleDuration: 0
     prefabSpawnCounts:
-    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 5
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -4690,8 +4688,6 @@ MonoBehaviour:
     loopEnabled: 1
     loopCycleDuration: 0
     prefabSpawnCounts:
-    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 7
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 30
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -4700,6 +4696,14 @@ MonoBehaviour:
       count: 4
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
       count: 15
+  - interval:
+      minInterval: 0
+      maxInterval: 90
+    loopEnabled: 1
+    loopCycleDuration: 0
+    prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 19
   spawnEnabled: 1
   showDebugLogs: 0
   hugeObstacleSpawnCount: 1
