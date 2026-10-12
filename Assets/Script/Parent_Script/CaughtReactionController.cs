@@ -24,10 +24,26 @@ public class CaughtReactionController : MonoBehaviour
     [SerializeField] private ParentUdpSender udpSender;
     [SerializeField] private MotherGauge motherGauge;
 
+    [Header("ゲームオーバー演出参照")]
+    [Tooltip("捕獲時の演出（廊下／庭／片付け入室中／片付けPeek）の順番を管理する。未設定なら自動検索する。")]
+    [SerializeField] private MotherGameOverSequenceController gameOverSequenceController;
+    [Tooltip("捕獲した位置・状況の保存と、演出の移動に使う。未設定なら自動検索する。")]
+    [SerializeField] private MotherApproachController approachController;
+    [Tooltip("片付けの進行段階（入室中かPeek中か）を取得する。未設定なら自動検索する。")]
+    [SerializeField] private MotherChoreController choreController;
+
+    [Tooltip("捕獲確定のMAX到達音・UI非表示・捕獲後の心拍を受け持つ。未設定なら自動検索する。")]
+    [SerializeField] private GameOverPresentationController presentationController;
+
     [Header("シーン設定")]
     [SerializeField] private string gameOverSceneName = "ParentGameOver";
 
+    [Tooltip("演出の『あと』の追加待機（秒）。Realtime。演出完了を待たずにシーンを切り替える用途には使わない。")]
     [SerializeField, Min(0f)] private float sceneChangeDelay;
+
+    [Header("演出タイミング")]
+    [Tooltip("演出を始める『前』の待機（秒）。Realtime。0で即開始。")]
+    [SerializeField, Min(0f)] private float performanceStartDelay;
 
     [Header("デバッグ")]
     [SerializeField] private bool showDebugLogs;
@@ -35,6 +51,9 @@ public class CaughtReactionController : MonoBehaviour
     // ゲームオーバー状態フラグ
     private bool _hasTriggeredGameOver;
     private Coroutine _gameOverRoutine;
+
+    // 捕獲時に保存する引き継ぎ情報（状態が消える前に保存する）
+    private MotherGameOverCaptureContext _context;
 
     private void Start()
     {
@@ -46,8 +65,21 @@ public class CaughtReactionController : MonoBehaviour
         EnsureUdpSender();
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
+        if (gameOverSequenceController == null)
+            gameOverSequenceController = Object.FindFirstObjectByType<MotherGameOverSequenceController>();
+        if (approachController == null)
+            approachController = Object.FindFirstObjectByType<MotherApproachController>();
+        if (choreController == null)
+            choreController = Object.FindFirstObjectByType<MotherChoreController>();
+        if (presentationController == null)
+            presentationController = Object.FindFirstObjectByType<GameOverPresentationController>();
 
         _hasTriggeredGameOver = false;
+        _context = default;
+
+        // 再プレイで音・UI・再生済みフラグが残らないように初期化する。
+        if (presentationController != null)
+            presentationController.ResetForReplay();
 
         if (showDebugLogs)
             Debug.Log("[CaughtReactionController] initialized - game-over watchdog only (gauge owned by PD)");
@@ -153,6 +185,26 @@ public class CaughtReactionController : MonoBehaviour
 
         _hasTriggeredGameOver = true;
 
+        // 捕獲確定（多重実行防止済み。ここから演出→結果画面へ進む）。
+        Debug.Log($"[CaughtReactionController] 捕獲確定: ゲームオーバー処理を開始します" +
+                  $"（母ゲージ最大={motherGauge != null && motherGauge.currentGauge >= motherGauge.maxGauge}）", this);
+
+        // ★ 捕獲確定の音とUI（MAX到達音／怪しさメーター非表示＋Danger保持／通常心拍の停止）★
+        //  ・無敵による抑止はこの上で済んでいるため、ここまで来た時だけ鳴る。
+        //  ・ゲージ最大監視とOnPlayerCaughtの両方がこのメソッドへ合流するため、同じ捕獲では1回だけになる
+        //    （_hasTriggeredGameOver と GameOverPresentationController 側の両方で防止）。
+        if (presentationController != null)
+            presentationController.NotifyCaptured();
+        else
+            Debug.LogWarning("[CaughtReactionController] 【設定不足】GameOverPresentationController が見つからないため、" +
+                             "MAX到達音とUI切り替えを行いません（演出は継続します）", this);
+
+        // ★ 演出へ引き継ぐ状況を保存する（状態を消す処理より前）★
+        //  ・ゲージ最大監視経由：ここでは通常の進行状態がまだ生きているため、現在の状態を直接保存する。
+        //  ・OnPlayerCaught経由：すでに AbortChore が呼ばれているため、
+        //    MotherChoreController が中断時に記録した「記憶値」を使って判定する。
+        CaptureGameOverContext();
+
         // MotherSuspicionSystemに永続的なゲームオーバーを通知し、進行を停止させる
         if (suspicionSystem != null)
         {
@@ -165,6 +217,16 @@ public class CaughtReactionController : MonoBehaviour
                 Debug.LogException(exception, this);
             }
         }
+
+        // ★ 捕獲直後に、通常移動・帰路・片付け移動・Peek横スライド・通常旋回を停止する ★
+        //   performanceStartDelay の待機に入る前に止め、保存位置と演出開始位置がずれないようにする。
+        //   ・位置リセット・モデル非表示は行わない（演出は捕獲した位置から開始する）。
+        //   ・Animator とドア回転は止めない（演出用の移動・再生は継続できる）。
+        if (gameOverSequenceController != null)
+            gameOverSequenceController.PrepareForCapture();
+        // 演出Controllerが未設定でも通常移動は止める（位置を維持したまま。二重呼び出しは冪等）。
+        if (approachController != null)
+            approachController.EnterGameOverExclusiveControl();
 
         if (showDebugLogs)
             Debug.LogWarning("[CaughtReactionController] ゲームオーバー発生 - 疑惑が最大値に到達");
@@ -191,22 +253,95 @@ public class CaughtReactionController : MonoBehaviour
 
     private void DisableGameLogic()
     {
-        if (doorController != null) { doorController.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Door Controller disabled"); }
+        // DoorController は「演出でドア本体を動かす」必要があるため enabled は維持する。
+        // 代わりに手動入力（Pキー）だけを止め、演出がドアを閉められる事故を防ぐ。
+        if (doorController != null)
+        {
+            doorController.ManualInputEnabled = false;
+            if (showDebugLogs) Debug.Log("[CaughtReactionController] Door Controller: 手動入力のみ停止（回転は演出のため維持）");
+        }
         if (sleepingController != null) { sleepingController.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Sleeping Controller disabled"); }
         if (suspicionSystem != null) { suspicionSystem.enabled = false; if (showDebugLogs) Debug.Log("[CaughtReactionController] Parent Detection disabled"); }
     }
 
+    /// <summary>
+    /// ゲームオーバー演出（4パターン）を実行してから、親機側のゲームオーバーシーンへ遷移する。
+    ///  ・演出前の待機＝performanceStartDelay、演出後の追加待機＝sceneChangeDelay。
+    ///  ・演出Controllerが未設定／ルート未設定／失敗／タイムアウトでも、必ず結果画面へ進める。
+    ///  ・シーン遷移の実行元はこのメソッドに一本化する（多重実行は _hasTriggeredGameOver で防止済み）。
+    /// </summary>
     private IEnumerator GameOverSequence()
     {
-        // 設定された遅延時間を待機（タイムスケールに依存しないRealtime）
-        float delay = Mathf.Max(0f, sceneChangeDelay);
-        if (delay > 0f)
+        // ── 演出前の待機（任意・Realtime）────────────────────────────────────
+        if (performanceStartDelay > 0f)
+            yield return new WaitForSecondsRealtime(performanceStartDelay);
+
+        // 結果画面へ進む理由を、ログで必ず分かるように記録する。
+        string transitionReason;
+
+        // ── 演出（廊下／庭／片付け入室中／片付けPeek）────────────────────────
+        if (gameOverSequenceController == null)
+            gameOverSequenceController = Object.FindFirstObjectByType<MotherGameOverSequenceController>();
+
+        if (gameOverSequenceController == null)
         {
-            yield return new WaitForSecondsRealtime(delay);
+            transitionReason = "設定不足（MotherGameOverSequenceController が見つからない）";
+            Debug.LogError("[CaughtReactionController] 【設定不足】MotherGameOverSequenceController が見つからないため、" +
+                           "演出を行わずシーン遷移のみ行います（GameOverController の配置と CaughtReactionController の参照を確認してください）");
+        }
+        else if (!gameOverSequenceController.HasAnyRouteConfigured)
+        {
+            transitionReason = "設定不足（4ルートの steps が未登録）";
+            Debug.LogError("[CaughtReactionController] 【設定不足】ゲームオーバー演出のルートにステップ（Waypoint）が登録されていないため、" +
+                           "演出を行わずシーン遷移のみ行います。 " + gameOverSequenceController.DescribeRouteConfiguration() +
+                           "（Waypointオブジェクトの配置だけでは登録になりません。各 Route.steps へ登録してください）");
+        }
+        else
+        {
+            bool finished = false;
+            // 演出自体が全体タイムアウトを持ち、必ず onResult を返す（停止中でも無限待機しない）。
+            yield return gameOverSequenceController.PlaySequence(_context, ok => finished = ok);
+
+            if (finished)
+            {
+                transitionReason = "正常完了（演出を最後まで再生）";
+                Debug.Log("[CaughtReactionController] ゲームオーバー演出が完了しました");
+            }
+            else
+            {
+                transitionReason = "演出失敗／タイムアウト（詳細は MotherGameOverSequence のログ参照）";
+                Debug.LogWarning("[CaughtReactionController] ゲームオーバー演出が完了しませんでした（失敗／タイムアウト）— 結果画面へ進みます");
+            }
         }
 
-        // 親機側のゲームオーバーシーン（ParentGameOver）をロード
-        if (showDebugLogs) Debug.Log($"[CaughtReactionController] {gameOverSceneName}シーンをロード中...");
+        // ── 演出後の追加待機（任意・Realtime）────────────────────────────────
+        float delay = Mathf.Max(0f, sceneChangeDelay);
+        if (delay > 0f)
+            yield return new WaitForSecondsRealtime(delay);
+
+        // ── 最終的なゲームオーバーシーン遷移 ────────────────────────────────
+        // 演出完了（または安全な打ち切り）を子機へ通知してから結果画面へ進む。
+        //  ・Jumpscare開始時ではなく、カメラ完了待ちまで終えて遷移が確定したここで送る。
+        //  ・子機はこの通知まで結果画面へ進まず、待機中は入力と得点が停止する。
+        EnsureUdpSender();
+        if (udpSender != null)
+            udpSender.NotifyGameOverSequenceCompleted(transitionReason);
+        else
+            Debug.LogWarning("[CaughtReactionController] ParentUdpSender が無いため、演出完了通知を送れません" +
+                             "（子機は子機側の上限で待機を解除します）", this);
+
+        LoadGameOverScene(transitionReason);
+        _gameOverRoutine = null;
+    }
+
+    /// <summary>
+    /// 親機のゲームオーバーシーンをロードする（このメソッドが最終遷移の唯一の実行元）。
+    ///  reason には「正常完了／設定不足／再生失敗／タイムアウト」等を入れてログに明記する。
+    /// </summary>
+    private void LoadGameOverScene(string reason)
+    {
+        Debug.Log($"[CaughtReactionController] 結果画面へ遷移します: scene='{gameOverSceneName}' / 理由={reason} / " +
+                  "呼び出し元=CaughtReactionController.GameOverSequence", this);
 
         if (!string.IsNullOrEmpty(gameOverSceneName))
         {
@@ -216,7 +351,45 @@ public class CaughtReactionController : MonoBehaviour
         {
             Debug.LogError("[CaughtReactionController] gameOverSceneNameが空です。インスペクターで設定してください。");
         }
-        _gameOverRoutine = null;
+    }
+
+    /// <summary>
+    /// 捕獲の種類・位置・片付けの進行段階を、演出へ引き継ぐために保存する。
+    ///  ・片付けの進行段階は AbortChore が記録した「中断前の記憶値」を使う（状態は消えているため）。
+    ///  ・位置は現在位置を使う（演出は捕獲した位置から始め、startPoint へは戻さない）。
+    /// </summary>
+    private void CaptureGameOverContext()
+    {
+        if (approachController == null) approachController = Object.FindFirstObjectByType<MotherApproachController>();
+        if (choreController == null) choreController = Object.FindFirstObjectByType<MotherChoreController>();
+
+        Transform mother = approachController != null ? approachController.transform : null;
+
+        _context = new MotherGameOverCaptureContext
+        {
+            startPosition = mother != null ? mother.position : Vector3.zero,
+            startRotation = mother != null ? mother.rotation : Quaternion.identity,
+            gardenPeek = approachController != null && (approachController.IsGardenPeeking || approachController.IsGardenRoute),
+            choreDoorPassed = approachController != null && approachController.IsChoreDoorPassed,
+        };
+
+        if (choreController != null)
+        {
+            _context.choreCapture = choreController.WasActiveOnLastAbort || choreController.IsChoreActive;
+
+            // 中断の記憶値があればそれを優先（片付けをしていた証拠）。無ければ現在段階。
+            MotherChoreController.ChorePhase phase = choreController.WasActiveOnLastAbort
+                ? choreController.LastAbortedPhase
+                : choreController.CurrentPhase;
+
+            _context.chorePhase = phase;
+            _context.choreLooking = phase == MotherChoreController.ChorePhase.Looking;
+        }
+
+        Debug.Log($"[CaughtReactionController] 捕獲状況を保存: gardenPeek={_context.gardenPeek} " +
+                  $"choreCapture={_context.choreCapture} choreLooking={_context.choreLooking} " +
+                  $"chorePhase={_context.chorePhase} choreDoorPassed={_context.choreDoorPassed} " +
+                  $"position={_context.startPosition.ToString("F2")}");
     }
 
     public void ForceGameOver()

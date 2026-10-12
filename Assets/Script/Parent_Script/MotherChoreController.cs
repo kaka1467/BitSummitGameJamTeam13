@@ -150,6 +150,55 @@ public class MotherChoreController : MonoBehaviour
     /// </summary>
     public bool IsChoreRouteFailed => _choreRouteFailed;
 
+    /// <summary>
+    /// 片付けの進行段階（読み取り専用）。
+    ///  ・IsChoreActive だけでは「入室中」と「片付け中のPeek」を区別できないため、段階を明示する。
+    ///  ・毎フレーム Animator のステート名を推測するのではなく、既存の進行フラグから判定する。
+    ///  ・ゲームオーバー演出（捕獲時）の開始ルート選択に使う。
+    /// </summary>
+    public enum ChorePhase
+    {
+        Idle,         // 片付けをしていない
+        Approaching,  // 入室中（chorePoint 未到着）
+        Performing,   // 演技中（chorePoint 到着後・Choreループ）
+        Looking,      // 片付け中のPeek（Chore_Peek 再生中）
+        Returning     // 演技終了後の帰り
+    }
+
+    /// <summary>現在の片付け段階（読み取り専用）。</summary>
+    public ChorePhase CurrentPhase
+    {
+        get
+        {
+            if (IsChoreActive)
+            {
+                // 演技終了後（帰り）は IsChoreActive が残っていても Returning として扱う。
+                if (approachController != null && approachController.IsChorePerformanceFinished)
+                    return ChorePhase.Returning;
+
+                if (_gazeInProgress) return ChorePhase.Looking;
+                if (_choreArrived) return ChorePhase.Performing;
+                return ChorePhase.Approaching;
+            }
+
+            // 演技終了後は IsChoreActive が false でも片付け経路（帰り）が残っている。
+            if (approachController != null && approachController.IsChoreRouteActive)
+                return ChorePhase.Returning;
+
+            return ChorePhase.Idle;
+        }
+    }
+
+    /// <summary>
+    /// 捕獲・中断の「直前」に観測した進行段階。
+    ///  ・AbortChore が状態（IsChoreActive／_choreArrived／_gazeInProgress）を消す前に記録する。
+    ///  ・ゲームオーバー演出の引き継ぎ（立ち上がりが必要か等）の判定に使う。
+    /// </summary>
+    public ChorePhase LastAbortedPhase { get; private set; } = ChorePhase.Idle;
+
+    /// <summary>直前の中断時に片付けが実行中だったか（状態を消す前の値を保存する）。</summary>
+    public bool WasActiveOnLastAbort { get; private set; }
+
     // ── 内部状態 ──────────────────────────────────────────────────────────────
     private Coroutine _mainRoutine; // 片付け本体（開始待ち＋行き〜帰り）
     private bool _choreStartRequested; // このプレイで開始要求を出したか
@@ -237,6 +286,8 @@ public class MotherChoreController : MonoBehaviour
     public void NotifyGameProgress(float progressRate)
     {
         if (!choreEnabled || IsChoreActive) return;
+        // ゲームオーバー演出中は片付けを開始しない（演出への通常要求を止める）。
+        if (approachController != null && approachController.IsGameOverSequenceActive) return;
         if (_choreStartRequested || _choreStartCount >= choreCountPerPlay) return;
         if (progressRate < choreAllowedProgressRate) return;
 
@@ -358,6 +409,16 @@ public class MotherChoreController : MonoBehaviour
     {
         bool wasActive = IsChoreActive;
 
+        // ★ 状態を消す前に、捕獲演出へ引き継ぐ進行段階を保存する ★
+        //   IsChoreActive／_choreArrived／_gazeInProgress をクリアする前に読む。
+        //   捕獲では AbortChore が「捕獲」→「ゲームオーバー」の順に2回呼ばれるため、
+        //   既に中断済み（実行中でない）の2回目では記憶値を上書きしない。
+        if (wasActive)
+        {
+            LastAbortedPhase = CurrentPhase;
+            WasActiveOnLastAbort = true;
+        }
+
         if (_mainRoutine != null)
         {
             StopCoroutine(_mainRoutine);
@@ -452,6 +513,10 @@ public class MotherChoreController : MonoBehaviour
         if (approachController != null)
             approachController.ResetChoreRoute();
 
+        // 捕獲演出へ引き継ぐ記憶値も初期化する（再プレイで持ち越さない）。
+        LastAbortedPhase = ChorePhase.Idle;
+        WasActiveOnLastAbort = false;
+
         ReleaseChoreLocks();
     }
 
@@ -466,6 +531,16 @@ public class MotherChoreController : MonoBehaviour
     private IEnumerator StartChoreAfterDelay(float delay, bool isManual = false)
     {
         yield return new WaitForSeconds(Mathf.Max(0f, delay));
+
+        // 待機中にゲームオーバー演出が始まっていたら片付けを開始しない（演出を上書きしない）。
+        if (approachController != null && approachController.IsGameOverSequenceActive)
+        {
+            Debug.LogWarning("[MotherChore] ゲームオーバー演出中に到達したため片付けを開始しません");
+            _choreStartRequested = false;
+            _manualStartRequested = false;
+            _manualStartPending = false;
+            yield break;
+        }
 
         // 待機中に通常の親イベントが始まったら、終了を待つ（重複させない）。
         if (warningSystem != null && warningSystem.isWarningActive)
@@ -539,6 +614,10 @@ public class MotherChoreController : MonoBehaviour
     {
         // ── サイクル開始：通常の親イベントを抑止する ─────────────────────────
         IsChoreActive = true;
+        // 新しい片付けサイクルの開始で、前回中断の記憶値をクリアする
+        // （捕獲種類の誤判定＝誤ったゲームオーバー演出の選択を防ぐ）。
+        LastAbortedPhase = ChorePhase.Idle;
+        WasActiveOnLastAbort = false;
         _gazeInProgress = false;
         _completedLookCount = 0;
         SetDetection(false);
@@ -978,6 +1057,10 @@ public class MotherChoreController : MonoBehaviour
         _choreRouteFailed = false;
         _choreCompleted = false;
         IsChoreActive = false;
+        // 正常完了でも前回中断の記憶値をクリアする（次に通常の覗きで捕獲されても
+        // 片付け中の捕獲と誤判定しないようにする）。
+        LastAbortedPhase = ChorePhase.Idle;
+        WasActiveOnLastAbort = false;
         SetDetection(false);
 
         // 念のため経路と怪しさ加算も閉じる（停止状態を残さない）。

@@ -444,6 +444,26 @@ public class MotherApproachController : MonoBehaviour
     public bool IsGardenRoute { get; private set; }
     public float CurrentApproachSpeed => parentDetection != null ? parentDetection.CurrentApproachSpeed : 1.5f;
 
+    /// <summary>
+    /// ゲームオーバー演出（捕獲時）のために通常の移動制御を譲っている最中か。
+    ///  ・true の間は通常の経路開始・歩行復帰を行わず、演出用の移動だけが位置を書き込む。
+    ///  ・読み取り専用（切り替えは EnterGameOverExclusiveControl のみ）。
+    /// </summary>
+    public bool IsGameOverSequenceActive { get; private set; }
+
+    /// <summary>
+    /// 片付けの入室でドアを通過済みか（ゲームオーバー演出でドア開けをやり直すかの判定に使う）。
+    ///  ・真のときは「現在位置からそのまま入室を続ける」ため、演出側がドア開けステップを飛ばす。
+    ///  ・読み取り専用（ChoreRoutine のドア通過後に true、ルート初期化で false）。
+    /// </summary>
+    public bool IsChoreDoorPassed { get; private set; }
+
+    /// <summary>
+    /// 片付けの演技が終了し、帰りの経路へ進んでいるか（ゲームオーバー演出の段階判定に使う）。
+    ///  ・読み取り専用。
+    /// </summary>
+    public bool IsChorePerformanceFinished => _chorePerformanceFinished;
+
     // ── 実行モード ────────────────────────────────────────────────────────────
     /// <summary>大きな音による突入開始前にMotherApproachWarningが設定する。移動ループ音を抑制し、rushInPauseAtDoorSecondsを使用する。</summary>
     public bool IsRushIn { get; set; }
@@ -986,10 +1006,10 @@ public class MotherApproachController : MonoBehaviour
             $"hallwayPassByPoint={(hallwayPassByPoint != null ? hallwayPassByPoint.name : "NULL")} | " +
             $"startPoint={(startPoint != null ? startPoint.name : "NULL")}");
 
-        if (IsApproaching || IsReturningHome || IsChoreRouteActive)
+        if (IsApproaching || IsReturningHome || IsChoreRouteActive || IsGameOverSequenceActive)
         {
             Debug.Log(
-                $"[MotherApproachController] 片付けルートを開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome} IsChoreRouteActive={IsChoreRouteActive})");
+                $"[MotherApproachController] 片付けルートを開始しません (IsApproaching={IsApproaching} IsReturningHome={IsReturningHome} IsChoreRouteActive={IsChoreRouteActive} IsGameOverSequenceActive={IsGameOverSequenceActive})");
             return false;
         }
 
@@ -1080,6 +1100,117 @@ public class MotherApproachController : MonoBehaviour
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  ゲームオーバー演出（捕獲時）専用：通常移動の排他制御と演出用の移動
+    //  ・Animator は操作しない（MotherAnimationPlayer が担当）。
+    //  ・位置は戻さない（startPointへ戻さない）／モデルは非表示にしない。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 捕獲時に、通常の移動・帰路・片付け・旋回・Peek横スライドを止め、ゲームオーバー演出へ制御を渡す。
+    ///  ・進行中の移動コルーチンを停止し、位置を書き込む処理が同時に複数動かないようにする。
+    ///  ・位置のリセット（startPointへ戻す）は行わない（捕獲した位置から演出を始めるため）。
+    ///  ・モデルの非表示は行わない（演出中は表示したまま）。
+    ///  ・Animator は停止しない（MotherAnimationPlayer の演出再生を妨げない）。
+    ///  ・帰路中断フラグ（_returnHomeAbortFlag）は立てない（立てると演出の旋回＝RotateToYaw が中断するため）。
+    /// </summary>
+    [Tooltip("ゲームオーバー演出の開始時に、顔ライト・目の発光を明示的に点灯し直す。" +
+             "（片付け中断などで消灯された場合の復帰。OFFなら照明はそのまま）")]
+    [SerializeField] private bool enableGameOverLighting = true;
+
+    public void EnterGameOverExclusiveControl()
+    {
+        // 進行中の移動・演出コルーチンを停止する（演出の移動と二重に位置を書かないため）。
+        if (_approachCoroutine != null) { StopCoroutine(_approachCoroutine); _approachCoroutine = null; }
+        if (_choreCoroutine != null) { StopCoroutine(_choreCoroutine); _choreCoroutine = null; }
+        StopRotateCoroutine();
+        StopDoorPeekSlideCoroutine();
+
+        // 通常進行のフラグを閉じる（演出の移動だけが動けるようにする）。
+        IsApproaching = false;
+        IsInHallwayPhase = false;
+        IsChoreRouteActive = false;
+        _roomPhaseActive = false;
+        _doorRoutineActive = false;
+        _roomEntryRequested = false;
+        _leaveRoomRequested = false;
+        _isGardenPeeking = false;
+        _choreRouteAborted = true;      // 片付けルートの各判定が真でも移動しないように
+        _routeExecutionFailed = false;  // 演出の移動が失敗扱いで止まらないように
+        ReturnHomePhase = ReturnHomeState.Idle;
+        // 帰路中断フラグは、演出の旋回（RotateToYaw）が中断しないよう明示的に下ろす。
+        // （進行中のコルーチンは上で停止済みなので、ここで下ろしても再開する処理はない）
+        _returnHomeAbortFlag = false;
+
+        // 片付け中断（AbortChoreRoute）などで消灯された照明を、演出開始時に明示的に点灯し直す。
+        // 以降この演出中は通常の中断処理（HideMotherForReturn / AbortApproach）が走らないよう、
+        // 経路開始・位置リセットも IsGameOverSequenceActive でガードしている。
+        if (enableGameOverLighting)
+        {
+            SetMotherStageLighting(true);
+            SetPeekLighting(true);
+        }
+
+        IsGameOverSequenceActive = true;
+
+        Debug.Log("[MotherApproachController] ゲームオーバー演出へ制御を移しました（位置・モデル表示は維持）");
+    }
+
+    /// <summary>
+    /// ゲームオーバー演出用：現在位置から指定Waypointへ、指定速度で「位置のみ」移動する。
+    ///  ・向きは変えない（到着後の旋回は FaceWaypointForwardForGameOver が担当）。
+    ///  ・motherHeightOffset は既存と同じ規則で1回だけ加算する。
+    ///  ・速度0以下なら現在の接近速度を使う（移動速度とアニメ再生速度は別扱い）。
+    ///  ・timeoutSeconds を超えたら無限待機せず、警告して現在位置のまま終了する。
+    /// </summary>
+    public IEnumerator MoveToWaypointForGameOver(Transform waypoint, float speed, float timeoutSeconds)
+    {
+        if (!IsGameOverSequenceActive) yield break;
+
+        if (waypoint == null)
+        {
+            Debug.LogWarning("[MotherApproachController] ゲームオーバー演出の移動先Waypointが未設定です（スキップ）", this);
+            yield break;
+        }
+
+        Vector3 goal = OffsetGoalPosition(waypoint.position);
+        float moveSpeed = speed > 0f ? speed : Mathf.Max(0.01f, CurrentApproachSpeed);
+        float timeout = Mathf.Max(0.1f, timeoutSeconds);
+        float elapsed = 0f;
+
+        while (Vector3.Distance(transform.position, goal) > stopDistance)
+        {
+            // 演出が中断されたら、その場で位置更新を止める。
+            if (!IsGameOverSequenceActive) yield break;
+
+            if (elapsed >= timeout)
+            {
+                Debug.LogWarning($"[MotherApproachController] ゲームオーバー演出の移動が {timeout:F1}s で" +
+                                 $"Waypoint '{waypoint.name}' へ到達しませんでした（打ち切り）", this);
+                yield break;
+            }
+
+            transform.position = Vector3.MoveTowards(transform.position, goal, moveSpeed * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        transform.position = goal;
+    }
+
+    /// <summary>
+    /// ゲームオーバー演出用：到着したWaypointのローカル＋Zへ旋回する（完了まで待つ）。
+    ///  ・向きの基準は既存ルールと同じく「Waypointのローカル＋Z」（移動先ベクトルからは計算しない）。
+    ///  ・既存の RotateToWaypointForward / RotateToYaw を再利用する。
+    /// </summary>
+    public IEnumerator FaceWaypointForwardForGameOver(Transform waypoint)
+    {
+        if (!IsGameOverSequenceActive) yield break;
+        if (waypoint == null) yield break;
+
+        yield return RotateToWaypointForward(waypoint, turnRotation, "gameover");
+    }
+
     /// <summary>再プレイ・シーン開始時に片付けルートの状態を初期化する。</summary>
     public void ResetChoreRoute()
     {
@@ -1092,6 +1223,8 @@ public class MotherApproachController : MonoBehaviour
         _choreRouteAborted = false;
         _chorePerformanceFinished = false;
         IsChoreRouteActive = false;
+        // ドア通過の記憶も初期化する（ゲームオーバー演出のドア判定へ古い値を残さない）。
+        IsChoreDoorPassed = false;
     }
 
     /// <summary>
@@ -1120,6 +1253,8 @@ public class MotherApproachController : MonoBehaviour
         IsChoreRouteActive = true;
         _choreRouteAborted = false;
         _chorePerformanceFinished = false;
+        // ドア通過の記憶を新しいサイクルで初期化する（前サイクルの通過を持ち越さない）。
+        IsChoreDoorPassed = false;
 
         // ══ 行き：hallwaypeak と同じ既存廊下ルートを歩く ═══════════════════════
         //   startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn（HallwayPoint_4 まで）
@@ -1179,6 +1314,9 @@ public class MotherApproachController : MonoBehaviour
             FinishChoreRouteAborted();
             yield break;
         }
+
+        // ドアを通過して部屋側へ入ったことを記録する（ゲームオーバー演出でドア開けをやり直さないため）。
+        IsChoreDoorPassed = true;
 
         // 5-2) 一時停止してドアを閉め、閉じ終わるまで待つ（モデルのアニメーションは再生しない）。
         MovementStateChanged?.Invoke(false);   // ドア閉めのため停止する
@@ -1441,6 +1579,14 @@ public class MotherApproachController : MonoBehaviour
 
     public void ResetApproach()
     {
+        // ゲームオーバー演出中は位置リセット（startPointへ戻す）を行わない。
+        // 演出は「捕獲した位置」から始めるため、後から通常の中断経路が位置を戻さないようにする。
+        if (IsGameOverSequenceActive)
+        {
+            Debug.LogWarning("[MotherApproachController] ゲームオーバー演出中のため、ResetApproach（位置リセット）をスキップします");
+            return;
+        }
+
         Debug.Log($"[MotherApproachController] ResetApproach | IsApproaching={IsApproaching}");
 
         if (_approachCoroutine != null)
@@ -1471,6 +1617,13 @@ public class MotherApproachController : MonoBehaviour
     private void BeginApproach(bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false,
         bool choreRoute = false)
     {
+        // ゲームオーバー演出中は通常の経路を開始しない（演出の移動と位置を二重に書かないため）。
+        if (IsGameOverSequenceActive)
+        {
+            Debug.LogWarning("[MotherApproachController] ゲームオーバー演出中のため、通常の経路を開始しません");
+            return;
+        }
+
         MovementStateChanged?.Invoke(false);
         // 「このサイクルは突入（大きな音）として開始されたか」を記録する。
         // MotherApproachWarningはIsRushIn=trueを設定してから本メソッドを呼ぶため、

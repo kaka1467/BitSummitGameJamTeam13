@@ -99,6 +99,18 @@ public class GameManager : MonoBehaviour
     //   ・GameManager.instance に対応する正当な担当だけが購読する（二重購読しない）。
     private ChildUdpReceiver _caughtReceiver;
     private bool _caughtSubscribed;
+
+    // ── 捕獲演出の待機（親機の演出完了まで結果画面へ進ませない）────────────────
+    [Header("捕獲演出の待機")]
+    [Tooltip("親機の演出完了通知（SEQUENCE_DONE）を受け取るまでの上限（秒）。\n" +
+             "超えたら通信断とみなし、理由をログに出して確定得点のまま結果画面へ進みます（永久待機しない）。")]
+    [SerializeField, Min(1f)] private float sequenceWaitTimeoutSeconds = 45f;
+
+    private bool _scoreFrozen;                 // 捕獲通知で確定したか（以後の加算を停止）
+    private int _frozenScore;                  // 確定得点（結果・ランキングはこの値）
+    private bool _waitingSequenceDone;         // CaptureSequenceReleased を購読済みか
+    private bool _sequenceDoneReceived;        // 演出完了（または上限）で遷移済みか
+    private Coroutine _sequenceWaitRoutine;
     private bool _started;   // Start完了フラグ（初回の購読をStart後へ遅らせるため）
 
     public enum ResultType { GameOver, TimeUp }
@@ -166,6 +178,22 @@ public class GameManager : MonoBehaviour
             _caughtSubscribed = false;
         }
 
+        // 演出完了通知の購読も解除する（破棄後に呼ばれないようにする）。
+        if (_waitingSequenceDone)
+        {
+            ChildUdpReceiver receiver = ChildUdpReceiver.instance;
+            if (receiver != null)
+                receiver.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
+
+            _waitingSequenceDone = false;
+        }
+
+        if (_sequenceWaitRoutine != null)
+        {
+            StopCoroutine(_sequenceWaitRoutine);
+            _sequenceWaitRoutine = null;
+        }
+
         _caughtReceiver = null;
     }
 
@@ -177,6 +205,95 @@ public class GameManager : MonoBehaviour
     {
         if (!isActiveAndEnabled) return;
         if (isGameOver) return;   // TriggerResult 側のガードと同じ（無駄な再入を避けるだけ）
+
+        // 1) 捕獲時点の得点を確定し、以後の加算を停止する（ランキング・最終得点はこの値を使う）。
+        FreezeScoreForCapture("捕獲通知（CAUGHT）");
+
+        // 2) 親機の演出完了通知を待ってから結果画面へ進む（入力・得点は既に停止済み）。
+        //    通知が来ない（通信断）場合は上限で解除するため、永久には待たない。
+        if (WaitForSequenceDone())
+            return;
+
+        TriggerResult(ResultType.GameOver);
+    }
+
+    /// <summary>捕獲時点の得点を確定得点として保存し、以後の加算を止める（二重実行しても値は変わらない）。</summary>
+    private void FreezeScoreForCapture(string reason)
+    {
+        if (_scoreFrozen) return;
+
+        _scoreFrozen = true;
+        _frozenScore = score;   // score 自体は以後変更されないため、この値が最終得点になる
+
+        Debug.Log($"[GameManager] 得点を確定しました（理由={reason}）: {_frozenScore}点。結果画面まで加算しません");
+    }
+
+    /// <summary>
+    /// 親機の演出完了通知（ChildUdpReceiver.CaptureSequenceReleased）を待つ。
+    ///  ・既に受信済み／購読できる相手が居ない場合は false（呼び出し側が即座に遷移する）。
+    ///  ・二重購読しない。
+    /// </summary>
+    private bool WaitForSequenceDone()
+    {
+        ChildUdpReceiver receiver = ChildUdpReceiver.instance != null ? ChildUdpReceiver.instance : udpReceiver;
+        if (receiver == null)
+        {
+            Debug.LogWarning("[GameManager] ChildUdpReceiver が見つからないため、演出完了を待てません（即座に結果画面へ進みます）", this);
+            return false;
+        }
+
+        if (_sequenceDoneReceived)
+        {
+            Debug.Log("[GameManager] 演出完了通知は既に受信済みのため、待たずに結果画面へ進みます");
+            return false;
+        }
+
+        if (!_waitingSequenceDone)
+        {
+            _waitingSequenceDone = true;
+            receiver.CaptureSequenceReleased += HandleCaptureSequenceReleased;
+            Debug.Log("[GameManager] 親機の演出完了通知を待機します（入力ロック・得点停止は適用済み）");
+        }
+
+        if (_sequenceWaitRoutine == null)
+            _sequenceWaitRoutine = StartCoroutine(SequenceWaitTimeoutRoutine());
+
+        return true;
+    }
+
+    /// <summary>演出完了通知の受信（または子機側の上限到達）で、確定得点のまま結果画面へ進む。</summary>
+    private void HandleCaptureSequenceReleased(string reason)
+    {
+        if (_sequenceDoneReceived) return;
+        _sequenceDoneReceived = true;
+
+        Debug.Log($"[GameManager] 親機の演出完了通知を受信しました（理由={reason}）。確定得点 {_frozenScore}点 で結果画面へ進みます");
+
+        if (_sequenceWaitRoutine != null)
+        {
+            StopCoroutine(_sequenceWaitRoutine);
+            _sequenceWaitRoutine = null;
+        }
+
+        TriggerResult(ResultType.GameOver);
+    }
+
+    /// <summary>
+    /// 【異常時フォールバック】親機の演出完了通知が来ない場合（通信断など）の上限。
+    /// 理由をログに出して結果画面へ進む（永久待機しない）。
+    /// </summary>
+    private IEnumerator SequenceWaitTimeoutRoutine()
+    {
+        yield return new WaitForSecondsRealtime(Mathf.Max(1f, sequenceWaitTimeoutSeconds));
+
+        _sequenceWaitRoutine = null;
+
+        if (_sequenceDoneReceived) yield break;
+
+        _sequenceDoneReceived = true;
+        Debug.LogWarning($"[GameManager] 【フォールバック】親機の演出完了通知を {sequenceWaitTimeoutSeconds:F1}s で受信できませんでした" +
+                         "（通信断の可能性）。確定得点のまま結果画面へ進みます", this);
+
         TriggerResult(ResultType.GameOver);
     }
 
@@ -288,6 +405,14 @@ public class GameManager : MonoBehaviour
 
     public void AddScore(int amount)
     {
+        // 捕獲通知後は、結果画面まで一切ポイントを増やさない（毎フレーム加算・アイテム・コンボ・
+        // ボーナス・遅延処理などの全加算入口はここを通る）。
+        if (_scoreFrozen)
+        {
+            Debug.Log($"[GameManager] 捕獲後のためポイント加算を停止中（amount={amount} を無視）。確定得点={_frozenScore}");
+            return;
+        }
+
         score += amount;
     }
 
@@ -540,6 +665,10 @@ public class GameManager : MonoBehaviour
 
     public void ResetScoreAndFever()
     {
+        // 再プレイ：得点ロックと演出待機の状態も初期化する（前回プレイの待機を残さない）。
+        _scoreFrozen = false;
+        _frozenScore = 0;
+        _sequenceDoneReceived = false;
         score = 0;
         feverCount = 0;
         StopFeverEffects();

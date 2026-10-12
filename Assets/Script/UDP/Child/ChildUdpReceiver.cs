@@ -172,6 +172,102 @@ public class ChildUdpReceiver : MonoBehaviour
     /// <summary>ゲーム側の受信担当（購読者）が準備済みか。</summary>
     public bool HasCaughtSubscriber => CaughtReceived != null;
 
+    // ── 捕獲演出の待機（親機の演出完了まで結果画面へ進ませない）────────────────
+    /// <summary>捕獲を受理し、演出待機状態へ入ったときに発火する（入力ロック・画像表示の適用側が購読）。</summary>
+    public event Action CaptureWaitStarted;
+
+    /// <summary>演出完了（またはフォールバック）で待機を解除したときに、理由付きで発火する。</summary>
+    public event Action<string> CaptureSequenceReleased;
+
+    private bool _waitingGameOverSequence;
+    private string _sequenceDoneHandledPlayId = "";   // 完了通知を処理済みのプレイID（重複・再送を無視）
+    private string _sequenceDonePendingPlayId = "";   // 捕獲通知より先に届いた完了通知（順序入れ替わり対応）
+
+    /// <summary>捕獲演出の待機中か（親機の演出完了待ち）。</summary>
+    public bool IsWaitingGameOverSequence => _waitingGameOverSequence;
+
+    /// <summary>捕獲を受理したので演出待機に入る（通常の寝たふりとは別の状態として保持する）。</summary>
+    private void EnterCaptureWait(string reason)
+    {
+        if (_waitingGameOverSequence) return;
+
+        _waitingGameOverSequence = true;
+        CaptureWaitStarted?.Invoke();
+
+        Debug.Log($"[ChildUdpReceiver] 捕獲演出の待機を開始しました（理由={reason}, playSessionId='{_playSessionId}'）。" +
+                  "結果画面へは演出完了通知を受けてから進みます。");
+
+        // 順序入れ替わり：完了通知が先に届いていた場合は、待機へ入った時点で即解除する。
+        if (!string.IsNullOrEmpty(_sequenceDonePendingPlayId) &&
+            (string.IsNullOrEmpty(_playSessionId) || _sequenceDonePendingPlayId == _playSessionId))
+        {
+            ReleaseCaptureWait($"演出完了通知が捕獲通知より先に届いていた（playId='{_sequenceDonePendingPlayId}'）");
+        }
+    }
+
+    /// <summary>演出待機を解除する（結果画面へ進める）。二重に呼んでも1回だけ通知する。</summary>
+    private void ReleaseCaptureWait(string reason)
+    {
+        if (!_waitingGameOverSequence) return;
+
+        _waitingGameOverSequence = false;
+        Debug.Log($"[ChildUdpReceiver] 捕獲演出の待機を解除しました（理由={reason}）。");
+        CaptureSequenceReleased?.Invoke(reason);
+    }
+
+    /// <summary>待機・完了通知の状態を初期化する（再プレイで残さない）。</summary>
+    private void ResetCaptureWaitState(string reason)
+    {
+        _waitingGameOverSequence = false;
+        _sequenceDoneHandledPlayId = "";
+        _sequenceDonePendingPlayId = "";
+        Debug.Log($"[ChildUdpReceiver] 捕獲演出の待機・完了通知の状態を初期化しました（理由={reason}）。");
+    }
+
+    /// <summary>
+    /// 演出完了通知（SEQUENCE_DONE:&lt;playSessionId&gt;:&lt;reason&gt;）を処理する。
+    ///  ・前回プレイの遅延通知は無視する（今回の待機を解除しない）。
+    ///  ・重複・再送は無視するが、親機の再送を止めるため ACK は必ず返す。
+    ///  ・捕獲通知より先に届いた場合は保留し、待機開始時に即解除する。
+    /// </summary>
+    private void HandleSequenceDoneMessage(string playId, string reason)
+    {
+        // 前回プレイの遅延通知（別プレイID）は無視する。ACKも返さない（親機の再送を今回のプレイで止めない）。
+        if (!string.IsNullOrEmpty(playId) && !string.IsNullOrEmpty(_playSessionId) && playId != _playSessionId)
+        {
+            Debug.Log($"[ChildUdpReceiver] SEQUENCE_DONE ignored（前回プレイの遅延通知）: playId='{playId}' / current='{_playSessionId}'");
+            return;
+        }
+
+        string effectivePlayId = string.IsNullOrEmpty(playId) ? _playSessionId : playId;
+
+        // 受領確認を返す（再送を止める）。
+        SendState($"SEQUENCE_DONE_ACK:{effectivePlayId}");
+
+        if (!string.IsNullOrEmpty(effectivePlayId) && _sequenceDoneHandledPlayId == effectivePlayId)
+        {
+            Debug.Log($"[ChildUdpReceiver] SEQUENCE_DONE は処理済み（重複・再送）: playId='{effectivePlayId}'（ACKのみ返しました）");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(effectivePlayId))
+        {
+            Debug.LogWarning("[ChildUdpReceiver] SEQUENCE_DONE のプレイIDが空です。現在プレイとして扱います");
+        }
+
+        _sequenceDoneHandledPlayId = effectivePlayId;
+
+        if (_waitingGameOverSequence)
+        {
+            ReleaseCaptureWait($"演出完了通知を受信（playId='{effectivePlayId}', reason='{reason}'）");
+            return;
+        }
+
+        // 捕獲通知（CAUGHT）より先に届いた場合は保留する（待機開始時に即解除する）。
+        _sequenceDonePendingPlayId = effectivePlayId;
+        Debug.Log($"[ChildUdpReceiver] SEQUENCE_DONE を保留しました（捕獲通知より先に受信。待機開始時に解除します）: playId='{effectivePlayId}', reason='{reason}'");
+    }
+
     /// <summary>購読前に受理したCAUGHTの保留が残っているか（ゲーム側の初期同期の問い合わせ用）。</summary>
     public bool HasPendingCaught => _hasPendingCaught;
 
@@ -841,6 +937,7 @@ public class ChildUdpReceiver : MonoBehaviour
             {
                 caughtHandled = false;
                 ClearPendingCaught("新プレイ開始（START_GAME）");
+                ResetCaptureWaitState("新プレイ開始（START_GAME）");
             }
 
             if (showDebugLogs)
@@ -881,6 +978,18 @@ public class ChildUdpReceiver : MonoBehaviour
             // 受理済みにしてから通知／フォールバックへ進む（再送はここで弾かれる）。
             HandleCaughtAccepted(activeScene);
 
+            return;
+        }
+
+        if (msg.StartsWith("SEQUENCE_DONE:", StringComparison.Ordinal))
+        {
+            // SEQUENCE_DONE:<playSessionId>:<reason>
+            string rest = msg.Substring("SEQUENCE_DONE:".Length);
+            string[] parts = rest.Split(':');
+            string playId = parts.Length > 0 ? parts[0].Trim() : "";
+            string reason = parts.Length > 1 ? parts[1].Trim() : "unspecified";
+
+            HandleSequenceDoneMessage(playId, reason);
             return;
         }
 
@@ -1046,6 +1155,9 @@ public class ChildUdpReceiver : MonoBehaviour
     {
         // 受理済みは「通知やフォールバックの前」に立てる（再送を弾く。保留の消費は妨げない）。
         caughtHandled = true;
+
+        // 捕獲を受理したので、親機の演出完了まで「演出待機」に入る（通常の寝たふりとは別状態）。
+        EnterCaptureWait("CAUGHT受理");
 
         // 1) ゲーム側の受信担当（GameManager）が準備済みなら通知する。
         if (CaughtReceived != null)
