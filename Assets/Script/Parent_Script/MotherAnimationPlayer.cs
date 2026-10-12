@@ -53,6 +53,19 @@ public class MotherAnimationPlayer : MonoBehaviour
     //  ・移動（waypoints）側の速度は変更しない（アニメーション再生だけを倍率で調整する）。
     private const string WalkSpeedParameter = "WalkSpeed";
 
+    // ── ゲームオーバー演出用パラメーター（Animator.Play ではなく Transition で入る）──────
+    //   ・GameOverActive：通常遷移とゲームオーバー遷移を区別する Bool。
+    //   ・WalkFast     ：早歩き（Walk_Fast）へ入る Bool。
+    //   ・JumpscareTrigger：ジャンプスケアへ入る Trigger。
+    //   ※ 既存の Walk / Door_OpenTrigger / WalkSpeed / Door_OpenSpeed は再利用する。
+    private const string GameOverActiveParameter = "GameOverActive";
+    private const string WalkFastParameter = "WalkFast";
+    private const string JumpscareParameter = "JumpscareTrigger";
+    //   ・GameOverStopTrigger：捕獲開始状態（Peek/Chore など）からも「停止状態（Idle）」へ入るための Trigger。
+    //     早歩きを一度再生しなくても停止状態へ入れるようにする（Bool ではなく Trigger にして
+    //     一度発火したら消費されるようにし、Door_Open／Jumpscare を継続的に上書きしない）。
+    private const string GameOverStopParameter = "GameOverStopTrigger";
+
     // ── 参照 ──────────────────────────────────────────────────────────────────
     [Header("参照")]
     [Tooltip("母親モデルのAnimator。未設定の場合はMotherApproachControllerから解決する。")]
@@ -83,8 +96,10 @@ public class MotherAnimationPlayer : MonoBehaviour
     [SerializeField] private bool showDebugLogs = true;
 
     // ── 片付けのドア開け速度 ──────────────────────────────────────────────────
-    [Tooltip("片付けの Door_Open 再生速度（倍率）。Animator全体の speed は変更せず、Door_Open 専用の" +
-             "速度パラメーター（Door_OpenSpeed）を設定する。1=等倍。行き／帰りの両方に適用する。")]
+    [Tooltip("【母親】Door_Open アニメの再生速度（倍率）。1=等倍、2=2倍の速さ、0.5=半分の速さ。\n" +
+             "※大きいほど動作が速くなります。Animator全体の speed は変更せず、Door_Open 専用の" +
+             "速度パラメーター（Door_OpenSpeed）を設定します。行き／帰りの両方に適用。\n" +
+             "※ドア本体が開く「時間」（MotherGameOverSequence の gameOverDoorOpenDuration）とは別の設定です。")]
     [SerializeField, Min(0.01f)] private float doorOpenSpeedMultiplier = 1.5f;
 
     // ── 歩行アニメーション速度 ────────────────────────────────────────────────
@@ -96,18 +111,64 @@ public class MotherAnimationPlayer : MonoBehaviour
 
     // ── 片付けのドア開け「開始タイミング」 ────────────────────────────────────
     //   Door_Open の「手がドアを押す」位置でドア本体を開き始めるための判定を本クラスで持つ。
-    //   ※推測の遅延秒数は入れていない。Unity の Animation ウィンドウで押すフレームを確認し、
-    //     正規化タイム（フレーム ÷ クリップ長）を doorOpenPushNormalizedTime に設定すること。
-    [Tooltip("Door_Open で「手がドアを押す」正規化タイム（0〜1）。この位置でドア本体を開き始める。" +
-             "0=モデル開始と同時。※Unity の Animation ウィンドウで押すフレームを確認して設定する" +
-             "（推測値は入れていない）。Animation Event（NotifyDoorOpenPushPoint）があればそちらが優先。")]
+    //   ※推測の遅延秒数は入れていない。Unity の Animation ウィンドウで押すフレームを確認して設定すること。
+    [Tooltip("押すタイミングの判定方式。NormalizedTime=正規化タイムで判定／AnimationEvent=Animation Event通知で判定。" +
+             "方式を明示的に選ぶ（両方を混ぜない）。")]
+    [SerializeField] private DoorOpenPushTiming doorOpenPushTiming = DoorOpenPushTiming.NormalizedTime;
+
+    [Tooltip("【NormalizedTime方式】Door_Open で「手がドアを押す」正規化タイム（0〜1）。\n" +
+             "値は「押す時刻[秒] ÷ クリップ長[秒]」で求める。0=モデル開始と同時。\n" +
+             "※これは『ドア本体の開き始めタイミング』であり、開く速さ／時間ではありません。\n" +
+             "※AnimationEvent方式ではこの値は使わない。")]
     [SerializeField, Range(0f, 1f)] private float doorOpenPushNormalizedTime = 0f;
 
     [Tooltip("Door_Open の押すタイミング待ちの上限（秒）。超えたら失敗として扱う（無限待機しない）。")]
     [SerializeField, Min(0.1f)] private float doorOpenPushTimeoutSeconds = 5f;
 
+    /// <summary>押すタイミングの判定方式（明示的に選択する）。</summary>
+    public enum DoorOpenPushTiming
+    {
+        /// <summary>正規化タイム（押す時刻[秒] ÷ クリップ長[秒]）で判定する。</summary>
+        NormalizedTime,
+        /// <summary>Animation Event（NotifyDoorOpenPushPoint）の通知だけで判定する。</summary>
+        AnimationEvent
+    }
+
     /// <summary>押すタイミングが通知されたか（Animation Event 用の任意フック）。</summary>
     private bool _doorOpenPushSignaled;
+
+    // ── ゲームオーバー演出（捕獲時）────────────────────────────────────────────
+    //  ・早歩き（Walk_Fast）とジャンプスケア（Jumpscare）は Animator Controller に既存のステートを使う。
+    //    どちらも遷移を持たないため、Animator.Play で直接入る（新規ステートや遷移は追加しない）。
+    //  ・Animator 全体の speed は変更しない。歩行は WalkSpeed、ドアは Door_OpenSpeed のまま使う。
+    //  ・「通常の歩行復帰（RestoreWalking）」が捕獲演出を上書きしないよう、演出中フラグで止める。
+    [Header("ゲームオーバー演出")]
+
+    [Tooltip("早歩きステート名。Animator Controller の既存 Walk_Fast を使う（重複作成しない）。")]
+    [SerializeField] private string walkFastStateName = "Walk_Fast";
+
+    [Tooltip("ジャンプスケアステート名。Animator Controller の既存 Jumpscare を使う（重複作成しない）。")]
+    [SerializeField] private string jumpScareStateName = "Jumpscare";
+
+    [Tooltip("早歩き（Walk_Fast）のときだけ使う歩行アニメの再生速度倍率。" +
+             "移動速度（waypoints）とは別。Animator 全体の speed は変更しない。")]
+    [SerializeField, Min(0.01f)] private float gameOverWalkFastAnimationSpeedMultiplier = 1.6f;
+
+    /// <summary>
+    /// 歩行アニメの速度倍率の上書き（0以下で無効＝walkAnimationSpeedMultiplier を使う）。
+    ///  ・早歩き中に FireTrigger→SetWalking(false)→ApplyWalkAnimationSpeed が走っても
+    ///    速度が通常値へ戻らないようにするための保持値。
+    /// </summary>
+    private float _walkSpeedOverride = -1f;
+
+    /// <summary>ゲームオーバー演出中か（通常の歩行復帰で演出を上書きしないためのフラグ）。</summary>
+    private bool _gameOverPerformanceActive;
+
+    /// <summary>ゲームオーバー演出中か（読み取り専用）。</summary>
+    public bool IsGameOverPerformanceActive => _gameOverPerformanceActive;
+
+    /// <summary>ジャンプスケアのステート名（演出側がログ・診断に使う。Animator 操作は本クラスに閉じる）。</summary>
+    public string JumpScareStateName => jumpScareStateName;
 
     // ── Unity ライフサイクル ──────────────────────────────────────────────────
 
@@ -120,6 +181,22 @@ public class MotherAnimationPlayer : MonoBehaviour
     private void Start()
     {
         ApplyWalkAnimationSpeed();
+
+        // 【重要】母親の移動はすべてコード側（MotherApproachController の transform.position 更新）で行うため、
+        //   Animator の Root Motion を無効化する。
+        //   ・Root Motion が ON だと、クリップに焼かれた平行移動が毎フレーム位置へ加算され、
+        //     コード側の移動速度（Step.moveSpeed / defaultMoveSpeed）が実質無視される
+        //     （＝速度を上げても見た目が変わらない）。
+        //   ・提供モデルの README も「Apply Root Motion OFF のまま」と指定している。
+        //   ・Prefab/Scene 側の設定も OFF にするのが本来だが、実行時に保険として無効化する。
+        Animator a = ResolveAnimator();
+        if (a != null && a.applyRootMotion)
+        {
+            a.applyRootMotion = false;
+            Debug.LogWarning("[MotherAnimationPlayer] Animator の Apply Root Motion が ON だったため OFF にしました" +
+                             "（コード移動と競合し、移動速度が反映されない原因になります）。" +
+                             "Prefab/Scene 側の設定も OFF にしてください", this);
+        }
     }
 
     /// <summary>
@@ -281,8 +358,28 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// <summary>
     /// 歩行状態を設定する（通常イベント・片付けの歩行区間で使う唯一の入口）。
     /// Walk=true なら既存遷移 Idle→Walk、false なら Walk→Idle が働く。
+    ///  ・ゲームオーバー演出中は、通常処理からの書き込みで演出（Walk_Fast／Jumpscare）を
+    ///    上書きしないよう、ここで拒否する。
+    ///  ・演出側の要求は SetWalkingInternal を直接使うため、ここで拒否されない。
     /// </summary>
     public void SetWalking(bool walking)
+    {
+        if (_gameOverPerformanceActive)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[MotherAnimationPlayer] ゲームオーバー演出中のため、通常の歩行設定（Walk={walking}）をスキップします");
+            return;
+        }
+
+        SetWalkingInternal(walking);
+    }
+
+    /// <summary>
+    /// 歩行状態を設定する内部処理（ゲームオーバー演出側の要求もここを使う）。
+    ///  ・通常処理の入口は public SetWalking（演出中は拒否）。
+    ///  ・演出用API（RequestWalk / FireTrigger）はこの内部処理を呼ぶ（ロックで演出を止めない）。
+    /// </summary>
+    private void SetWalkingInternal(bool walking)
     {
         Animator a = ResolveAnimator();
         if (a == null) return;
@@ -307,6 +404,14 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// </summary>
     public void RestoreWalking()
     {
+        // ゲームオーバー演出中は通常の歩行復帰要求で演出（Walk_Fast／Jumpscare）を上書きしない。
+        if (_gameOverPerformanceActive)
+        {
+            if (showDebugLogs)
+                Debug.Log("[MotherAnimationPlayer] ゲームオーバー演出中のため、通常の歩行復帰をスキップします");
+            return;
+        }
+
         Animator a = ResolveAnimator();
         if (a == null) return;
 
@@ -323,6 +428,13 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// </summary>
     public void FirePeekTrigger(string triggerName)
     {
+        if (_gameOverPerformanceActive)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[MotherAnimationPlayer] ゲームオーバー演出中のため、通常のPeek要求('{triggerName}')をスキップします");
+            return;
+        }
+
         Animator a = ResolveAnimator();
         if (a == null || string.IsNullOrEmpty(triggerName)) return;
 
@@ -355,17 +467,35 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// 【片付け】Door_Open（ドアを開ける・1回）へ遷移要求を出す。
     /// 先に Door_Open 専用の速度パラメーターを設定する（Animator全体の speed は変更しない）。
     /// </summary>
-    public void RequestDoorOpen()
+    public bool RequestDoorOpen()
     {
+        Animator a = ResolveAnimator();
+        if (a == null ||
+            !HasParameterOn(a, DoorOpenParameter, AnimatorControllerParameterType.Trigger) ||
+            !HasState(doorOpenStateName))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Door_Open（Trigger '{DoorOpenParameter}' / ステート '{doorOpenStateName}'）を" +
+                             "解決できないため、ドア開けを要求できません（失敗）", this);
+            return false;
+        }
+
+        // WalkFast=true のままだと Any State→Walk_Fast が Door_Open を上書きしうるため、
+        // 移動要求と古い停止Trigger を先に解除する。
+        ClearGameOverMovementRequests();
+
         _doorOpenPushSignaled = false;   // 新しい Door_Open のためにクリア
         ApplyDoorOpenSpeed();
         FireTrigger(DoorOpenParameter);
+        return true;
     }
 
     /// <summary>
     /// 【任意】Door_Open の「手がドアを押す」瞬間を知らせる（Animation Event から呼べるフック）。
-    ///  ・イベントを置く場合は、押すフレームでこのメソッドを呼ぶ（その場合 normalizedTime 判定より優先）。
-    ///  ・ステート名・タイミングの管理は本クラスに閉じる（MotherChoreController へ戻さない）。
+    ///  ・doorOpenPushTiming = AnimationEvent のときに使う。
+    ///  ・押すフレームに Animation Event を置き、このメソッドを呼ぶ。
+    ///  ・ステート名・タイミングの管理は本クラスに閉じる（呼び出し側へ戻さない）。
+    ///  ・待機開始前に通知が来ても取りこぼさないよう、この通知は WaitForDoorOpenPush では消さない
+    ///    （消すのは新しい Door_Open を出す RequestDoorOpen の時点だけ）。
     /// </summary>
     public void NotifyDoorOpenPushPoint()
     {
@@ -375,8 +505,10 @@ public class MotherAnimationPlayer : MonoBehaviour
     /// <summary>
     /// Door_Open の「手がドアを押す」タイミング（＝ドア本体を開き始める瞬間）まで待つ。
     ///  ・モデルの開始（Door_Open へ到達）が確認できるまで成立しない（開始前にドアを開けない）。
-    ///  ・Animation Event（NotifyDoorOpenPushPoint）が来たら成立。
-    ///  ・イベントが無い場合は doorOpenPushNormalizedTime を超えたら成立。
+    ///  ・判定方式は doorOpenPushTiming で明示的に選ぶ：
+    ///      NormalizedTime … normalizedTime が doorOpenPushNormalizedTime 以上で成立
+    ///                       （閾値の意味は「押す時刻[秒] ÷ クリップ長[秒]」）
+    ///      AnimationEvent … NotifyDoorOpenPushPoint() の通知だけで成立
     ///  ・タイムアウトしたら success=false（無限待機しない）。
     /// ステート名・正規化タイムは本クラスが保持する（呼び出し側は何も渡さない）。
     /// </summary>
@@ -391,7 +523,9 @@ public class MotherAnimationPlayer : MonoBehaviour
             yield break;
         }
 
-        _doorOpenPushSignaled = false;
+        // ※ ここで _doorOpenPushSignaled を消さない。
+        //   消すのは RequestDoorOpen() の時点だけにして、待機開始前に Animation Event が
+        //   来ていてもその通知を取りこぼさないようにする。
         float elapsed = 0f;
 
         // 1) モデルの開始（Door_Open 到達）を確認する。開始前にドアを開けない。
@@ -414,26 +548,52 @@ public class MotherAnimationPlayer : MonoBehaviour
             yield break;
         }
 
-        // 2) 押すタイミングを待つ（Animation Event 優先。無ければ正規化タイム閾値）。
-        while (!_doorOpenPushSignaled)
+        // 2) 押すタイミングを、選択した方式だけで待つ（両方式を混ぜない）。
+        if (doorOpenPushTiming == DoorOpenPushTiming.AnimationEvent)
         {
-            AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
-            if (info.IsName(doorOpenStateName) && info.normalizedTime >= doorOpenPushNormalizedTime)
-                break;
-
-            if (elapsed >= doorOpenPushTimeoutSeconds)
+            // AnimationEvent方式：イベント通知だけを待つ（正規化タイムは見ない）。
+            while (!_doorOpenPushSignaled)
             {
-                Debug.LogWarning($"[MotherAnimationPlayer] Door_Open の押すタイミングを {doorOpenPushTimeoutSeconds:F1}s で確認できませんでした（失敗）", this);
-                onResult?.Invoke(false);
-                yield break;
+                if (elapsed >= doorOpenPushTimeoutSeconds)
+                {
+                    Debug.LogWarning($"[MotherAnimationPlayer] Door_Open の押すタイミング（Animation Event）を " +
+                                     $"{doorOpenPushTimeoutSeconds:F1}s で確認できませんでした（失敗）", this);
+                    onResult?.Invoke(false);
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                yield return null;
             }
 
-            elapsed += Time.deltaTime;
-            yield return null;
+            if (showDebugLogs)
+                Debug.Log("[MotherAnimationPlayer] Door_Open 押すタイミング成立（Animation Event）— ドア本体を開き始めます");
+        }
+        else
+        {
+            // NormalizedTime方式：normalizedTime が閾値以上になったら成立（閾値0なら到達直後に成立）。
+            while (true)
+            {
+                AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
+                if (info.IsName(doorOpenStateName) && info.normalizedTime >= doorOpenPushNormalizedTime)
+                    break;
+
+                if (elapsed >= doorOpenPushTimeoutSeconds)
+                {
+                    Debug.LogWarning($"[MotherAnimationPlayer] Door_Open の押すタイミング（normalizedTime=" +
+                                     $"{doorOpenPushNormalizedTime:F2}）を {doorOpenPushTimeoutSeconds:F1}s で確認できませんでした（失敗）", this);
+                    onResult?.Invoke(false);
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (showDebugLogs)
+                Debug.Log($"[MotherAnimationPlayer] Door_Open 押すタイミング成立（normalizedTime={doorOpenPushNormalizedTime:F2}）— ドア本体を開き始めます");
         }
 
-        if (showDebugLogs)
-            Debug.Log($"[MotherAnimationPlayer] Door_Open 押すタイミング成立（normalizedTime={doorOpenPushNormalizedTime:F2}）— ドア本体を開き始めます");
         onResult?.Invoke(true);
     }
 
@@ -481,7 +641,7 @@ public class MotherAnimationPlayer : MonoBehaviour
             return;
         }
 
-        float speed = Mathf.Max(0.01f, walkAnimationSpeedMultiplier);
+        float speed = Mathf.Max(0.01f, _walkSpeedOverride > 0f ? _walkSpeedOverride : walkAnimationSpeedMultiplier);
         a.SetFloat(WalkSpeedParameter, speed);
 
         if (showDebugLogs)
@@ -570,6 +730,301 @@ public class MotherAnimationPlayer : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  ゲームオーバー演出（捕獲時）用 API
+    //  ・Animator への書き込みは本クラスに集約する。呼び出し側はステート名を渡さない。
+    //  ・Walk_Fast / Jumpscare は遷移を持たないため Animator.Play で入る（Play は本クラス内だけ）。
+    //  ・Animator 全体の speed は変更しない（歩行は WalkSpeed、ドアは Door_OpenSpeed）。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>ゲームオーバー演出の開始を宣言する（GameOverActive=true。通常の歩行復帰で演出を上書きしない）。</summary>
+    public void BeginGameOverPerformance()
+    {
+        _gameOverPerformanceActive = true;
+        SetBoolParameter(GameOverActiveParameter, true);
+    }
+
+    /// <summary>
+    /// ゲームオーバー演出の終了を宣言する。
+    ///  ・GameOverActive=false／WalkFast=false／未消費 JumpscareTrigger を消す（再プレイへ持ち越さない）。
+    ///  ・歩行速度の上書きも通常値へ戻す。
+    /// </summary>
+    public void EndGameOverPerformance()
+    {
+        _gameOverPerformanceActive = false;
+        _walkSpeedOverride = -1f;
+        ResetGameOverParameters();
+        ApplyWalkAnimationSpeed();
+    }
+
+    /// <summary>
+    /// ゲームオーバー用パラメーター（GameOverActive / WalkFast / JumpscareTrigger）を初期状態へ戻す。
+    /// 中断・終了・再プレイで未消費の値・Trigger を残さない。
+    /// </summary>
+    public void ResetGameOverParameters()
+    {
+        SetBoolParameter(GameOverActiveParameter, false);
+        SetBoolParameter(WalkFastParameter, false);
+        ResetTriggerIfExists(ResolveAnimator(), JumpscareParameter);
+        ResetTriggerIfExists(ResolveAnimator(), GameOverStopParameter);
+    }
+
+    /// <summary>
+    /// ゲームオーバー演出で「移動要求を解除し、割り込み用 Trigger を消す」共通処理。
+    ///  ・Walk=false／WalkFast=false を確実にする（Any State→Walk_Fast の再発火を防ぐ）。
+    ///  ・古い GameOverStopTrigger を消す（停止要求後に別ステートへ移っても、
+    ///    残った Trigger が後から Idle へ引き戻さないようにする）。
+    /// </summary>
+    private void ClearGameOverMovementRequests()
+    {
+        Animator a = ResolveAnimator();
+        SetWalkingInternal(false);
+        SetBoolParameter(WalkFastParameter, false);
+        ResetTriggerIfExists(a, GameOverStopParameter);
+    }
+
+    /// <summary>
+    /// 早歩き（Walk_Fast）を要求する。
+    ///  ・Animator.Play は使わない。Controller の遷移
+    ///    「Any State → Walk_Fast（GameOverActive==true かつ WalkFast==true）」で入る。
+    ///  ・歩行速度は WalkSpeed を早歩き用の倍率に上書きする（waypoints の移動速度は変更しない）。
+    ///  ・必要な Bool/ステートが無い場合は false を返す（直接 Play へ黙ってフォールバックしない）。
+    /// </summary>
+    public bool RequestWalkFast()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null)
+        {
+            Debug.LogWarning("[MotherAnimationPlayer] Animatorを解決できないため、早歩きを要求できません（失敗）", this);
+            return false;
+        }
+
+        if (!HasParameterOn(a, WalkFastParameter, AnimatorControllerParameterType.Bool))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Bool '{WalkFastParameter}' が無いため早歩きに入れません（失敗）。" +
+                             "Animator Controller へ登録してください", this);
+            return false;
+        }
+
+        if (!HasState(walkFastStateName))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{walkFastStateName}' が無いため早歩きに入れません（失敗）", this);
+            return false;
+        }
+
+        // 早歩き中は WalkSpeed を早歩き用の倍率に保つ。
+        _walkSpeedOverride = gameOverWalkFastAnimationSpeedMultiplier;
+        ApplyWalkAnimationSpeed();
+
+        // Walk=false／WalkFast=false／古い停止Trigger を消してから、WalkFast=true を立てる。
+        ClearGameOverMovementRequests();
+        SetBoolParameter(WalkFastParameter, true);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] 早歩き要求: {WalkFastParameter}=true（遷移で {walkFastStateName} へ。速度倍率={gameOverWalkFastAnimationSpeedMultiplier:F2}）");
+        return true;
+    }
+
+    /// <summary>
+    /// 停止要求（ゲームオーバー演出）：早歩きを経由していなくても「停止状態（Idle）」へ入れる。
+    ///  ・Walk=false／WalkFast=false を確実にし、GameOverStopTrigger を発火する。
+    ///  ・遷移は Controller 側の「Any State → Idle（GameOverActive==true かつ GameOverStopTrigger）」で行う。
+    ///  ・停止状態への到達待ちは WaitForStopState を使う（呼び出し側は到達前に次の段階へ進まない）。
+    ///  ・必要な Bool/Trigger が無い場合は false を返す（直接 Play へはフォールバックしない）。
+    /// </summary>
+    public bool RequestStop()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null)
+        {
+            Debug.LogWarning("[MotherAnimationPlayer] Animatorを解決できないため、停止要求を出せません（失敗）", this);
+            return false;
+        }
+
+        if (!HasParameterOn(a, GameOverStopParameter, AnimatorControllerParameterType.Trigger))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Trigger '{GameOverStopParameter}' が無いため、停止状態へ入れません（失敗）。" +
+                             "Animator Controller へ登録してください", this);
+            return false;
+        }
+
+        if (!HasState(idleStateName))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] 停止状態の '{idleStateName}' が無いため、停止状態へ入れません（失敗）", this);
+            return false;
+        }
+
+        // 移動要求（Walk/WalkFast）を解除し、古い停止Trigger を消してから停止Trigger を発火する。
+        ClearGameOverMovementRequests();
+        a.SetTrigger(GameOverStopParameter);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] 停止要求: {GameOverStopParameter}（遷移で {idleStateName} へ）");
+        return true;
+    }
+
+    /// <summary>
+    /// 停止状態（Idle）への到達をタイムアウト付きで待つ。到達できなければ false（打ち切り判断用）。
+    ///  ・遷移中は到達とみなさない。
+    /// </summary>
+    public IEnumerator WaitForStopState(float timeoutSeconds, System.Action<bool> onResult = null)
+    {
+        Animator a = ResolveAnimator();
+        if (a == null || !HasState(idleStateName))
+        {
+            Debug.LogWarning("[MotherAnimationPlayer] 停止状態の到達を確認できません（Animator/ステート未解決）", this);
+            yield return new WaitForSeconds(fallbackWaitSeconds);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        float timeout = Mathf.Max(0.1f, timeoutSeconds);
+        float elapsed = 0f;
+
+        while (elapsed < timeout)
+        {
+            AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
+            if (!a.IsInTransition(Layer) && info.IsName(idleStateName))
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[MotherAnimationPlayer] 停止状態（{idleStateName}）へ到達しました（{elapsed:F2}s）");
+                onResult?.Invoke(true);
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        Debug.LogWarning($"[MotherAnimationPlayer] 停止状態（{idleStateName}）へ {timeout:F1}s で到達できませんでした（失敗）", this);
+        onResult?.Invoke(false);
+    }
+
+    /// <summary>
+    /// 指定ステートへの到達（遷移完了）をタイムアウト付きで待つ。
+    ///  ・遷移中は到達とみなさない。
+    ///  ・到達できなければ false（呼び出し側は打ち切り判断に使う）。
+    /// </summary>
+    public IEnumerator WaitForStateArrival(string stateName, float timeoutSeconds, System.Action<bool> onResult = null)
+    {
+        Animator a = ResolveAnimator();
+        if (a == null || string.IsNullOrEmpty(stateName) || !HasState(stateName))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' の到達を確認できません（Animator/ステート未解決）", this);
+            yield return new WaitForSeconds(fallbackWaitSeconds);
+            onResult?.Invoke(false);
+            yield break;
+        }
+
+        float timeout = Mathf.Max(0.1f, timeoutSeconds);
+        float elapsed = 0f;
+
+        while (elapsed < timeout)
+        {
+            AnimatorStateInfo info = a.GetCurrentAnimatorStateInfo(Layer);
+            if (!a.IsInTransition(Layer) && info.IsName(stateName))
+            {
+                if (showDebugLogs)
+                    Debug.Log($"[MotherAnimationPlayer] ステート '{stateName}' へ到達しました（{elapsed:F2}s）");
+                onResult?.Invoke(true);
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        Debug.LogWarning($"[MotherAnimationPlayer] ステート '{stateName}' へ {timeout:F1}s で到達できませんでした（失敗）", this);
+        onResult?.Invoke(false);
+    }
+
+    /// <summary>早歩き（Walk_Fast）ステートへの到達を待つ。</summary>
+    public IEnumerator WaitForWalkFastState(float timeoutSeconds, System.Action<bool> onResult = null) =>
+        WaitForStateArrival(walkFastStateName, timeoutSeconds, onResult);
+
+    /// <summary>通常歩き（Walk）ステートへの到達を待つ。</summary>
+    public IEnumerator WaitForWalkState(float timeoutSeconds, System.Action<bool> onResult = null) =>
+        WaitForStateArrival(walkStateName, timeoutSeconds, onResult);
+
+    /// <summary>
+    /// 通常歩き（Walk）へ戻す（ゲームオーバー演出の移動区間に使う）。
+    ///  ・既存の Idle→Walk 遷移（Walk=true）を使う。歩行速度の上書きは解除する。
+    /// </summary>
+    public void RequestWalk()
+    {
+        _walkSpeedOverride = -1f;
+        // WalkFast=false／古い停止Trigger を消してから、通常歩き（Walk=true）へ。
+        ClearGameOverMovementRequests();
+        // 演出用の歩行要求は SetWalking（演出中は拒否）ではなく内部処理を使う（ロックで演出を止めない）。
+        SetWalkingInternal(true);
+
+        if (showDebugLogs)
+            Debug.Log("[MotherAnimationPlayer] 歩行要求（通常歩き）");
+    }
+
+    /// <summary>
+    /// ジャンプスケア（Jumpscare）を1回再生する要求を出す。
+    ///  ・Animator.Play は使わない。Controller の遷移
+    ///    「Any State → Jumpscare（GameOverActive==true かつ JumpscareTrigger）」で入る。
+    ///  ・開始できたら true、パラメーター/ステートが無い場合は false（直接 Play へ黙ってフォールバックしない）。
+    /// </summary>
+    public bool RequestJumpScare()
+    {
+        Animator a = ResolveAnimator();
+        if (a == null)
+        {
+            Debug.LogWarning("[MotherAnimationPlayer] Animatorを解決できないため、ジャンプスケアを要求できません（失敗）", this);
+            return false;
+        }
+
+        if (!HasParameterOn(a, JumpscareParameter, AnimatorControllerParameterType.Trigger))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Trigger '{JumpscareParameter}' が無いためジャンプスケアに入れません（失敗）。" +
+                             "Animator Controller へ登録してください", this);
+            return false;
+        }
+
+        if (!HasState(jumpScareStateName))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] ステート '{jumpScareStateName}' が無いためジャンプスケアに入れません（失敗）", this);
+            return false;
+        }
+
+        // 歩行の取り違えと古い停止Trigger を残さない（呼び出し側の順番にも依存しない）。
+        ClearGameOverMovementRequests();
+
+        // 未消費の Trigger を消してから発火する。
+        a.ResetTrigger(JumpscareParameter);
+        a.SetTrigger(JumpscareParameter);
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherAnimationPlayer] ジャンプスケア要求: {JumpscareParameter}（遷移で {jumpScareStateName} へ）");
+        return true;
+    }
+
+    /// <summary>
+    /// ジャンプスケアの再生完了を待つ（成功/失敗を onResult で返す）。
+    ///  ・未開始・ステート未登録・タイムアウトは失敗（正常完了と混同しない）。
+    /// </summary>
+    public IEnumerator WaitForJumpScare(System.Action<bool> onResult = null) =>
+        WaitForOneShot(jumpScareStateName, onResult);
+
+    /// <summary>Bool パラメーターがあれば設定する（無ければ警告のみ。直接 Play へはフォールバックしない）。</summary>
+    private void SetBoolParameter(string name, bool value)
+    {
+        Animator a = ResolveAnimator();
+        if (a == null) return;
+
+        if (!HasParameterOn(a, name, AnimatorControllerParameterType.Bool))
+        {
+            Debug.LogWarning($"[MotherAnimationPlayer] Animator に Bool '{name}' がありません。Animator Controller へ登録してください", this);
+            return;
+        }
+
+        a.SetBool(name, value);
+    }
+
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  内部
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -596,7 +1051,9 @@ public class MotherAnimationPlayer : MonoBehaviour
         }
 
         // 歩行で上書きされないよう先に Walk を解除してから遷移を要求する。
-        SetWalking(false);
+        // 演出中は public SetWalking が拒否されるため、内部処理を使う
+        // （演出のドア開け・立ち上がり要求までロックで止めない）。
+        SetWalkingInternal(false);
         a.ResetTrigger(triggerName);
         a.SetTrigger(triggerName);
 

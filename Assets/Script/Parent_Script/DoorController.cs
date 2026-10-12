@@ -34,6 +34,46 @@ public class DoorController : MonoBehaviour
     /// <summary>片付けの全開待ちの間だけ使う回転速度の上書き（0以下で無効＝通常の openSpeed）。</summary>
     private float _speedOverride = -1f;
 
+    // ── 時間指定の移動（ゲームオーバー演出用）───────────────────────────────
+    //  ・「秒」で全開までの時間を指定して開ける方式。値が大きいほどゆっくり開く。
+    //  ・通常の覗き／片付けは既存の速度方式（openSpeed / _speedOverride）のまま。
+    //  ・ドア角度の書き込み元はこのクラスのみ（UpdateDoorRotation が両方式を排他で扱う）。
+    private bool _timedMoveActive;
+    private float _timedElapsed;
+    private float _timedDuration = 1f;
+    private Quaternion _timedFromRotation = Quaternion.identity;
+    private AnimationCurve _timedCurve;
+
+    /// <summary>時間指定の移動が進行中か（読み取り専用）。</summary>
+    public bool IsTimedMoveActive => _timedMoveActive;
+
+    /// <summary>
+    /// 【ゲームオーバー演出用】目標状態へ「指定秒」で動かす（値が大きいほどゆっくり開く）。
+    ///  ・すでに途中まで開いていても、現在角度から目標角度まで動かす。
+    ///  ・curve が null / キー0件なら線形で動かす（空カーブは Evaluate が0を返すため）。
+    ///  ・既存の速度方式（BeginChoreFullOpen / SetDoorState）は変更しない。
+    ///  ・呼び出し元は MotherGameOverSequenceController だけで、同時に複数のコルーチンから呼ばない。
+    /// </summary>
+    public void BeginTimedMove(DoorState targetState, float durationSeconds, AnimationCurve curve)
+    {
+        if (door == null)
+        {
+            Debug.LogWarning("[DoorController] door が未設定のため時間指定の移動を開始できません", this);
+            return;
+        }
+
+        _timedFromRotation = door.localRotation;
+        _targetDoorState = targetState;      // SetDoorState の同一判定を通さず、途中角度からでも開始する
+        _timedDuration = Mathf.Max(0.01f, durationSeconds);
+        _timedElapsed = 0f;
+        _timedCurve = curve;
+        _timedMoveActive = true;
+        _speedOverride = -1f;                // 時間方式では速度上書きを使わない
+
+        if (showDebugLogs)
+            Debug.Log($"[DoorController] 時間指定の移動を開始: {targetState} / 時間={_timedDuration:F2}s");
+    }
+
     [Header("デバッグ")]
     public bool showDebugLogs;
 
@@ -46,6 +86,14 @@ public class DoorController : MonoBehaviour
     /// </summary>
     public DoorState CurrentDoorState => _currentDoorState;
 
+    /// <summary>
+    /// 手動入力（Pキー）を受け付けるか。
+    ///  ・ゲームオーバー演出中は「入力だけ」を止めたい。enabled を false にすると Update ごと止まり
+    ///    ドア本体の回転（演出のドア開け）まで止まってしまうため、入力停止と回転制御を分ける。
+    ///  ・既定は true（従来どおり入力可能）。捕獲演出の開始時に false にする。
+    /// </summary>
+    public bool ManualInputEnabled { get; set; } = true;
+
     private void Start()
     {
         if (door != null)
@@ -54,12 +102,15 @@ public class DoorController : MonoBehaviour
         _currentDoorState = DoorState.Closed;
         _targetDoorState = DoorState.Closed;
         _speedOverride = -1f;
+        // シーン開始時は手動入力を受け付ける（再プレイで停止状態を持ち越さない）。
+        ManualInputEnabled = true;
     }
 
     private void OnDisable()
     {
-        // 無効化（シーン変更・ゲームオーバー等）で速度上書きを残さない。
+        // 無効化（シーン変更・ゲームオーバー等）で速度上書き・時間指定移動を残さない。
         _speedOverride = -1f;
+        _timedMoveActive = false;
     }
 
     /// <summary>
@@ -115,7 +166,8 @@ public class DoorController : MonoBehaviour
     private void Update()
     {
         // Pキーによる手動切り替え（新しい入力システム）。ドアのClosed↔Full切替のみで、怪しさへの加算は行わない。
-        if (Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
+        // 捕獲演出中（ManualInputEnabled=false）は入力だけを止める。回転は下の UpdateDoorRotation が継続する。
+        if (ManualInputEnabled && Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
         {
             if (showDebugLogs)
                 Debug.Log("?? Pキーを押しました：ドアを切り替えます");
@@ -145,6 +197,27 @@ public class DoorController : MonoBehaviour
         float targetAngleY = GetTargetAngle(_targetDoorState);
         Quaternion targetRotation = Quaternion.Euler(0f, targetAngleY, 0f);
 
+        // ── 時間指定の移動（ゲームオーバー演出用）────────────────────────────
+        //   開始角度から目標角度まで「指定秒」で動かす（値が大きいほどゆっくり）。
+        if (_timedMoveActive)
+        {
+            _timedElapsed += Time.deltaTime;
+            float k = Mathf.Clamp01(_timedElapsed / _timedDuration);
+            // キー0件の空カーブは Evaluate が0を返すため、線形として扱う。
+            float e = (_timedCurve != null && _timedCurve.length > 0) ? Mathf.Clamp01(_timedCurve.Evaluate(k)) : k;
+
+            door.localRotation = Quaternion.Slerp(_timedFromRotation, targetRotation, e);
+
+            if (k >= 1f)
+            {
+                door.localRotation = targetRotation;   // 到達時に誤差を残さない
+                _currentDoorState = _targetDoorState;
+                _timedMoveActive = false;
+            }
+            return;
+        }
+
+        // ── 既存の速度方式（通常の覗き・片付け）──────────────────────────────
         // 片付けの全開待ち中は上書き速度を使う（通常の覗き・閉め速度は変更しない）。
         float speed = (_speedOverride > 0f) ? _speedOverride : openSpeed;
 

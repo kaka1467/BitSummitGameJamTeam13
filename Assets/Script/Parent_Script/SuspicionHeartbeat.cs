@@ -34,15 +34,97 @@ public class SuspicionHeartbeat : MonoBehaviour
     [Tooltip("1拍の直後に1になり、次の拍に向けて0へ減衰する。大きいほど「ドクッ」と素早く消える。")]
     [SerializeField, Min(0.1f)] private float pulseDecayPower = 2f;
 
+    [Header("デバッグ")]
+    [Tooltip("ゲームオーバー演出の心拍制御（停止／開始／終了）をログに記録する。")]
+    [SerializeField] private bool showDebugLogs = true;
+
     /// <summary>いま鼓動中か（寝たふり中。Require Sleeping がオフなら常に）。</summary>
     public bool IsBeating { get; private set; }
 
     /// <summary>赤い点滅の強さ（0〜1）。拍の瞬間に1、次の拍に向けて減衰する。鼓動中のみ有効。</summary>
     public float BeatPulse { get; private set; }
 
+    /// <summary>
+    /// 心拍の制御モード。
+    ///  ・Normal：通常（寝たふり中だけ、ゲージの段階に応じた間隔で鳴らす）
+    ///  ・SuppressedForGameOver：捕獲確定〜ドア開け完了まで（通常制御を止めて鳴らさない）
+    ///  ・GameOverOverride：捕獲後（寝たふり・ゲージ段階に依存せず、赤段階と同じ間隔で鳴らし続ける）
+    /// </summary>
+    public enum BeatControlMode
+    {
+        Normal = 0,
+        SuppressedForGameOver = 1,
+        GameOverOverride = 2,
+    }
+
+    /// <summary>現在の制御モード。ゲームオーバー演出側が二重制御していないかの確認に使う。</summary>
+    public BeatControlMode ControlMode => _mode;
+
+    /// <summary>捕獲後のゲームオーバー演出として鳴っているか。</summary>
+    public bool IsGameOverOverrideActive => _mode == BeatControlMode.GameOverOverride;
+
+    /// <summary>
+    /// 【捕獲確定】通常の心拍制御を止める（鳴らさない）。ドア開け完了まで無音にする。
+    ///  ・以降は BeginGameOverBeat が呼ばれるまで鳴らない。
+    ///  ・呼び出し元は GameOverPresentationController のみ（心拍の書き込み元を競合させない）。
+    /// </summary>
+    public void SuppressNormalBeatForGameOver()
+    {
+        _mode = BeatControlMode.SuppressedForGameOver;
+        SetIdle();
+
+        if (showDebugLogs)
+            Debug.Log($"[{nameof(SuspicionHeartbeat)}] 捕獲確定：通常の心拍制御を停止しました（ドア開け完了まで鳴らしません）", this);
+    }
+
+    /// <summary>
+    /// 【ドア開け完了】赤段階と同じテンポ（redBeatInterval）で心拍を開始する。
+    ///  ・テンポはこのクラスの設定をそのまま使う（別の場所へコピーしない＝二重管理しない）。
+    ///  ・寝たふり判定やゲージ段階には依存しない（捕獲後は自動減少でテンポを遅くしない）。
+    ///  ・既に開始済みなら何もしない（二重再生防止）。
+    /// </summary>
+    public void BeginGameOverBeat()
+    {
+        if (_mode == BeatControlMode.GameOverOverride)
+        {
+            if (showDebugLogs)
+                Debug.Log($"[{nameof(SuspicionHeartbeat)}] ゲームオーバー心拍は既に開始済みです（再開始しません）", this);
+            return;
+        }
+
+        _mode = BeatControlMode.GameOverOverride;
+
+        // 次のUpdateで1拍目をすぐ鳴らす（条件成立時に即1拍目を鳴らす既存挙動と同じ）。
+        _wasActive = false;
+        _timer = 0f;
+
+        if (showDebugLogs)
+            Debug.Log($"[{nameof(SuspicionHeartbeat)}] ドア開け完了：赤段階と同じテンポ（{redBeatInterval:F2}s間隔）で心拍を開始します", this);
+    }
+
+    /// <summary>
+    /// 【終了／中断】ゲームオーバー用の心拍を止め、通常制御へ戻す。
+    ///  ・シーン遷移・再プレイ・中断で呼ぶ（音を残さない）。
+    /// </summary>
+    public void EndGameOverBeat()
+    {
+        if (_mode == BeatControlMode.Normal)
+        {
+            SetIdle();
+            return;
+        }
+
+        _mode = BeatControlMode.Normal;
+        SetIdle();
+
+        if (showDebugLogs)
+            Debug.Log($"[{nameof(SuspicionHeartbeat)}] ゲームオーバー心拍を終了し、通常制御へ戻しました", this);
+    }
+
     private float _timer;
     private bool _wasActive;
     private bool _missingSleepingWarningShown;
+    private BeatControlMode _mode = BeatControlMode.Normal;
 
     private void Start()
     {
@@ -59,13 +141,23 @@ public class SuspicionHeartbeat : MonoBehaviour
 
     private void Update()
     {
-        if (sleepingController == null && !_missingSleepingWarningShown)
+        // 捕獲確定〜ドア開け完了までは通常制御を止める（鳴らさない）。
+        if (_mode == BeatControlMode.SuppressedForGameOver)
+        {
+            SetIdle();
+            return;
+        }
+
+        if (_mode == BeatControlMode.Normal && sleepingController == null && !_missingSleepingWarningShown)
         {
             _missingSleepingWarningShown = true;
             Debug.LogWarning($"[{nameof(SuspicionHeartbeat)}] SleepingControllerが見つかりません。寝たふり判定ができないため鼓動しません。", this);
         }
 
-        bool active = sleepingController != null && sleepingController.IsSleeping;
+        // 捕獲後（ゲームオーバー演出）は寝たふり判定に依存せず鳴らす
+        //  ・SleepingController は捕獲時に無効化されるため、依存させると音が止まってしまう。
+        bool active = _mode == BeatControlMode.GameOverOverride
+                      || (sleepingController != null && sleepingController.IsSleeping);
 
         if (!active)
         {
@@ -73,7 +165,8 @@ public class SuspicionHeartbeat : MonoBehaviour
             return;
         }
 
-        float interval = GetBeatInterval();
+        // 捕獲後はゲージ段階に追従せず、赤段階と同じ間隔を使う（自動減少でテンポを遅くしない）。
+        float interval = _mode == BeatControlMode.GameOverOverride ? redBeatInterval : GetBeatInterval();
 
         // 条件を満たした瞬間に1拍目をすぐ鳴らす
         if (!_wasActive)
@@ -103,6 +196,15 @@ public class SuspicionHeartbeat : MonoBehaviour
 
         if (heartbeatAudioSource != null)
             heartbeatAudioSource.Stop();
+    }
+
+    /// <summary>
+    /// 無効化（シーン遷移・再プレイ）で、ゲームオーバー用の心拍モードと音を残さない。
+    /// </summary>
+    private void OnDisable()
+    {
+        _mode = BeatControlMode.Normal;
+        SetIdle();
     }
 
     private void PlayBeat()

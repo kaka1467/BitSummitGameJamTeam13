@@ -36,6 +36,8 @@ public class ChildSleepLockApplier : MonoBehaviour
     private ChildUdpReceiver _subscribedReceiver;   // 購読解除を確実にするため保持する
     private bool _hasApplied;                       // 同値での不要な再適用を避ける
     private bool _appliedLocked;
+    private bool _sleepLocked;                      // 寝たふり（SLEEP_LOCK）によるロック
+    private bool _captureWaitLocked;                // 捕獲後の演出待機によるロック（寝たふりとは別枠）
     private bool _missingReceiverWarned;            // 警告は1回だけ
 
     private void OnEnable()
@@ -83,11 +85,15 @@ public class ChildSleepLockApplier : MonoBehaviour
 
         _subscribedReceiver = receiver;
         _subscribedReceiver.SleepLockChanged += HandleSleepLockChanged;
+        // 捕獲後の演出待機（親機の演出完了待ち）でも、寝たふりと同じ操作不可ロック・画像を使う。
+        _subscribedReceiver.CaptureWaitStarted += HandleCaptureWaitStarted;
+        _subscribedReceiver.CaptureSequenceReleased += HandleCaptureSequenceReleased;
         _subscribed = true;
 
         // 購読成立の時点で現在状態を「強制適用」する（初期同期）。
         // ・同値スキップは通常の通知だけに使う（購読成立・再有効化では確実に適用する）。
         // ・Receiver が未取得だった時間帯に状態が変わっていても、ここで必ず現在値にそろう。
+        _captureWaitLocked = receiver.IsWaitingGameOverSequence;
         Apply(receiver.IsSleepInputLocked, force: true);
 
         if (showDebugLogs)
@@ -101,7 +107,11 @@ public class ChildSleepLockApplier : MonoBehaviour
         if (_subscribed)
         {
             if (_subscribedReceiver != null)
+            {
                 _subscribedReceiver.SleepLockChanged -= HandleSleepLockChanged;
+                _subscribedReceiver.CaptureWaitStarted -= HandleCaptureWaitStarted;
+                _subscribedReceiver.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
+            }
 
             _subscribed = false;
             if (showDebugLogs)
@@ -127,6 +137,49 @@ public class ChildSleepLockApplier : MonoBehaviour
     /// </summary>
     private void Apply(bool locked, bool force = false)
     {
+        _sleepLocked = locked;
+        ApplyEffectiveLock(force);
+    }
+
+    /// <summary>
+    /// 捕獲後の演出待機によるロック（寝たふりロックとは別枠。どちらかがONなら操作不可）。
+    ///  ・通常の寝たふりをONにして代用しない（寝たふり解除の入力で演出待機が解けない）。
+    ///  ・画像は既存の寝たふり用UI（sleepLockImage）を再利用する。
+    /// </summary>
+    private void SetCaptureWaitLock(bool locked)
+    {
+        _captureWaitLocked = locked;
+        ApplyEffectiveLock(force: true);
+    }
+
+    private void HandleCaptureWaitStarted()
+    {
+        if (!isActiveAndEnabled) return;
+
+        Debug.Log("[ChildSleepLockApplier] 捕獲演出の待機に入りました（寝たふりとは別状態で、操作不可ロックと画像を適用します）。");
+        SetCaptureWaitLock(true);
+    }
+
+    private void HandleCaptureSequenceReleased(string reason)
+    {
+        if (!isActiveAndEnabled) return;
+
+        Debug.Log($"[ChildSleepLockApplier] 捕獲演出の待機を解除しました（理由={reason}）。");
+        SetCaptureWaitLock(false);
+    }
+
+    /// <summary>
+    /// 実効ロック（寝たふりロック OR 捕獲演出待機ロック）をシーン側へ適用する。
+    /// ・PlayerInputLock（静的）… 常に適用（PlayerMove／QTEManager が参照する唯一のゲート）。
+    /// ・PlayerMove.SetInputEnabled … 割当があるときだけ（従来と同じ入力停止）。
+    /// ・睡眠中画像 … 割当があるときだけ。
+    /// force=false（通常の通知）では同値の再適用をしない。
+    /// force=true（購読成立・再有効化・捕獲待機の切り替え）では現在状態を確実に適用する。
+    /// </summary>
+    private void ApplyEffectiveLock(bool force)
+    {
+        bool locked = _sleepLocked || _captureWaitLocked;
+
         if (!force && _hasApplied && _appliedLocked == locked) return;
         _hasApplied = true;
         _appliedLocked = locked;
@@ -140,7 +193,7 @@ public class ChildSleepLockApplier : MonoBehaviour
             sleepLockImage.SetActive(locked);
 
         if (showDebugLogs)
-            Debug.Log($"[ChildSleepLockApplier] 睡眠ロックを適用しました | locked={locked} | force={force} | " +
-                      $"playerMove={(playerMove != null)} | image={(sleepLockImage != null)}", this);
+            Debug.Log($"[ChildSleepLockApplier] 操作不可ロックを適用しました | locked={locked}（sleep={_sleepLocked}, captureWait={_captureWaitLocked}） | " +
+                      $"force={force} | playerMove={(playerMove != null)} | image={(sleepLockImage != null)}", this);
     }
 }
