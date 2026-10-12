@@ -179,12 +179,53 @@ public class ChildUdpReceiver : MonoBehaviour
     /// <summary>演出完了（またはフォールバック）で待機を解除したときに、理由付きで発火する。</summary>
     public event Action<string> CaptureSequenceReleased;
 
+    /// <summary>
+    /// 捕獲演出の状態。「未捕獲」と「完了済み」を区別するため（「待機中ではない」だけで完了扱いにしない）。
+    ///  ・None      ：このプレイでは捕獲を受理しておらず、完了通知も受けていない
+    ///  ・Waiting   ：捕獲を受理し、親機の演出完了通知を待っている
+    ///  ・Completed ：演出完了（または子機側の上限）で待機を解除済み
+    /// </summary>
+    public enum CaptureWaitState
+    {
+        None = 0,
+        Waiting = 1,
+        Completed = 2,
+    }
+
     private bool _waitingGameOverSequence;
+    private CaptureWaitState _captureWaitState = CaptureWaitState.None;
+    private string _captureWaitPlayId = "";           // 状態が属するプレイID（初期同期の判定に使う）
     private string _sequenceDoneHandledPlayId = "";   // 完了通知を処理済みのプレイID（重複・再送を無視）
     private string _sequenceDonePendingPlayId = "";   // 捕獲通知より先に届いた完了通知（順序入れ替わり対応）
 
     /// <summary>捕獲演出の待機中か（親機の演出完了待ち）。</summary>
     public bool IsWaitingGameOverSequence => _waitingGameOverSequence;
+
+    /// <summary>現在プレイの捕獲演出の状態（未捕獲／待機中／完了済み）。</summary>
+    public CaptureWaitState CurrentCaptureWaitState => _captureWaitState;
+
+    /// <summary>
+    /// 【初期同期】GameManager が購読成立時に確認する「現在プレイの演出完了が確定済みか」。
+    ///  ・Completed のときだけ true（未捕獲 None を完了扱いにしない）。
+    ///  ・購読より先に完了通知が処理されていても、ここで true になるため取りこぼさない。
+    ///  ・プレイIDが分かる場合は現在プレイと一致するときだけ完了済みとみなす（前回プレイを混ぜない）。
+    /// </summary>
+    public bool IsCaptureWaitCompletedForCurrentPlay
+    {
+        get
+        {
+            if (_captureWaitState != CaptureWaitState.Completed) return false;
+
+            if (!string.IsNullOrEmpty(_captureWaitPlayId) &&
+                !string.IsNullOrEmpty(_playSessionId) &&
+                _captureWaitPlayId != _playSessionId)
+            {
+                return false;
+            }
+
+            return true;
+        }
+    }
 
     /// <summary>捕獲を受理したので演出待機に入る（通常の寝たふりとは別の状態として保持する）。</summary>
     private void EnterCaptureWait(string reason)
@@ -192,6 +233,8 @@ public class ChildUdpReceiver : MonoBehaviour
         if (_waitingGameOverSequence) return;
 
         _waitingGameOverSequence = true;
+        _captureWaitState = CaptureWaitState.Waiting;
+        _captureWaitPlayId = _playSessionId ?? "";
         CaptureWaitStarted?.Invoke();
 
         Debug.Log($"[ChildUdpReceiver] 捕獲演出の待機を開始しました（理由={reason}, playSessionId='{_playSessionId}'）。" +
@@ -208,17 +251,48 @@ public class ChildUdpReceiver : MonoBehaviour
     /// <summary>演出待機を解除する（結果画面へ進める）。二重に呼んでも1回だけ通知する。</summary>
     private void ReleaseCaptureWait(string reason)
     {
-        if (!_waitingGameOverSequence) return;
+        // 完了扱いは「待機中だったとき」だけ立てる（未捕獲を完了扱いにしない）。
+        if (!_waitingGameOverSequence)
+        {
+            return;
+        }
 
         _waitingGameOverSequence = false;
+        _captureWaitState = CaptureWaitState.Completed;
+        if (string.IsNullOrEmpty(_captureWaitPlayId)) _captureWaitPlayId = _playSessionId ?? "";
+
         Debug.Log($"[ChildUdpReceiver] 捕獲演出の待機を解除しました（理由={reason}）。");
         CaptureSequenceReleased?.Invoke(reason);
     }
 
-    /// <summary>待機・完了通知の状態を初期化する（再プレイで残さない）。</summary>
+    /// <summary>
+    /// 【子機側の上限】GameManager の待機タイムアウトから呼ぶ。
+    ///  ・待機を解除して「完了済み」にそろえ、入力適用側（ChildSleepLockApplier）に古いロックを残さない。
+    ///  ・結果遷移は呼び出し側（GameManager）が行う。この通知だけで遷移しない
+    ///    （購読者がいない／タイムアウト経路でも二重に結果処理しない）。
+    /// </summary>
+    public void ReleaseCaptureWaitByLocalTimeout(string reason)
+    {
+        if (!_waitingGameOverSequence)
+        {
+            _captureWaitState = CaptureWaitState.Completed;
+            if (string.IsNullOrEmpty(_captureWaitPlayId)) _captureWaitPlayId = _playSessionId ?? "";
+            Debug.Log($"[ChildUdpReceiver] 子機側の上限で待機終了を記録しました（既に解除済み。理由={reason}）");
+            return;
+        }
+
+        ReleaseCaptureWait($"子機側の上限（{reason}）");
+    }
+
+    /// <summary>
+    /// 待機・完了通知の状態を初期化する（再プレイで残さない）。
+    ///  ・リセットではイベントを発火しない（誤って結果遷移を起こさない）。
+    /// </summary>
     private void ResetCaptureWaitState(string reason)
     {
         _waitingGameOverSequence = false;
+        _captureWaitState = CaptureWaitState.None;
+        _captureWaitPlayId = "";
         _sequenceDoneHandledPlayId = "";
         _sequenceDonePendingPlayId = "";
         Debug.Log($"[ChildUdpReceiver] 捕獲演出の待機・完了通知の状態を初期化しました（理由={reason}）。");
@@ -336,6 +410,7 @@ public class ChildUdpReceiver : MonoBehaviour
         // 子機起点の新しいプレイ開始でも、前プレイの受理済み状態と保留を持ち越さない。
         caughtHandled = false;
         ClearPendingCaught("新プレイ開始（子機起点）");
+        ResetCaptureWaitState("新プレイ開始（子機起点）");
 
         if (showDebugLogs)
             Debug.Log($"[StartTrace][子機] OnStartButtonClicked → START_GAME 送信へ (sessionId={_playSessionId}, 送信先={targetIP}:{parentReceivePort})", this);
@@ -848,6 +923,8 @@ public class ChildUdpReceiver : MonoBehaviour
         caughtHandled = false;
         // 購読前に受理したCAUGHTの保留もリセットする（次プレイへ持ち越さない）。
         ClearPendingCaught("ResetForNewSession（タイトル復帰）");
+        // 捕獲演出の待機・完了状態もリセットする（イベントは発火しない＝結果遷移を起こさない）。
+        ResetCaptureWaitState("ResetForNewSession（タイトル復帰）");
 
         // 睡眠ロックを解除し、購読者がいれば変更を通知する（シーン側が解除を適用できるように）。
         // 購読者が居ない場合もUDP側の保持状態は正しく解除される。
