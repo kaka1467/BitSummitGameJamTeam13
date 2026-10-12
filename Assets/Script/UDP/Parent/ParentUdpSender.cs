@@ -116,7 +116,10 @@ public class ParentUdpSender : MonoBehaviour
     private Coroutine _heartbeatCoroutine;
     private Coroutine _caughtRetryCoroutine;
     private Coroutine _returnToTitleNotifyCoroutine;
-    private float     _lastReceiveTime;
+    // 接続管理（状態遷移・接続先確定の判断・PING復帰・最終受信時刻・タイムアウト判定・開始/キャンセル）は
+    // ParentConnectionLink が保持する。実行時の状態の保持元はリンク側で、
+    // currentState / targetIP は互換のためのミラー（HandleLinkStateChanged で同期する）。
+    private readonly ParentConnectionLink _link = new ParentConnectionLink();
     private float     _pingInterval  = 1.0f;
     private float     _timeoutLimit  = 3.0f;
 
@@ -234,12 +237,52 @@ public class ParentUdpSender : MonoBehaviour
     ///  ・受信スレッドから変更する場合は actionQueue 経由（メインスレッド）で呼ぶこと。
     ///  ・既存の public フィールド currentState は従来どおりの名前・型のまま残す。
     /// </summary>
+    /// <summary>
+    /// 互換入口：接続状態の設定は接続担当（ParentConnectionLink）へ委譲する。
+    ///  ・同じ状態なら何もしない（従来の early return と同じ。イベントも出ない）。
+    ///  ・状態が変わったときだけ、リンクの StateChanged 経由で
+    ///    currentState（互換フィールド）と ConnectionStateChanged（既存イベント）へ1回だけ転送する。
+    /// </summary>
     private void SetConnectionState(ConnectionState next)
     {
-        if (currentState == next) return;
+        _link.SetState(MapToLinkState(next));
+    }
 
-        currentState = next;
-        ConnectionStateChanged?.Invoke(next);
+    /// <summary>接続担当の状態変化を、互換フィールドと既存イベントへ1回だけ転送する。</summary>
+    private void HandleLinkStateChanged(ParentConnectionLink.LinkState state)
+    {
+        MirrorConnectionLinkToCompatFields();
+        ConnectionStateChanged?.Invoke(currentState);
+    }
+
+    /// <summary>
+    /// 接続担当の状態を、既存の互換フィールド（currentState／targetIP）へ写す。
+    ///  ・イベントは出さない（イベントを出すのは HandleLinkStateChanged だけ＝二重通知しない）。
+    /// </summary>
+    private void MirrorConnectionLinkToCompatFields()
+    {
+        currentState = MapLinkState(_link.State);
+        targetIP = _link.TargetIP;
+    }
+
+    private static ConnectionState MapLinkState(ParentConnectionLink.LinkState state)
+    {
+        switch (state)
+        {
+            case ParentConnectionLink.LinkState.Connecting: return ConnectionState.Connecting;
+            case ParentConnectionLink.LinkState.Connected:  return ConnectionState.Connected;
+            default:                                        return ConnectionState.Disconnected;
+        }
+    }
+
+    private static ParentConnectionLink.LinkState MapToLinkState(ConnectionState state)
+    {
+        switch (state)
+        {
+            case ConnectionState.Connecting: return ParentConnectionLink.LinkState.Connecting;
+            case ConnectionState.Connected:  return ParentConnectionLink.LinkState.Connected;
+            default:                         return ParentConnectionLink.LinkState.Disconnected;
+        }
     }
 
     // ── Singleton / DontDestroyOnLoad ──────────────────────────────────────────
@@ -253,6 +296,14 @@ public class ParentUdpSender : MonoBehaviour
         }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+
+        // Inspectorから読み込んだ接続先を、リンクへ先に渡す（リンクの既定値でInspector値を上書きしない）。
+        // その後で互換フィールドへミラーするため、起動時の targetIP / currentState は従来と同じ値になる。
+        _link.SeedTargetIP(targetIP);
+
+        // 接続担当の状態変化を、既存の ConnectionState フィールド・イベントへ転送する（1回だけ）。
+        _link.StateChanged += HandleLinkStateChanged;
+        MirrorConnectionLinkToCompatFields();
     }
 
     // ── Button callbacks ──────────────────────────────────────────────────────
@@ -496,15 +547,14 @@ public class ParentUdpSender : MonoBehaviour
             // 購読者がまだ居ない場合は、同じゲームシーン内に限って保留を維持する（常に最新値のみ保持）
         }
 
-        // Timeout check
-        if (currentState == ConnectionState.Connected &&
-            Time.time - _lastReceiveTime > _timeoutLimit)
+        // Timeout check（判定は接続担当、シーンによる例外は親機側で評価して渡す）
+        if (_link.IsTimedOut(Time.time, _timeoutLimit))
         {
             string sceneName = SceneManager.GetActiveScene().name;
             if (sceneName == gameSceneName)
             {
                 // Keep connection alive during loading to avoid false timeouts.
-                _lastReceiveTime = Time.time;
+                _link.NoteReceive(Time.time);
             }
             else
             {
@@ -801,9 +851,9 @@ public class ParentUdpSender : MonoBehaviour
 
     public void ResetForNewSession()
     {
-        SetConnectionState(ConnectionState.Disconnected);
-        targetIP = "127.0.0.1";
-        _lastReceiveTime = 0f;
+        // 接続状態・接続先・最終受信時刻の初期化は接続担当へ委譲する（互換フィールドは即時ミラー）。
+        _link.ResetForNewSession();
+        MirrorConnectionLinkToCompatFields();
         _gameStarted = false;
         _resultProcessed = false;
         // タイトル復帰時のリセットは維持する（前プレイの受信記録を次プレイへ持ち越さない）。
@@ -1053,8 +1103,8 @@ public class ParentUdpSender : MonoBehaviour
     // PING が再開した場合は接続を復帰する。タイトル画面での Cancel（意図的な切断）は復帰させない。
     private void TryRecoverConnectionFromPing()
     {
-        if (currentState != ConnectionState.Disconnected) return;
-        if (IsTitleScene(SceneManager.GetActiveScene().name)) return;
+        if (_link.State != ParentConnectionLink.LinkState.Disconnected) return;
+        if (IsTitleScene(SceneManager.GetActiveScene().name)) return;   // シーン条件は親機側で評価して渡す
 
         SetConnectionState(ConnectionState.Connected);
         Debug.LogWarning("[ParentUdpSender] PING resumed after timeout — connection restored.");
@@ -1088,7 +1138,7 @@ public class ParentUdpSender : MonoBehaviour
             Debug.Log($"[ParentUdpSender] HandleIncoming: '{message.RawPayload}' | scene='{SceneManager.GetActiveScene().name}' | loudItemSubscribers={(LoudItemReceived != null)} | gameProgressSubscribers={(GameProgressReceived != null)} | _resultProcessed={_resultProcessed}");
 
         // 子機から何か届いた＝子機は生きている。PING 以外のメッセージでも生存時刻を更新する。
-        _lastReceiveTime = Time.time;
+        _link.NoteReceive(Time.time);
 
         if (message.Type == ParentMessageType.Ping)
         {
@@ -1623,9 +1673,17 @@ public class ParentUdpSender : MonoBehaviour
                     {
                         string oldIP = targetIP;
                         ConnectionState oldState = currentState;
-                        targetIP         = senderIP;
-                        currentState     = ConnectionState.Connected;
-                        _lastReceiveTime  = Time.time;
+
+                        // Discovery受理＝接続先の確定。接続管理は ParentConnectionLink が保持する。
+                        //  ・接続確定に必要な状態（接続先IP・最終受信時刻・互換フィールド）を先に整える。
+                        //  ・状態遷移（Connected）と ConnectionStateChanged の通知は、このブロックの既存処理
+                        //    （ランキング検証・チャレンジ送信・DISCOVERY_ACCEPT送信）が終わった後に行い、
+                        //    購読者へ不完全な状態を見せない。
+                        //  ・同値（Connected→Connected）のDiscovery再送では通知しない（SetState の同値ガード）。
+                        //    ただし接続先IPは同値でも更新され、互換ミラーにも反映される。
+                        _link.SetTargetIP(senderIP);
+                        _link.NoteReceive(Time.time);
+                        MirrorConnectionLinkToCompatFields();
                         _gameStarted      = false;
 
                         // 接続確認: 同じ子機（同じ sourceId・起動世代）の Discovery 再送では確定状態を壊さず、
@@ -1653,6 +1711,12 @@ public class ParentUdpSender : MonoBehaviour
                         if (showDebugLogs)
                             Debug.Log($"[ParentUdpSender][Diag] DISCOVERY_REQUEST受信により state {oldState} → Connected, targetIP '{oldIP}' → '{targetIP}'");
                         SendDiscoveryAccept(senderIP);
+
+                        // 接続状態を確定する：Disconnected／Connecting → Connected の変化があるときだけ
+                        // ConnectionStateChanged が1回通知される（購読済みのタイトルUIはこれで Connected 表示へ更新される）。
+                        //  ・この呼び出しより後に、このブロック内で状態を上書きする処理は無い
+                        //    （購読者が通知中に Disconnected 等へ変えても、その状態を打ち消さない）。
+                        SetConnectionState(ConnectionState.Connected);
                     });
                 }
 
