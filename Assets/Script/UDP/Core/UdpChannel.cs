@@ -124,6 +124,20 @@ public sealed class UdpChannel : IDisposable
     /// <param name="error">失敗理由（成功時は空文字）。</param>
     public bool TryOpen(int discoveryBindPort, int normalBindPort, out string error)
     {
+        return TryOpen(discoveryBindPort, normalBindPort, false, out error);
+    }
+
+    /// <summary>
+    /// 送信ソケットの broadcast 許可を指定して開く（子機の Discovery が 255.255.255.255 へ送るため）。
+    ///  ・enableBroadcastSend=false は従来と同じ挙動（親機の既存呼び出しは既定の false を使う）。
+    ///  ・受信bind先・送信元ポート（OS任せ）・失敗時の後始末は従来どおり。
+    /// </summary>
+    /// <param name="discoveryBindPort">Discovery用の受信bind先ポート（0以下なら作らない）。</param>
+    /// <param name="normalBindPort">通常データ用の受信bind先ポート（0以下なら作らない）。</param>
+    /// <param name="enableBroadcastSend">送信ソケットで broadcast（255.255.255.255）を許可するか。</param>
+    /// <param name="error">失敗理由（成功時は空文字）。</param>
+    public bool TryOpen(int discoveryBindPort, int normalBindPort, bool enableBroadcastSend, out string error)
+    {
         error = "";
 
         if (_disposed)  { error = "disposed";           return false; }
@@ -133,6 +147,7 @@ public sealed class UdpChannel : IDisposable
         try
         {
             _senderClient = new UdpClient();
+            _senderClient.EnableBroadcast = enableBroadcastSend;
 
             if (discoveryBindPort > 0)
                 OpenReceiver(UdpChannelRoute.Discovery, discoveryBindPort);

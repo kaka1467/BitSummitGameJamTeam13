@@ -107,9 +107,9 @@ public class ChildUdpReceiver : MonoBehaviour
     private Coroutine _rankSyncResendCoroutine;
 
     // ── Private networking ────────────────────────────────────────────────────
-    private UdpClient udpClient;
-    private UdpClient sendClient;
-    private Thread receiveThread;
+    // 通信基盤（UdpChannel）へ委譲する：ソケット生成・bind・送信・受信スレッド・停止／解放は基盤側が持つ。
+    //  ChildUdpReceiver 自身は同じソケットを別途生成しない（受信内容の解釈とゲーム処理だけを行う）。
+    private UdpChannel _udpChannel;
     private volatile bool isRunning = false;
 
     // ログ用のエントリ構造体
@@ -532,7 +532,7 @@ public class ChildUdpReceiver : MonoBehaviour
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + BuildDiscoveryRequest());
-            sendClient.Send(data, data.Length, "255.255.255.255", broadcastPort);
+            SendToUdp(data, "255.255.255.255", broadcastPort);
             if (showDebugLogs)
                 Debug.Log("[ChildUdpReceiver] RANK_SYNC_CHALLENGE 未受信のため DISCOVERY_REQUEST を再送（同じ challengeId が再送されます）。");
         }
@@ -670,7 +670,7 @@ public class ChildUdpReceiver : MonoBehaviour
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + message);
-            sendClient.Send(data, data.Length, targetIP, parentReceivePort);
+            SendToUdp(data, targetIP, parentReceivePort);
 
             if (isStartTrace && showDebugLogs)
                 Debug.Log($"[StartTrace][子機] ChildUdpReceiver.SendState 送信成功 — '{message}' → {targetIP}:{parentReceivePort} ({data.Length} bytes)", this);
@@ -678,7 +678,7 @@ public class ChildUdpReceiver : MonoBehaviour
             if (message == "LOADING_COMPLETE")
             {
                 // Fallback: broadcast so parent can receive even if targetIP is stale.
-                sendClient.Send(data, data.Length, "255.255.255.255", parentReceivePort);
+                SendToUdp(data, "255.255.255.255", parentReceivePort);
                 if (showDebugLogs)
                     Debug.Log($"[ChildUdpReceiver] → '{message}' broadcast to 255.255.255.255:{parentReceivePort}");
             }
@@ -788,16 +788,28 @@ public class ChildUdpReceiver : MonoBehaviour
 
         isRunning = true;
 
-        udpClient = new UdpClient(normalPort);
-        sendClient = new UdpClient();
-        sendClient.EnableBroadcast = true;
-
-        receiveThread = new Thread(ReceiveData) { IsBackground = true };
-        receiveThread.Start();
+        // 通信基盤を開く：受信は normalPort の1経路（従来の new UdpClient(normalPort) と同じbind先）、
+        // 送信は broadcast 許可（Discovery が 255.255.255.255 へ送るため。従来の EnableBroadcast=true と同じ）。
+        //  ・Discovery用の受信経路は作らない（子機は normalPort の1経路で受信する＝従来と同じ）。
+        //  ・途中で失敗した場合、基盤側が生成済みソケットを全て破棄する（部分初期化を残さない）。
+        _udpChannel = new UdpChannel();
+        if (!_udpChannel.TryOpen(0, normalPort, true, out string openError))
+        {
+            Debug.LogError($"[ChildUdpReceiver] UDP通信基盤を開けませんでした（port={normalPort}）: {openError}");
+            _udpChannel.Dispose();
+            _udpChannel = null;
+            isRunning = false;
+            return;
+        }
     }
 
     void Update()
     {
+        // 1) 基盤（UdpChannel）から受信データ・通信エラーを取り込み、既存のキューへ積む。
+        //    取り込み→処理を同一フレームで行うため、反映フレームは従来と同じ。
+        PumpChannelQueues();
+
+        // 2) 以降は従来どおりの処理順（messageQueue → actionQueue → logQueue → 保留CAUGHT消費）。
         while (messageQueue.TryDequeue(out string msg))
             HandleIncoming(msg);
 
@@ -869,9 +881,12 @@ public class ChildUdpReceiver : MonoBehaviour
         if (discoveryCoroutine != null) { StopCoroutine(discoveryCoroutine); discoveryCoroutine = null; }
         if (heartbeatCoroutine != null) { StopCoroutine(heartbeatCoroutine); heartbeatCoroutine = null; }
 
-        // Close sockets — unblocks blocking Receive() so the thread exits naturally.
-        CloseClient(ref udpClient, "udpClient");
-        CloseClient(ref sendClient, "sendClient");
+        // 通信基盤を停止する：停止要求 → 受信ソケットを閉じてブロッキング受信を解除 → 受信スレッドの終了を有限時間だけ待つ。
+        //  ・基盤側が冪等なので複数回呼んでも安全（無期限Joinはしない）。
+        //  ・終了した個体の受信結果は基盤側で破棄される（新しい個体へ流用しない）。
+        UdpChannel channel = _udpChannel;
+        _udpChannel = null;
+        channel?.Close();
     }
 
     // ── Scene reference refresh ────────────────────────────────────────────────
@@ -1387,7 +1402,7 @@ public class ChildUdpReceiver : MonoBehaviour
             try
             {
                 byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + BuildDiscoveryRequest());
-                sendClient.Send(data, data.Length, "255.255.255.255", broadcastPort);
+                SendToUdp(data, "255.255.255.255", broadcastPort);
                 Debug.Log($"[ChildUdpReceiver] Sent DISCOVERY_REQUEST (broadcast) source='{_rankSyncSourceId}' sessionSeq={_rankSyncSessionSeq}");
             }
             catch (Exception e) { Debug.LogError($"[ChildUdpReceiver] Discovery send error: {e.Message}"); }
@@ -1402,7 +1417,7 @@ public class ChildUdpReceiver : MonoBehaviour
             try
             {
                 byte[] data = Encoding.UTF8.GetBytes(MAGIC_NUMBER + "PING");
-                sendClient.Send(data, data.Length, targetIP, parentReceivePort);
+                SendToUdp(data, targetIP, parentReceivePort);
             }
             catch (Exception e) { Debug.LogError($"[ChildUdpReceiver] Heartbeat error: {e.Message}"); }
 
@@ -1446,50 +1461,73 @@ public class ChildUdpReceiver : MonoBehaviour
         }
     }
 
-    // ── Background receive thread ─────────────────────────────────────────────
-    private void ReceiveData()
+    /// <summary>
+    /// 通信基盤（UdpChannel）から、受信データと通信エラーをメインスレッドで取り込み、
+    /// 既存のキュー（messageQueue / actionQueue / logQueue）へ積む。
+    ///  ・従来は受信スレッドが直接このキューへ積んでいた処理を、そのままメインスレッドへ移した
+    ///    （受信スレッドでは Unity 処理を呼ばない）。処理順・反映フレームは従来と同じ。
+    ///  ・受信元エンドポイントは失わずログに残す（本文の解釈は従来どおり）。
+    /// </summary>
+    private void PumpChannelQueues()
     {
-        while (isRunning)
+        if (!isRunning || _udpChannel == null) return;
+
+        // 通信エラー（従来: 受信スレッドから logQueue 経由で Error として出していたもの）
+        while (_udpChannel.TryDequeueIssue(out UdpChannel.Issue issue))
         {
-            try
+            EnqueueLog(LogType.Error, $"[ChildUdpReceiver] ReceiveData error: {issue.Message}");
+        }
+
+        // 受信データ（従来の ReceiveData の順序をそのまま再現する）
+        while (_udpChannel.TryDequeueReceived(out UdpChannel.Datagram datagram))
+        {
+            string msg = datagram.Text;
+            IPEndPoint ep = datagram.RemoteEndPoint;
+
+            // PING 以外のメッセージのみログキューへ積む（毎秒のPINGによる文字列生成・ログ出力を抑制）
+            if (msg != MAGIC_NUMBER + "PING")
             {
-                IPEndPoint ep = new IPEndPoint(IPAddress.Any, normalPort);
-                byte[] data = udpClient.Receive(ref ep);
-                string msg = Encoding.UTF8.GetString(data);
-
-                // PING 以外のメッセージのみログキューへ積む（毎秒のPINGによる文字列生成・ログ出力を抑制）
-                if (msg != MAGIC_NUMBER + "PING")
-                {
-                    EnqueueLog(LogType.Log, $"[ChildUdpReceiver] Received: '{msg}' from {ep.Address}");
-                }
-
-                if (msg == MAGIC_NUMBER + "DISCOVERY_ACCEPT")
-                {
-                    string parentIP = ep.Address.ToString();
-                    EnqueueLog(LogType.Log, $"[ChildUdpReceiver] DISCOVERY_ACCEPT from {parentIP} — now Connected.");
-                    actionQueue.Enqueue(() =>
-                    {
-                        targetIP = parentIP;
-                        SetConnectionState(ConnectionState.Connected);
-                        lastReceiveTime = Time.time;
-                        gameSceneLoaded = false;
-
-                        // 再接続時: 最新スナップショットを送る（未確認があれば同じ更新番号・同じ内容を再送）
-                        SendRankSyncOnConnect();
-                    });
-                }
-
-                messageQueue.Enqueue(msg);
+                EnqueueLog(LogType.Log, $"[ChildUdpReceiver] Received: '{msg}' from {(ep != null ? ep.Address.ToString() : "unknown")}");
             }
-            catch (Exception e)
+
+            if (msg == MAGIC_NUMBER + "DISCOVERY_ACCEPT")
             {
-                if (isRunning)
+                string parentIP = ep != null ? ep.Address.ToString() : "";
+                EnqueueLog(LogType.Log, $"[ChildUdpReceiver] DISCOVERY_ACCEPT from {parentIP} — now Connected.");
+                actionQueue.Enqueue(() =>
                 {
-                    EnqueueLog(LogType.Error, $"[ChildUdpReceiver] ReceiveData error: {e.Message}");
-                }
+                    targetIP = parentIP;
+                    SetConnectionState(ConnectionState.Connected);
+                    lastReceiveTime = Time.time;
+                    gameSceneLoaded = false;
+
+                    // 再接続時: 最新スナップショットを送る（未確認があれば同じ更新番号・同じ内容を再送）
+                    SendRankSyncOnConnect();
+                });
             }
+
+            messageQueue.Enqueue(msg);
         }
     }
+
+    /// <summary>
+    /// 通信基盤（UdpChannel）で1件送信する（メインスレッドからのみ呼ぶ）。
+    ///  ・基盤が未オープン（初期化失敗・停止後）の場合は例外を投げる（呼び出し側の既存 try/catch が受け止める）。
+    /// </summary>
+    private void SendToUdp(byte[] data, string ip, int port)
+    {
+        UdpChannel channel = _udpChannel;
+        if (channel == null)
+            throw new InvalidOperationException("UDP channel is not open");
+
+        channel.Send(data, data.Length, ip, port);
+    }
+
+    // ── 受信スレッドは通信基盤（UdpChannel）が持つ ─────────────────────────────
+    //  従来の受信スレッド（ReceiveData）は撤去した。ブロッキング受信・受信スレッドの生成と終了・
+    //  受信データ／通信エラーの受け渡しは UdpChannel が担当し、ChildUdpReceiver は
+    //  Update の PumpChannelQueues() でメインスレッドとして取り込むだけにした。
+    //  （受信内容の解釈は従来どおり HandleIncoming 以降で行う）
 
     // タイトルUIの表示更新（ラベル・位置・Cancel表示・クレジット/設定ボタン）は
     // ChildTitleConnectionUI が ChildUdpReceiver.ConnectionStateChanged を受けて行う。
