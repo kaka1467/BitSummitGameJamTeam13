@@ -108,8 +108,10 @@ public class GameManager : MonoBehaviour
 
     private bool _scoreFrozen;                 // 捕獲通知で確定したか（以後の加算を停止）
     private int _frozenScore;                  // 確定得点（結果・ランキングはこの値）
+    private bool _capturePending;              // 捕獲済みで演出完了待ち（タイマー停止・捕獲優先の判定）
     private bool _waitingSequenceDone;         // CaptureSequenceReleased を購読済みか
     private bool _sequenceDoneReceived;        // 演出完了（または上限）で遷移済みか
+    private ChildUdpReceiver _releaseSubscribedReceiver;   // 実際に購読した相手（解除はここから行う）
     private Coroutine _sequenceWaitRoutine;
     private bool _started;   // Start完了フラグ（初回の購読をStart後へ遅らせるため）
 
@@ -179,14 +181,16 @@ public class GameManager : MonoBehaviour
         }
 
         // 演出完了通知の購読も解除する（破棄後に呼ばれないようにする）。
+        //  ・ChildUdpReceiver.instance を再取得せず、実際に購読した相手から解除する。
         if (_waitingSequenceDone)
         {
-            ChildUdpReceiver receiver = ChildUdpReceiver.instance;
-            if (receiver != null)
-                receiver.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
+            if (_releaseSubscribedReceiver != null)
+                _releaseSubscribedReceiver.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
 
             _waitingSequenceDone = false;
         }
+
+        _releaseSubscribedReceiver = null;
 
         if (_sequenceWaitRoutine != null)
         {
@@ -223,6 +227,7 @@ public class GameManager : MonoBehaviour
         if (_scoreFrozen) return;
 
         _scoreFrozen = true;
+        _capturePending = true;   // 演出完了待ちの間はタイマーを止め、TIME_UPより捕獲を優先する
         _frozenScore = score;   // score 自体は以後変更されないため、この値が最終得点になる
 
         Debug.Log($"[GameManager] 得点を確定しました（理由={reason}）: {_frozenScore}点。結果画面まで加算しません");
@@ -248,13 +253,26 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
+        // 1) 先に購読する。この後に状態を確認するため、購読前に完了していても取りこぼさない。
         if (!_waitingSequenceDone)
         {
             _waitingSequenceDone = true;
+            _releaseSubscribedReceiver = receiver;   // 解除は「実際に購読した相手」から行う
             receiver.CaptureSequenceReleased += HandleCaptureSequenceReleased;
-            Debug.Log("[GameManager] 親機の演出完了通知を待機します（入力ロック・得点停止は適用済み）");
+            Debug.Log($"[GameManager] 親機の演出完了通知を購読しました（receiver='{receiver.gameObject.name}'）");
         }
 
+        // 2) 購読成立時に現在プレイの状態を初期同期する。
+        //    SEQUENCE_DONE先着 → CAUGHT の順でも、Receiverが完了済みを保持しているためここで確定できる。
+        //    「待機中ではない」だけでは完了扱いにしない（未捕獲は false）。
+        if (receiver.IsCaptureWaitCompletedForCurrentPlay)
+        {
+            _sequenceDoneReceived = true;
+            Debug.Log("[GameManager] 演出完了は購読成立時に既に確定済みでした（初期同期）。待たずに結果画面へ進みます");
+            return false;
+        }
+
+        // 3) まだ待機中：上限付きで待つ（通知が来なくても永久には待たない）。
         if (_sequenceWaitRoutine == null)
             _sequenceWaitRoutine = StartCoroutine(SequenceWaitTimeoutRoutine());
 
@@ -294,6 +312,11 @@ public class GameManager : MonoBehaviour
         Debug.LogWarning($"[GameManager] 【フォールバック】親機の演出完了通知を {sequenceWaitTimeoutSeconds:F1}s で受信できませんでした" +
                          "（通信断の可能性）。確定得点のまま結果画面へ進みます", this);
 
+        // Receiver側の待機状態と、入力適用側（ロック・画像）に古い状態を残さない。
+        //  ・結果遷移はこのメソッドが行う（Receiverの解除通知では遷移しない＝二重結果処理を防ぐ）。
+        if (_releaseSubscribedReceiver != null)
+            _releaseSubscribedReceiver.ReleaseCaptureWaitByLocalTimeout("GameManagerの待機タイムアウト");
+
         TriggerResult(ResultType.GameOver);
     }
 
@@ -331,6 +354,9 @@ public class GameManager : MonoBehaviour
             TrySubscribeCaught();
 
         if (isGameOver) return;
+
+        // 捕獲演出の待機中はタイマーを進めない（TIME_UPが先に確定して GameClear へ進まないようにする）。
+        if (_capturePending) return;
 
         if (!isTutorialMode)
         {
@@ -438,6 +464,15 @@ public class GameManager : MonoBehaviour
     public void TriggerResult(ResultType resultType)
     {
         if (isGameOver) return;
+
+        // 【捕獲優先】捕獲済み（演出待機中）なら、TIME_UP が要求されても GameOver として確定する。
+        //  ・捕獲時点の確定得点（score は凍結済み）を使って保存・ランキング・遷移する。
+        //  ・GameClear へ進ませない。
+        if (_capturePending && resultType == ResultType.TimeUp)
+        {
+            Debug.LogWarning("[GameManager] 【捕獲優先】TIME_UP要求を GameOver として確定します（捕獲時点の確定得点を使用）", this);
+            resultType = ResultType.GameOver;
+        }
 
         isGameOver = true;
 
@@ -668,6 +703,7 @@ public class GameManager : MonoBehaviour
         // 再プレイ：得点ロックと演出待機の状態も初期化する（前回プレイの待機を残さない）。
         _scoreFrozen = false;
         _frozenScore = 0;
+        _capturePending = false;
         _sequenceDoneReceived = false;
         score = 0;
         feverCount = 0;
