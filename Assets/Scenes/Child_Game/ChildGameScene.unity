@@ -331,6 +331,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
   speed: 0.05
   boostedSpeedMultiplier: 3
+  doubleSpeedRemainingTime: 60
+  doubleSpeedMultiplier: 2
 --- !u!64 &42175645
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -1183,8 +1185,6 @@ MonoBehaviour:
   titleSceneName: ChildeTitle
   sleepingManager: {fileID: 508756885}
   playerMove: {fileID: 1865325544}
-  sleepLockImageObject: {fileID: 859110597}
-  sleepLockImageObjectName: SleepLockImage
   showDebugLogs: 1
 --- !u!4 &243933952
 Transform:
@@ -4103,8 +4103,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9114ca0079672024e9521386f05c7178, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
-  speed: 0.05
-  boostedSpeedMultiplier: 3
+  speed: 0.1
+  boostedSpeedMultiplier: 4
+  doubleSpeedRemainingTime: 60
+  doubleSpeedMultiplier: 2
 --- !u!1 &1423400455
 GameObject:
   m_ObjectHideFlags: 0
@@ -4628,6 +4630,8 @@ MonoBehaviour:
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
       count: 0
+    - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -4643,6 +4647,8 @@ MonoBehaviour:
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 0
+    - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
@@ -4660,6 +4666,8 @@ MonoBehaviour:
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
       count: 0
+    - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -4674,6 +4682,10 @@ MonoBehaviour:
     loopEnabled: 0
     loopCycleDuration: 0
     prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 0
+    - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 45
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -4688,6 +4700,10 @@ MonoBehaviour:
     loopEnabled: 1
     loopCycleDuration: 0
     prefabSpawnCounts:
+    - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
+      count: 0
+    - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
+      count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
       count: 30
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
@@ -4704,10 +4720,23 @@ MonoBehaviour:
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
       count: 19
+    - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
+      count: 0
+    - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
+      count: 0
+    - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
+      count: 0
+    - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
+      count: 0
+    - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
+      count: 0
   spawnEnabled: 1
   showDebugLogs: 0
   hugeObstacleSpawnCount: 1
   hugeObstacleSpawnY: 0.00000001929803
+  bgmNormalSpawnRemainingSeconds: 90
+  enableDebugSpawnKeys: 1
+  showDebugSpawnKeyLogs: 1
   minSpawnDistanceX: 1.2
   minSpawnDistanceY: 10
   recentSpawnWindow: 0.6
@@ -4722,6 +4751,7 @@ MonoBehaviour:
   - -0.574
   hugeInitialDelay: 30
   hugeCooldownAfterQte: 30
+  hugeFeverDeferralSeconds: 5
 --- !u!4 &1639938499
 Transform:
   m_ObjectHideFlags: 0
@@ -5119,6 +5149,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
   speed: 0.05
   boostedSpeedMultiplier: 3
+  doubleSpeedRemainingTime: 60
+  doubleSpeedMultiplier: 2
 --- !u!64 &1805476197
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -5751,7 +5783,7 @@ MonoBehaviour:
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 180
+  time: 80
   maxTime: 180
   feverCount: 0
   feverNeeded: 5
@@ -5772,6 +5804,9 @@ MonoBehaviour:
   udpReceiver: {fileID: 243933951}
   timeChangeText: {fileID: 852103714}
   timeChangeDisplaySeconds: 1.5
+  gameProgressSendInterval: 1
+  sendGameProgress: 1
+  sequenceWaitTimeoutSeconds: 45
 --- !u!4 &1949956397
 Transform:
   m_ObjectHideFlags: 0
@@ -5945,6 +5980,8 @@ MonoBehaviour:
   autoCollectCenterRange: 0.8
   enableHoldToSkip: 1
   skipKey: 15
+  allowGamepadSkip: 1
+  skipGamepadButton: 6
   holdToSkipSeconds: 1
   skipHintText: {fileID: 2138202686}
   skipHintMessage: Hold A to Skip
@@ -6580,7 +6617,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 26e33433f711424fa174053f92054def, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChildSleepLockApplier
   udpReceiver: {fileID: 0}
   playerMove: {fileID: 1865325544}
