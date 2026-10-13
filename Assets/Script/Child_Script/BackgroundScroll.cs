@@ -4,6 +4,8 @@ public class BackgroundScroll : MonoBehaviour
 {
     public float speed = 0.05f;
     [SerializeField] private float boostedSpeedMultiplier = 2f;
+    [SerializeField, Min(0f)] private float doubleSpeedRemainingTime = 60f;
+    [SerializeField, Min(0f)] private float doubleSpeedMultiplier = 2f;
 
     private Renderer rend;
     private PlayerBoost playerBoost;
@@ -33,7 +35,9 @@ public class BackgroundScroll : MonoBehaviour
             }
         }
 
-        float multiplier = (playerBoost != null && playerBoost.IsBoosting) ? boostedSpeedMultiplier : 1f;
+        float boostMultiplier = (playerBoost != null && playerBoost.IsBoosting) ? boostedSpeedMultiplier : 1f;
+        float timerMultiplier = (GameManager.instance != null && GameManager.instance.time <= doubleSpeedRemainingTime) ? doubleSpeedMultiplier : 1f;
+        float multiplier = boostMultiplier * timerMultiplier;
         currentOffset += Time.deltaTime * speed * multiplier;
         rend.material.mainTextureOffset = new Vector2(currentOffset, 0f);
     }
