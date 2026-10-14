@@ -1159,6 +1159,24 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         LoadGameScene();
     }
 
+    /// <summary>
+    /// 子機だけで開始する（親機なしの単独プレイ）。
+    /// OnStartButtonClicked と同じく新しいプレイIDを発行し、前プレイの状態を持ち越さずにゲームシーンへ遷移する。
+    /// ただし START_GAME は親機へ送らない（親機は開始しない）。
+    /// </summary>
+    public void OnSoloStartButtonClicked()
+    {
+        _session.PlaySessionId = Guid.NewGuid().ToString("N");
+        _lastPeerReturnToTitleSeq = 0;
+
+        _session.CaughtHandled = false;
+        ClearPendingCaught("新プレイ開始（子機単独）");
+        ResetCaptureWaitState("新プレイ開始（子機単独）");
+
+        Debug.Log($"[ChildUdpRuntimeHost] Solo start (親機なし) — START_GAME は送信しません (playSessionId={_session.PlaySessionId}, connection={ConnectionState})");
+        LoadGameScene();
+    }
+
     /// <summary>接続ボタン起点（旧側 OnConnectButtonClicked と同じ分岐：Connected なら開始、そうでなければ接続操作）。</summary>
     public void OnConnectButtonClicked()
     {
