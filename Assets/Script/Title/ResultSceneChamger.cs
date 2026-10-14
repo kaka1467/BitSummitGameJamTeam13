@@ -26,7 +26,7 @@ public class ResultSceneChamger : MonoBehaviour
     [Header("遷移先シーン名")]
     [Tooltip("タイトルへ戻る先のシーン名。親機／子機の各結果シーンで Inspector から上書きしてください" +
              "（既定は子機タイトル。親機の結果シーンでは ParentTitle を指定）。")]
-    public string titleSceneName = "ChildeTitle"; 
+    public string titleSceneName = "ChildTitle";
 
     [Header("復帰ボタン")]
     [Tooltip("「タイトルへ戻る」UIボタン／FAST復帰通知で使う短いフェード時間（秒）。0 で即座に遷移。")]
@@ -138,14 +138,40 @@ public class ResultSceneChamger : MonoBehaviour
     /// </summary>
     private void NotifyReturnToTitle(bool fast)
     {
-        if (ChildUdpReceiver.instance != null)
+        // 選択順は従来どおり「子機が居れば子機、居なければ親機」。notifyPeer／fast の意味も変えない。
+        ChildUdpRuntimeHost childHost = ResolveChildHost();
+        if (childHost != null)
         {
-            ChildUdpReceiver.instance.notifyReturnToTitle(fast);
+            childHost.notifyReturnToTitle(fast);
+            return;
         }
-        else if (ParentUdpSender.Instance != null)
+
+        ParentUdpRuntimeHost parentHost = ResolveParentHost();
+        if (parentHost != null)
         {
-            ParentUdpSender.Instance.NotifyReturnToTitleToChild(fast);
+            // Host側の対応入口（旧窓口 NotifyReturnToTitleToChild の委譲先と同じメソッド）。
+            parentHost.NotifyReturnToTitleToChildPrepared(fast);
         }
+    }
+
+    /// <summary>稼働中の子機Hostを優先し、無ければ初期化済みHostを探す（未初期化Hostは使わない）。</summary>
+    private static ChildUdpRuntimeHost ResolveChildHost()
+    {
+        ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
+        if (host != null) return host;
+
+        ChildUdpRuntimeHost found = FindFirstObjectByType<ChildUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
+    }
+
+    /// <summary>稼働中の親機Hostを優先し、無ければ初期化済みHostを探す（未初期化Hostは使わない）。</summary>
+    private static ParentUdpRuntimeHost ResolveParentHost()
+    {
+        ParentUdpRuntimeHost host = ParentUdpRuntimeHost.Running;
+        if (host != null) return host;
+
+        ParentUdpRuntimeHost found = FindFirstObjectByType<ParentUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
     }
 
     /// <summary>

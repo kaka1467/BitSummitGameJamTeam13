@@ -47,13 +47,17 @@ public class RankingResetButton : MonoBehaviour
         Debug.Log("[RankingResetButton] ランキングをリセットしました。");
 
         // 子機が唯一の基準: リセット後の状態（全0・最新結果なし）を親機へ同期する
-        if (ChildUdpReceiver.instance != null)
+        ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running != null
+            ? ChildUdpRuntimeHost.Running
+            : FindFirstObjectByType<ChildUdpRuntimeHost>();
+
+        if (host != null)
         {
-            ChildUdpReceiver.instance.NotifyRankingChanged(RankingSnapshot.TypeNone);
+            host.NotifyRankingChanged(RankingSnapshot.TypeNone);
         }
         else
         {
-            Debug.LogWarning("[RankingResetButton] ChildUdpReceiver not found — リセット内容を親機へ同期できません（子機ビルド以外では正常）。");
+            Debug.LogWarning("[RankingResetButton] ChildUdpRuntimeHost not found — リセット内容を親機へ同期できません（子機ビルド以外では正常）。");
         }
 
         if (confirmationPanel != null)

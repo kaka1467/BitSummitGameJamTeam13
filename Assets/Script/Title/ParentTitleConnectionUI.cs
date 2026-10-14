@@ -15,7 +15,7 @@ using UnityEngine.UI;
 ///                         START_GAME・単独開始・プレイID・シーン遷移・ランキング同期（挙動は従来のまま）
 ///
 ///  ・このコンポーネントはタイトルシーンにのみ置く（DontDestroyOnLoad にしない）。
-///  ・接続先は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+///  ・接続先は稼働中の ParentUdpRuntimeHost（DDOLの生存個体）を基準にする。
 ///    シーンの重複UDP個体は Awake で自壊するため掴まない（Inspector参照も持たない）。
 ///  ・Connection Panel の子にはしない（TitleMenuHighlight.FlashAndDeactivate が
 ///    押されたボタン自身を非表示にするため、UI処理と初期化が失われない配置にする）。
@@ -39,14 +39,14 @@ public class ParentTitleConnectionUI : MonoBehaviour
     private GameObject soloStartButtonObject;
 
     // ── 接続先（実行時に解決する。Inspectorでは指定しない）────────────────────
-    private ParentUdpSender _receiver;
+    private ParentUdpRuntimeHost _host;
 
     // 本コンポーネントが動的に追加したリスナー（OnDisable/OnDestroy で自分のものだけ外す）
     private readonly List<(Button button, UnityAction action)> _dynamicListeners =
         new List<(Button button, UnityAction action)>();
 
     // 最後にUIへ反映した接続状態（同値の再適用を避ける）
-    private ParentUdpSender.ConnectionState? _lastAppliedState;
+    private ParentConnectionLink.LinkState? _lastAppliedState;
 
     // 診断用：直前にラベルへ書き込んだ文字列（変化時のみログを出す）
     private string _lastAppliedConnectLabel;
@@ -54,7 +54,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
     private void OnEnable()
     {
         // 有効化し直したときも再接続・再購読・再登録できるようにする。
-        TryBindReceiver();
+        TryBindHost();
         RegisterTitleListeners();
         ApplyCurrentStateIfNeeded();
     }
@@ -63,7 +63,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
     {
         // Awake/OnEnable の時点では ParentUdpSender.Instance が未設定のことがある
         // （同一シーン内の Awake 実行順は不定）。Start でも必ず試す。
-        TryBindReceiver();
+        TryBindHost();
         RegisterTitleListeners();
         ApplyCurrentStateIfNeeded();
     }
@@ -72,60 +72,71 @@ public class ParentTitleConnectionUI : MonoBehaviour
     {
         // 接続済みなら何もしない（毎フレームの検索は行わない）。
         // 未接続の間だけ、static フィールドを見て再接続を試す。
-        if (_receiver != null) return;
+        if (_host != null) return;
 
-        TryBindReceiver();
+        TryBindHost();
         ApplyCurrentStateIfNeeded();
     }
 
     private void OnDisable()
     {
-        UnbindReceiver();
+        UnbindHost();
         RemoveDynamicListeners();
     }
 
     private void OnDestroy()
     {
-        UnbindReceiver();
+        UnbindHost();
         RemoveDynamicListeners();
     }
 
     // ── UDPへの接続（生存個体＝DDOLを基準にする）──────────────────────────────
 
     /// <summary>
-    /// 生存UDP（ParentUdpSender.Instance）へ接続し、状態通知を購読する。
-    /// まだ存在しない場合は何もしない（Start/Update/操作時に再試行する）。
+    /// 稼働中の親機Hostへ接続し、状態通知を購読する。
+    /// まだ取得できない場合は何もしない（Start/Update/操作時に再試行する）。
     /// </summary>
-    private void TryBindReceiver()
+    private void TryBindHost()
     {
-        if (_receiver != null) return;
+        if (_host != null) return;
 
-        ParentUdpSender alive = ParentUdpSender.Instance;
-        if (alive == null) return;
+        ParentUdpRuntimeHost host = ResolveHost();
+        if (host == null) return;
 
-        _receiver = alive;
-        _receiver.ConnectionStateChanged += HandleConnectionStateChanged;
-        Debug.Log($"[ParentTitleConnectionUI] 生存UDPへ接続 '{alive.gameObject.name}' (id={alive.GetInstanceID()})", this);
+        _host = host;
+        _host.ConnectionStateChanged += HandleConnectionStateChanged;
+        Debug.Log($"[ParentTitleConnectionUI] 親機Hostへ接続 '{host.gameObject.name}' (id={host.GetInstanceID()})", this);
     }
 
-    private void UnbindReceiver()
+    /// <summary>稼働中のHostを優先し、無ければ初期化済みHostを探す（未初期化Hostは購読先にしない）。</summary>
+    private static ParentUdpRuntimeHost ResolveHost()
     {
-        if (_receiver != null)
-            _receiver.ConnectionStateChanged -= HandleConnectionStateChanged;
+        ParentUdpRuntimeHost host = ParentUdpRuntimeHost.Running;
+        if (host != null) return host;
 
-        _receiver = null;
+        ParentUdpRuntimeHost found = FindFirstObjectByType<ParentUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
+    }
+
+    /// <summary>購読した同じ個体から解除する。</summary>
+    private void UnbindHost()
+    {
+        if (_host != null)
+            _host.ConnectionStateChanged -= HandleConnectionStateChanged;
+
+        _host = null;
         _lastAppliedState = null;
         _lastAppliedConnectLabel = null;
     }
 
     /// <summary>操作直前に接続先を保証する（未接続なら解決を試みる）。</summary>
-    private bool EnsureReceiver()
+    private bool EnsureHost()
     {
-        if (_receiver == null) TryBindReceiver();
+        if (_host == null) TryBindHost();
 
-        if (_receiver == null)
+        if (_host == null)
         {
-            Debug.LogWarning("[ParentTitleConnectionUI] ParentUdpSender.Instance が未生成のため操作を実行できません。", this);
+            Debug.LogWarning("[ParentTitleConnectionUI] 親機Hostが未稼働のため操作を実行できません。", this);
             return false;
         }
 
@@ -133,7 +144,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
     }
 
     /// <summary>UDPからの状態通知（メインスレッドで発火される）。</summary>
-    private void HandleConnectionStateChanged(ParentUdpSender.ConnectionState state)
+    private void HandleConnectionStateChanged(ParentConnectionLink.LinkState state)
     {
         ApplyConnectionState(state);
     }
@@ -144,13 +155,13 @@ public class ParentTitleConnectionUI : MonoBehaviour
     /// </summary>
     private void ApplyCurrentStateIfNeeded()
     {
-        if (_receiver == null) return;
-        ApplyConnectionState(_receiver.CurrentConnectionState);
+        if (_host == null) return;
+        ApplyConnectionState(_host.ConnectionState);
     }
 
     // ── 表示更新（従来の ParentUdpSender.UpdateUI と同じ見た目）───────────────
 
-    private void ApplyConnectionState(ParentUdpSender.ConnectionState state)
+    private void ApplyConnectionState(ParentConnectionLink.LinkState state)
     {
         if (_lastAppliedState.HasValue && _lastAppliedState.Value == state) return; // 同値では再適用しない
         _lastAppliedState = state;
@@ -160,13 +171,13 @@ public class ParentTitleConnectionUI : MonoBehaviour
             string newLabel;
             switch (state)
             {
-                case ParentUdpSender.ConnectionState.Disconnected:
+                case ParentConnectionLink.LinkState.Disconnected:
                     newLabel = "Connect";
                     break;
-                case ParentUdpSender.ConnectionState.Connecting:
+                case ParentConnectionLink.LinkState.Connecting:
                     newLabel = "Connecting...";
                     break;
-                case ParentUdpSender.ConnectionState.Connected:
+                case ParentConnectionLink.LinkState.Connected:
                     newLabel = "STARTING...";
                     break;
                 default:
@@ -177,7 +188,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
             // 旧実装（ParentUdpSender.UpdateUI）と同じ診断ログ。表示文字が変わったときだけ出す。
             if (newLabel != _lastAppliedConnectLabel)
             {
-                bool gameStarted = _receiver != null && _receiver.IsGameStarted;
+                bool gameStarted = _host != null && _host.IsGameStarted;
                 Debug.Log(
                     $"[ParentTitleConnectionUI][Diag] connectButtonLabel: '{_lastAppliedConnectLabel}' → '{newLabel}' " +
                     $"| state={state} | scene='{SceneManager.GetActiveScene().name}' " +
@@ -191,7 +202,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
 
         if (connectButton != null) connectButton.gameObject.SetActive(true);
         if (cancelButton != null)
-            cancelButton.gameObject.SetActive(state == ParentUdpSender.ConnectionState.Connecting);
+            cancelButton.gameObject.SetActive(state == ParentConnectionLink.LinkState.Connecting);
     }
 
 
@@ -200,15 +211,15 @@ public class ParentTitleConnectionUI : MonoBehaviour
     /// <summary>Connect Button。接続状態の遷移は UDP 側（OnConnectButtonClicked）が持つ。</summary>
     public void OnConnectClicked()
     {
-        if (!EnsureReceiver()) return;
-        _receiver.OnConnectButtonClicked();
+        if (!EnsureHost()) return;
+        _host.OnConnectButtonClicked();
     }
 
     /// <summary>cancel button。接続状態を戻す処理は UDP 側が持つ。</summary>
     public void OnCancelClicked()
     {
-        if (!EnsureReceiver()) return;
-        _receiver.OnCancelButtonClicked();
+        if (!EnsureHost()) return;
+        _host.OnCancelButtonClicked();
     }
 
     /// <summary>
@@ -217,8 +228,8 @@ public class ParentTitleConnectionUI : MonoBehaviour
     /// </summary>
     public void OnSoloStartClicked()
     {
-        if (!EnsureReceiver()) return;
-        _receiver.OnSoloStartButtonClicked();
+        if (!EnsureHost()) return;
+        _host.OnSoloStartButtonClicked();
     }
 
     // ── タイトル用リスナー（Inspectorの永続リスナーと二重登録しない）──────────

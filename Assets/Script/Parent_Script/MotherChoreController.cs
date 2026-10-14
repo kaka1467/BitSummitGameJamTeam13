@@ -304,17 +304,32 @@ public class MotherChoreController : MonoBehaviour
 
     /// <summary>
     /// 現在のシーンがゲームプレイシーン（親機の GameScene）か。
-    /// ParentUdpSender の gameplaySceneName と同じ判定を使う（未設定なら名前比較にフォールバック）。
+    /// 稼働中のHostを優先し、無ければ初期化済みHostを使う（未初期化Hostは採用しない）。
+    /// Hostの設定（gameplaySceneName）が参照可能かつ非空なら、その設定を優先して判定する
+    /// （判定は既存 ParentSceneBoundaryPolicy をHost経由で再利用）。
+    /// 参照可能な設定が無い／空の場合だけ、従来どおり名前比較へフォールバックする。
     /// </summary>
     private bool IsGameplayScene()
     {
         string active = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 
-        ParentUdpSender sender = ParentUdpSender.Instance;
-        if (sender != null && !string.IsNullOrEmpty(sender.gameplaySceneName))
-            return active == sender.gameplaySceneName;
+        ParentUdpRuntimeHost host = ResolveHost();
+        if (host != null && host.Settings != null && !string.IsNullOrEmpty(host.Settings.GameplaySceneName))
+            return host.IsGameplayScene(active);
 
         return active == "ParentGameScene";
+    }
+
+    /// <summary>
+    /// 稼働中のHostを優先し、無ければ初期化済みHostを探す（未初期化Hostは返さない）。
+    /// </summary>
+    private static ParentUdpRuntimeHost ResolveHost()
+    {
+        ParentUdpRuntimeHost host = ParentUdpRuntimeHost.Running;
+        if (host != null) return host;
+
+        ParentUdpRuntimeHost found = FindFirstObjectByType<ParentUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

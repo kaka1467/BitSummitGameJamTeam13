@@ -262,21 +262,21 @@ public class MotherSuspicionSystem : MonoBehaviour
     // ── LOUD_ITEM（子機の大きな音）の購読 ────────────────────────────────────
     //  ・受信後の反応（OnLoudItemTriggered）は本クラスが担当する。
     //    UDP側（ParentUdpSender）は「受信した」ことだけを通知する。
-    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・購読は Host が保持する ParentNotificationHub の既存イベントを基準にする（旧窓口とは二重購読しない）。
     //  ・同じ通知で二重に反応しないよう、購読する実体は1つに限定する（_loudItemSubscriber）。
     private static MotherSuspicionSystem _loudItemSubscriber; // 二重発火防止：現在購読している実体
     private bool _loudItemSubscribed;
-    private ParentUdpSender _loudItemSender;                  // 購読解除を確実にするため保持する
+    private ParentNotificationHub _loudItemHub;                // 購読したHub（解除も同じ個体へ行う）
 
     // ── GAME_PROGRESS（子機のゲーム進行率）の購読 ────────────────────────────
     //  ・受信後の反応（OnGameProgress）は本クラスが担当する。
     //    UDP側（ParentUdpSender）は「受信した進行率」だけを通知する。
-    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・購読は Host が保持する ParentNotificationHub の既存イベントを基準にする（旧窓口とは二重購読しない）。
     //  ・同じ通知を複数の実体が処理しないよう、購読する実体は1つに限定する（_gameProgressSubscriber）。
     //  ・LOUD_ITEM とは別の静的な担当スロットで管理する（互いのガードに影響しない）。
     private static MotherSuspicionSystem _gameProgressSubscriber; // 二重処理防止：現在購読している実体
     private bool _gameProgressSubscribed;
-    private ParentUdpSender _gameProgressSender;                  // 購読解除を確実にするため保持する
+    private ParentNotificationHub _gameProgressHub;             // 購読したHub（解除も同じ個体へ行う）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
@@ -401,14 +401,14 @@ public class MotherSuspicionSystem : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
     //  LOUD_ITEM（子機の大きな音）の受信購読
     //  ・受信後の反応は本クラスが担当し、UDP側（ParentUdpSender）は受信を通知するだけ。
-    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・購読は Host が保持する ParentNotificationHub の既存イベントを基準にする（旧窓口とは二重購読しない）。
     //  ・同じ通知で二重に反応しないよう、購読する実体は1つに限定する。
     //  ・enabled=false（捕獲演出など）で購読を外し、再有効化で購読を再開する。
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// ParentUdpSender.Instance の LoudItemReceived を購読する。
-    /// Instance が未生成の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
+    /// Host が保持する ParentNotificationHub の LoudItemReceived を購読する。
+    /// Host が未稼働の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
     /// </summary>
     private bool TrySubscribeLoudItem()
     {
@@ -423,15 +423,16 @@ public class MotherSuspicionSystem : MonoBehaviour
             return false;
         }
 
-        ParentUdpSender sender = ParentUdpSender.Instance;
-        if (sender == null) return false;
+        ParentUdpRuntimeHost host = ResolveParentHost();
+        if (host == null || host.Notifications == null) return false;
 
-        _loudItemSender = sender;
-        _loudItemSender.LoudItemReceived += HandleLoudItemReceived;
+        ParentNotificationHub hub = host.Notifications;
+        _loudItemHub = hub;
+        _loudItemHub.LoudItemReceived += HandleLoudItemReceived;
         _loudItemSubscribed = true;
         _loudItemSubscriber = this;
 
-        Debug.Log($"[PD] LOUD_ITEM の購読を開始しました（sender='{sender.gameObject.name}', id={sender.GetInstanceID()}）。", this);
+        Debug.Log($"[PD] LOUD_ITEM の購読を開始しました（Host='{host.gameObject.name}', id={host.GetInstanceID()}）。", this);
         return true;
     }
 
@@ -442,9 +443,9 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         if (_loudItemSubscribed)
         {
-            if (_loudItemSender != null)
+            if (_loudItemHub != null)
             {
-                _loudItemSender.LoudItemReceived -= HandleLoudItemReceived;
+                _loudItemHub.LoudItemReceived -= HandleLoudItemReceived;
             }
 
             _loudItemSubscribed = false;
@@ -457,7 +458,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             _loudItemSubscriber = null;
         }
 
-        _loudItemSender = null;
+        _loudItemHub = null;
     }
 
     /// <summary>
@@ -465,6 +466,16 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// 既存の条件判定（enableLoudItemFeature／捕獲済み／警告中の扱い／無敵時の捕獲抑止と突入継続）は
     /// OnLoudItemTriggered 側のまま変更しない。
     /// </summary>
+    /// <summary>稼働中のHostを優先し、無ければ初期化済みHostを探す（未初期化Hostは購読先にしない）。</summary>
+    private static ParentUdpRuntimeHost ResolveParentHost()
+    {
+        ParentUdpRuntimeHost host = ParentUdpRuntimeHost.Running;
+        if (host != null) return host;
+
+        ParentUdpRuntimeHost found = FindFirstObjectByType<ParentUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
+    }
+
     private void HandleLoudItemReceived()
     {
         if (!isActiveAndEnabled) return;   // 無効化中は反応しない（購読解除済みだが念のため）
@@ -474,14 +485,14 @@ public class MotherSuspicionSystem : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
     //  GAME_PROGRESS（子機のゲーム進行率）の受信購読
     //  ・受信後の反応は本クラス（OnGameProgress）が担当し、UDP側は受信を通知するだけ。
-    //  ・購読は ParentUdpSender.Instance（DDOLの生存個体）を基準にする。
+    //  ・購読は Host が保持する ParentNotificationHub の既存イベントを基準にする（旧窓口とは二重購読しない）。
     //  ・同じ通知を複数の実体が処理しないよう、購読する実体は1つに限定する。
     //  ・enabled=false（捕獲演出など）で購読を外し、再有効化で購読を再開する。
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// ParentUdpSender.Instance の GameProgressReceived を購読する。
-    /// Instance が未生成の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
+    /// Host が保持する ParentNotificationHub の GameProgressReceived を購読する。
+    /// Host が未稼働の場合は購読せず false を返す（OnEnable/Start/Update で再試行する）。
     /// </summary>
     private bool TrySubscribeGameProgress()
     {
@@ -496,15 +507,16 @@ public class MotherSuspicionSystem : MonoBehaviour
             return false;
         }
 
-        ParentUdpSender sender = ParentUdpSender.Instance;
-        if (sender == null) return false;
+        ParentUdpRuntimeHost host = ResolveParentHost();
+        if (host == null || host.Notifications == null) return false;
 
-        _gameProgressSender = sender;
-        _gameProgressSender.GameProgressReceived += HandleGameProgressReceived;
+        ParentNotificationHub hub = host.Notifications;
+        _gameProgressHub = hub;
+        _gameProgressHub.GameProgressReceived += HandleGameProgressReceived;
         _gameProgressSubscribed = true;
         _gameProgressSubscriber = this;
 
-        Debug.Log($"[PD] GAME_PROGRESS の購読を開始しました（sender='{sender.gameObject.name}', id={sender.GetInstanceID()}）。", this);
+        Debug.Log($"[PD] GAME_PROGRESS の購読を開始しました（Host='{host.gameObject.name}', id={host.GetInstanceID()}）。", this);
         return true;
     }
 
@@ -515,9 +527,9 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         if (_gameProgressSubscribed)
         {
-            if (_gameProgressSender != null)
+            if (_gameProgressHub != null)
             {
-                _gameProgressSender.GameProgressReceived -= HandleGameProgressReceived;
+                _gameProgressHub.GameProgressReceived -= HandleGameProgressReceived;
             }
 
             _gameProgressSubscribed = false;
@@ -530,7 +542,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             _gameProgressSubscriber = null;
         }
 
-        _gameProgressSender = null;
+        _gameProgressHub = null;
     }
 
     /// <summary>

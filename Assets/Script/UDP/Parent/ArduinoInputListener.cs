@@ -6,7 +6,7 @@ using UnityEngine;
 /// Does NOT open a SerialPort — PillowSensor is the sole port owner.
 /// Recognised commands:
 ///   "BOOT_OK"       — device ready confirmation, logged and ignored
-///   "CAUGHT"        — calls ParentUdpSender.SendState("CAUGHT")
+///   "CAUGHT"        — calls ParentUdpRuntimeHost.SendState("CAUGHT")
 ///   "ERR_NOT_FOUND" — warns that the HX711 load-cell sensor is not ready
 /// All other lines are logged verbatim and ignored.
 /// </summary>
@@ -17,8 +17,8 @@ public class ArduinoInputListener : MonoBehaviour
     [Tooltip("PillowSensor that owns the serial port. ArduinoInputListener subscribes to its OnRawLine event.")]
     [SerializeField] private PillowSensor pillowSensor;
 
-    [Tooltip("ParentUdpSender that will transmit CAUGHT over UDP when triggered.")]
-    [SerializeField] private ParentUdpSender udpSender;
+    [Tooltip("親機Host（ParentUdpRuntimeHost）を明示指定する。未割当なら CAUGHT は送信しない（Running／Find／GetComponentによる自動取得は行わない）。")]
+    [SerializeField] private ParentUdpRuntimeHost udpSender;
 
     // ── Debug ─────────────────────────────────────────────────────────────────
     [Header("Debug")]
@@ -45,7 +45,7 @@ public class ArduinoInputListener : MonoBehaviour
         }
 
         if (udpSender == null)
-            Debug.LogError("[ArduinoInputListener] ParentUdpSender (udpSender) is not assigned — CAUGHT will never be forwarded over UDP.");
+            Debug.LogError("[ArduinoInputListener] ParentUdpRuntimeHost (udpSender) is not assigned — CAUGHT will never be forwarded over UDP.");
     }
 
     private void OnDestroy()
@@ -70,11 +70,11 @@ public class ArduinoInputListener : MonoBehaviour
         }
         else if (line == "CAUGHT")
         {
-            if (showDebugLogs) Debug.Log("[ArduinoInputListener] CAUGHT detected — forwarding to ParentUdpSender.");
+            if (showDebugLogs) Debug.Log("[ArduinoInputListener] CAUGHT detected — forwarding to ParentUdpRuntimeHost.");
             if (udpSender != null)
                 udpSender.SendState("CAUGHT");
             else
-                Debug.LogError("[ArduinoInputListener] udpSender is not assigned — CAUGHT was detected but NOT sent over UDP.");
+                Debug.LogError("[ArduinoInputListener] udpSender (ParentUdpRuntimeHost) is not assigned — CAUGHT was detected but NOT sent over UDP.");
         }
         else
         {

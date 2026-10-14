@@ -21,7 +21,6 @@ public class CaughtReactionController : MonoBehaviour
     [SerializeField] private MotherSuspicionSystem suspicionSystem;
     [SerializeField] private SleepingController sleepingController;
     [SerializeField] private DoorController doorController;
-    [SerializeField] private ParentUdpSender udpSender;
     [SerializeField] private MotherGauge motherGauge;
 
     [Header("ゲームオーバー演出参照")]
@@ -55,6 +54,9 @@ public class CaughtReactionController : MonoBehaviour
     // 捕獲時に保存する引き継ぎ情報（状態が消える前に保存する）
     private MotherGameOverCaptureContext _context;
 
+    // 実行時解決する親機Host（Inspector割当なし・非シリアライズ）
+    private ParentUdpRuntimeHost _host;
+
     private void Start()
     {
         EnsureSuspicionSystem();
@@ -62,7 +64,7 @@ public class CaughtReactionController : MonoBehaviour
             sleepingController = Object.FindFirstObjectByType<SleepingController>();
         if (doorController == null)
             doorController = Object.FindFirstObjectByType<DoorController>();
-        EnsureUdpSender();
+        EnsureHost();
         if (motherGauge == null)
             motherGauge = Object.FindFirstObjectByType<MotherGauge>();
         if (gameOverSequenceController == null)
@@ -97,12 +99,20 @@ public class CaughtReactionController : MonoBehaviour
         return suspicionSystem;
     }
 
-    private void EnsureUdpSender()
+    /// <summary>
+    /// 稼働中の親機Hostを優先し、無ければ初期化済みHostを解決する（未初期化Hostは使わない）。
+    ///  ・取得できた結果は保持する（毎フレームの検索は行わない）。
+    ///  ・Connected条件は付けない（Disconnectedでも稼働Hostは参照できる）。
+    /// </summary>
+    private void EnsureHost()
     {
-        if (udpSender == null)
-            udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
-        if (udpSender == null)
-            udpSender = ParentUdpSender.Instance;
+        if (_host != null) return;
+
+        ParentUdpRuntimeHost running = ParentUdpRuntimeHost.Running;
+        if (running != null) { _host = running; return; }
+
+        ParentUdpRuntimeHost found = Object.FindFirstObjectByType<ParentUdpRuntimeHost>();
+        if (found != null && found.IsConfigured) _host = found;
     }
 
     private void Update()
@@ -231,16 +241,16 @@ public class CaughtReactionController : MonoBehaviour
         if (showDebugLogs)
             Debug.LogWarning("[CaughtReactionController] ゲームオーバー発生 - 疑惑が最大値に到達");
 
-        // ★★★ 親機捕獲確定をParentUdpSenderに通知（CAUGHTの即時送信・常駐再送・resultProcessed管理） ★★★
-        EnsureUdpSender();
-        if (udpSender != null)
+        // ★★★ 親機捕獲確定を親機Hostに通知（CAUGHTの即時送信・常駐再送・resultProcessed管理） ★★★
+        EnsureHost();
+        if (_host != null)
         {
-            udpSender.NotifyGameOverFromParentCatch();
-            if (showDebugLogs) Debug.Log("[CaughtReactionController] Notified ParentUdpSender of caught game over.");
+            _host.NotifyGameOverFromParentCatchPrepared();
+            if (showDebugLogs) Debug.Log("[CaughtReactionController] Notified ParentUdpRuntimeHost of caught game over.");
         }
         else if (showDebugLogs)
         {
-            Debug.LogWarning("[CaughtReactionController] ParentUdpSender not found — NotifyGameOverFromParentCatch skipped.");
+            Debug.LogWarning("[CaughtReactionController] ParentUdpRuntimeHost not found — NotifyGameOverFromParentCatch skipped.");
         }
 
         // ゲームロジックのコンポーネントを無効化
@@ -323,11 +333,11 @@ public class CaughtReactionController : MonoBehaviour
         // 演出完了（または安全な打ち切り）を子機へ通知してから結果画面へ進む。
         //  ・Jumpscare開始時ではなく、カメラ完了待ちまで終えて遷移が確定したここで送る。
         //  ・子機はこの通知まで結果画面へ進まず、待機中は入力と得点が停止する。
-        EnsureUdpSender();
-        if (udpSender != null)
-            udpSender.NotifyGameOverSequenceCompleted(transitionReason);
+        EnsureHost();
+        if (_host != null)
+            _host.NotifyGameOverSequenceCompletedPrepared(transitionReason);
         else
-            Debug.LogWarning("[CaughtReactionController] ParentUdpSender が無いため、演出完了通知を送れません" +
+            Debug.LogWarning("[CaughtReactionController] 親機Hostが無いため、演出完了通知を送れません" +
                              "（子機は子機側の上限で待機を解除します）", this);
 
         LoadGameOverScene(transitionReason);

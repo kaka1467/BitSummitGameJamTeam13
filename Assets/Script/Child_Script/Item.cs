@@ -118,15 +118,17 @@ public class Item : MonoBehaviour
 
                 // BGMアイテム（ラウドアイテム）を拾った時に親機へUDP通知を送る
                 {
-                    ChildUdpReceiver udpReceiver = FindObjectOfType<ChildUdpReceiver>();
-                    if (udpReceiver != null)
+                    // 送信元は稼働中の子機Host（旧互換窓口へのフォールバックは作らない）。
+                    // 取得できない場合は明示的に記録する（アイテム効果・得点・時間・QTE・SE/BGMの処理順序は変更しない）。
+                    ChildUdpRuntimeHost udpHost = ChildUdpRuntimeHost.Running;
+                    if (udpHost != null)
                     {
                         Debug.Log("[Item] BGM Item matched! Calling SendLoudItem().");
-                        udpReceiver.SendLoudItem();
+                        udpHost.SendLoudItem();
                     }
                     else
                     {
-                        Debug.LogError("[Item] ChildUdpReceiver could not be found in the child game scene!");
+                        Debug.LogError("[Item] ChildUdpRuntimeHost is not running — LOUD_ITEM was not sent to the parent.");
                     }
                 }
                 

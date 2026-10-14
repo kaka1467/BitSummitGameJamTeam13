@@ -421,7 +421,7 @@ MonoBehaviour:
   inputIgnoreDuration: 5
   autoChangeDelay: 20
   returnToTitleSe: {fileID: 32344634}
-  titleSceneName: ChildeTitle
+  titleSceneName: ChildTitle
   returnButtonFadeDuration: 0.5
 --- !u!4 &93066374
 Transform:

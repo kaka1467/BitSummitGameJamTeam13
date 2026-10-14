@@ -5,23 +5,20 @@ using UnityEngine;
 /// 親機から届く睡眠ロック状態（SLEEP_LOCK / SLEEP_UNLOCK）を、子機のシーン側へ適用する担当。
 ///
 /// 役割の境界：
-///   ChildUdpReceiver（UDP側） — 受信・重複判定・状態保持（isSleepInputLocked）・購読者への通知のみ。
+///   ChildUdpRuntimeHost／ChildNotificationHub（通信側） — 受信・重複判定・状態保持（睡眠ロック／捕獲待機）・購読者への通知のみ。
 ///                               ゲーム処理（入力停止・画像表示・PlayerMove）は行わない。
 ///   本クラス（シーン側）      — 通知と「現在の状態」を購読し、シーン内のオブジェクトへ適用する。
 ///
-/// ・購読は生存している ChildUdpReceiver（instance、DDOLの単一実体）を基準にする。
+/// ・購読は稼働中の ChildUdpRuntimeHost（DDOLの単一実体）が保持する Hub を基準にする。
 /// ・購読成立時に「現在の IsSleepInputLocked」を取得して初期適用する
 ///   （親機が寝たまま子機がシーン遷移しても、同値LOCKの再送なしで正しい状態になる）。
 /// ・無効化・破棄では購読を解除するだけ。UDP側のロック状態はシーン終了を理由に解除しない。
-/// ・UDP取得が遅れた場合は購読できるまで再試行する（Findや名前検索は行わない）。
+/// ・Host取得が遅れた場合は購読できるまで再試行する（実行順設定で取得順を固定しない）。
 /// ・シーン内参照はInspector割当を優先する（未割当の機能は何もしない）。
 /// </summary>
 public class ChildSleepLockApplier : MonoBehaviour
 {
     [Header("参照（Inspector割当を優先）")]
-    [Tooltip("未設定の場合は ChildUdpReceiver.instance（DDOLの生存個体）を使う。")]
-    [SerializeField] private ChildUdpReceiver udpReceiver;
-
     [Tooltip("入力の有効／無効を切り替えるPlayerMove（ゲームシーンで割り当てる。未割当なら PlayerInputLock のみで停止）。")]
     [SerializeField] private PlayerMove playerMove;
 
@@ -33,7 +30,8 @@ public class ChildSleepLockApplier : MonoBehaviour
     [SerializeField] private bool showDebugLogs = false;
 
     private bool _subscribed;
-    private ChildUdpReceiver _subscribedReceiver;   // 購読解除を確実にするため保持する
+    private ChildUdpRuntimeHost _host;               // 実行時解決（Inspector割当なし）
+    private ChildNotificationHub _subscribedHub;     // 実際に購読したHub（解除も同じ個体から行う）
     private bool _hasApplied;                       // 同値での不要な再適用を避ける
     private bool _appliedLocked;
     private bool _sleepLocked;                      // 寝たふり（SLEEP_LOCK）によるロック
@@ -66,51 +64,66 @@ public class ChildSleepLockApplier : MonoBehaviour
         Unsubscribe();
     }
 
-    /// <summary>生存ChildUdpReceiverを購読する（重複購読しない）。</summary>
+    /// <summary>
+    /// 稼働中の子機Hostが保持するHubを購読する（重複購読しない）。
+    ///  ・Host は Running を優先し、無ければ初期化済みHostのみ採用する（未初期化Hostは購読先にしない）。
+    ///  ・取得できない場合は購読せず false を返す（OnEnable/Update で再試行する）。
+    /// </summary>
     private bool TrySubscribe()
     {
         if (_subscribed) return true;
         if (!isActiveAndEnabled) return false;
 
-        ChildUdpReceiver receiver = udpReceiver != null ? udpReceiver : ChildUdpReceiver.instance;
-        if (receiver == null)
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host == null || host.Notifications == null)
         {
             if (!_missingReceiverWarned)
             {
                 _missingReceiverWarned = true;
-                Debug.LogWarning("[ChildSleepLockApplier] ChildUdpReceiver が見つからないため、購読成立まで再試行します。", this);
+                Debug.LogWarning("[ChildSleepLockApplier] 子機Host（未稼働／未初期化）が見つからないため、購読成立まで再試行します。", this);
             }
             return false;
         }
 
-        _subscribedReceiver = receiver;
-        _subscribedReceiver.SleepLockChanged += HandleSleepLockChanged;
+        _host = host;
+        _subscribedHub = host.Notifications;
+        _subscribedHub.SleepLockChanged += HandleSleepLockChanged;
         // 捕獲後の演出待機（親機の演出完了待ち）でも、寝たふりと同じ操作不可ロック・画像を使う。
-        _subscribedReceiver.CaptureWaitStarted += HandleCaptureWaitStarted;
-        _subscribedReceiver.CaptureSequenceReleased += HandleCaptureSequenceReleased;
+        _subscribedHub.CaptureWaitStarted += HandleCaptureWaitStarted;
+        _subscribedHub.CaptureSequenceReleased += HandleCaptureSequenceReleased;
         _subscribed = true;
 
         // 購読成立の時点で現在状態を「強制適用」する（初期同期）。
         // ・同値スキップは通常の通知だけに使う（購読成立・再有効化では確実に適用する）。
-        // ・Receiver が未取得だった時間帯に状態が変わっていても、ここで必ず現在値にそろう。
-        _captureWaitLocked = receiver.IsWaitingGameOverSequence;
-        Apply(receiver.IsSleepInputLocked, force: true);
+        // ・Host未取得だった時間帯に状態が変わっていても、ここで必ず現在値にそろう。
+        _captureWaitLocked = _subscribedHub.WaitingGameOverSequence;
+        Apply(_subscribedHub.IsSleepLocked, force: true);
 
         if (showDebugLogs)
-            Debug.Log($"[ChildSleepLockApplier] 購読を開始しました（receiver='{receiver.gameObject.name}', id={receiver.GetInstanceID()}）。", this);
+            Debug.Log($"[ChildSleepLockApplier] 購読を開始しました（Host='{host.gameObject.name}', id={host.GetInstanceID()}）。", this);
         return true;
     }
 
-    /// <summary>保持している購読先から解除する（二重に呼んでも安全）。</summary>
+    /// <summary>稼働中のHostを優先し、無ければ初期化済みHostを探す（未初期化Hostは返さない）。</summary>
+    private static ChildUdpRuntimeHost ResolveHost()
+    {
+        ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
+        if (host != null) return host;
+
+        ChildUdpRuntimeHost found = FindFirstObjectByType<ChildUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
+    }
+
+    /// <summary>実際に購読した同じHub個体から解除する（二重に呼んでも安全）。</summary>
     private void Unsubscribe()
     {
         if (_subscribed)
         {
-            if (_subscribedReceiver != null)
+            if (_subscribedHub != null)
             {
-                _subscribedReceiver.SleepLockChanged -= HandleSleepLockChanged;
-                _subscribedReceiver.CaptureWaitStarted -= HandleCaptureWaitStarted;
-                _subscribedReceiver.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
+                _subscribedHub.SleepLockChanged -= HandleSleepLockChanged;
+                _subscribedHub.CaptureWaitStarted -= HandleCaptureWaitStarted;
+                _subscribedHub.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
             }
 
             _subscribed = false;
@@ -118,7 +131,8 @@ public class ChildSleepLockApplier : MonoBehaviour
                 Debug.Log("[ChildSleepLockApplier] 購読を解除しました。", this);
         }
 
-        _subscribedReceiver = null;
+        _subscribedHub = null;
+        _host = null;
     }
 
     private void HandleSleepLockChanged(bool locked)

@@ -1262,17 +1262,14 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 68a83da404cb6469ca82a55fa37f128f, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ChildUdpReceiver
+  m_EditorClassIdentifier: Assembly-CSharp::ChildUdpBootstrap
   normalPort: 8000
   broadcastPort: 8001
   parentReceivePort: 8002
   targetIP: 127.0.0.1
   currentState: 0
-  lastMessage: 
   gameSceneName: ChildLoading
-  titleSceneName: ChildeTitle
-  sleepingManager: {fileID: 0}
-  playerMove: {fileID: 0}
+  titleSceneName: ChildTitle
   sleepLockImageObject: {fileID: 0}
   sleepLockImageObjectName: SleepLockImage
   showDebugLogs: 1
@@ -8837,7 +8834,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 26e33433f711424fa174053f92054def, type: 3}
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::ChildSleepLockApplier
-  udpReceiver: {fileID: 0}
   playerMove: {fileID: 0}
   sleepLockImage: {fileID: 0}
   showDebugLogs: 0
