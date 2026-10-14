@@ -20,6 +20,15 @@ public class ItemSpawnerEditor : Editor
     private SerializedProperty hugeCooldownAfterQteProp;
     private SerializedProperty showDebugLogsProp;
 
+    // 以前はカスタムインスペクタに出ておらず、Debugモードでしか触れなかった設定
+    private SerializedProperty spawnEnabledProp;
+    private SerializedProperty bgmNormalSpawnRemainingSecondsProp;
+    private SerializedProperty hugeFeverDeferralSecondsProp;
+    private SerializedProperty retryIntervalProp;
+    private SerializedProperty maxRetryCountProp;
+    private SerializedProperty enableDebugSpawnKeysProp;
+    private SerializedProperty showDebugSpawnKeyLogsProp;
+
     private void OnEnable()
     {
         normalSpawnRulesProp = serializedObject.FindProperty("normalSpawnRules");
@@ -36,6 +45,14 @@ public class ItemSpawnerEditor : Editor
         hugeCooldownAfterQteProp = serializedObject.FindProperty("hugeCooldownAfterQte");
         showDebugLogsProp = serializedObject.FindProperty("showDebugLogs");
 
+        spawnEnabledProp = serializedObject.FindProperty("spawnEnabled");
+        bgmNormalSpawnRemainingSecondsProp = serializedObject.FindProperty("bgmNormalSpawnRemainingSeconds");
+        hugeFeverDeferralSecondsProp = serializedObject.FindProperty("hugeFeverDeferralSeconds");
+        retryIntervalProp = serializedObject.FindProperty("retryInterval");
+        maxRetryCountProp = serializedObject.FindProperty("maxRetryCount");
+        enableDebugSpawnKeysProp = serializedObject.FindProperty("enableDebugSpawnKeys");
+        showDebugSpawnKeyLogsProp = serializedObject.FindProperty("showDebugSpawnKeyLogs");
+
         EnsureRules();
     }
 
@@ -45,6 +62,9 @@ public class ItemSpawnerEditor : Editor
 
         EnsureRules();
 
+        DrawIfExists(spawnEnabledProp, "Spawn Control", "通常アイテムの自動出現を行うか。OFF にすると通常出現とHugeObstacleの自動出現が止まる（数字キーのデバッグ出現は別）。");
+
+        EditorGUILayout.Space(4f);
         EditorGUILayout.LabelField("Normal Spawn Rules", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox("各 Rule はゲーム開始からの時間範囲です。Min〜Max 秒の間で、設定した個数だけ1回スポーンします。", MessageType.Info);
         List<GameObject> displayPrefabs = GetNormalPrefabsFromItemPool();
@@ -129,6 +149,15 @@ public class ItemSpawnerEditor : Editor
         }
 
         EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("BGM Spawn Condition", EditorStyles.boldLabel);
+        if (bgmNormalSpawnRemainingSecondsProp != null)
+        {
+            EditorGUILayout.PropertyField(bgmNormalSpawnRemainingSecondsProp);
+            EditorGUILayout.HelpBox("BGM（ラウドアイテム）は、子機のゲームタイマーの『残り時間』がこの秒数未満になったときだけ通常出現します。" +
+                                    "ゲーム開始からの経過時間ではなく、時間の加算・減算を反映した現在の残り時間で判定します。", MessageType.Info);
+        }
+
+        EditorGUILayout.Space(6f);
         EditorGUILayout.LabelField("HugeObstacle Settings", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(hugeObstacleSpawnCountProp, new GUIContent("Count (per huge event)"));
         EditorGUILayout.PropertyField(hugeObstacleSpawnYProp, new GUIContent("Spawn Y Position"));
@@ -145,10 +174,15 @@ public class ItemSpawnerEditor : Editor
         EditorGUILayout.PropertyField(overlapAvoidanceXStepProp, new GUIContent("Fallback X Step"));
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.PropertyField(maxPlacementAttemptsProp, new GUIContent("Max Placement Attempts"));
+        EditorGUILayout.BeginHorizontal();
+        DrawIfExists(retryIntervalProp);
+        DrawIfExists(maxRetryCountProp);
+        EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space(6f);
         EditorGUILayout.PropertyField(hugeInitialDelayProp);
         EditorGUILayout.PropertyField(hugeCooldownAfterQteProp);
+        DrawIfExists(hugeFeverDeferralSecondsProp);
 
         EditorGUILayout.Space(6f);
         EditorGUILayout.PropertyField(spawnOffsetFromRightProp);
@@ -160,8 +194,22 @@ public class ItemSpawnerEditor : Editor
         {
             EditorGUILayout.PropertyField(showDebugLogsProp, new GUIContent("Show Debug Logs"));
         }
+        DrawIfExists(enableDebugSpawnKeysProp);
+        DrawIfExists(showDebugSpawnKeyLogsProp);
 
         serializedObject.ApplyModifiedProperties();
+    }
+
+    // プロパティが存在するときだけ描画する（フィールドの改名・削除でエディタが落ちないようにする）。
+    // label/tooltip を渡さなければ、ItemSpawner 側の [Tooltip] がそのまま使われる。
+    private static void DrawIfExists(SerializedProperty prop, string label = null, string tooltip = null)
+    {
+        if (prop == null) return;
+
+        if (label == null)
+            EditorGUILayout.PropertyField(prop);
+        else
+            EditorGUILayout.PropertyField(prop, new GUIContent(label, tooltip));
     }
 
     private void EnsureRules()

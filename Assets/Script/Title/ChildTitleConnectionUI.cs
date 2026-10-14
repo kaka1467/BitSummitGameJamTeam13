@@ -27,7 +27,11 @@ public class ChildTitleConnectionUI : MonoBehaviour
     [Tooltip("接続ボタンのラベル（Connect TMP）。")] [SerializeField]
     private TextMeshProUGUI connectButtonLabel;
 
-    [Tooltip("Disconnected/Connecting状態のときの接続ボタン位置。")] [SerializeField]
+    [Tooltip("ONなら、シーン上に置いた接続ボタン（の親）の位置を Disconnected/Connecting 時の位置として使う。" +
+             "下の Default Position は無視される。シーンで並べたレイアウトが再生時に動いてしまうのを防ぐ。")] [SerializeField]
+    private bool useSceneLayoutAsDefaultPosition = true;
+
+    [Tooltip("Disconnected/Connecting状態のときの接続ボタン位置。useSceneLayoutAsDefaultPosition が OFF のときだけ使う。")] [SerializeField]
     private Vector2 connectButtonDefaultPosition = Vector2.zero;
 
     [Tooltip("Connected（START!）状態のときの接続ボタン位置。")] [SerializeField]
@@ -38,6 +42,12 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     [Tooltip("Cancelボタン（cancelUiObject が未設定のときの表示切替に使う）。")] [SerializeField]
     private Button cancelButton;
+
+    [Header("子機だけで開始（親機なしの単独プレイ）")]
+    [Tooltip("親機に接続せず、子機だけでゲームを始めるボタン。押すと START_GAME は送らずにそのままゲームへ進む。" +
+             "Connected（START!）のあいだは自動で隠す。クリック処理はこのコンポーネントが自動で登録するので、OnClick の設定は不要。")]
+    [SerializeField]
+    private Button soloStartButton;
 
     [Header("ラベル文言")] [Tooltip("未接続時の接続ボタン文言。")] [SerializeField]
     private string connectLabel = "Connect";
@@ -80,6 +90,9 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     private void Awake()
     {
+        // シーンで置いた接続ボタンの位置を、未接続時の位置として覚える（表示更新より先に行う）。
+        CaptureSceneLayoutPosition();
+
         // Inspector参照だけを使い、初期状態（パネルを閉じる）へ整える。名前検索はしない。
         ApplyInitialPanelState();
     }
@@ -121,6 +134,22 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         UnbindReceiver();
         RemoveDynamicListeners();
+    }
+
+    /// <summary>
+    /// 接続ボタン（の親）の現在位置＝シーンで置いた位置を、Disconnected/Connecting 時の位置として採用する。
+    /// （Inspector に残った古い座標で、再生時にボタンが動いてしまうのを防ぐ）
+    /// </summary>
+    private void CaptureSceneLayoutPosition()
+    {
+        if (!useSceneLayoutAsDefaultPosition || connectButton == null) return;
+
+        Transform moveTarget = connectButton.transform.parent != null
+            ? connectButton.transform.parent
+            : connectButton.transform;
+
+        if (moveTarget is RectTransform rect)
+            connectButtonDefaultPosition = rect.anchoredPosition;
     }
 
     // ── UDPへの接続（生存個体＝DDOLを基準にする）──────────────────────────────
@@ -228,6 +257,11 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
         SetActiveForButton(creditsButton, state != ChildUdpReceiver.ConnectionState.Connected);
         SetActiveForButton(settingsButton, state != ChildUdpReceiver.ConnectionState.Connected);
+
+        // 単独開始ボタンは未接続／接続中だけ表示する。接続済み（START!）では通常の開始に任せ、
+        // 親機と子機の開始がずれないよう隠す。ボタンの親は触らず、ボタン自身だけを切り替える。
+        if (soloStartButton != null)
+            ResolveToggleTarget(soloStartButton).SetActive(state != ChildUdpReceiver.ConnectionState.Connected);
     }
 
     /// <summary>タイトル表示時の初期状態：各パネルを閉じ、装飾を表示する。</summary>
@@ -276,6 +310,19 @@ public class ChildTitleConnectionUI : MonoBehaviour
         target.SetActive(active);
     }
 
+    /// <summary>
+    /// ボタンの表示切替の対象を返す。ボタンが装飾コンテナ（Connect/Credit など）の子ならコンテナごと、
+    /// 親が Canvas だったり他のボタンだったりする場合は、巻き込まないようボタン自身だけを返す。
+    /// </summary>
+    private static GameObject ResolveToggleTarget(Button button)
+    {
+        Transform parent = button.transform.parent;
+        if (parent != null && parent.GetComponent<Canvas>() == null && parent.GetComponent<Selectable>() == null)
+            return parent.gameObject;
+
+        return button.gameObject;
+    }
+
     /// <summary>クリックを遮らないようにする（旧 ChildUdpReceiver.RefreshUiReferences と同じ処理）。</summary>
     private static void DisableRaycastTargets(GameObject target)
     {
@@ -303,6 +350,13 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         if (!EnsureReceiver()) return;
         _receiver.OnCancelButtonClicked();
+    }
+
+    /// <summary>子機だけで開始。START_GAME を送らずにゲームへ進む処理は UDP 側が持つ。</summary>
+    public void OnSoloStartClicked()
+    {
+        if (!EnsureReceiver()) return;
+        _receiver.OnSoloStartButtonClicked();
     }
 
     /// <summary>クレジットの開閉（タイトルUIのみの処理）。</summary>
@@ -358,6 +412,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         BindButton(connectButton, OnConnectClicked, nameof(OnConnectClicked));
         BindButton(cancelButton, OnCancelClicked, nameof(OnCancelClicked));
+        BindButton(soloStartButton, OnSoloStartClicked, nameof(OnSoloStartClicked));
         BindButton(creditsButton, OnCreditsClicked, nameof(OnCreditsClicked));
         BindButton(settingsButton, OnSettingsClicked, nameof(OnSettingsClicked));
         BindButton(creditsCloseButton, OnCloseCreditsClicked, nameof(OnCloseCreditsClicked));
