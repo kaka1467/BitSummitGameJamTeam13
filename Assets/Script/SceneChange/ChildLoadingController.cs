@@ -27,11 +27,8 @@ public class ChildLoadingController : MonoBehaviour
     [SerializeField] private bool waitForGaugeComplete = true;
     [SerializeField] private GaugeSceneChanger gaugeSceneChanger;
 
-    private ChildUdpReceiver _udpReceiver;
-
     private void Start()
     {
-        _udpReceiver = UnityEngine.Object.FindFirstObjectByType<ChildUdpReceiver>();
         if (waitForGaugeComplete && gaugeSceneChanger == null)
         {
             gaugeSceneChanger = UnityEngine.Object.FindFirstObjectByType<GaugeSceneChanger>();
@@ -69,19 +66,13 @@ public class ChildLoadingController : MonoBehaviour
         }
 
         // ─── 修正箇所 ───
-        // ここでの送信をコメントアウト（またはインスペクターで sendLoadingCompleteOnFinish を false にする）
+        // ここでの送信は従来どおり無効のまま（sendLoadingCompleteOnFinish を true にしても送らない）。
+        // 旧型（ChildUdpReceiver）の取得は有効利用が無かったため整理した（送信の有効化は行わない）。
         if (sendLoadingCompleteOnFinish)
         {
-            // Notify parent that child loading is complete
-            if (_udpReceiver != null)
-            {
-                Debug.Log("[ChildLoadingController] Loading done — sending LOADING_COMPLETE to parent.");
-                // _udpReceiver.SendState("LOADING_COMPLETE"); // ← コメントアウト
-            }
-            else
-            {
-                Debug.LogWarning("[ChildLoadingController] ChildUdpReceiver not found — LOADING_COMPLETE not sent.");
-            }
+            // Notify parent that child loading is complete（送信は無効のまま維持）
+            Debug.Log("[ChildLoadingController] Loading done — LOADING_COMPLETE send is disabled (unchanged).");
+            // _host.SendState("LOADING_COMPLETE"); // ← コメントアウト（移行のついでに有効化しない）
         }
         // ─────────────────
 

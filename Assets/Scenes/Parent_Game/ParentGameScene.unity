@@ -1300,50 +1300,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 246968026}
   m_CullTransparentMesh: 1
---- !u!1 &259444273
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 259444274}
-  - component: {fileID: 259444275}
-  m_Layer: 0
-  m_Name: ParentUdpRuntimeHost
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &259444274
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 259444273}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1385247219}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &259444275
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 259444273}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 306ef83cfb59e40a2935b1a4c26ef9c1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpRuntimeHost
 --- !u!1 &277311122
 GameObject:
   m_ObjectHideFlags: 0
@@ -3674,82 +3630,6 @@ MonoBehaviour:
   meterFrameRoot: {fileID: 0}
   hideOnCapture: []
   showDebugLogs: 1
---- !u!1 &821377963
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 821377964}
-  - component: {fileID: 821377966}
-  - component: {fileID: 821377965}
-  m_Layer: 0
-  m_Name: ParentUdpSender
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &821377964
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 821377963}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1385247219}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &821377965
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 821377963}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b1c07f14a89f2354f8a810d280fa2cc2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ArduinoInputListener
-  pillowSensor: {fileID: 479984877}
-  udpSender: {fileID: 0}
-  showDebugLogs: 0
---- !u!114 &821377966
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 821377963}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
-  normalPort: 8000
-  broadcastPort: 8001
-  parentReceivePort: 8002
-  targetIP: 127.0.0.1
-  currentState: 0
-  gameSceneName: ParentLoading
-  soloGameSceneName: ParentGameScene
-  gameplaySceneName: ParentGameScene
-  enableReturnToTitleKey: 1
-  returnToTitleKey: 60
-  returnToTitleHoldSeconds: 1.5
-  motherTitleSceneName: ParentTitle
-  titleSceneName: ChildeTitle
-  gameOverSceneName: ParentGameOver
-  timeUpSceneName: ParentGameClear
-  showDebugLogs: 1
 --- !u!1 &835640658
 GameObject:
   m_ObjectHideFlags: 0
@@ -5824,7 +5704,6 @@ MonoBehaviour:
   suspicionSystem: {fileID: 1951468137}
   sleepingController: {fileID: 2121813538}
   doorController: {fileID: 1919619509}
-  udpSender: {fileID: 0}
   motherGauge: {fileID: 1418577572}
   gameOverSequenceController: {fileID: 0}
   approachController: {fileID: 0}
@@ -5858,6 +5737,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1385247219}
+  - component: {fileID: 1385247221}
+  - component: {fileID: 1385247220}
   m_Layer: 0
   m_Name: UDP
   m_TagString: Untagged
@@ -5877,11 +5758,52 @@ Transform:
   m_LocalPosition: {x: 843.0947, y: 215.59084, z: 59.9558}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 821377964}
-  - {fileID: 259444274}
+  m_Children: []
   m_Father: {fileID: 1760085926}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1385247220
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1385247217}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1c07f14a89f2354f8a810d280fa2cc2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ArduinoInputListener
+  pillowSensor: {fileID: 479984877}
+  udpSender: {fileID: 0}
+  showDebugLogs: 0
+--- !u!114 &1385247221
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1385247217}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpBootstrap
+  normalPort: 8000
+  broadcastPort: 8001
+  parentReceivePort: 8002
+  targetIP: 127.0.0.1
+  currentState: 0
+  gameSceneName: ParentLoading
+  soloGameSceneName: ParentGameScene
+  gameplaySceneName: ParentGameScene
+  enableReturnToTitleKey: 1
+  returnToTitleKey: 60
+  returnToTitleHoldSeconds: 1.5
+  motherTitleSceneName: ParentTitle
+  titleSceneName: ChildTitle
+  gameOverSceneName: ParentGameOver
+  timeUpSceneName: ParentGameClear
+  showDebugLogs: 1
 --- !u!1 &1391312562
 GameObject:
   m_ObjectHideFlags: 0
@@ -10647,7 +10569,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SleepingController
   pillowSensor: {fileID: 479984877}
-  udpSender: {fileID: 0}
   awakeHeartbeatInterval: 1
   sleepHeartbeatInterval: 1
   sleepStartAudioSource: {fileID: 835640660}

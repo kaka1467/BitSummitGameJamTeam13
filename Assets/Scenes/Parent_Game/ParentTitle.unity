@@ -5258,7 +5258,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7688f8b5e86c34f86b98ec51240662a5, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpSender
+  m_EditorClassIdentifier: Assembly-CSharp::ParentUdpBootstrap
   normalPort: 8000
   broadcastPort: 8001
   parentReceivePort: 8002
@@ -5271,7 +5271,7 @@ MonoBehaviour:
   returnToTitleKey: 60
   returnToTitleHoldSeconds: 1.5
   motherTitleSceneName: ParentTitle
-  titleSceneName: ChildeTitle
+  titleSceneName: ChildTitle
   gameOverSceneName: ParentGameOver
   timeUpSceneName: ParentGameClear
   showDebugLogs: 1

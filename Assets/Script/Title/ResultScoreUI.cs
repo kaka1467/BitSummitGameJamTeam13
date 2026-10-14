@@ -52,18 +52,57 @@ public class ResultScoreUI : MonoBehaviour
         GameManager.ResultDataCommitted += RefreshResultData;
         // 親機側: 子機からUDP受信した最終スコアの保存・ランキング更新完了でも表示を再読み込みする。
         // 子機GameManagerのイベントだけに依存せず、親機のUDP受信・保存経路とも同期する。
-        ParentUdpSender.ResultDataCommitted += RefreshResultData;
+        // 購読先は Host 個体（まだ取得できない場合は Start／次フレームの再取得経路で接続する）。
+        SubscribeParentHost();
         RefreshResultData();
     }
 
     private void OnDisable()
     {
         GameManager.ResultDataCommitted -= RefreshResultData;
-        ParentUdpSender.ResultDataCommitted -= RefreshResultData;
+        UnsubscribeParentHost();
+    }
+
+    // 親機Host個体（購読した個体を保持し、解除も同じ個体へ行う）
+    private ParentUdpRuntimeHost _subscribedHost;
+
+    /// <summary>
+    /// 親機Host個体を取得して ResultDataCommitted を購読する。
+    ///  ・同じ個体への二重購読はしない。
+    ///  ・個体が変わった場合は旧購読を外してから接続する。
+    ///  ・まだ取得できない場合は何もしない（Start・次フレームの既存再取得経路で接続する）。
+    /// </summary>
+    private void SubscribeParentHost()
+    {
+        ParentUdpRuntimeHost host = ResolveParentHost();
+        if (host == null || host == _subscribedHost) return;
+
+        UnsubscribeParentHost();
+        host.ResultDataCommitted += RefreshResultData;
+        _subscribedHost = host;
+    }
+
+    private void UnsubscribeParentHost()
+    {
+        if (_subscribedHost == null) return;
+
+        _subscribedHost.ResultDataCommitted -= RefreshResultData;
+        _subscribedHost = null;
+    }
+
+    /// <summary>稼働中のHost個体を優先し、無ければシーン上のHost（DDOLの生存個体）を探す。</summary>
+    private static ParentUdpRuntimeHost ResolveParentHost()
+    {
+        ParentUdpRuntimeHost host = ParentUdpRuntimeHost.Running;
+        if (host != null) return host;
+
+        return FindFirstObjectByType<ParentUdpRuntimeHost>();
     }
 
     private void Start()
     {
+        // 購読の再取得（OnEnable 時点で Host が取得できなかった場合に接続する）。
+        SubscribeParentHost();
         RefreshResultData();
 
         // 書き込み側（GameManager.Start / Awake）が Start の後に走るケースに備え、
@@ -75,6 +114,7 @@ public class ResultScoreUI : MonoBehaviour
     private System.Collections.IEnumerator RefreshResultDataNextFrame()
     {
         yield return null;
+        SubscribeParentHost();
         RefreshResultData();
     }
 
@@ -82,9 +122,10 @@ public class ResultScoreUI : MonoBehaviour
     {
         // 親機では「子機データの表示用コピー」だけを表示する（親機の独自ランキングは使わない）。
         // 子機では従来どおり自分のランキング（唯一の基準）を表示する。
-        if (ParentUdpSender.Instance != null)
+        ParentUdpRuntimeHost host = ResolveParentHost();
+        if (host != null)
         {
-            RefreshFromParentSyncCopy();
+            RefreshFromParentSyncCopy(host);
             return;
         }
 
@@ -116,15 +157,14 @@ public class ResultScoreUI : MonoBehaviour
     /// ・GAME_OVER と TIME_UP は別々に読む（混ぜない）
     /// ・未同期（未接続・同期前）は「------」を表示し、古い親機ランキングを最新として出さない
     /// </summary>
-    private void RefreshFromParentSyncCopy()
+    private void RefreshFromParentSyncCopy(ParentUdpRuntimeHost host)
     {
-        var sender = ParentUdpSender.Instance;
         bool isGameOver = resultType == DisplayResultType.GameOver;
 
-        RankSyncDisplayState state = sender.GetSyncDisplayState();
+        RankSyncDisplayState state = host.GetSyncDisplayState();
 
-        bool hasGo = sender.TryGetSyncedResult(true, out int goLast, out int[] goTop);
-        bool hasTu = sender.TryGetSyncedResult(false, out int tuLast, out int[] tuTop);
+        bool hasGo = host.TryGetSyncedResult(true, out int goLast, out int[] goTop);
+        bool hasTu = host.TryGetSyncedResult(false, out int tuLast, out int[] tuTop);
         bool hasThis = isGameOver ? hasGo : hasTu;
 
         TextMeshProUGUI[] primaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
@@ -171,7 +211,7 @@ public class ResultScoreUI : MonoBehaviour
         ApplyRankingTexts(otherTexts, crossRanking);
 
         UnityEngine.Debug.Log($"[ResultScoreUI] (parent {RankSyncDisplay.ToLabel(state)}) resultType={resultType}, score={score}, " +
-                              $"ranking=[{string.Join(", ", ranking)}], source='{sender.RankSyncSourceId}', update={sender.RankSyncUpdateNo}, peer='{sender.ConnectedPeerSourceId}'");
+                              $"ranking=[{string.Join(", ", ranking)}], source='{host.RankSyncSourceId}', update={host.RankSyncUpdateNo}, peer='{host.ConnectedPeerSourceId}'");
     }
 
     private static void ApplyNoDataTexts(TextMeshProUGUI[] texts)

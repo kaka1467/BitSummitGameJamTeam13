@@ -12,7 +12,10 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private PlayerMove playerMove;
     [SerializeField] private ItemSpawner itemSpawner;
     [SerializeField] private GameManager gameManager;
-    [SerializeField] private ChildUdpReceiver udpReceiver;
+    // 既存UDP GameObject（ルート）への参照。実行時にそのルート上のHostを解決する。
+    [SerializeField] private GameObject udpReceiver;
+
+    private ChildUdpRuntimeHost _host;   // 実行時解決したHost（Inspector割当なし・非シリアライズ）
     [SerializeField] private TextMeshProUGUI countdownText;
     [SerializeField] private TextMeshProUGUI startText;
     [SerializeField] private BGMController bgmController;
@@ -163,10 +166,8 @@ public class TutorialFlow : MonoBehaviour
             bgmController = FindFirstObjectByType<BGMController>();
         }
 
-        if (udpReceiver == null)
-        {
-            udpReceiver = FindFirstObjectByType<ChildUdpReceiver>();
-        }
+        // 子機Hostを解決する（指定UDPルート → Running → 初期化済みHost）。
+        ResolveHost();
 
         if (playerAnimator == null && playerMove != null)
         {
@@ -741,22 +742,40 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 子機Hostを解決する：指定UDPルート（保存参照）→ 稼働個体（Running）→ 初期化済みHost。
+    ///  ・ルートが未割当・破棄済みの場合は既存の生存個体取得へ進む。
+    ///  ・未初期化Hostは使わない（既存の再試行条件を維持する）。
+    /// </summary>
+    private ChildUdpRuntimeHost ResolveHost()
+    {
+        if (_host != null) return _host;
+
+        if (udpReceiver != null)
+        {
+            ChildUdpRuntimeHost onRoot = udpReceiver.GetComponent<ChildUdpRuntimeHost>();
+            if (onRoot != null && onRoot.IsConfigured) { _host = onRoot; return _host; }
+        }
+
+        ChildUdpRuntimeHost running = ChildUdpRuntimeHost.Running;
+        if (running != null) { _host = running; return _host; }
+
+        ChildUdpRuntimeHost found = FindFirstObjectByType<ChildUdpRuntimeHost>();
+        if (found != null && found.IsConfigured) _host = found;
+        return _host;
+    }
+
     private void NotifyParentStartShown()
     {
         if (startSignalSent) return;
         startSignalSent = true;
 
-        if (udpReceiver == null)
-        {
-            udpReceiver = ChildUdpReceiver.instance != null
-                ? ChildUdpReceiver.instance
-                : FindFirstObjectByType<ChildUdpReceiver>();
-        }
+        ChildUdpRuntimeHost host = ResolveHost();
 
-        if (udpReceiver != null)
+        if (host != null)
         {
-            Debug.Log($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown — LOADING_COMPLETE 送信 (startSignalSent={startSignalSent}, receiverId={udpReceiver.GetInstanceID()}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
-            udpReceiver.SendState("LOADING_COMPLETE");
+            Debug.Log($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown — LOADING_COMPLETE 送信 (startSignalSent={startSignalSent}, hostId={host.GetInstanceID()}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
+            host.SendState("LOADING_COMPLETE");
             Debug.Log("[TutorialFlow] Start shown — sent LOADING_COMPLETE to parent.");
             if (loadingCompleteRoutine != null)
             {
@@ -766,8 +785,8 @@ public class TutorialFlow : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("[TutorialFlow] Start shown but ChildUdpReceiver not found — LOADING_COMPLETE not sent.");
-            Debug.LogWarning($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown 失敗 — udpReceiver が見つからず LOADING_COMPLETE を送れません (startSignalSent={startSignalSent}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
+            Debug.LogWarning("[TutorialFlow] Start shown but ChildUdpRuntimeHost not found — LOADING_COMPLETE not sent.");
+            Debug.LogWarning($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown 失敗 — 子機Hostが見つからず LOADING_COMPLETE を送れません (startSignalSent={startSignalSent}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
         }
     }
 
@@ -779,9 +798,10 @@ public class TutorialFlow : MonoBehaviour
         for (int i = 0; i < repeatCount; i++)
         {
             yield return new WaitForSecondsRealtime(intervalSeconds);
-            if (udpReceiver != null)
+            ChildUdpRuntimeHost host = ResolveHost();
+            if (host != null)
             {
-                udpReceiver.SendState("LOADING_COMPLETE");
+                host.SendState("LOADING_COMPLETE");
             }
         }
     }

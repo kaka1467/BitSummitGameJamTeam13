@@ -6,17 +6,13 @@ using UnityEngine.InputSystem;
 /// PCデバッグ入力（Spaceキー）は最優先で、ハードウェアセンサーを上書きする。
 /// 補助入力としてハードウェア枕センサー（シリアル／ESP32経由のPillowSensor）に対応する。
 /// 新しい入力システムを統合し、PCでシームレスにテストできる。
-/// 状態遷移時にParentUdpSender経由でSLEEP_LOCK／SLEEP_UNLOCKを自動送信し、
+/// 状態遷移時に親機Host経由でSLEEP_LOCK／SLEEP_UNLOCKを自動送信し、
 /// 起きている間は誤ロック状態を回復するため定期的にSLEEP_UNLOCKを送信する。
 /// </summary>
 public class SleepingController : MonoBehaviour
 {
     [Header("ハードウェアセンサー")]
     [SerializeField] private PillowSensor pillowSensor;
-
-    [Header("UDP")]
-    [Tooltip("未設定の場合はStart時に自動検索。睡眠状態の変化時にSLEEP_LOCK／SLEEP_UNLOCKを送信します。")]
-    [SerializeField] private ParentUdpSender udpSender;
 
     [Header("安全用ハートビート")]
     [Tooltip("親機が起きている間にSLEEP_UNLOCKを再送する間隔（秒）。")]
@@ -50,6 +46,9 @@ public class SleepingController : MonoBehaviour
     private bool _diagLastIsSleeping;
     private bool _diagLastWasSleeping;
 
+    // 実行時解決する親機Host（Inspector割当なし・非シリアライズ）
+    private ParentUdpRuntimeHost _host;
+
     /// <summary>
     /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（MotherSuspicionSystemとCaughtReactionControllerが使用）
     /// </summary>
@@ -57,16 +56,15 @@ public class SleepingController : MonoBehaviour
 
     private void Start()
     {
-        if (udpSender == null)
-            udpSender = Object.FindFirstObjectByType<ParentUdpSender>();
+        GetHost();
         _isSleeping = false;
         _wasSleeping = false;
 
-        // 起動時にudpSenderの状態を記録する。nullのままならGetUdpSender()が実行時に再試行する。
-        if (udpSender != null)
-            Debug.Log($"[SC-DIAG] udpSenderはインスペクターで設定済み: '{udpSender.gameObject.name}'");
+        // 起動時に親機Hostの状態を記録する。nullのままならGetHost()が実行時に再取得する。
+        if (_host != null)
+            Debug.Log($"[SC-DIAG] 親機Hostを取得しました: '{_host.gameObject.name}'");
         else
-            Debug.LogWarning("[SC-DIAG] udpSenderがインスペクター未設定 - GetUdpSender()で実行時に自動検索します。");
+            Debug.LogWarning("[SC-DIAG] 親機Host（未稼働／未初期化）- GetHost()で実行時に再取得します。");
 
         // 設定されていれば枕センサーを初期化する
         if (pillowSensor != null)
@@ -89,7 +87,7 @@ public class SleepingController : MonoBehaviour
         // --- 診断：isSleepingとwasSleepingが変化したときだけ記録する ---
         if (_isSleeping != _diagLastIsSleeping)
         {
-            Debug.Log($"[SC-DIAG] isSleeping changed: {_diagLastIsSleeping} -> {_isSleeping}  |  wasSleeping={_wasSleeping}  |  udpSender={(udpSender != null ? udpSender.gameObject.name : "NULL")}");
+            Debug.Log($"[SC-DIAG] isSleeping changed: {_diagLastIsSleeping} -> {_isSleeping}  |  wasSleeping={_wasSleeping}  |  host={(_host != null ? _host.gameObject.name : "NULL")}");
             _diagLastIsSleeping = _isSleeping;
         }
         if (_wasSleeping != _diagLastWasSleeping)
@@ -105,15 +103,15 @@ public class SleepingController : MonoBehaviour
             Debug.Log("[SleepingController] State changed: AWAKE -> SLEEPING. Sending SLEEP_LOCK.");
             if (sleepStartAudioSource != null)
                 sleepStartAudioSource.Play();
-            ParentUdpSender sender = GetUdpSender();
-            if (sender != null)
+            ParentUdpRuntimeHost host = GetHost();
+            if (host != null)
             {
-                Debug.Log($"[SC-DIAG] >>> Calling SendStateSLEEP_LOCK() on '{sender.gameObject.name}'");
-                sender.SendStateSLEEP_LOCK();
+                Debug.Log($"[SC-DIAG] >>> Calling SendStateSLEEP_LOCK() on '{host.gameObject.name}'");
+                host.SendStateSLEEP_LOCK();
             }
             else
             {
-                Debug.LogWarning("[SC-DIAG] *** ParentUdpSender not found - SLEEP_LOCK NOT sent! Is ParentUdpSender in the scene and enabled? ***");
+                Debug.LogWarning("[SC-DIAG] *** 親機Host（未稼働／未初期化）- SLEEP_LOCK NOT sent! ***");
             }
             _awakeHeartbeatTimer = 0f;
             _sleepHeartbeatTimer = 0f;
@@ -122,15 +120,15 @@ public class SleepingController : MonoBehaviour
         {
             // 睡眠 -> 起床の遷移
             Debug.Log("[SleepingController] State changed: SLEEPING -> AWAKE. Sending SLEEP_UNLOCK.");
-            ParentUdpSender sender = GetUdpSender();
-            if (sender != null)
+            ParentUdpRuntimeHost host = GetHost();
+            if (host != null)
             {
-                Debug.Log($"[SC-DIAG] >>> Calling SendStateSLEEP_UNLOCK() on '{sender.gameObject.name}'");
-                sender.SendStateSLEEP_UNLOCK();
+                Debug.Log($"[SC-DIAG] >>> Calling SendStateSLEEP_UNLOCK() on '{host.gameObject.name}'");
+                host.SendStateSLEEP_UNLOCK();
             }
             else
             {
-                Debug.LogWarning("[SC-DIAG] *** ParentUdpSender not found - SLEEP_UNLOCK NOT sent! Is ParentUdpSender in the scene and enabled? ***");
+                Debug.LogWarning("[SC-DIAG] *** 親機Host（未稼働／未初期化）- SLEEP_UNLOCK NOT sent! ***");
             }
             _awakeHeartbeatTimer = 0f;
             _sleepHeartbeatTimer = 0f;
@@ -139,8 +137,8 @@ public class SleepingController : MonoBehaviour
         // --- 安全用ハートビート：起きている間、SLEEP_UNLOCKを定期的に再送する ---
         if (!_isSleeping)
         {
-            ParentUdpSender sender = GetUdpSender();
-            bool isConnected = sender != null && sender.currentState == ParentUdpSender.ConnectionState.Connected;
+            ParentUdpRuntimeHost host = GetHost();
+            bool isConnected = host != null && host.IsConnected;
 
             if (isConnected)
             {
@@ -150,7 +148,7 @@ public class SleepingController : MonoBehaviour
                     _awakeHeartbeatTimer = 0f;
                     if (showDebugLogs)
                         Debug.Log("[SleepingController] Awake heartbeat: sending SLEEP_UNLOCK.");
-                    sender.SendStateSLEEP_UNLOCK();
+                    host.SendStateSLEEP_UNLOCK();
                 }
             }
             else
@@ -165,8 +163,8 @@ public class SleepingController : MonoBehaviour
             // LOCK は状態遷移時に1回しか送っていないため、UDP で取りこぼすと子機が
             // 「親が寝ているのに操作できる」状態のままになる。子機側は既にロック済みの
             // LOCK を無視するので、再送しても副作用はない。
-            ParentUdpSender sender = GetUdpSender();
-            bool isConnected = sender != null && sender.currentState == ParentUdpSender.ConnectionState.Connected;
+            ParentUdpRuntimeHost host = GetHost();
+            bool isConnected = host != null && host.IsConnected;
 
             if (isConnected)
             {
@@ -176,7 +174,7 @@ public class SleepingController : MonoBehaviour
                     _sleepHeartbeatTimer = 0f;
                     if (showDebugLogs)
                         Debug.Log("[SleepingController] Sleep heartbeat: sending SLEEP_LOCK.");
-                    sender.SendStateSLEEP_LOCK();
+                    host.SendStateSLEEP_LOCK();
                 }
             }
         }
@@ -236,37 +234,37 @@ public class SleepingController : MonoBehaviour
     }
 
     /// <summary>
-    /// 送信に使用するParentUdpSenderを、3段階のフォールバックで取得する：
-    ///   1. インスペクター設定済みのudpSenderフィールド（最速、推奨）
-    ///   2. ParentUdpSender.Instance（ParentUdpSender自身が設定する静的シングルトン）
-    ///   3. FindFirstObjectByType（シーン検索、最も遅いので最後の手段のみ）
-    /// フォールバックで見つけた結果は、次回のためudpSenderにキャッシュする。
+    /// 送信に使用する親機Hostを、次の順で取得する（結果はキャッシュする）：
+    ///   1. すでに取得済みの Host
+    ///   2. ParentUdpRuntimeHost.Running（明示起動に成功した稼働個体を最優先）
+    ///   3. FindFirstObjectByType（初期化済みHostのみ採用。未初期化Hostは使わない）
     /// </summary>
-    private ParentUdpSender GetUdpSender()
+    private ParentUdpRuntimeHost GetHost()
     {
-        // レベル1：すでにキャッシュ済み
-        if (udpSender != null)
-            return udpSender;
+        // レベル1：すでに取得済み
+        if (_host != null)
+            return _host;
 
-        // レベル2：静的シングルトン
-        if (ParentUdpSender.Instance != null)
+        // レベル2：稼働個体（Running）
+        ParentUdpRuntimeHost running = ParentUdpRuntimeHost.Running;
+        if (running != null)
         {
-            udpSender = ParentUdpSender.Instance;
-            Debug.Log($"[SC-DIAG] GetUdpSender: found via ParentUdpSender.Instance ('{udpSender.gameObject.name}') - caching.");
-            return udpSender;
+            _host = running;
+            Debug.Log($"[SC-DIAG] GetHost: found via ParentUdpRuntimeHost.Running ('{_host.gameObject.name}') - caching.");
+            return _host;
         }
 
-        // レベル3：シーン検索
-        ParentUdpSender found = Object.FindFirstObjectByType<ParentUdpSender>();
-        if (found != null)
+        // レベル3：シーン検索（初期化済みのみ）
+        ParentUdpRuntimeHost found = Object.FindFirstObjectByType<ParentUdpRuntimeHost>();
+        if (found != null && found.IsConfigured)
         {
-            udpSender = found;
-            Debug.Log($"[SC-DIAG] GetUdpSender: found via FindFirstObjectByType ('{udpSender.gameObject.name}') - caching.");
-            return udpSender;
+            _host = found;
+            Debug.Log($"[SC-DIAG] GetHost: found via FindFirstObjectByType ('{_host.gameObject.name}') - caching.");
+            return _host;
         }
 
         // どの方法でも見つからなかった
-        Debug.LogWarning($"[SC-DIAG] GetUdpSender: ParentUdpSender NOT found in scene! (called from '{gameObject.name}')");
+        Debug.LogWarning($"[SC-DIAG] GetHost: 親機Host（未稼働／未初期化）が見つかりません (called from '{gameObject.name}')");
         return null;
     }
 

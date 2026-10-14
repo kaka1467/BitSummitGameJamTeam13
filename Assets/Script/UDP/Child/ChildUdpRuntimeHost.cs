@@ -1471,5 +1471,5 @@ public sealed class ChildUdpRuntimeHostSettings
     public string GameSceneName = "ChildLoading";
 
     /// <summary>子機のタイトルシーン名（旧側のシリアライズ値を写す）。</summary>
-    public string TitleSceneName = "ChildeTitle";
+    public string TitleSceneName = "ChildTitle";
 }

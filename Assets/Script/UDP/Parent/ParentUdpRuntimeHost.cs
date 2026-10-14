@@ -1481,6 +1481,14 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
     /// <summary>現在プレイのロード完了記録（保持元は ParentPlaySession）。</summary>
     public bool ChildLoadingComplete => _session != null && _session.ChildLoadingComplete;
 
+    /// <summary>
+    /// 指定シーンが「現在の設定でのゲームプレイシーン」か（判定は既存 ParentSceneBoundaryPolicy を再利用）。
+    ///  ・読み取り専用の問い合わせ。設定の書き込み口・新しい設定保持元は作らない。
+    ///  ・設定（GameplaySceneName）の現在値を使う（開始時コピーへ固定しない）。
+    /// </summary>
+    public bool IsGameplayScene(string sceneName)
+        => _settings != null && ParentSceneBoundaryPolicy.IsGameplayScene(sceneName, _settings.GameplaySceneName);
+
     /// <summary>確定済みの接続相手（保持元は ParentRankSyncCoordinator）。</summary>
     public string ConnectedPeerSourceId => _rankSync != null ? _rankSync.ConfirmedPeerSourceId : "";
 
@@ -1602,7 +1610,7 @@ public sealed class ParentUdpRuntimeHostSettings
     public string SoloGameSceneName = "ParentGameScene";
     public string GameplaySceneName = "ParentGameScene";
     public string MotherTitleSceneName = "ParentTitle";
-    public string TitleSceneName = "ChildeTitle";
+    public string TitleSceneName = "ChildTitle";
 
     // 結果シーン（旧側 gameOverSceneName／timeUpSceneName のシリアライズ値を写す。既定値で代替しない）
     public string GameOverSceneName = "ParentGameOver";

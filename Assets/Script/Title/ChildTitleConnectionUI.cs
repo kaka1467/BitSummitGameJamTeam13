@@ -14,7 +14,7 @@ using UnityEngine.UI;
 ///                        START_GAME・プレイID・シーン遷移・ランキング同期（挙動は従来のまま）
 ///
 ///  ・このコンポーネントはタイトルシーンにのみ置く（DontDestroyOnLoad にしない）。
-///  ・接続先は ChildUdpReceiver.instance（DDOLの生存個体）を基準にする。
+///  ・接続先は稼働中の ChildUdpRuntimeHost（DDOLの生存個体）を基準にする。
 ///    シーンの重複UDP個体は Awake で自壊するため掴まない（Inspector参照も持たない）。
 ///  ・Inspector参照はすべて本コンポーネントが保持し、通常動作で名前検索は行わない。
 ///  ・Connected→START の判断や START_GAME 送信は UDP 側の既存API（OnConnectButtonClicked）が持つ。
@@ -27,11 +27,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
     [Tooltip("接続ボタンのラベル（Connect TMP）。")] [SerializeField]
     private TextMeshProUGUI connectButtonLabel;
 
-    [Tooltip("ONなら、シーン上に置いた接続ボタン（の親）の位置を Disconnected/Connecting 時の位置として使う。" +
-             "下の Default Position は無視される。シーンで並べたレイアウトが再生時に動いてしまうのを防ぐ。")] [SerializeField]
-    private bool useSceneLayoutAsDefaultPosition = true;
-
-    [Tooltip("Disconnected/Connecting状態のときの接続ボタン位置。useSceneLayoutAsDefaultPosition が OFF のときだけ使う。")] [SerializeField]
+    [Tooltip("Disconnected/Connecting状態のときの接続ボタン位置。")] [SerializeField]
     private Vector2 connectButtonDefaultPosition = Vector2.zero;
 
     [Tooltip("Connected（START!）状態のときの接続ボタン位置。")] [SerializeField]
@@ -42,12 +38,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     [Tooltip("Cancelボタン（cancelUiObject が未設定のときの表示切替に使う）。")] [SerializeField]
     private Button cancelButton;
-
-    [Header("子機だけで開始（親機なしの単独プレイ）")]
-    [Tooltip("親機に接続せず、子機だけでゲームを始めるボタン。押すと START_GAME は送らずにそのままゲームへ進む。" +
-             "Connected（START!）のあいだは自動で隠す。クリック処理はこのコンポーネントが自動で登録するので、OnClick の設定は不要。")]
-    [SerializeField]
-    private Button soloStartButton;
 
     [Header("ラベル文言")] [Tooltip("未接続時の接続ボタン文言。")] [SerializeField]
     private string connectLabel = "Connect";
@@ -79,20 +69,17 @@ public class ChildTitleConnectionUI : MonoBehaviour
     private GameObject[] animatedSpriteObjects;
 
     // ── 接続先（実行時に解決する。Inspectorでは指定しない）────────────────────
-    private ChildUdpReceiver _receiver;
+    private ChildUdpRuntimeHost _host;
 
     // 本コンポーネントが動的に追加したリスナー（OnDisable/OnDestroy で自分のものだけ外す）
     private readonly List<(Button button, UnityAction action)> _dynamicListeners =
         new List<(Button button, UnityAction action)>();
 
     // 最後にUIへ反映した接続状態（同値の再適用を避ける）
-    private ChildUdpReceiver.ConnectionState? _lastAppliedState;
+    private ChildConnectionLink.LinkState? _lastAppliedState;
 
     private void Awake()
     {
-        // シーンで置いた接続ボタンの位置を、未接続時の位置として覚える（表示更新より先に行う）。
-        CaptureSceneLayoutPosition();
-
         // Inspector参照だけを使い、初期状態（パネルを閉じる）へ整える。名前検索はしない。
         ApplyInitialPanelState();
     }
@@ -100,7 +87,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
     private void OnEnable()
     {
         // 有効化し直したときも再接続・再購読・再登録できるようにする。
-        TryBindReceiver();
+        TryBindHost();
         RegisterTitleListeners();
         ApplyCurrentStateIfNeeded();
     }
@@ -109,7 +96,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         // Awake/OnEnable の時点では ChildUdpReceiver.instance が未設定のことがある
         // （同一シーン内の Awake 実行順は不定）。Start でも必ず試す。
-        TryBindReceiver();
+        TryBindHost();
         RegisterTitleListeners();
         ApplyCurrentStateIfNeeded();
     }
@@ -118,75 +105,70 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         // 接続済みなら何もしない（毎フレームの検索は行わない）。
         // 未接続の間だけ、static フィールドを見て再接続を試す。
-        if (_receiver != null) return;
+        if (_host != null) return;
 
-        TryBindReceiver();
+        TryBindHost();
         ApplyCurrentStateIfNeeded();
     }
 
     private void OnDisable()
     {
-        UnbindReceiver();
+        UnbindHost();
         RemoveDynamicListeners();
     }
 
     private void OnDestroy()
     {
-        UnbindReceiver();
+        UnbindHost();
         RemoveDynamicListeners();
-    }
-
-    /// <summary>
-    /// 接続ボタン（の親）の現在位置＝シーンで置いた位置を、Disconnected/Connecting 時の位置として採用する。
-    /// （Inspector に残った古い座標で、再生時にボタンが動いてしまうのを防ぐ）
-    /// </summary>
-    private void CaptureSceneLayoutPosition()
-    {
-        if (!useSceneLayoutAsDefaultPosition || connectButton == null) return;
-
-        Transform moveTarget = connectButton.transform.parent != null
-            ? connectButton.transform.parent
-            : connectButton.transform;
-
-        if (moveTarget is RectTransform rect)
-            connectButtonDefaultPosition = rect.anchoredPosition;
     }
 
     // ── UDPへの接続（生存個体＝DDOLを基準にする）──────────────────────────────
 
     /// <summary>
-    /// 生存UDP（ChildUdpReceiver.instance）へ接続し、状態通知を購読する。
-    /// まだ存在しない場合は何もしない（Start/Update/操作時に再試行する）。
+    /// 稼働中の子機Hostへ接続し、状態通知を購読する。
+    /// まだ取得できない場合は何もしない（Start/Update/操作時に再試行する）。
     /// </summary>
-    private void TryBindReceiver()
+    private void TryBindHost()
     {
-        if (_receiver != null) return;
+        if (_host != null) return;
 
-        ChildUdpReceiver alive = ChildUdpReceiver.instance;
-        if (alive == null) return;
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host == null) return;
 
-        _receiver = alive;
-        _receiver.ConnectionStateChanged += HandleConnectionStateChanged;
-        Debug.Log($"[ChildTitleConnectionUI] 生存UDPへ接続 '{alive.gameObject.name}' (id={alive.GetInstanceID()})", this);
+        _host = host;
+        _host.ConnectionStateChanged += HandleConnectionStateChanged;
+        Debug.Log($"[ChildTitleConnectionUI] 子機Hostへ接続 '{host.gameObject.name}' (id={host.GetInstanceID()})", this);
     }
 
-    private void UnbindReceiver()
+    /// <summary>稼働中のHostを優先し、無ければ初期化済みHostを探す（未初期化Hostは購読先にしない）。</summary>
+    private static ChildUdpRuntimeHost ResolveHost()
     {
-        if (_receiver != null)
-            _receiver.ConnectionStateChanged -= HandleConnectionStateChanged;
+        ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
+        if (host != null) return host;
 
-        _receiver = null;
+        ChildUdpRuntimeHost found = FindFirstObjectByType<ChildUdpRuntimeHost>();
+        return (found != null && found.IsConfigured) ? found : null;
+    }
+
+    /// <summary>購読した同じ個体から解除する。</summary>
+    private void UnbindHost()
+    {
+        if (_host != null)
+            _host.ConnectionStateChanged -= HandleConnectionStateChanged;
+
+        _host = null;
         _lastAppliedState = null;
     }
 
     /// <summary>操作直前に接続先を保証する（未接続なら解決を試みる）。</summary>
-    private bool EnsureReceiver()
+    private bool EnsureHost()
     {
-        if (_receiver == null) TryBindReceiver();
+        if (_host == null) TryBindHost();
 
-        if (_receiver == null)
+        if (_host == null)
         {
-            Debug.LogWarning("[ChildTitleConnectionUI] ChildUdpReceiver.instance が未生成のため操作を実行できません。", this);
+            Debug.LogWarning("[ChildTitleConnectionUI] 子機Hostが未稼働のため操作を実行できません。", this);
             return false;
         }
 
@@ -194,7 +176,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
     }
 
     /// <summary>UDPからの状態通知（メインスレッドで発火される）。</summary>
-    private void HandleConnectionStateChanged(ChildUdpReceiver.ConnectionState state)
+    private void HandleConnectionStateChanged(ChildConnectionLink.LinkState state)
     {
         ApplyConnectionState(state);
     }
@@ -205,14 +187,14 @@ public class ChildTitleConnectionUI : MonoBehaviour
     /// </summary>
     private void ApplyCurrentStateIfNeeded()
     {
-        if (_receiver == null) return;
-        ApplyConnectionState(_receiver.CurrentConnectionState);
+        if (_host == null) return;
+        ApplyConnectionState(_host.ConnectionState);
     }
 
 
     // ── 表示更新（従来の ChildUdpReceiver.UpdateUi と同じ見た目）───────────────
 
-    private void ApplyConnectionState(ChildUdpReceiver.ConnectionState state)
+    private void ApplyConnectionState(ChildConnectionLink.LinkState state)
     {
         if (_lastAppliedState.HasValue && _lastAppliedState.Value == state) return; // 同値では再適用しない
         _lastAppliedState = state;
@@ -221,13 +203,13 @@ public class ChildTitleConnectionUI : MonoBehaviour
         {
             switch (state)
             {
-                case ChildUdpReceiver.ConnectionState.Disconnected:
+                case ChildConnectionLink.LinkState.Disconnected:
                     connectButtonLabel.text = connectLabel;
                     break;
-                case ChildUdpReceiver.ConnectionState.Connecting:
+                case ChildConnectionLink.LinkState.Connecting:
                     connectButtonLabel.text = connectingLabel;
                     break;
-                case ChildUdpReceiver.ConnectionState.Connected:
+                case ChildConnectionLink.LinkState.Connected:
                     connectButtonLabel.text = "START!";
                     break;
             }
@@ -236,7 +218,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
         if (connectButton != null)
         {
             connectButton.gameObject.SetActive(true);
-            connectButton.interactable = state != ChildUdpReceiver.ConnectionState.Connecting;
+            connectButton.interactable = state != ChildConnectionLink.LinkState.Connecting;
 
             Transform moveTarget = connectButton.transform.parent != null
                 ? connectButton.transform.parent
@@ -244,24 +226,19 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
             if (moveTarget is RectTransform rect)
             {
-                rect.anchoredPosition = state == ChildUdpReceiver.ConnectionState.Connected
+                rect.anchoredPosition = state == ChildConnectionLink.LinkState.Connected
                     ? connectButtonStartPosition
                     : connectButtonDefaultPosition;
             }
         }
 
         if (cancelUiObject != null)
-            cancelUiObject.SetActive(state == ChildUdpReceiver.ConnectionState.Connecting);
+            cancelUiObject.SetActive(state == ChildConnectionLink.LinkState.Connecting);
         else if (cancelButton != null)
-            cancelButton.gameObject.SetActive(state == ChildUdpReceiver.ConnectionState.Connecting);
+            cancelButton.gameObject.SetActive(state == ChildConnectionLink.LinkState.Connecting);
 
-        SetActiveForButton(creditsButton, state != ChildUdpReceiver.ConnectionState.Connected);
-        SetActiveForButton(settingsButton, state != ChildUdpReceiver.ConnectionState.Connected);
-
-        // 単独開始ボタンは未接続／接続中だけ表示する。接続済み（START!）では通常の開始に任せ、
-        // 親機と子機の開始がずれないよう隠す。ボタンの親は触らず、ボタン自身だけを切り替える。
-        if (soloStartButton != null)
-            ResolveToggleTarget(soloStartButton).SetActive(state != ChildUdpReceiver.ConnectionState.Connected);
+        SetActiveForButton(creditsButton, state != ChildConnectionLink.LinkState.Connected);
+        SetActiveForButton(settingsButton, state != ChildConnectionLink.LinkState.Connected);
     }
 
     /// <summary>タイトル表示時の初期状態：各パネルを閉じ、装飾を表示する。</summary>
@@ -310,19 +287,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         target.SetActive(active);
     }
 
-    /// <summary>
-    /// ボタンの表示切替の対象を返す。ボタンが装飾コンテナ（Connect/Credit など）の子ならコンテナごと、
-    /// 親が Canvas だったり他のボタンだったりする場合は、巻き込まないようボタン自身だけを返す。
-    /// </summary>
-    private static GameObject ResolveToggleTarget(Button button)
-    {
-        Transform parent = button.transform.parent;
-        if (parent != null && parent.GetComponent<Canvas>() == null && parent.GetComponent<Selectable>() == null)
-            return parent.gameObject;
-
-        return button.gameObject;
-    }
-
     /// <summary>クリックを遮らないようにする（旧 ChildUdpReceiver.RefreshUiReferences と同じ処理）。</summary>
     private static void DisableRaycastTargets(GameObject target)
     {
@@ -341,22 +305,15 @@ public class ChildTitleConnectionUI : MonoBehaviour
     /// </summary>
     public void OnConnectClicked()
     {
-        if (!EnsureReceiver()) return;
-        _receiver.OnConnectButtonClicked();
+        if (!EnsureHost()) return;
+        _host.OnConnectButtonClicked();
     }
 
     /// <summary>Cancelボタン。接続状態を戻す処理は UDP 側が持つ。</summary>
     public void OnCancelClicked()
     {
-        if (!EnsureReceiver()) return;
-        _receiver.OnCancelButtonClicked();
-    }
-
-    /// <summary>子機だけで開始。START_GAME を送らずにゲームへ進む処理は UDP 側が持つ。</summary>
-    public void OnSoloStartClicked()
-    {
-        if (!EnsureReceiver()) return;
-        _receiver.OnSoloStartButtonClicked();
+        if (!EnsureHost()) return;
+        _host.CancelConnect();
     }
 
     /// <summary>クレジットの開閉（タイトルUIのみの処理）。</summary>
@@ -412,7 +369,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         BindButton(connectButton, OnConnectClicked, nameof(OnConnectClicked));
         BindButton(cancelButton, OnCancelClicked, nameof(OnCancelClicked));
-        BindButton(soloStartButton, OnSoloStartClicked, nameof(OnSoloStartClicked));
         BindButton(creditsButton, OnCreditsClicked, nameof(OnCreditsClicked));
         BindButton(settingsButton, OnSettingsClicked, nameof(OnSettingsClicked));
         BindButton(creditsCloseButton, OnCloseCreditsClicked, nameof(OnCloseCreditsClicked));

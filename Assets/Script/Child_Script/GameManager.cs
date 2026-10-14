@@ -66,7 +66,8 @@ public class GameManager : MonoBehaviour
 
     public TextMeshProUGUI timeText;
     public TextMeshProUGUI feverText;
-    public ChildUdpReceiver udpReceiver;
+    // 既存UDP GameObject（ルート）への参照。実行時にそのルート上のHostを解決する。
+    public GameObject udpReceiver;
 
     [Header("Time Change Display")]
     [SerializeField] private TextMeshProUGUI timeChangeText;
@@ -91,13 +92,15 @@ public class GameManager : MonoBehaviour
 
     // ── CAUGHT（親機の捕獲）の購読 ────────────────────────────────────────────
     //   受信後の結果処理（TriggerResult(GameOver)）は本クラスが担当する。
-    //   UDP側（ChildUdpReceiver）は「受理した」ことを通知するだけ（保留・受理済みはUDP側が保持）。
-    //   ・購読は生存個体（ChildUdpReceiver.instance）を基準にする。
+    //   Host側（ChildNotificationHub）は「受理した」ことを通知するだけ（保留・受理済みは通信側が保持）。
+    //   ・購読は指定UDPルート→Running→初期化済みHostの順で解決したHostが保持するHubを基準にする。
     //   ・結果処理に必要な初期化（Awake）が終わった「Start完了後」に購読を開始し、
     //     初期化途中に TriggerResult を実行して Start に上書きされる構造を避ける。
     //   ・Instance取得遅延には Update で再試行する。
     //   ・GameManager.instance に対応する正当な担当だけが購読する（二重購読しない）。
-    private ChildUdpReceiver _caughtReceiver;
+    private ChildUdpRuntimeHost _host;                     // 実行時解決したHost（Inspector割当なし）
+    private ChildUdpRuntimeHost _caughtHost;               // CAUGHT を購読したHost
+    private ChildNotificationHub _caughtHub;               // 実際に購読したHub（解除も同じ個体から行う）
     private bool _caughtSubscribed;
 
     // ── 捕獲演出の待機（親機の演出完了まで結果画面へ進ませない）────────────────
@@ -111,7 +114,8 @@ public class GameManager : MonoBehaviour
     private bool _capturePending;              // 捕獲済みで演出完了待ち（タイマー停止・捕獲優先の判定）
     private bool _waitingSequenceDone;         // CaptureSequenceReleased を購読済みか
     private bool _sequenceDoneReceived;        // 演出完了（または上限）で遷移済みか
-    private ChildUdpReceiver _releaseSubscribedReceiver;   // 実際に購読した相手（解除はここから行う）
+    private ChildUdpRuntimeHost _releaseSubscribedHost;    // 演出完了通知を購読したHost
+    private ChildNotificationHub _releaseSubscribedHub;    // 実際に購読したHub（解除も同じ個体から行う）
     private Coroutine _sequenceWaitRoutine;
     private bool _started;   // Start完了フラグ（初回の購読をStart後へ遅らせるため）
 
@@ -126,7 +130,7 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
-        EnsureUdpReceiver();
+        ResolveHost();
 
         // 初期化完了を記録してから CAUGHT の購読を開始する。
         _started = true;
@@ -143,10 +147,27 @@ public class GameManager : MonoBehaviour
         UnsubscribeCaught();
     }
 
-    private void EnsureUdpReceiver()
+    /// <summary>
+    /// 子機Hostを解決する：指定UDPルート（保存参照）→ 稼働個体（Running）→ 初期化済みHost。
+    ///  ・ルートが未割当・破棄済みの場合は既存の生存個体取得へ進む。
+    ///  ・未初期化Hostは使わない（既存の再試行を維持する）。
+    /// </summary>
+    private ChildUdpRuntimeHost ResolveHost()
     {
-        if (udpReceiver == null)
-            udpReceiver = UnityEngine.Object.FindFirstObjectByType<ChildUdpReceiver>();
+        if (_host != null) return _host;
+
+        if (udpReceiver != null)
+        {
+            ChildUdpRuntimeHost onRoot = udpReceiver.GetComponent<ChildUdpRuntimeHost>();
+            if (onRoot != null && onRoot.IsConfigured) { _host = onRoot; return _host; }
+        }
+
+        ChildUdpRuntimeHost running = ChildUdpRuntimeHost.Running;
+        if (running != null) { _host = running; return _host; }
+
+        ChildUdpRuntimeHost found = UnityEngine.Object.FindFirstObjectByType<ChildUdpRuntimeHost>();
+        if (found != null && found.IsConfigured) _host = found;
+        return _host;
     }
 
     /// <summary>
@@ -159,13 +180,14 @@ public class GameManager : MonoBehaviour
         if (!isActiveAndEnabled) return false;
         if (instance != this) return false;   // GameManager.instance に対応する正当な担当だけ
 
-        ChildUdpReceiver receiver = ChildUdpReceiver.instance;
-        if (receiver == null) return false;   // 取得できたら Update で再試行する
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host == null || host.Notifications == null) return false;   // 取得できたら Update で再試行する
 
-        _caughtReceiver = receiver;
-        _caughtReceiver.CaughtReceived += HandleCaughtReceived;
+        _caughtHost = host;
+        _caughtHub = host.Notifications;
+        _caughtHub.CaughtReceived += HandleCaughtReceived;
         _caughtSubscribed = true;
-        Debug.Log($"[GameManager] CAUGHT の購読を開始しました（receiver='{receiver.gameObject.name}'）。");
+        Debug.Log($"[GameManager] CAUGHT の購読を開始しました（Host='{host.gameObject.name}'）。");
         return true;
     }
 
@@ -174,23 +196,27 @@ public class GameManager : MonoBehaviour
     {
         if (_caughtSubscribed)
         {
-            if (_caughtReceiver != null)
-                _caughtReceiver.CaughtReceived -= HandleCaughtReceived;
+            if (_caughtHub != null)
+                _caughtHub.CaughtReceived -= HandleCaughtReceived;
 
             _caughtSubscribed = false;
         }
 
+        _caughtHub = null;
+        _caughtHost = null;
+
         // 演出完了通知の購読も解除する（破棄後に呼ばれないようにする）。
-        //  ・ChildUdpReceiver.instance を再取得せず、実際に購読した相手から解除する。
+        //  ・生存個体を再取得せず、実際に購読した同じ個体から解除する。
         if (_waitingSequenceDone)
         {
-            if (_releaseSubscribedReceiver != null)
-                _releaseSubscribedReceiver.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
+            if (_releaseSubscribedHub != null)
+                _releaseSubscribedHub.CaptureSequenceReleased -= HandleCaptureSequenceReleased;
 
             _waitingSequenceDone = false;
         }
 
-        _releaseSubscribedReceiver = null;
+        _releaseSubscribedHub = null;
+        _releaseSubscribedHost = null;
 
         if (_sequenceWaitRoutine != null)
         {
@@ -198,7 +224,7 @@ public class GameManager : MonoBehaviour
             _sequenceWaitRoutine = null;
         }
 
-        _caughtReceiver = null;
+        _caughtHost = null;
     }
 
     /// <summary>
@@ -234,16 +260,16 @@ public class GameManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 親機の演出完了通知（ChildUdpReceiver.CaptureSequenceReleased）を待つ。
+    /// 親機の演出完了通知（Hostが保持するHubの CaptureSequenceReleased）を待つ。
     ///  ・既に受信済み／購読できる相手が居ない場合は false（呼び出し側が即座に遷移する）。
     ///  ・二重購読しない。
     /// </summary>
     private bool WaitForSequenceDone()
     {
-        ChildUdpReceiver receiver = ChildUdpReceiver.instance != null ? ChildUdpReceiver.instance : udpReceiver;
-        if (receiver == null)
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host == null || host.Notifications == null)
         {
-            Debug.LogWarning("[GameManager] ChildUdpReceiver が見つからないため、演出完了を待てません（即座に結果画面へ進みます）", this);
+            Debug.LogWarning("[GameManager] 子機Hostが見つからないため、演出完了を待てません（即座に結果画面へ進みます）", this);
             return false;
         }
 
@@ -257,15 +283,16 @@ public class GameManager : MonoBehaviour
         if (!_waitingSequenceDone)
         {
             _waitingSequenceDone = true;
-            _releaseSubscribedReceiver = receiver;   // 解除は「実際に購読した相手」から行う
-            receiver.CaptureSequenceReleased += HandleCaptureSequenceReleased;
-            Debug.Log($"[GameManager] 親機の演出完了通知を購読しました（receiver='{receiver.gameObject.name}'）");
+            _releaseSubscribedHost = host;           // 解除は「実際に購読した相手」から行う
+            _releaseSubscribedHub = host.Notifications;
+            _releaseSubscribedHub.CaptureSequenceReleased += HandleCaptureSequenceReleased;
+            Debug.Log($"[GameManager] 親機の演出完了通知を購読しました（Host='{host.gameObject.name}'）");
         }
 
         // 2) 購読成立時に現在プレイの状態を初期同期する。
         //    SEQUENCE_DONE先着 → CAUGHT の順でも、Receiverが完了済みを保持しているためここで確定できる。
         //    「待機中ではない」だけでは完了扱いにしない（未捕獲は false）。
-        if (receiver.IsCaptureWaitCompletedForCurrentPlay)
+        if (host.IsCaptureWaitCompletedForCurrentPlay)
         {
             _sequenceDoneReceived = true;
             Debug.Log("[GameManager] 演出完了は購読成立時に既に確定済みでした（初期同期）。待たずに結果画面へ進みます");
@@ -314,8 +341,8 @@ public class GameManager : MonoBehaviour
 
         // Receiver側の待機状態と、入力適用側（ロック・画像）に古い状態を残さない。
         //  ・結果遷移はこのメソッドが行う（Receiverの解除通知では遷移しない＝二重結果処理を防ぐ）。
-        if (_releaseSubscribedReceiver != null)
-            _releaseSubscribedReceiver.ReleaseCaptureWaitByLocalTimeout("GameManagerの待機タイムアウト");
+        if (_releaseSubscribedHost != null)
+            _releaseSubscribedHost.ReleaseCaptureWaitByLocalTimeout("GameManagerの待機タイムアウト");
 
         TriggerResult(ResultType.GameOver);
     }
@@ -349,7 +376,7 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
-        // CAUGHT の購読がまだ張れていない場合は再試行する（ChildUdpReceiver.Instance の取得遅延）。
+        // CAUGHT の購読がまだ張れていない場合は再試行する（子機Hostの取得遅延）。
         if (_started && !_caughtSubscribed)
             TrySubscribeCaught();
 
@@ -394,12 +421,12 @@ public class GameManager : MonoBehaviour
         if (isGameOver || isTutorialMode) return;
         if (Time.unscaledTime < _nextGameProgressSendTime) return;
 
-        EnsureUdpReceiver();
-        if (udpReceiver == null) return;
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host == null) return;
 
         float maxTimeSafe = Mathf.Max(1f, maxTime);
         float progressRate = Mathf.Clamp01(1f - (time / maxTimeSafe));
-        udpReceiver.SendGameProgress(progressRate);
+        host.SendGameProgress(progressRate);
 
         _nextGameProgressSendTime = Time.unscaledTime + Mathf.Max(0.1f, gameProgressSendInterval);
     }
@@ -568,17 +595,17 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator HandleGameOver(string resultTypeName, int finalScore, string targetScene)
     {
-        EnsureUdpReceiver();
-        if (udpReceiver != null)
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host != null)
         {
             // 結果確定後、子機を唯一の基準としてランキング／スコアのスナップショットを親機へ同期する。
             // （親機の確認返信は待たず、子機側の保存はここで完了している）
-            udpReceiver.NotifyRankingChanged(resultTypeName);
+            host.NotifyRankingChanged(resultTypeName);
             Debug.Log($"[GameManager] Notified ranking change (snapshot sync): {resultTypeName}:{finalScore}");
         }
         else
         {
-            Debug.LogWarning("[GameManager] ChildUdpReceiver not found — result not sent to parent.");
+            Debug.LogWarning("[GameManager] 子機Hostが見つからないため、結果を親機へ送信できません。");
         }
 
         yield return new WaitForSecondsRealtime(0.1f);
