@@ -103,6 +103,11 @@ public class MotherSuspicionSystem : MonoBehaviour
     [Tooltip("大きな音のアイテム発生時にMotherGaugeへ加算する段階数。最大値に達した場合は突入せず即座にゲームオーバーになる。")] [SerializeField]
     private int loudItemGaugeAmount = 3;
 
+    [Tooltip("【片付け演出中】RushIn要求が発生したときの移動速度倍率。基準は「適用前の片付け通常速度」（固定値を直書きしない）。" +
+             "片付け専用ルートは変更せず、速度だけをこの倍率にする。")]
+    [SerializeField, Min(0f)]
+    private float choreRushInSpeedMultiplier = 1.5f;
+
     // ── 部屋内の継続疑惑 ──────────────────────────────────────────────────────
     // ── 庭覗き中の継続疑惑 ────────────────────────────────────────────────────
     [Header("庭覗き中の継続疑惑")]
@@ -259,6 +264,15 @@ public class MotherSuspicionSystem : MonoBehaviour
     private bool _animatorWarningLogged;
     public float CurrentApproachSpeed => _approachSpeed;
 
+    // ── RushIn／片付けRushIn の速度上書き（基準を保存して正確に戻す） ────────────
+    //  ・「戻すためだけに乱数を再抽選しない」ため、適用前の速度を保存して復元する。
+    //  ・重複要求で倍率を累積させない（適用中は再適用しない）。
+    //  ・速度の書き込み元はこのクラス（_approachSpeed）に集約したままにする。
+    private bool _rushInSpeedActive;
+    private float _rushInSpeedBase;
+    private bool _choreRushInSpeedActive;
+    private float _choreRushInSpeedBase;
+
     // ── LOUD_ITEM（子機の大きな音）の購読 ────────────────────────────────────
     //  ・受信後の反応（OnLoudItemTriggered）は本クラスが担当する。
     //    UDP側（ParentUdpSender）は「受信した」ことだけを通知する。
@@ -338,6 +352,8 @@ public class MotherSuspicionSystem : MonoBehaviour
             approachController.MigrateLegacyHallwayPoints();
 
         _approachSpeed = initialApproachSpeed;
+        // 再プレイで RushIn の速度上書き状態を持ち越さない。
+        ClearRushInSpeedState();
         if (approachController != null)
         {
             approachController.MovementStateChanged += HandleWalkingStateChanged;
@@ -560,9 +576,83 @@ public class MotherSuspicionSystem : MonoBehaviour
         _approachSpeed = Mathf.Max(0f, speed);
     }
 
+    /// <summary>
+    /// 【RushIn】突入用の移動速度を適用する。
+    ///  ・適用前の速度（＝このイベントの通常速度）を保存し、帰路開始時に
+    ///    RestoreRushInSpeed() で正確に戻す（戻すための乱数再抽選はしない）。
+    ///  ・重複要求では保存済みの基準を上書きしない（累積しない）。
+    ///  ・速度の書き込み元はこのクラスのまま（呼び出し側は速度値を書かない）。
+    /// </summary>
     public void SetLoudItemRushInSpeed(float speed)
     {
+        if (!_rushInSpeedActive)
+        {
+            _rushInSpeedActive = true;
+            _rushInSpeedBase = _approachSpeed;
+        }
+
         SetApproachSpeed(speed);
+        Debug.Log($"[MotherSuspicionSystem] RushIn速度を適用 | 基準={_rushInSpeedBase:F2} → 実効={_approachSpeed:F2}（重複要求でも基準は保持）");
+    }
+
+    /// <summary>
+    /// 【RushIn解除】突入用の速度上書きを解除し、適用前に保存した通常速度へ戻す。
+    ///  ・帰路移動の「開始前」に呼ぶ（Peekの速い動作は終わっている）。
+    ///  ・冪等（解除済みなら何もしない）。
+    /// </summary>
+    public void RestoreRushInSpeed(string reason)
+    {
+        if (!_rushInSpeedActive) return;
+
+        _rushInSpeedActive = false;
+        SetApproachSpeed(_rushInSpeedBase);
+        Debug.Log($"[MotherSuspicionSystem] RushIn速度を解除（{reason}）→ 復元速度={_approachSpeed:F2}");
+    }
+
+    /// <summary>
+    /// 【片付けRushIn】片付け演出中の RushIn 要求で、片付けの通常移動速度 × 倍率を適用する。
+    ///  ・基準は「適用前の片付け通常速度」を保存して使う（乱数は再抽選しない／固定値を直書きしない）。
+    ///  ・重複要求では累積しない（適用中は何もしない）。
+    ///  ・片付け専用ルートは変更しない（速度だけを変える）。
+    /// </summary>
+    public void ApplyChoreRushInSpeed(float multiplier)
+    {
+        if (_choreRushInSpeedActive)
+        {
+            Debug.Log($"[MotherSuspicionSystem] 片付けRushInの倍率は適用済みのため累積しません（実効速度={_approachSpeed:F2}）");
+            return;
+        }
+
+        _choreRushInSpeedActive = true;
+        _choreRushInSpeedBase = _approachSpeed;
+
+        float rate = Mathf.Max(0f, multiplier);
+        SetApproachSpeed(_choreRushInSpeedBase * rate);
+        Debug.Log($"[MotherSuspicionSystem] 片付けRushIn | 片付け通常速度={_choreRushInSpeedBase:F2} × 倍率={rate:F2} → 実効速度={_approachSpeed:F2}（ルートは片付け専用のまま）");
+    }
+
+    /// <summary>
+    /// 【片付けRushIn解除】倍率を解除し、適用前の片付け通常速度へ戻す。
+    /// 片付けの帰路開始・片付け終了／中断・再プレイで呼ぶ（冪等）。
+    /// </summary>
+    public void ReleaseChoreRushInSpeed(string reason)
+    {
+        if (!_choreRushInSpeedActive) return;
+
+        _choreRushInSpeedActive = false;
+        SetApproachSpeed(_choreRushInSpeedBase);
+        Debug.Log($"[MotherSuspicionSystem] 片付けRushInの倍率を解除（{reason}）→ 復元速度={_approachSpeed:F2}");
+    }
+
+    /// <summary>
+    /// 速度上書きの「状態」だけを解除する（速度値は書き換えない）。
+    /// 次サイクル開始（ResetCycle）・再プレイでは、速度の基準を決めるのは呼び出し側なので
+    /// ここで復元値を持ち込まない（持ち越しだけを防ぐ）。
+    /// </summary>
+    private void ClearRushInSpeedState()
+    {
+        _rushInSpeedActive = false;
+        _choreRushInSpeedActive = false;
     }
 
     public void ApplyApproachSpeed(bool isManual)
@@ -1022,7 +1112,22 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         Debug.Log($"[PD] Loud item → rush-in request — adding {loudItemGaugeAmount} gauge stage(s) (once)");
 
-        warningSystem?.PlayRushIn();
+        // 【音】6キーで開始した片付け演出中は、RushIn専用の効果音を鳴らさない
+        //   （他の音＝足音・ドア音・MAX到達音・心拍・Jumpscareは止めない。AudioSourceのStopや全体ミュートはしない）。
+        //   ※ 自動発生の片付けは今回の変更対象ではないため従来どおり鳴らす。
+        bool choreActive = motherChoreController != null && motherChoreController.IsChoreActive;
+        bool manualChoreActive = motherChoreController != null && motherChoreController.IsManualChoreActive;
+        bool choreReturnTrip = approachController != null && approachController.IsReturnTripActive;
+
+        if (manualChoreActive)
+        {
+            Debug.Log("[PD] 6キーで開始した片付け演出中のため、RushIn専用の効果音は再生しません" +
+                      "（ゲージ加算・捕獲判定・速度倍率は通常どおり）");
+        }
+        else
+        {
+            warningSystem?.PlayRushIn();
+        }
 
         if (motherGauge != null)
         {
@@ -1036,6 +1141,26 @@ public class MotherSuspicionSystem : MonoBehaviour
                 if (OnPlayerCaught()) return;
                 Debug.Log("[PD] 無敵で捕獲を抑止したため、突入（ラッシュイン）演出を続行します");
             }
+        }
+
+        // 【片付け演出中】片付け専用ルートは差し替えない（通常のドア突入ルートへ切り替えない）。
+        //   移動速度だけを「片付けの通常速度 × 倍率」にする（基準は適用前の速度を保存して使う）。
+        if (choreActive)
+        {
+            if (choreReturnTrip)
+            {
+                // 片付けの帰路中は倍率を適用しない（帰路は通常の片付け速度のまま）。
+                Debug.Log("[PD] 片付けの帰路中のRushIn要求 — 速度倍率は適用しません（通常の片付け速度のまま／ルートは片付け専用のまま）");
+            }
+            else
+            {
+                Debug.Log($"[PD] 片付け演出中のRushIn要求 — ルート=片付け専用（差し替えなし）/ 片付け中={choreActive} / " +
+                          $"手動(6キー)={manualChoreActive} / 帰路中={choreReturnTrip} / " +
+                          $"基準速度={_approachSpeed:F2} / 倍率={choreRushInSpeedMultiplier:F2}");
+                ApplyChoreRushInSpeed(choreRushInSpeedMultiplier);
+            }
+
+            return;   // 通常RushIn（loudItemRushInMoveSpeed・DoorPeekルート）は開始しない
         }
 
         // 新しいRushInを1回だけ開始する（isWarningActiveは上記の中断でfalseになっており、
@@ -1188,6 +1313,8 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         float elapsed = 0f;
         float timeout = Mathf.Max(0f, roomCheckSafetyTimeout);
+        // 無敵ONでも「設定された覗き時間」は再生する（覗きを途中で打ち切らないための経過時間）。
+        float peekElapsed = 0f;
 
         while (true)
         {
@@ -1230,9 +1357,16 @@ public class MotherSuspicionSystem : MonoBehaviour
 
             if (IsInvincible && !sleeping)
             {
-                Debug.Log("[PD] 無敵モード中でプレイヤーが起きているため（通常なら捕獲に至る状況）、" +
-                          "捕獲せずに通常の覗き終了処理（退出・ドア閉め・帰路・終了通知）へ進みます");
-                break;
+                // 【無敵モード】捕獲は発生しないため「捕獲待ち」で待ち続けない。
+                //   ただし覗き（Peek_Door）は設定された時間（_activePeekDuration）を再生してから
+                //   終了する。無敵ONでも「Peekの再生・終了・帰路」を止めない。
+                if (peekElapsed >= Mathf.Max(0f, _activePeekDuration))
+                {
+                    Debug.Log($"[PD] 無敵モード中でプレイヤーが起きているため（通常なら捕獲に至る状況）、" +
+                              $"設定された覗き時間 {_activePeekDuration:F1}s の経過後に通常の覗き終了処理" +
+                              "（退出・ドア閉め・帰路・終了通知）へ進みます");
+                    break;
+                }
             }
 
             if (sleeping)
@@ -1251,6 +1385,7 @@ public class MotherSuspicionSystem : MonoBehaviour
                 }
             }
 
+            peekElapsed += Time.deltaTime;
             yield return null;
         }
 
@@ -1881,6 +2016,8 @@ public class MotherSuspicionSystem : MonoBehaviour
             _choreMovementSuppressed = false;
             DisableChoreSuspicion();
             StopChoreLookSuspicion();   // 片付け解除：視線期間の加算もハンドルごと解除する
+            // 片付けRushInの速度倍率も解除する（中断・正常終了・次サイクル・再プレイへ持ち越さない）。
+            ReleaseChoreRushInSpeed("片付け終了/中断");
         }
     }
 
@@ -2152,6 +2289,21 @@ public class MotherSuspicionSystem : MonoBehaviour
     //   ・既に成立したゲームオーバーをLキーで取り消すことはしない。
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>永久ゲームオーバーが確定しているか（診断用・読み取り専用）。</summary>
+    public bool HasPermanentGameOver => _hasPermanentGameOver;
+
+    /// <summary>警告シーケンスが進行中か（診断用・読み取り専用）。</summary>
+    public bool IsWarningSequenceActive => warningSystem != null && warningSystem.isWarningActive;
+
+    /// <summary>片付けのドア開けによる歩行上書き抑止中か（診断用・読み取り専用）。</summary>
+    public bool IsChoreWalkingOverrideSuppressed => _choreWalkingOverrideSuppressed;
+
+    /// <summary>無敵で捕獲が抑止された印が立っているか（診断用・読み取り専用）。</summary>
+    public bool CaptureSuppressedDuringPeek => _captureSuppressedDuringPeek;
+
+    /// <summary>このサイクルで部屋入室の疑惑を開始済みか（診断用・読み取り専用）。</summary>
+    public bool IsRoomEntryStarted => _roomEntryStarted;
+
     /// <summary>無敵状態を設定する。ON/OFFのログと表示を更新する。</summary>
     public void SetInvincible(bool value, string reason = null)
     {
@@ -2166,7 +2318,39 @@ public class MotherSuspicionSystem : MonoBehaviour
         Debug.Log($"[MotherSuspicion] テスト用無敵モード: {(value ? "ON" : "OFF")}{suffix}" +
                   (value ? " — 怪しさ加算と捕獲を抑止します" : " — 通常の加算・捕獲判定へ戻します"));
 
+        // 切り替え時点の実行フェーズを1回出力する（毎フレームは出さない）。
+        LogInvinciblePhase(value ? "無敵ON" : "無敵OFF");
+
         InvincibleChanged?.Invoke(value);
+    }
+
+    /// <summary>
+    /// 無敵の切り替え時点の実行フェーズを1回出力する。
+    /// 母親イベントが進行中の場合は、切り分け用の状態一覧も1回だけ出す。
+    /// </summary>
+    private void LogInvinciblePhase(string trigger)
+    {
+        string route = (warningSystem != null) ? warningSystem.ActiveRoute.ToString() : "none";
+        int gauge = (motherGauge != null) ? motherGauge.currentGauge : -1;
+        int max = (motherGauge != null) ? motherGauge.maxGauge : -1;
+
+        string approach = approachController != null
+            ? $"接近中={approachController.IsApproaching} 庭覗き中={approachController.IsGardenPeeking} " +
+              $"庭ルート={approachController.IsGardenRoute} 帰路={approachController.ReturnHomePhase} " +
+              $"経路失敗={approachController.RouteExecutionFailed} ドア停止={approachController.StoppedAtDoor} " +
+              $"終了通知済み={approachController.IsRouteEndNotified}"
+            : "approachController=none";
+
+        Debug.Log($"[MotherSuspicion] {trigger} 時点のフェーズ | 警告中={IsWarningSequenceActive} ルート={route} | " +
+                  $"ゲージ={gauge}/{max} 捕獲={isCaught} 永久GO={_hasPermanentGameOver} ドア覗き={isMotherLookingNow} " +
+                  $"部屋入室開始={_roomEntryStarted} 捕獲抑止印={_captureSuppressedDuringPeek} | {approach}");
+
+        if (approachController != null &&
+            (approachController.IsApproaching || approachController.IsReturningHome ||
+             approachController.IsGardenPeeking || approachController.StoppedAtDoor))
+        {
+            approachController.LogRouteStateDump($"{trigger} 時点");
+        }
     }
 
     /// <summary>ON/OFFを反転する（Lキーから呼ばれる）。</summary>
@@ -2317,6 +2501,8 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         Debug.Log("[PD] ResetCycle");
         SetApproachSpeed(approachMoveSpeedMin);
+        // 次サイクルへ RushIn の速度上書き状態を持ち越さない（速度の基準は上のSetApproachSpeedが決める）。
+        ClearRushInSpeedState();
 
         if (_dummyResetCoroutine != null)
         {

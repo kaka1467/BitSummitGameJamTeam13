@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// ChildTitleConnectionUI（子機タイトル専用）：
-/// 子機タイトル（ChildeTitle）の接続UIを ChildUdpReceiver から分離したコンポーネント。
+/// 子機タイトル（Child/// 子機タイトル（ChildTitle）の接続UIを ChildUdpReceiver から分離したコンポーネント。eTitle）の接続UIを ChildUdpReceiver から分離したコンポーネント。
 ///
 /// 責務の境界：
 ///   本クラス           — タイトルUIの参照保持・表示更新・パネル開閉・タイトル用リスナー登録

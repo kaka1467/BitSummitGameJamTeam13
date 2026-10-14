@@ -48,6 +48,8 @@ public class ParentWarningScheduler : MonoBehaviour
     private bool _gracePeriodOver;
     // 片付け演出（MotherChoreController）中は true。自動警告の発火を待機させる。
     private bool _blockedByChore;
+    // 「前の母親イベントの終了待ち」を1回だけ記録する（この待機が長い＝前のサイクルが終わっていない）。
+    private bool _waitingForActiveWarningLogged;
 
     public bool IsGracePeriodOver => _gracePeriodOver;
 
@@ -250,7 +252,18 @@ public class ParentWarningScheduler : MonoBehaviour
 
             if (warningSystem != null && warningSystem.isWarningActive)
             {
+                // 前の母親イベントが終わるまで待つ。ここが長い場合、前のサイクルが
+                // 終了通知（onPassedByDoor／EndWarningSequence）を受け取れていない。
+                // 停止の切り分けに必要なので、この警告は showDebugLogs に関係なく1回だけ出す。
+                if (!_waitingForActiveWarningLogged)
+                {
+                    _waitingForActiveWarningLogged = true;
+                    Debug.LogWarning("[ParentWarningScheduler] 前の母親イベントの終了待ちに入りました" +
+                                     "（isWarningActive=true）。この待機が長い場合は前のサイクルが終了通知を受け取れていません。");
+                }
+
                 yield return new WaitWhile(() => warningSystem != null && warningSystem.isWarningActive);
+                _waitingForActiveWarningLogged = false;
             }
 
             // 片付け演出が開始された場合も発火を待つ。

@@ -141,6 +141,14 @@ public class MotherChoreController : MonoBehaviour
     /// <summary>片付けサイクル進行中か（通常の親イベントを抑止する期間）。</summary>
     public bool IsChoreActive { get; private set; }
 
+    /// <summary>
+    /// 6キーで開始した片付け演出が実行中か（読み取り専用）。
+    ///  ・「入力フレーム」ではなく、この片付けサイクルが手動開始だったかを開始〜終了まで保持する
+    ///    （_choreStartIsManual は StartChoreAfterDelay で確定し、サイクル終了で解除する）。
+    ///  ・他システム（RushIn音の可否など）が片付けの実行中かどうかを判定するための入口。
+    /// </summary>
+    public bool IsManualChoreActive => IsChoreActive && _choreStartIsManual;
+
     /// <summary>視線アニメーション（Chore_Peek）を再生中か。</summary>
     public bool IsLooking => _gazeInProgress;
 
@@ -456,6 +464,8 @@ public class MotherChoreController : MonoBehaviour
         // 6キーの開始待ち要求もクリアする（中断・ゲームオーバー・シーン変更で残さない）。
         _manualStartRequested = false;
         _manualStartPending = false;
+        // このサイクルが手動（6キー）だったかの記録も閉じる（中断で残さない）。
+        _choreStartIsManual = false;
         IsChoreActive = false;
         SetDetection(false);
 
@@ -1100,6 +1110,8 @@ public class MotherChoreController : MonoBehaviour
         //     先に解除すると、退場処理中の連打で二重に開始できてしまう。
         _manualStartRequested = false;
         _manualStartPending = false;
+        // このサイクルが手動（6キー）だったかの記録も閉じる（次サイクルへ持ち越さない）。
+        _choreStartIsManual = false;
 
         Debug.Log("[MotherChore] 6キー：再び手動開始を受け付けます（片付け完了・ロック解除済み）");
     }
