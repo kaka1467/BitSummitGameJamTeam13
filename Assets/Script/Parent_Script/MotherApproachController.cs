@@ -1238,6 +1238,10 @@ public class MotherApproachController : MonoBehaviour
         // IsChoreRouteActive は帰りの経路中も true のまま維持する（Walk・足音・経路ガードに使う）。
         // 演技待ちループは _chorePerformanceFinished を見て抜ける。
         _chorePerformanceFinished = true;
+
+        // 【片付けRushIn解除】帰路の移動を始める前に、片付けRushInの速度倍率を解除して
+        // 片付け通常速度へ戻す（帰路移動の開始前。速度の書き込み元は MotherSuspicionSystem）。
+        parentDetection?.ReleaseChoreRushInSpeed("片付けの帰路開始");
     }
 
     /// <summary>
@@ -1577,6 +1581,218 @@ public class MotherApproachController : MonoBehaviour
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  経路の終了（中断時も必ずサイクルを閉じる）
+    //   ・経路を「表示したまま」終わらせない／「終了通知なし」で終わらせない。
+    //   ・終了通知は onPassedByDoor（既存の PWS.HandlePassedByDoor →
+    //     PD.OnApproachPassedBy → ResetCycle + EndWarningSequence → ResetApproach）へ合流させる。
+    //     これが無いと isWarningActive が立ったままになり、
+    //     母親がその場に残って見え、次の母親イベントも開始されない。
+    //   ・1ルートにつき1回だけ通知する（二重終了しない）。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>このルートで終了通知（onPassedByDoor）を出したか。ResetStateFlags（サイクル開始／リセット）で解除する。</summary>
+    private bool _routeEndNotified;
+
+    /// <summary>このルートで終了通知を出したか（診断用・読み取り専用）。</summary>
+    public bool IsRouteEndNotified => _routeEndNotified;
+
+    /// <summary>必須条件の失敗で経路を中断したか（診断用・読み取り専用）。</summary>
+    public bool RouteExecutionFailed => _routeExecutionFailed;
+
+    /// <summary>
+    /// 経路が成立せず中断したときの終了処理（1ルート1回）。
+    ///  ・到着／覗き成功としては扱わない（success=false で確定する）。
+    ///  ・画面内で瞬間移動させないよう、先にモデルを非表示にしてから終了通知を出す。
+    /// </summary>
+    private void FinishRouteAborted(string routeLabel, string reason)
+    {
+        if (_routeEndNotified) return;
+
+        DiagPhase("経路中断", $"{routeLabel}:{reason}");
+
+        // 歩行・旋回・照明・覗きフラグを閉じ、モデルを非表示にする（既存の失敗時処理と同じ）。
+        HideMotherForReturn(routeLabel, reason, success: false);
+
+        NotifyRouteEndOnce(routeLabel, reason);
+    }
+
+    /// <summary>
+    /// 経路の終了通知（onPassedByDoor）を1回だけ出す。
+    /// 帰路が成立しないまま経路を閉じた場合も、この通知で既存のサイクル終了処理へ合流させる。
+    /// </summary>
+    private void NotifyRouteEndOnce(string routeLabel, string reason)
+    {
+        if (_routeEndNotified) return;
+        _routeEndNotified = true;
+
+        DiagPhase("経路終了通知", $"{routeLabel}:{reason}");
+
+        // ゲームオーバー演出中は演出が位置・表示・照明を所有している。
+        // 通知先（PD）もゲームオーバー中は無視するため、ここでは通知せず印だけ立てる。
+        if (IsGameOverSequenceActive)
+        {
+            Debug.LogWarning($"[MotherApproachController] ゲームオーバー演出中のため、サイクル終了通知をスキップします" +
+                             $"（{routeLabel}:{reason}）", this);
+            return;
+        }
+
+        PassedByDoor = true;
+        IsApproaching = false;
+
+        // 通知先が受理したかを判定するため、通知前の警告状態を記録する。
+        MotherSuspicionSystem pd = parentDetection;
+        bool warningWasActive = pd != null && pd.IsWarningSequenceActive;
+
+        Debug.LogWarning($"[MotherApproachController] 経路を終了し、サイクル終了通知（onPassedByDoor）を出します" +
+                         $"（{routeLabel}:{reason}）", this);
+        onPassedByDoor?.Invoke();
+
+        // 通知先が警告中でなかった等で無視した場合、サイクル終了処理
+        // （ResetCycle／EndWarningSequence／ResetApproach）は実行されていない。
+        // 「通知を出しただけ」で復旧済みと見なさないよう、明示的に警告する。
+        if (warningWasActive && pd != null && pd.IsWarningSequenceActive)
+        {
+            Debug.LogWarning($"[MotherApproachController] サイクル終了通知が受理されませんでした" +
+                             $"（警告中={pd.IsWarningSequenceActive} / {routeLabel}:{reason}）。" +
+                             " ResetCycle・EndWarningSequence・ResetApproach は実行されていません。" +
+                             " モデルは非表示のため、次のルート開始（BeginApproach）で復帰します。", this);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  診断ログ（段階変更のみ・毎フレーム出力しない）
+    //   ・段階が変わったときだけ1行出す（同じ段階の再出力はしない）。
+    //   ・待機が想定より長い場合だけ、停止時の状態一覧を1回出す。
+    // ──────────────────────────────────────────────────────────────────────────
+    [Header("診断ログ")]
+    [Tooltip("ルートの段階変更（廊下開始／TurnPoint到着／庭ルート開始／Window Peek開始・終了／" +
+             "帰路要求・受理・開始・完了／中断理由）を段階ごとに1回出力する。")]
+    [SerializeField] private bool routeDiagnosticsEnabled = true;
+
+    [Tooltip("この秒数を超えて待機が続いたときだけ、停止時の状態一覧を1回出力する（毎フレームは出さない）。")]
+    [SerializeField, Min(1f)] private float diagnosticsStallSeconds = 5f;
+
+    private int _diagnosticRouteSerial;
+    private string _diagnosticRouteLabel = "none";
+    private string _diagnosticLastPhase;
+    private bool _diagnosticStallDumped;
+    private float _diagnosticWaitStartedAt;
+
+    /// <summary>ルート開始：診断ログの段階をリセットし、ルート名を記録する。</summary>
+    private void DiagRouteBegin(string label)
+    {
+        _diagnosticRouteSerial++;
+        _diagnosticRouteLabel = label;
+        _diagnosticLastPhase = null;
+        _diagnosticStallDumped = false;
+        _diagnosticWaitStartedAt = Time.time;
+        DiagPhase("ルート開始", label);
+    }
+
+    /// <summary>段階の変更を1回だけ出力する（同じ段階の連続呼び出しは無視する）。</summary>
+    private void DiagPhase(string phase, string detail = null)
+    {
+        if (!routeDiagnosticsEnabled) return;
+        if (_diagnosticLastPhase == phase) return;
+
+        _diagnosticLastPhase = phase;
+        Debug.Log($"[MotherRoute#{_diagnosticRouteSerial}] {phase}" +
+                  (string.IsNullOrEmpty(detail) ? "" : $" | {detail}"), this);
+    }
+
+    /// <summary>待機の計測を開始する（この待機で1回だけ状態一覧を出せるようにする）。</summary>
+    private void DiagBeginWait()
+    {
+        _diagnosticWaitStartedAt = Time.time;
+        _diagnosticStallDumped = false;
+    }
+
+    /// <summary>待機中に毎フレーム呼ぶ。想定より長いときだけ状態一覧を1回出力する。</summary>
+    private void DiagWaitTick(string where)
+    {
+        if (!routeDiagnosticsEnabled || _diagnosticStallDumped) return;
+        if (Time.time - _diagnosticWaitStartedAt < Mathf.Max(1f, diagnosticsStallSeconds)) return;
+
+        _diagnosticStallDumped = true;
+        LogRouteStateDump($"待機が長い（{where}）");
+    }
+
+    /// <summary>
+    /// 切り分け用の状態一覧を1回出力する。
+    /// 「位置移動が止まったのか／位置は動くがアニメーションだけ止まったのか」を判断できる材料を出す。
+    /// </summary>
+    public void LogRouteStateDump(string reason)
+    {
+        MotherSuspicionSystem pd = parentDetection;
+        Animator animator = ResolveMotherAnimator();
+
+        string animState = "animator=none";
+        if (animator != null)
+        {
+            AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(IdleLayerIndex);
+            bool inTransition = animator.IsInTransition(IdleLayerIndex);
+            string controller = animator.runtimeAnimatorController != null
+                ? animator.runtimeAnimatorController.name
+                : "null";
+
+            animState =
+                $"controller='{controller}' current='{ClipNameOf(animator, IdleLayerIndex)}' " +
+                $"currentHash={current.fullPathHash} inTransition={inTransition}" +
+                (inTransition ? $" next='{ClipNameOf(animator, IdleLayerIndex, true)}'" : "") +
+                $" Walk={BoolParameterOf(animator, "Walk")}" +
+                $" GameOverActive={BoolParameterOf(animator, "GameOverActive")}" +
+                $" WalkFast={BoolParameterOf(animator, "WalkFast")}";
+        }
+
+        Debug.LogWarning(
+            $"[MotherRoute#{_diagnosticRouteSerial}] 状態一覧（{reason}）\n" +
+            $"  ルート={_diagnosticRouteLabel} 段階={_diagnosticLastPhase ?? "unknown"}\n" +
+            $"  位置={transform.position.ToString("F2")} 実効速度={CurrentApproachSpeed:F2} " +
+            $"旋回中={_rotateCoroutine != null} 接近中={IsApproaching} 廊下={IsInHallwayPhase} 庭ルート={IsGardenRoute}\n" +
+            $"  Door到達={ReachedDoor} Door停止={StoppedAtDoor} 通過={PassedByDoor} 庭覗き中={_isGardenPeeking} " +
+            $"DoorRoutine={_doorRoutineActive} 入室={_roomPhaseActive} スライド={_peekSlideCoroutine != null}\n" +
+            $"  帰路={ReturnHomePhase} 帰路中断={_returnHomeAbortFlag} 経路失敗={_routeExecutionFailed} " +
+            $"終了通知済み={_routeEndNotified}\n" +
+            $"  Animator: {animState}\n" +
+            (pd != null
+                ? $"  PD: 無敵={pd.IsInvincible} 捕獲={pd.isCaught} 永久GO={pd.HasPermanentGameOver} " +
+                  $"ドア覗き={pd.isMotherLookingNow} 警告中={pd.IsWarningSequenceActive} " +
+                  $"移動抑止={pd.IsChoreMovementSuppressed} 歩行抑止={pd.IsChoreWalkingOverrideSuppressed} " +
+                  $"覗き捕獲抑止={pd.CaptureSuppressedDuringPeek} 部屋入室開始={pd.IsRoomEntryStarted} " +
+                  $"ゲージ={(pd.motherGauge != null ? pd.motherGauge.currentGauge : -1)}/" +
+                  $"{(pd.motherGauge != null ? pd.motherGauge.maxGauge : -1)}"
+                : "  PD: none"),
+            this);
+    }
+
+    /// <summary>現在State（または遷移先State）のクリップ名を返す（読みやすい状態名として使う）。</summary>
+    private static string ClipNameOf(Animator animator, int layerIndex, bool nextState = false)
+    {
+        if (animator == null) return "n/a";
+
+        AnimatorClipInfo[] clips = nextState
+            ? animator.GetNextAnimatorClipInfo(layerIndex)
+            : animator.GetCurrentAnimatorClipInfo(layerIndex);
+
+        if (clips == null || clips.Length == 0 || clips[0].clip == null) return "none";
+        return clips[0].clip.name;
+    }
+
+    /// <summary>Boolパラメーターの現在値を返す（未定義なら "n/a"）。</summary>
+    private static string BoolParameterOf(Animator animator, string parameterName)
+    {
+        if (animator == null) return "n/a";
+
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            if (parameter.name == parameterName && parameter.type == AnimatorControllerParameterType.Bool)
+                return animator.GetBool(parameterName).ToString();
+        }
+
+        return "n/a";
+    }
+
     public void ResetApproach()
     {
         // ゲームオーバー演出中は位置リセット（startPointへ戻す）を行わない。
@@ -1630,7 +1846,19 @@ public class MotherApproachController : MonoBehaviour
         // ResetStateFlags()でIsRushInが消える前にここで捕捉する（入室可否の判定に使用する）。
         _cycleStartedAsRushIn = IsRushIn;
 
+        // 【重要】「経路の終了」を示す印は、新しいルートの開始時にだけ解除する。
+        //   終了通知（onPassedByDoor）は内部で EndWarningSequence → ResetApproach →
+        //   ResetStateFlags を「再入」で呼ぶ。そのため ResetStateFlags 側で解除すると
+        //   「通知の途中で終了済みの印が消える」ことになり、
+        //   通知から戻った古いコルーチンが同じルートの終了処理をもう一度実行しうる。
+        //   ここ（＝新しいサイクルの開始）で解除することで、古いルートの後始末と区別する。
+        _routeExecutionFailed = false;
+        _routeEndNotified = false;
+
         ResetStateFlags();
+
+        // 診断ログ：このルートの開始（段階ログの基点）。
+        DiagRouteBegin($"ルート={(choreRoute ? "Chore" : gardenPeek ? "GardenPeek" : gardenPassBy ? "GardenPassBy" : hallwayPassBy ? "HallwayPassBy" : "DoorPeek")}");
 
         // 接近開始時は遠い段階の音量から初期化
 
@@ -1710,6 +1938,7 @@ public class MotherApproachController : MonoBehaviour
 
         Debug.Log("[MotherApproachController] ドアで停止 — OnStoppedAtDoorを発生");
         onStoppedAtDoor?.Invoke();
+        DiagPhase("ドア停止（Peek開始）", $"'{doorPoint.name}' 到着・停止 → PDの覗き/帰路要求待ち");
 
         // 【Door Peek 横スライド／共通の配置処理】
         // PD側がこの直後に Peek_Door を発火して Door Peek State に入るため、
@@ -1742,8 +1971,11 @@ public class MotherApproachController : MonoBehaviour
         // HandlePrimaryResetSequence というコルーチンを開始し、プレイヤーが寝る（または安全タイムアウト）
         // まで続く。その終了直前に MotherSuspicionSystem が RequestReturnHome() を呼ぶので、
         // ここでは「要求が来るまで」待ってから帰路を開始する（少しも早く始めない）。
+        DiagBeginWait();
         while (ReturnHomePhase != ReturnHomeState.Requested && !_returnHomeAborted())
         {
+            // 診断：この待機が長い場合だけ状態一覧を1回出す（PDからの帰路要求待ち）。
+            DiagWaitTick("帰路要求待ち（PDのRequestReturnHome）");
             yield return null;
         }
 
@@ -1751,6 +1983,7 @@ public class MotherApproachController : MonoBehaviour
         {
             // 受付済み → 実行中へ（PDの待機は IsReturnHomePending を見ているので途切れない）。
             ReturnHomePhase = ReturnHomeState.Running;
+            DiagPhase("帰路実行開始", $"DoorPeek（doorPointから帰路へ）");
 
             // 【Door Peek 横スライド・通常終了】
             // 未実行のスライド予約を取り消し、ずれていれば現在位置から保存位置へ
@@ -1816,24 +2049,28 @@ public class MotherApproachController : MonoBehaviour
         if (IsReturnHomePending)
         {
             Debug.Log($"[MotherApproachController] RequestReturnHome: 既に帰路を{ReturnHomePhase}で進行中 — 重複要求を無視");
+            DiagPhase("帰路要求 受理", $"既に進行中（{ReturnHomePhase}）");
             return true; // 待つべき帰路が存在するので true を返す（PDは待機してよい）
         }
 
         if (!_doorRoutineActive)
         {
             Debug.Log("[MotherApproachController] RequestReturnHome 却下：ドア停止ルートが実行中ではない");
+            DiagPhase("帰路要求 却下（ドア停止ルートが実行中ではない）", "RequestReturnHome");
             return false;
         }
 
         if (IsRushIn)
         {
             Debug.Log("[MotherApproachController] RequestReturnHome 却下：突入サイクルのため帰路を開始しない");
+            DiagPhase("帰路要求 却下（突入サイクル）", "RequestReturnHome");
             return false;
         }
 
         if (!ShouldReturnHome())
         {
             Debug.Log("[MotherApproachController] RequestReturnHome 却下：帰路の対象外（ゲームオーバー等）");
+            DiagPhase("帰路要求 却下（帰路の対象外：ゲームオーバー等）", "RequestReturnHome");
             return false;
         }
 
@@ -1842,6 +2079,7 @@ public class MotherApproachController : MonoBehaviour
         // PDは「まだ受け付けただけ」を完了と誤認しない。
         ReturnHomePhase = ReturnHomeState.Requested;
         Debug.Log("[MotherApproachController] RequestReturnHome 受理（Requested）— DoorRoutineの検知を待つ");
+        DiagPhase("帰路要求 受理", "Requested（DoorRoutineの検知待ち）");
         return true;
     }
 
@@ -2113,6 +2351,9 @@ public class MotherApproachController : MonoBehaviour
         yield return MoveToTurnPoint();
         if (_routeExecutionFailed || turnPoint == null) yield break;
 
+        DiagPhase("庭ルート開始", $"中間点={gardenRoutePoints.Length}件 → gardenPeekPoint=" +
+                                  $"{(gardenPeekPoint != null ? gardenPeekPoint.name : "NULL")}");
+
         // 【新仕様】各点へ移動 → 到着 → その点の＋Zへ旋回（Hallwayと同じルール）。
         for (int i = 0; i < gardenRoutePoints.Length; i++)
         {
@@ -2155,6 +2396,7 @@ public class MotherApproachController : MonoBehaviour
         _gardenPeekDuration = Mathf.Max(0f, peekBaseSeconds) + gaugeAtPeekStart;
         Debug.Log(
             $"[MotherApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={peekBaseSeconds:F1} + gauge={gaugeAtPeekStart})");
+        DiagPhase("Window Peek開始", $"duration={_gardenPeekDuration:F1}s base={peekBaseSeconds:F1} gaugeAtPeekStart={gaugeAtPeekStart}");
 
         // 覗き待機開始：庭覗き中の継続疑惑（PD）に開始を通知する。
         _isGardenPeeking = true;
@@ -2164,6 +2406,7 @@ public class MotherApproachController : MonoBehaviour
 
         // 覗き待機終了：継続疑惑が次tick以内に確実に停止するよう、フラグを先に解除する。
         _isGardenPeeking = false;
+        DiagPhase("Window Peek終了", $"庭覗き中=false（帰路へ）");
         // グループ（B）追加照明の終了。グループ（A）がONなら点灯は維持され、
         // 顔ライトもここでは消えない（帰路の非表示でまとめて消灯する）。
         SetPeekLighting(false);
@@ -2293,13 +2536,28 @@ public class MotherApproachController : MonoBehaviour
     ///  ・移動中のフラグを解除（足音が止まる／音量が遠景へ戻る）
     ///  ・進行中の旋回コルーチンを停止（回転指示を残さない）
     ///  ・目の発光・窓覗きライトを消灯
-    /// 「到着」「覗き成功」とは扱わないため、到達フラグ（ReachedDoor／StoppedAtDoor／PassedByDoor）や
-    /// UnityEvent（onReachedDoor／onStoppedAtDoor／onPassedByDoor）は一切発生させない。
-    /// サイクルの後始末（疑惑解除・警告終了・StartPoint復帰）は既存どおり
-    /// ResetCycle → EndWarningSequence → ResetApproach に委ねる。
+    ///  ・モデルを非表示にし、サイクル終了通知（onPassedByDoor）を1回だけ出して
+    ///    既存の終了経路（PD.OnApproachPassedBy → ResetCycle + EndWarningSequence →
+    ///    ResetApproach）へ合流させる（表示・警告状態を残さない）。
+    /// 「到着」「覗き成功」とは扱わないため、到達フラグ（ReachedDoor／StoppedAtDoor）や
+    /// 到着系のUnityEvent（onReachedDoor／onStoppedAtDoor）は発生させない。
     /// </summary>
     private void AbortApproach()
     {
+        // ゲームオーバー演出中は、演出が位置・表示・照明・アニメーションを所有している。
+        // ここでフラグ・照明・モデル表示・終了通知を触ると演出を壊すため、
+        // 「経路が失敗した」ことだけ記録して戻る（生存している古いフレームもこれで止まる）。
+        if (IsGameOverSequenceActive)
+        {
+            _routeExecutionFailed = true;
+            DiagPhase("経路中断（ゲームオーバー演出中のため後始末スキップ）", _diagnosticRouteLabel);
+            return;
+        }
+
+        // 終了通知（非表示＋サイクル終了通知）は1回だけにする。
+        // 既に中断済みの場合は、状態の後始末だけを行う（従来と同じ挙動）。
+        bool alreadyFailed = _routeExecutionFailed;
+
         _routeExecutionFailed = true;
         IsApproaching = false;
         IsInHallwayPhase = false;
@@ -2318,6 +2576,15 @@ public class MotherApproachController : MonoBehaviour
 
         // 足音などの移動演出を止める（MotherSuspicionSystemが購読している）。
         MovementStateChanged?.Invoke(false);
+
+        if (alreadyFailed) return;
+
+        // 【重要】中断してもサイクルは必ず閉じる。
+        //   従来はここでフラグを下ろすだけで、モデル表示と isWarningActive が残っていた。
+        //   その結果、母親がその場に止まって見え、次の母親イベントも開始されなかった。
+        //   既存の終了経路（onPassedByDoor → PD.OnApproachPassedBy → ResetCycle +
+        //   EndWarningSequence → ResetApproach）へ合流させて正常に閉じる。
+        FinishRouteAborted(_diagnosticRouteLabel, "必須条件の失敗（経路中断）");
     }
 
     /// <summary>
@@ -2332,6 +2599,8 @@ public class MotherApproachController : MonoBehaviour
         IsInHallwayPhase = true;
         // 中間段階（廊下）：turnPointで方向転換するまでは中間音量を維持する
         Debug.Log("[MotherApproachController] フェーズ：廊下 | IsInHallwayPhase=true");
+        DiagPhase("廊下開始", $"turnPoint={(turnPoint != null ? turnPoint.name : "NULL")} " +
+                              $"中間点={BuildHallwayPath(hallwayPointsBeforeTurn).Count}件");
 
         // TurnPointが未設定なら、その経路は成立しないため警告して安全に中断する。
         if (turnPoint == null)
@@ -2353,6 +2622,7 @@ public class MotherApproachController : MonoBehaviour
         // TurnPoint：ここは方向転換の要所なので、到着して＋Zへ旋回完了まで待つ。
         yield return MoveAndFaceWaypoint(turnPoint, turnRotation, "turnPoint");
         if (_routeExecutionFailed) yield break;
+        DiagPhase("TurnPoint到着", $"'{turnPoint.name}' 旋回完了");
     }
 
     /// <summary>
@@ -2398,6 +2668,11 @@ public class MotherApproachController : MonoBehaviour
     {
         Debug.Log($"[MotherApproachController] ReturnHome（帰路）：開始 [{routeLabel}] " +
                   $"endPoint={(endPoint != null ? endPoint.name : "null")}");
+        DiagPhase("帰路開始", $"{routeLabel} endPoint={(endPoint != null ? endPoint.name : "NULL")}");
+
+        // 【RushIn解除】帰路の移動を始める前に、RushInの移動速度上書きを解除して通常速度へ戻す
+        // （帰り終わった後ではなく、帰路移動の開始前。速度の書き込み元は MotherSuspicionSystem）。
+        parentDetection?.RestoreRushInSpeed($"{routeLabel}の帰路開始");
 
         // 必須参照の確認。Turn Back Point と 最終点 は帰路に必須。
         if (turnBackPoint == null)
@@ -2405,6 +2680,8 @@ public class MotherApproachController : MonoBehaviour
             Debug.LogWarning($"[MotherApproachController] {routeLabel}: Turn Back Point が" +
                              "未設定のため帰路を開始できません。Inspectorで設定してください。", this);
             HideMotherForReturn(routeLabel, "TurnBackPoint未設定", success: false);
+            // 帰路が成立しないので、サイクル終了通知を出して次の母親イベントを開始できる状態へ戻す。
+            NotifyRouteEndOnce(routeLabel, "TurnBackPoint未設定");
             yield break;
         }
 
@@ -2413,6 +2690,8 @@ public class MotherApproachController : MonoBehaviour
             Debug.LogWarning($"[MotherApproachController] {routeLabel}: 帰路の最終点（endPoint）が" +
                              "未設定のため帰路を開始できません。Inspectorで設定してください。", this);
             HideMotherForReturn(routeLabel, "最終点未設定", success: false);
+            // 帰路が成立しないので、サイクル終了通知を出して次の母親イベントを開始できる状態へ戻す。
+            NotifyRouteEndOnce(routeLabel, "最終点未設定");
             yield break;
         }
 
@@ -2544,6 +2823,7 @@ public class MotherApproachController : MonoBehaviour
         }
 
         Debug.Log($"[MotherApproachController] 帰路確定 — {ReturnHomePhase}（{routeLabel}:{reason}）");
+        DiagPhase("帰路完了", $"{routeLabel}:{reason} success={success} 帰路={ReturnHomePhase}");
         onReturnedHome?.Invoke();
     }
 
@@ -2754,8 +3034,17 @@ public class MotherApproachController : MonoBehaviour
         // 歩行中であることを通知（既に true でも問題ない）。
         MovementStateChanged?.Invoke(true);
 
+        // 診断：この移動が長引いた場合だけ状態一覧を1回出す（位置移動が止まったかの切り分け）。
+        DiagBeginWait();
         while (Vector3.Distance(transform.position, goal) > stopDistance)
         {
+            DiagWaitTick($"中間点の通過移動（{target.name}）");
+
+            // 経路が中断・失敗している場合は、古いフレームが残っていても位置を書き続けない。
+            // ゲームオーバー演出中は演出が位置を所有するため、通常ルート側は必ず降りる
+            //（この移動ヘルパーは通常ルート／片付け専用。演出の移動は MoveToWaypointForGameOver が担当）。
+            if (IsReturnHomeAborted || _routeExecutionFailed || IsGameOverSequenceActive) yield break;
+
             // 帰路が中断されたら、通過中でもその場で位置更新を止める。
             if (IsReturnHomeAborted) yield break;
 
@@ -2804,8 +3093,17 @@ public class MotherApproachController : MonoBehaviour
         if (Vector3.Distance(transform.position, goal) > stopDistance)
             MovementStateChanged?.Invoke(true);
 
+        // 診断：この移動が長引いた場合だけ状態一覧を1回出す（位置移動が止まったかの切り分け）。
+        DiagBeginWait();
         while (Vector3.Distance(transform.position, goal) > stopDistance)
         {
+            DiagWaitTick($"位置移動（{target.name}）");
+
+            // 経路が中断・失敗している場合は、古いフレームが残っていても位置を書き続けない。
+            // ゲームオーバー演出中は演出が位置を所有するため、通常ルート側は必ず降りる
+            //（この移動ヘルパーは通常ルート／片付け専用。演出の移動は MoveToWaypointForGameOver が担当）。
+            if (IsReturnHomeAborted || _routeExecutionFailed || IsGameOverSequenceActive) yield break;
+
             // 帰路が中断（タイムアウト／ゲームオーバー）されたら、その場で位置更新を止める。
             if (IsReturnHomeAborted) yield break;
 
@@ -3024,6 +3322,7 @@ public class MotherApproachController : MonoBehaviour
     {
         Debug.LogWarning($"[MotherApproachController] {phase}: Idleへ到達できなかったため、" +
                          "覗きを要求せず安全に中断します（ライト・覗きフラグを消灯／解除）。", this);
+        DiagPhase("Idle待機失敗", $"段階={phase}（経路を中断）");
         AbortApproach();
     }
 
@@ -4130,7 +4429,12 @@ public class MotherApproachController : MonoBehaviour
 
     private void ResetStateFlags()
     {
-        _routeExecutionFailed = false;
+        // 【重要】_routeExecutionFailed / _routeEndNotified はここでは解除しない。
+        //  ・終了通知（onPassedByDoor）は EndWarningSequence → ResetApproach → 本メソッドを
+        //    「再入」で呼ぶ。ここで解除すると通知の途中で終了済みの印が消え、
+        //    通知から戻った古いコルーチンが同じルートの終了処理を再実行しうる
+        //    （＝終了通知の二重発火・中断後の再走）。
+        //  ・これらの印は「新しいルートの開始」＝ BeginApproach() でのみ解除する。
         IsApproaching = false;
         ReachedDoor = false;
         StoppedAtDoor = false;

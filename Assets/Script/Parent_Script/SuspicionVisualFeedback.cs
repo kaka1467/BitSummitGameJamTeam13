@@ -48,9 +48,15 @@ public class SuspicionVisualFeedback : MonoBehaviour
 
     [Header("捕獲後（ゲームオーバー）の表示")]
     [Tooltip("【必須】「Meter Frame」オブジェクトを指定します（メーターの枠）。\n" +
-             "捕獲確定時に非表示にします。他のメーターUI（Meter Color / Meter Gauge / Mother Face）は\n" +
-             "既存の画像参照から自動で親をたどって非表示にするため、指定不要です。")]
+             "捕獲確定時に非表示にします。未設定の場合は、このコンポーネント自身（Suspicion UI）の配下から\n" +
+             "meterFrameObjectName の名前で自動解決します（非アクティブも含む／シーン全体は検索しません）。\n" +
+             "他のメーターUI（Meter Color / Meter Gauge / Mother Face）は既存の画像参照から自動で親をたどって\n" +
+             "非表示にするため、指定不要です。")]
     [SerializeField] private GameObject meterFrameRoot;
+
+    [Tooltip("meterFrameRoot が未設定のときに自動解決で使うオブジェクト名。\n" +
+             "検索範囲はこのコンポーネント自身の配下だけです（同名が複数ある場合は自動解決せず警告します）。")]
+    [SerializeField] private string meterFrameObjectName = "Meter Frame";
 
     [Tooltip("追加で非表示にしたいUI（「怪しさ」の文字・数値など）。\n" +
              "※DangerVignette（Frame blue / purple / red）や、このコンポーネント自身が付いているオブジェクトは指定しないでください。\n" +
@@ -64,6 +70,19 @@ public class SuspicionVisualFeedback : MonoBehaviour
     private bool _capturedForGameOver;
     private bool _hideTargetsWarningShown;
     private bool _meterUiWarningShown;
+
+    // 捕獲時に隠した対象と、隠す前の表示状態（復元で使う）。
+    //  ・「全色・全顔画像を無条件に SetActive(true) にしない」ため、
+    //    隠す前の activeSelf を記録し、復元時はその値へ戻す。
+    private readonly System.Collections.Generic.List<GameObject> _hiddenTargets =
+        new System.Collections.Generic.List<GameObject>();
+    private readonly System.Collections.Generic.List<bool> _hiddenTargetsPreviousActive =
+        new System.Collections.Generic.List<bool>();
+
+    // Meter Frame の解決結果（捕獲時に1回だけ診断として出す）。
+    private bool _meterFrameResolveAttempted;
+    private string _meterFrameResolvedSource = "未解決";
+    private string _meterFrameResolvedPath = "none";
 
     private bool _missingMotherGaugeWarningShown;
     private bool _hasLastGaugeValue;
@@ -270,7 +289,9 @@ public class SuspicionVisualFeedback : MonoBehaviour
         }
 
         SetAlpha(frameRed, Mathf.Lerp(redVignetteMinAlpha, redVignetteMaxAlpha, pulse));
-        SetAlpha(meterRed, Mathf.Lerp(redMeterMinAlpha, redMeterMaxAlpha, pulse));
+        // 捕獲後はメーター側（Meter Color）を再表示しない。
+        // 危険表示は DangerVignette（frameRed）だけを結果画面まで維持する。
+        SetAlpha(meterRed, _capturedForGameOver ? 0f : Mathf.Lerp(redMeterMinAlpha, redMeterMaxAlpha, pulse));
     }
 
     /// <summary>
@@ -284,6 +305,11 @@ public class SuspicionVisualFeedback : MonoBehaviour
     {
         _capturedForGameOver = captured;
 
+        // 捕獲処理の「前」に Meter Frame を解決する（明示参照が無ければ自分の配下から自動解決／毎フレーム検索しない）。
+        GameObject meterFrame = ResolveMeterFrameRoot();
+        bool meterFrameActiveBefore = meterFrame != null && meterFrame.activeSelf;
+        bool meterFrameVisibleBefore = meterFrame != null && meterFrame.activeInHierarchy;
+
         if (EnsureMotherGauge())
         {
             UpdateVisuals();   // captured=true のときはメーターを隠し、赤（Danger）を保持する
@@ -292,13 +318,188 @@ public class SuspicionVisualFeedback : MonoBehaviour
         ApplyHideTargets(captured);          // 追加指定（「怪しさ」の文字など）
         ApplyMeterUiVisibility(captured);    // 枠・色・ゲージ・顔（既存参照から導出＋Meter Frame）
 
+        // 復元時：記録済みの対象をすべて「隠す前の状態」へ戻す（取り残しを作らない）。
+        if (!captured)
+        {
+            RestoreAllHiddenTargets();
+        }
+
         if (showDebugLogs)
         {
             string meterState = captured ? "非表示" : "表示";
             string vignetteState = captured ? "保持" : "通常";
             Debug.Log($"[{nameof(SuspicionVisualFeedback)}] 捕獲後の表示切り替え: captured={captured} " +
                       $"（メーター={meterState} / DangerVignette={vignetteState}）", this);
+
+            // 捕獲時に1回だけ：Meter Frame の解決結果と非表示前後の状態を出す。
+            if (captured)
+            {
+                LogMeterFrameCaptureState(meterFrame, meterFrameActiveBefore, meterFrameVisibleBefore);
+            }
         }
+    }
+
+    /// <summary>
+    /// 捕獲時に非表示にする「Meter Frame」を解決する（捕獲処理の前に呼ぶ・結果は保持して毎フレーム検索しない）。
+    ///   1. Inspector の明示参照（meterFrameRoot）を最優先
+    ///   2. 未設定なら、このコンポーネント自身（Suspicion UI）の配下だけを名前で検索（非アクティブも含む）
+    ///   3. 同名が複数ある場合は勝手に選ばず、具体的な警告を出す（シーン全体の曖昧な検索はしない）
+    /// </summary>
+    private GameObject ResolveMeterFrameRoot()
+    {
+        if (meterFrameRoot != null)
+        {
+            _meterFrameResolvedSource = "明示参照（Inspector）";
+            _meterFrameResolvedPath = GetHierarchyPath(meterFrameRoot.transform);
+            return meterFrameRoot;
+        }
+
+        if (_meterFrameResolveAttempted) return null;
+        _meterFrameResolveAttempted = true;
+
+        if (string.IsNullOrEmpty(meterFrameObjectName))
+        {
+            _meterFrameResolvedSource = "未解決（自動解決名が空）";
+            _meterFrameResolvedPath = "none";
+            Debug.LogWarning($"[{nameof(SuspicionVisualFeedback)}] 【設定不足】meterFrameRoot が未設定で、" +
+                             "自動解決に使う名前（meterFrameObjectName）も空です。Inspector で meterFrameRoot を割り当ててください", this);
+            return null;
+        }
+
+        // 自分の配下だけを検索する（シーン全体の名前検索はしない＝別の枠を掴まない）。非アクティブも含める。
+        Transform[] all = GetComponentsInChildren<Transform>(true);
+        GameObject found = null;
+        int count = 0;
+        string firstPath = null;
+        string secondPath = null;
+
+        foreach (Transform t in all)
+        {
+            if (t == null || t.gameObject == gameObject) continue;
+            if (t.name != meterFrameObjectName) continue;
+
+            count++;
+            if (found == null)
+            {
+                found = t.gameObject;
+                firstPath = GetHierarchyPath(t);
+            }
+            else if (secondPath == null)
+            {
+                secondPath = GetHierarchyPath(t);
+            }
+        }
+
+        if (count == 1)
+        {
+            meterFrameRoot = found;   // 解決結果を保持する（毎フレーム検索しない）
+            _meterFrameResolvedSource = "自動解決（自分の配下・非アクティブ含む）";
+            _meterFrameResolvedPath = firstPath;
+            Debug.Log($"[{nameof(SuspicionVisualFeedback)}] Meter Frame を自動解決しました: '{firstPath}'" +
+                      "（meterFrameRoot 未設定のため。Inspectorで明示割り当てすると優先されます）", this);
+            return meterFrameRoot;
+        }
+
+        if (count == 0)
+        {
+            _meterFrameResolvedSource = "未解決（見つからない）";
+            _meterFrameResolvedPath = "none";
+            Debug.LogWarning($"[{nameof(SuspicionVisualFeedback)}] 【設定不足】Meter Frame を解決できませんでした。" +
+                             $"'{meterFrameObjectName}' が '{GetHierarchyPath(transform)}' 配下に見つかりません。" +
+                             " Inspector で meterFrameRoot を割り当てるか、meterFrameObjectName を実際の名前にしてください", this);
+            return null;
+        }
+
+        _meterFrameResolvedSource = $"未解決（同名が{count}件）";
+        _meterFrameResolvedPath = firstPath ?? "none";
+        Debug.LogWarning($"[{nameof(SuspicionVisualFeedback)}] 【設定不足】Meter Frame の候補が {count} 件あります" +
+                         $"（{firstPath} / {secondPath} ほか）。誤った枠を隠さないため自動解決しません。" +
+                         " Inspector の meterFrameRoot に隠したい枠を明示してください", this);
+        return null;
+    }
+
+    /// <summary>捕獲時に1回だけ、Meter Frame の解決結果と非表示前後の状態を出力する。</summary>
+    private void LogMeterFrameCaptureState(GameObject meterFrame, bool activeBefore, bool visibleBefore)
+    {
+        if (meterFrame == null)
+        {
+            Debug.LogWarning($"[{nameof(SuspicionVisualFeedback)}] 捕獲時の Meter Frame: 解決できませんでした" +
+                             $"（{_meterFrameResolvedSource} / path={_meterFrameResolvedPath}）— 枠は表示されたままになります" +
+                             "（Inspector の meterFrameRoot を確認してください）", this);
+            return;
+        }
+
+        Debug.Log($"[{nameof(SuspicionVisualFeedback)}] 捕獲時の Meter Frame: {_meterFrameResolvedSource} / " +
+                  $"path='{GetHierarchyPath(meterFrame.transform)}'\n" +
+                  $"  非表示前: activeSelf={activeBefore} activeInHierarchy={visibleBefore}\n" +
+                  $"  非表示後: activeSelf={meterFrame.activeSelf} activeInHierarchy={meterFrame.activeInHierarchy}", this);
+    }
+
+    /// <summary>Transform の Hierarchy パス（診断用）。</summary>
+    private static string GetHierarchyPath(Transform t)
+    {
+        if (t == null) return "null";
+
+        var sb = new System.Text.StringBuilder(t.name);
+        Transform current = t.parent;
+        while (current != null)
+        {
+            sb.Insert(0, current.name + "/");
+            current = current.parent;
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 捕獲時に隠す対象を記録する（同じ対象は1回だけ／隠す前の状態を上書きしない）。
+    /// </summary>
+    private void RecordHiddenTarget(GameObject target)
+    {
+        if (target == null) return;
+        if (_hiddenTargets.Contains(target)) return;
+
+        _hiddenTargets.Add(target);
+        _hiddenTargetsPreviousActive.Add(target.activeSelf);
+    }
+
+    /// <summary>
+    /// 捕獲時に隠した対象を「隠す前の表示状態」へ戻す。
+    ///  ・記録が無い対象は触らない（捕獲時に隠していないものを表示状態変更しない）。
+    ///  ・無条件の SetActive(true) は行わない（元から非表示だったUIを表示しない）。
+    /// </summary>
+    private void RestoreHiddenTarget(GameObject target)
+    {
+        if (target == null) return;
+
+        int index = _hiddenTargets.IndexOf(target);
+        if (index < 0) return;
+
+        bool previous = _hiddenTargetsPreviousActive[index];
+        if (target.activeSelf != previous)
+        {
+            target.SetActive(previous);
+        }
+
+        _hiddenTargets.RemoveAt(index);
+        _hiddenTargetsPreviousActive.RemoveAt(index);
+    }
+
+    /// <summary>記録済みの非表示対象をすべて「隠す前の状態」へ戻す（取り残し防止の安全弁）。</summary>
+    private void RestoreAllHiddenTargets()
+    {
+        for (int i = _hiddenTargets.Count - 1; i >= 0; i--)
+        {
+            GameObject target = _hiddenTargets[i];
+            bool previous = _hiddenTargetsPreviousActive[i];
+            if (target != null && target.activeSelf != previous)
+            {
+                target.SetActive(previous);
+            }
+        }
+
+        _hiddenTargets.Clear();
+        _hiddenTargetsPreviousActive.Clear();
     }
 
     /// <summary>
@@ -343,9 +544,16 @@ public class SuspicionVisualFeedback : MonoBehaviour
                 continue;
             }
 
-            if (target.activeSelf != !hide)
+            if (hide)
             {
-                target.SetActive(!hide);
+                // 隠す前の状態を記録してから隠す（復元時はこの状態へ戻す）。
+                RecordHiddenTarget(target);
+                if (target.activeSelf) target.SetActive(false);
+            }
+            else
+            {
+                // 記録した「隠す前の状態」へ戻す（無条件の SetActive(true) はしない）。
+                RestoreHiddenTarget(target);
             }
         }
     }
@@ -389,31 +597,48 @@ public class SuspicionVisualFeedback : MonoBehaviour
         int applied = 0;
         int missing = 0;
 
-        if (!HideRootIfSafe(meterFrameRoot, hide, "Meter Frame")) missing++;
-        else applied++;
+        // 対象と表示名（ログで「何を隠した／何が未解決か」を1行で分かるようにする）。
+        string[] labels = { "Meter Frame", "Meter Color", "Meter Gauge", "Mother Face" };
+        GameObject[] targets =
+        {
+            meterFrameRoot,
+            ResolveParentRoot(meterBlue),
+            ResolveParentRoot(FirstMeterSegment()),
+            ResolveParentRoot(faceBlue)
+        };
 
-        GameObject meterColorRoot = ResolveParentRoot(meterBlue);
-        if (!HideRootIfSafe(meterColorRoot, hide, "Meter Color")) missing++;
-        else applied++;
+        var appliedNames = new System.Text.StringBuilder();
+        var missingNames = new System.Text.StringBuilder();
 
-        GameObject meterGaugeRoot = ResolveParentRoot(FirstMeterSegment());
-        if (!HideRootIfSafe(meterGaugeRoot, hide, "Meter Gauge")) missing++;
-        else applied++;
-
-        GameObject motherFaceRoot = ResolveParentRoot(faceBlue);
-        if (!HideRootIfSafe(motherFaceRoot, hide, "Mother Face")) missing++;
-        else applied++;
+        for (int i = 0; i < targets.Length; i++)
+        {
+            if (HideRootIfSafe(targets[i], hide, labels[i]))
+            {
+                applied++;
+                if (appliedNames.Length > 0) appliedNames.Append(", ");
+                appliedNames.Append(labels[i]);
+            }
+            else
+            {
+                missing++;
+                if (missingNames.Length > 0) missingNames.Append(", ");
+                missingNames.Append(labels[i]);
+            }
+        }
 
         if (hide && missing > 0 && !_meterUiWarningShown)
         {
             _meterUiWarningShown = true;
             Debug.LogWarning($"[{nameof(SuspicionVisualFeedback)}] 【設定不足】捕獲時に非表示にするメーターUIの参照が {missing} 件解決できませんでした" +
-                             "（Meter Frame=Inspectorの meterFrameRoot / 色・ゲージ・顔=各画像参照）。" +
-                             "解決できた分だけ非表示にします。未解決のUIは表示されたままになります", this);
+                             $"（未解決=[{missingNames}]）。Meter Frame は Inspector の meterFrameRoot、" +
+                             $"または自分の配下の名前（meterFrameObjectName='{meterFrameObjectName}'）で解決します。" +
+                             " 色・ゲージ・顔は各画像参照から親をたどって解決します。" +
+                             " 解決できた分だけ非表示にします。未解決のUIは表示されたままになります", this);
         }
 
         if (showDebugLogs)
-            Debug.Log($"[{nameof(SuspicionVisualFeedback)}] メーターUIの表示切り替え: hide={hide} / 適用={applied}件 / 未解決={missing}件", this);
+            Debug.Log($"[{nameof(SuspicionVisualFeedback)}] メーターUIの表示切り替え: hide={hide} / " +
+                      $"適用={applied}件[{appliedNames}] / 未解決={missing}件[{missingNames}]", this);
     }
 
     /// <summary>meterSegments の先頭の有効な要素（Meter Gauge の親をたどるために使う）。</summary>
@@ -457,9 +682,16 @@ public class SuspicionVisualFeedback : MonoBehaviour
             return false;
         }
 
-        if (target.activeSelf != !hide)
+        if (hide)
         {
-            target.SetActive(!hide);
+            // 隠す前の状態を記録してから隠す（復元時はこの状態へ戻す）。
+            RecordHiddenTarget(target);
+            if (target.activeSelf) target.SetActive(false);
+        }
+        else
+        {
+            // 記録した「隠す前の状態」へ戻す（無条件の SetActive(true) はしない）。
+            RestoreHiddenTarget(target);
         }
 
         return true;
