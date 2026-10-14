@@ -462,6 +462,13 @@ public class ChildUdpReceiver : MonoBehaviour
         _host.OnStartButtonClicked();
     }
 
+    /// <summary>子機だけで開始（親機なしの単独プレイ。START_GAME は送らずにゲームシーンへ遷移する）。</summary>
+    public void OnSoloStartButtonClicked()
+    {
+        if (!HostReady) { LogHostUnavailable(); return; }
+        _host.OnSoloStartButtonClicked();
+    }
+
     /// <summary>
     /// ランキング／今回スコアが変化したときに、最新スナップショットを作成して親機へ送る。
     /// GameManager.TriggerResult（結果確定後）と RankingResetButton（リセット後）から呼ぶ。
