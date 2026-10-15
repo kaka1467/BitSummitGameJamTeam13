@@ -38,9 +38,6 @@ public class ItemEffect : MonoBehaviour
     private void HandleCollect(Collider2D other)
     {
         Item item = GetComponent<Item>();
-        // キャッシュと安全確認
-        ItemMagnet im = GetComponent<ItemMagnet>();
-        var gm = GameManager.instance;
         var pool = ItemPool.Instance;
 
         // item がない場合は効果を与えずにプールへ戻す
@@ -48,16 +45,6 @@ public class ItemEffect : MonoBehaviour
         {
             if (pool != null) pool.ReturnToPool(gameObject);
             return;
-        }
-
-        // フィーバー中は、プレハブでマグネット無効に設定されているアイテムの効果を無視する
-        if (gm != null && gm.IsFeverMagnetActive)
-        {
-            if (!item.isMagnetable || (im != null && !im.enabled))
-            {
-                if (pool != null) pool.ReturnToPool(gameObject);
-                return;
-            }
         }
 
         // HugeObstacle は QTE 完了コールバック後にプールへ戻す

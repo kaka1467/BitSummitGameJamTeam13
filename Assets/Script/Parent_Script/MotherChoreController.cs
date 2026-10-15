@@ -64,8 +64,8 @@ public class MotherChoreController : MonoBehaviour
     private MotherAnimationPlayer animationPlayer;
 
     // ── 開始条件 ──────────────────────────────────────────────────────────────
-    [Header("開始条件")] [Tooltip("片付けイベントを許可するゲーム進行率（0〜1）。この値以上になると片付けを開始できる。初期値0.6。")] [SerializeField, Range(0f, 1f)]
-    private float choreAllowedProgressRate = 0.6f;
+    [Header("開始条件")] [Tooltip("片付けイベントを許可するゲーム進行率（0〜1）。子機の残り時間が『この値より大きい』ときだけ開始できる（初期値0.5＝240秒設定で残り120秒未満）。")] [SerializeField, Range(0f, 1f)]
+    private float choreAllowedProgressRate = 0.5f;
 
     [Tooltip("1プレイ中に片付けを開始する回数。1以上。")] [SerializeField, Min(1)]
     private int choreCountPerPlay = 1;
@@ -288,8 +288,9 @@ public class MotherChoreController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// ゲーム進行率の通知。しきい値（choreAllowedProgressRate）以上になると片付けを開始する。
-    /// MotherSuspicionSystem 経由で、子機からの進行通知（または親機側の経過時間）で呼ばれる。
+    /// ゲーム進行率の通知。しきい値（choreAllowedProgressRate）を「超える」と片付けを開始する。
+    /// しきい値ちょうど（残り120秒ちょうど）は許可しない（仕様：残り120秒未満のみ）。
+    /// MotherSuspicionSystem 経由で、子機から届く実際の進行率のみで呼ばれる。
     /// </summary>
     public void NotifyGameProgress(float progressRate)
     {
@@ -297,14 +298,15 @@ public class MotherChoreController : MonoBehaviour
         // ゲームオーバー演出中は片付けを開始しない（演出への通常要求を止める）。
         if (approachController != null && approachController.IsGameOverSequenceActive) return;
         if (_choreStartRequested || _choreStartCount >= choreCountPerPlay) return;
-        if (progressRate < choreAllowedProgressRate) return;
+        // 「残り120秒未満」＝ progressRate > 0.5 のみ許可する（ちょうど0.5＝残り120秒ちょうどは不可）。
+        if (progressRate <= choreAllowedProgressRate) return;
 
         _choreStartRequested = true;
         float delay = Random.Range(Mathf.Min(startDelayMin, startDelayMax),
             Mathf.Max(startDelayMin, startDelayMax));
 
         if (showDebugLogs)
-            Debug.Log($"[MotherChore] 進行率 {progressRate:F2} ≥ {choreAllowedProgressRate:F2} — {delay:F1}s 後に片付けを開始します");
+            Debug.Log($"[MotherChore] 進行率 {progressRate:F2} > {choreAllowedProgressRate:F2} — {delay:F1}s 後に片付けを開始します");
 
         if (_mainRoutine != null) StopCoroutine(_mainRoutine);
         _mainRoutine = StartCoroutine(StartChoreAfterDelay(delay));

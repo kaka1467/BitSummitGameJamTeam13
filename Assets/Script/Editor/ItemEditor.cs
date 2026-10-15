@@ -62,6 +62,10 @@ public class ItemEditor : Editor
                 break;
 
             case ItemType.Clock:
+                // 時計は減点アイテムのため、Score と同じ scoreAmount を編集できるようにする
+                // （負の値で減点。新しい設定フィールドは増やさない）。
+                EditorGUILayout.LabelField("Score Settings", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(scoreAmountProp, new GUIContent("Score Amount"));
                 break;
 
             // case ItemType.Enemy:
@@ -88,6 +92,11 @@ public class ItemEditor : Editor
                 EditorGUILayout.PropertyField(bgmClipProp, new GUIContent("BGM Clip"));
                 EditorGUILayout.PropertyField(loopBgmProp, new GUIContent("Loop"));
                 EditorGUILayout.Slider(bgmVolumeProp, 0f, 1f, new GUIContent("Volume"));
+
+                // Loud Item は減点アイテムのため、Score と同じ scoreAmount を編集できるようにする
+                // （負の値で減点。新しい設定フィールドは増やさない）。
+                EditorGUILayout.LabelField("Score Settings", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(scoreAmountProp, new GUIContent("Score Amount"));
                 break;
         }
 

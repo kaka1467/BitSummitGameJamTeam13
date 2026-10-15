@@ -231,7 +231,7 @@ MonoBehaviour:
   m_RequiresOpaqueTextureOption: 2
   m_CameraType: 0
   m_Cameras: []
-  m_RendererIndex: 1
+  m_RendererIndex: -1
   m_VolumeLayerMask:
     serializedVersion: 2
     m_Bits: 1
@@ -331,8 +331,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
   speed: 0.05
   boostedSpeedMultiplier: 3
-  doubleSpeedRemainingTime: 60
-  doubleSpeedMultiplier: 2
 --- !u!64 &42175645
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -3730,7 +3728,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 03:00
+  m_text: 04:00
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
   m_sharedMaterial: {fileID: 3271106341989512478, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
@@ -4102,8 +4100,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
   speed: 0.1
   boostedSpeedMultiplier: 4
-  doubleSpeedRemainingTime: 60
-  doubleSpeedMultiplier: 2
 --- !u!1 &1423400455
 GameObject:
   m_ObjectHideFlags: 0
@@ -4630,13 +4626,13 @@ MonoBehaviour:
     - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 45
+      count: 184
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 3
+      count: 24
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 3
+      count: 12
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 5
+      count: 20
   - interval:
       minInterval: 30
       maxInterval: 60
@@ -4648,13 +4644,13 @@ MonoBehaviour:
     - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 45
+      count: 170
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 5
+      count: 50
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 3
+      count: 12
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 5
+      count: 18
   - interval:
       minInterval: 60
       maxInterval: 90
@@ -4666,13 +4662,13 @@ MonoBehaviour:
     - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 45
+      count: 160
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 8
+      count: 70
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 4
+      count: 14
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 10
+      count: 36
   - interval:
       minInterval: 90
       maxInterval: 120
@@ -4684,58 +4680,58 @@ MonoBehaviour:
     - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 45
+      count: 160
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 10
+      count: 90
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 4
+      count: 14
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 10
+      count: 36
   - interval:
       minInterval: 120
-      maxInterval: 150
-    loopEnabled: 1
+      maxInterval: 180
+    loopEnabled: 0
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 0
+      count: 56
     - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 30
+      count: 206
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 15
+      count: 168
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 4
+      count: 28
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 15
+      count: 102
   - interval:
-      minInterval: 0
-      maxInterval: 90
-    loopEnabled: 1
+      minInterval: 180
+      maxInterval: 240
+    loopEnabled: 0
     loopCycleDuration: 0
     prefabSpawnCounts:
     - prefab: {fileID: 8010092503364828236, guid: c3532187bbef14defa7f3727d97df047, type: 3}
-      count: 19
+      count: 70
     - prefab: {fileID: 8010092503364828236, guid: 83459812dbcc4d20a4e0ecf5168ccd9e, type: 3}
       count: 0
     - prefab: {fileID: 20773454807468889, guid: 7bab08327c0a445e29f3aed340a78ce3, type: 3}
-      count: 0
+      count: 172
     - prefab: {fileID: 8010092503364828236, guid: 108823c92f023484d909655f6dc59c27, type: 3}
-      count: 0
+      count: 210
     - prefab: {fileID: 8010092503364828236, guid: eae5ff4cd60dae3488c2aac616a3672f, type: 3}
-      count: 0
+      count: 22
     - prefab: {fileID: 20773454807468889, guid: 6e3c8ec15485d344bb2cdf2535bb7c7b, type: 3}
-      count: 0
-  spawnEnabled: 1
-  showDebugLogs: 0
+      count: 86
+  spawnEnabled: 0
+  showDebugLogs: 1
   hugeObstacleSpawnCount: 1
   hugeObstacleSpawnY: 0.00000001929803
-  bgmNormalSpawnRemainingSeconds: 90
+  bgmNormalSpawnRemainingSeconds: 120
   enableDebugSpawnKeys: 1
   showDebugSpawnKeyLogs: 1
   minSpawnDistanceX: 1.2
-  minSpawnDistanceY: 10
+  minSpawnDistanceY: 0.3
   recentSpawnWindow: 0.6
   overlapAvoidanceXStep: 0.8
   maxPlacementAttempts: 8
@@ -4955,6 +4951,8 @@ MonoBehaviour:
   timeLimitSeconds: 5
   enteredColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
   remainingColor: {r: 0, g: 0, b: 0, a: 1}
+  successBaseScore: 1000
+  successMissPenalty: 100
 --- !u!4 &1671829137
 Transform:
   m_ObjectHideFlags: 0
@@ -5146,8 +5144,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BackgroundScroll
   speed: 0.05
   boostedSpeedMultiplier: 3
-  doubleSpeedRemainingTime: 60
-  doubleSpeedMultiplier: 2
 --- !u!64 &1805476197
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -5780,13 +5776,40 @@ MonoBehaviour:
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 80
-  maxTime: 180
+  time: 240
+  maxTime: 240
+  scoreSpeedSteps:
+  - score: 0
+    multiplier: 1
+  - score: 3000
+    multiplier: 1.1
+  - score: 6000
+    multiplier: 1.2
+  - score: 10000
+    multiplier: 1.3
+  - score: 15000
+    multiplier: 1.4
+  - score: 25000
+    multiplier: 1.5
+  - score: 35000
+    multiplier: 1.6
+  - score: 45000
+    multiplier: 1.7
+  - score: 55000
+    multiplier: 1.8
+  - score: 65000
+    multiplier: 1.9
+  - score: 75000
+    multiplier: 2
+  - score: 85000
+    multiplier: 2.1
+  - score: 95000
+    multiplier: 2.2
+  - score: 100000
+    multiplier: 2.3
   feverCount: 0
   feverNeeded: 5
-  feverScoreBonus: 5000
   feverBoostDuration: 8
-  feverBoostMultiplier: 1.5
   feverLoopEffect: {fileID: 192992550}
   feverLoopEffect2: {fileID: 1404703329}
   scoreDigitTexts:

@@ -1,9 +1,16 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System;
+using Unity.Profiling;
 
 public class ItemPool : MonoBehaviour
 {
+    // ── 計測用マーカー（Profilerで処理時間と呼び出し回数を見る。動作は変更しない）──
+    private static readonly ProfilerMarker s_rebuildPoolsMarker =
+        new ProfilerMarker("ItemPool.RebuildPools");
+    private static readonly ProfilerMarker s_createItemMarker =
+        new ProfilerMarker("ItemPool.CreateItem");
+
     public static ItemPool Instance;
 
     public GameObject[] itemPrefabs;
@@ -28,6 +35,8 @@ public class ItemPool : MonoBehaviour
 
     private void RebuildPools()
     {
+        using var rebuildScope = s_rebuildPoolsMarker.Auto();
+
         pools.Clear();
         validPrefabs.Clear();
 
@@ -59,6 +68,8 @@ public class ItemPool : MonoBehaviour
             {
                 try
                 {
+                    using var createScope = s_createItemMarker.Auto();
+
                     GameObject obj = Instantiate(prefab);
                     ConfigureMagnet(obj, prefab);
                     obj.SetActive(false);

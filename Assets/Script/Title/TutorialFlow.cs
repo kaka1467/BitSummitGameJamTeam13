@@ -5,9 +5,18 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
+using Unity.Profiling;
 
 public class TutorialFlow : MonoBehaviour
 {
+    // ── 計測用マーカー（Profilerで処理時間と呼び出し回数を見る。動作は変更しない）──
+    private static readonly ProfilerMarker s_tutorialStartupMarker =
+        new ProfilerMarker("TutorialFlow.StartupSync");
+    private static readonly ProfilerMarker s_mainPlayStartPrepMarker =
+        new ProfilerMarker("TutorialFlow.MainPlayStartPrep");
+    private static readonly ProfilerMarker s_clearActiveItemsMarker =
+        new ProfilerMarker("TutorialFlow.ClearActiveItems");
+
     [Header("References")]
     [SerializeField] private PlayerMove playerMove;
     [SerializeField] private ItemSpawner itemSpawner;
@@ -138,7 +147,14 @@ public class TutorialFlow : MonoBehaviour
     public void StartTutorial()
     {
         if (tutorialRunning) return;
-        StartCoroutine(TutorialRoutine());
+
+        // StartCoroutine は「最初の yield までの区間」を同期実行するため、
+        // このスコープはチュートリアル開始時の同期的な準備部分だけを計測する
+        // （Coroutine全体や yield をまたいだ区間は計測しない）。
+        using (s_tutorialStartupMarker.Auto())
+        {
+            StartCoroutine(TutorialRoutine());
+        }
     }
 
     private IEnumerator TutorialRoutine()
@@ -253,17 +269,20 @@ public class TutorialFlow : MonoBehaviour
         // RunCountdown 内にあり、飛ばすと親機が遷移できなくなるため。
         yield return RunCountdown();
 
-        playerMove.SetInputEnabled(true);
-        playerMove.SetAutoDrive(false);
-        playerMove.SetAutoTargetX(null);
-
-        itemSpawner.SpawnEnabled = true;
-        itemSpawner.RestartSchedule();
-
-        if (disableGameManagerDuringTutorial && gameManager != null)
+        using (s_mainPlayStartPrepMarker.Auto())
         {
-            gameManager.SetTutorialMode(false);
-            gameManager.ResetScoreAndFever();
+            playerMove.SetInputEnabled(true);
+            playerMove.SetAutoDrive(false);
+            playerMove.SetAutoTargetX(null);
+
+            itemSpawner.SpawnEnabled = true;
+            itemSpawner.RestartSchedule();
+
+            if (disableGameManagerDuringTutorial && gameManager != null)
+            {
+                gameManager.SetTutorialMode(false);
+                gameManager.ResetScoreAndFever();
+            }
         }
 
         HideInteractiveHint();
@@ -864,6 +883,8 @@ public class TutorialFlow : MonoBehaviour
 
     private void ClearActiveItemsExcept(GameObject keep)
     {
+        using var clearScope = s_clearActiveItemsMarker.Auto();
+
         ItemPool pool = ItemPool.Instance;
         Item[] items = FindObjectsByType<Item>(FindObjectsSortMode.None);
         foreach (Item item in items)

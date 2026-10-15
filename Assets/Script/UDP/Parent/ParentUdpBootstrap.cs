@@ -131,6 +131,12 @@ public class ParentUdpBootstrap : MonoBehaviour
 
     private void Start()
     {
+        // 親機の描画負荷を抑えるため、目標フレームレートを60fpsにする。
+        //  ・Application.targetFrameRate はアプリ全体（実行中のプロセス）に作用する設定。
+        //  ・重複個体は Awake で自壊するため、ここへ来るのは正当な親機インスタンスだけ。
+        //  ・vSyncCount(0) は変更しない（targetFrameRate を有効に保つ）。
+        Application.targetFrameRate = 60;
+
         // Force result scenes to shared names across parent/child.
         gameOverSceneName = ResultGameOverScene;
         timeUpSceneName = ResultTimeUpScene;
