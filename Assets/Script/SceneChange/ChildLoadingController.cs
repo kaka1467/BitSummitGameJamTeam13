@@ -1,4 +1,5 @@
 using System.Collections;
+using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -10,6 +11,10 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public class ChildLoadingController : MonoBehaviour
 {
+    // ── 計測用マーカー（Profilerで処理時間と呼び出し回数を見る。動作は変更しない）──
+    private static readonly ProfilerMarker s_loadChildGameSceneMarker =
+        new ProfilerMarker("Loading.LoadChildGameScene");
+
     [Header("Scene Settings")]
     [Tooltip("Name of the child game scene to load after loading is done.")]
     public string gameSceneName = "ChildGameScene";
@@ -81,6 +86,9 @@ public class ChildLoadingController : MonoBehaviour
 
         Debug.Log($"[ChildLoadingController] Loading {gameSceneName}.");
         Debug.Log($"[StartTrace][子機] ChildLoadingController → SceneManager.LoadScene('{gameSceneName}') 直前 (現在scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
-        SceneManager.LoadScene(gameSceneName);
+        using (s_loadChildGameSceneMarker.Auto())
+        {
+            SceneManager.LoadScene(gameSceneName);
+        }
     }
 }

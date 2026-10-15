@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Unity.Profiling;
 
 /// <summary>
 /// ChildUdpRuntimeHost：子機UDPランタイムの「実行所有者」になるための準備クラス（今回は非稼働）。
@@ -55,6 +56,14 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public sealed class ChildUdpRuntimeHost : MonoBehaviour
 {
+    // ── 計測用マーカー（Profilerで処理時間と呼び出し回数を見る。動作は変更しない）──
+    private static readonly ProfilerMarker s_drainChannelQueuesMarker =
+        new ProfilerMarker("UDP.DrainChannelQueues");
+    private static readonly ProfilerMarker s_processReceiveQueueMarker =
+        new ProfilerMarker("UDP.ProcessReceiveQueue");
+    private static readonly ProfilerMarker s_processLogQueueMarker =
+        new ProfilerMarker("UDP.ProcessLogQueue");
+
     /// <summary>ライフサイクル状態（明示的な入口だけで遷移する）。</summary>
     public enum RuntimeState { Created = 0, Configured = 1, Running = 2, Stopped = 3 }
 
@@ -381,6 +390,8 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     {
         if (_channel == null) return;
 
+        using var drainScope = s_drainChannelQueuesMarker.Auto();
+
         while (_channel.TryDequeueIssue(out UdpChannel.Issue issue))
             EnqueueLog(LogType.Error, $"[ChildUdpRuntimeHost] Receive error: {issue.Message}");
 
@@ -422,6 +433,8 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     /// <summary>取り込んだ受信を順に処理する（Host内部だけが消費する）。</summary>
     private void ProcessReceiveQueue()
     {
+        using var receiveScope = s_processReceiveQueueMarker.Auto();
+
         while (_receiveQueue.TryDequeue(out string raw))
             DispatchMessage(raw);
     }
@@ -1417,6 +1430,8 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     /// <summary>積まれたログをメインスレッドで出力する。</summary>
     private void ProcessLogQueue()
     {
+        using var logScope = s_processLogQueueMarker.Auto();
+
         while (_logQueue.TryDequeue(out LogEntry entry))
         {
             switch (entry.Type)

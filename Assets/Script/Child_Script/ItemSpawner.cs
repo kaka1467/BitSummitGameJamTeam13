@@ -2,9 +2,22 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
+using Unity.Profiling;
 
 public class ItemSpawner : MonoBehaviour
 {
+    // ── 計測用マーカー（Profilerで処理時間と呼び出し回数を見る。動作は変更しない）──
+    private static readonly ProfilerMarker s_buildScheduleMarker =
+        new ProfilerMarker("ItemSpawner.BuildNormalSpawnSchedule");
+    private static readonly ProfilerMarker s_handleScheduledMarker =
+        new ProfilerMarker("ItemSpawner.HandleScheduledNormalSpawns");
+    private static readonly ProfilerMarker s_tryPlaceMarker =
+        new ProfilerMarker("ItemSpawner.TryPlaceItemWithoutOverlap");
+    private static readonly ProfilerMarker s_isOccupiedMarker =
+        new ProfilerMarker("ItemSpawner.IsSpawnPositionOccupied");
+    private static readonly ProfilerMarker s_collectActiveItemsMarker =
+        new ProfilerMarker("ItemSpawner.CollectActiveItems");
+
     [Serializable]
     public class SpawnIntervalRange
     {
@@ -58,7 +71,7 @@ public class ItemSpawner : MonoBehaviour
     //   （時間の加算・減算があれば、その現在値に従う）。
     [Header("BGM Spawn Condition")]
     [Tooltip("BGMアイテムを通常出現させてよい残り時間のしきい値（秒）。残り時間がこの値未満のときだけ通常出現を許可する。")]
-    [SerializeField, Min(0f)] private float bgmNormalSpawnRemainingSeconds = 90f;
+    [SerializeField, Min(0f)] private float bgmNormalSpawnRemainingSeconds = 120f;
 
     // ── デバッグ出現キー（数字1〜6） ──────────────────────────────────────────
     //   子機のゲーム中のみ有効。タイトル・ロード中・ゲーム終了後は出現させない。
@@ -84,14 +97,14 @@ public class ItemSpawner : MonoBehaviour
     private class ScheduledNormalSpawn
     {
         public GameObject prefab;
-        public float spawnTime;
-        public float visibleByTime;
+        public float spawnTime;        // 出現を実行する絶対時刻（Time.unscaledTime と直接比較する）
+        public float visibleByTime;    // 画面に入っているべき絶対時刻（締め切り計算に使う）
         public int retryCount;      // リトライ回数
 
         // ループ用フィールド
         public bool loopEnabled;
         public float loopCycleDuration;   // 次サイクルまでの周期
-        public float cycleStartTime;      // このサイクルが始まった実時刻（ゲーム開始からの経過）
+        public float cycleStartTime;      // このサイクルが始まった絶対時刻（本プレイ開始時刻＋ルール内の相対秒）
         public float localVisibleOffset;  // サイクル内でのランダムオフセット（再スケジュール時に再利用）
     }
 
@@ -119,11 +132,50 @@ public class ItemSpawner : MonoBehaviour
 
     private float nextHugeSpawnTime = -1f;
     private bool isHugeSpawnScheduled = false;
+
+    // 通常出現予定の基準時刻（＝本プレイ開始時刻。Start / RestartSchedule が呼ぶ
+    // BuildNormalSpawnSchedule の中で更新する）。
+    //  ・ScheduledNormalSpawn の spawnTime / visibleByTime / cycleStartTime は、
+    //    すべてこの基準時刻を含む絶対時刻で保持する（相対時刻と絶対時刻を混在させない）。
+    //  ・これによりタイトル待機・ロード・チュートリアルの長さに関係なく、
+    //    ルールの0〜30秒などが「本プレイ開始からの経過秒」として解釈される。
+    //  ・巨大障害物の予定（nextHugeSpawnTime）は元から Time.unscaledTime ＋待機秒数で
+    //    管理しているため、この基準時刻は使わない（二重加算しない）。
+    private float normalScheduleStartTime;
     private readonly List<ScheduledNormalSpawn> scheduledNormalSpawns = new List<ScheduledNormalSpawn>();
     private readonly List<RecentSpawnRecord> recentSpawnRecords = new List<RecentSpawnRecord>();
 
     // ★ 追加: 同一Update内で仮登録した配置済み位置（フレーム終わりにクリア）
     private readonly List<RecentSpawnRecord> pendingFrameRecords = new List<RecentSpawnRecord>();
+
+    // ── アクティブアイテム一覧のフレーム内キャッシュ ────────────────────────────
+    //  ・IsSpawnPositionOccupied は1回の配置試行で最大 (レーン数+1) 回呼ばれ、出現が集中する
+    //    フレームでは全体探索が数百回に達するため、同じフレーム内は一覧を再利用する。
+    //  ・取得元は従来と同じ FindObjectsByType<Item>（ItemPool 管理外のアイテムも対象に含める）。
+    //  ・キャッシュはフレーム番号で無効化し、未構築／フレームが変わればその場で構築する
+    //    （Update 以外の出現経路＝巨大障害物・デバッグキー・TrySpawnByPrefab・チュートリアルでも古い一覧を使わない）。
+    //  ・同じフレームで新しく出現したアイテムは、配置成功時に pendingFrameRecords へ登録されるため
+    //    後続の配置判定からも見える（重なり防止に穴を作らない）。
+    //  ・同じフレームで返却・無効化されたアイテムは、判定ループ側の activeInHierarchy / null チェックで除外される。
+    private Item[] _activeItemsForFrame;
+    private int _activeItemsForFrameNumber = -1;
+
+    /// <summary>
+    /// 重なり判定に使う「現在アクティブな Item コンポーネント一覧」を、同一フレーム内で再利用して返す。
+    /// 取得元・並び順・重複の扱いは従来の FindObjectsByType<Item>(FindObjectsSortMode.None) と同じ。
+    /// </summary>
+    private Item[] GetActiveItemsForFrame()
+    {
+        int frame = Time.frameCount;
+        if (_activeItemsForFrame == null || _activeItemsForFrameNumber != frame)
+        {
+            using var collectScope = s_collectActiveItemsMarker.Auto();
+            _activeItemsForFrame = FindObjectsByType<Item>(FindObjectsSortMode.None);
+            _activeItemsForFrameNumber = frame;
+        }
+
+        return _activeItemsForFrame;
+    }
 
     // デバッグ出現キーの診断ログ用（初回のみ／警告は1回のみ出力して毎フレームのログ氾濫を防ぐ）
     private bool _debugInitLogged;
@@ -385,6 +437,10 @@ public class ItemSpawner : MonoBehaviour
     {
         if (scheduledNormalSpawns.Count == 0) return;
 
+        // 処理対象があるときだけ計測する（毎フレームの空呼び出しをマーカーに出さない）
+        using var handleScope = s_handleScheduledMarker.Auto();
+
+        // 予定時刻（spawnTime）は基準時刻を含む絶対時刻なので、現在時刻とそのまま比較できる。
         float now = Time.unscaledTime;
 
         // ★ 修正: リトライも含めて処理するため、逆順ループで安全に削除
@@ -404,7 +460,8 @@ public class ItemSpawner : MonoBehaviour
                     float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
                     float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
 
-                    scheduled.spawnTime    = Mathf.Max(0f, nextVisible - leadTime);
+                    // 再予約も同じ絶対時刻系で行う（基準時刻より前には生成しない）
+                    scheduled.spawnTime    = Mathf.Max(normalScheduleStartTime, nextVisible - leadTime);
                     scheduled.visibleByTime = nextVisible;
                     scheduled.cycleStartTime = nextCycleStart;
                     scheduled.retryCount   = 0;
@@ -428,7 +485,8 @@ public class ItemSpawner : MonoBehaviour
                         float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
                         float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
 
-                        scheduled.spawnTime    = Mathf.Max(0f, nextVisible - leadTime);
+                        // 上限リトライ失敗時の次サイクル持ち越しも同じ絶対時刻系で行う
+                        scheduled.spawnTime    = Mathf.Max(normalScheduleStartTime, nextVisible - leadTime);
                         scheduled.visibleByTime = nextVisible;
                         scheduled.cycleStartTime = nextCycleStart;
                         scheduled.retryCount   = 0;
@@ -449,7 +507,7 @@ public class ItemSpawner : MonoBehaviour
                 }
                 else
                 {
-                    // 少し後に再試行
+                    // 少し後に再試行（now も予定時刻も同じ絶対時刻系なので、そのまま加算できる）
                     scheduled.spawnTime = now + retryInterval;
                 }
             }
@@ -458,7 +516,14 @@ public class ItemSpawner : MonoBehaviour
 
     private void BuildNormalSpawnSchedule()
     {
+        using var buildScope = s_buildScheduleMarker.Auto();
+
         scheduledNormalSpawns.Clear();
+
+        // この回の基準時刻（＝本プレイ開始時刻）をここで確定する。
+        // Start（シーン読み込み時）と RestartSchedule（本プレイ開始時）の両方がここを通るため、
+        // 後から呼ばれた方が基準時刻として有効になる（本プレイ開始時の RestartSchedule が最後に来る）。
+        normalScheduleStartTime = Time.unscaledTime;
 
         if (normalSpawnRules == null || normalSpawnRules.Count == 0)
         {
@@ -501,16 +566,22 @@ public class ItemSpawner : MonoBehaviour
             {
                 // サイクル内でのランダムオフセット（0〜cycleDuration の範囲）
                 float localOffset = UnityEngine.Random.Range(0f, cycleDuration);
-                float visibleTime = startTime + localOffset;
+
+                // ルール内の相対秒（本プレイ開始＝0秒）に基準時刻を加え、絶対時刻として保持する。
+                // 先行時間（leadTime＝画面外から画面に入るまでの移動時間）は従来どおり差し引く。
+                // 予定が本プレイ開始時刻より前になる場合は基準時刻にクランプし、開始前には生成しない
+                // （その分だけ最初のアイテムが画面に入るのは遅れる。移動時間は残る）。
+                float visibleTime = normalScheduleStartTime + startTime + localOffset;
+
                 scheduledNormalSpawns.Add(new ScheduledNormalSpawn
                 {
                     prefab           = entry.prefab,
-                    spawnTime        = Mathf.Max(0f, visibleTime - leadTime),
+                    spawnTime        = Mathf.Max(normalScheduleStartTime, visibleTime - leadTime),
                     visibleByTime    = visibleTime,
                     retryCount       = 0,
                     loopEnabled      = rule.loopEnabled,
                     loopCycleDuration = rule.loopEnabled ? cycleDuration : 0f,
-                    cycleStartTime   = startTime,          // 第1サイクルの基準時刻
+                    cycleStartTime   = normalScheduleStartTime + startTime,   // 第1サイクルの基準時刻（絶対）
                     localVisibleOffset = localOffset,
                 });
             }
@@ -525,9 +596,13 @@ public class ItemSpawner : MonoBehaviour
         if (distance <= 0f) return 0f;
 
         ItemMove move = prefab.GetComponent<ItemMove>();
-        if (move == null || move.speed <= 0f) return 0f;
+        if (move == null) return 0f;
 
-        return distance / move.speed;
+        // 得点段階倍率を反映した実効速度で先行時間を求める（段階が上がるほど画面へ入るのが早くなる）。
+        float effectiveSpeed = move.EffectiveSpeed;
+        if (effectiveSpeed <= 0f) return 0f;
+
+        return distance / effectiveSpeed;
     }
 
     private List<GameObject> GetNormalPrefabsFromItemPool()
@@ -566,17 +641,7 @@ public class ItemSpawner : MonoBehaviour
             return false;
         }
 
-        var gm = GameManager.instance;
-        bool feverActive = gm != null && gm.IsFeverMagnetActive;
-
-        if (feverActive && !itemComp.isMagnetable)
-        {
-            ItemPool.Instance.ReturnToPool(item);
-            // フィーバー中のスキップは「失敗」ではなく正常終了 → true で除去
-            return true;
-        }
-
-        // BGM は「子機のタイマーの残り時間がしきい値(既定90秒)未満」のときだけ通常出現を許可する。
+        // BGM は「子機のタイマーの残り時間がしきい値(既定120秒)未満」のときだけ通常出現を許可する。
         // 解禁前の予定はここで消費する（保留・毎フレーム再試行・解禁時のまとめ出現はしない）。
         if (itemComp.itemType == ItemType.BGM && !IsBgmNormalSpawnAllowed())
         {
@@ -600,6 +665,8 @@ public class ItemSpawner : MonoBehaviour
     private bool TryPlaceItemWithoutOverlap(GameObject item, bool preferHugeLane, float maxExtraX = float.PositiveInfinity)
     {
         if (item == null) return false;
+
+        using var placeScope = s_tryPlaceMarker.Auto();
 
         Item itemComp = item.GetComponent<Item>();
         bool forceHugeObstacleY = itemComp != null && itemComp.itemType == ItemType.HugeObstacle;
@@ -638,14 +705,22 @@ public class ItemSpawner : MonoBehaviour
         if (prefab == null) return 0f;
 
         ItemMove move = prefab.GetComponent<ItemMove>();
-        if (move == null || move.speed <= 0f)
+        if (move == null)
+        {
+            return float.PositiveInfinity;
+        }
+
+        // 配置時に許可する追加X距離も、得点段階倍率を反映した実効速度で求める
+        // （実効速度が上がるほど「画面に入るまでの残り時間」で進める距離が伸びる）。
+        float effectiveSpeed = move.EffectiveSpeed;
+        if (effectiveSpeed <= 0f)
         {
             return float.PositiveInfinity;
         }
 
         float remainingTime = Mathf.Max(0f, visibleByTime - now);
         float rightEdgeX = GetScreenRightEdgeX();
-        float maxSpawnX = rightEdgeX + (move.speed * remainingTime);
+        float maxSpawnX = rightEdgeX + (effectiveSpeed * remainingTime);
         float baseSpawnX = GetSpawnXWorld();
         return Mathf.Max(0f, maxSpawnX - baseSpawnX);
     }
@@ -694,6 +769,8 @@ public class ItemSpawner : MonoBehaviour
 
     private bool IsSpawnPositionOccupied(Vector3 candidate, float now, GameObject spawningItem)
     {
+        using var occupiedScope = s_isOccupiedMarker.Auto();
+
         PruneRecentSpawns(now);
         Vector2 spawningHalf = GetApproxHalfSize(spawningItem);
 
@@ -728,8 +805,9 @@ public class ItemSpawner : MonoBehaviour
         }
 
         // ③ 実際にアクティブなアイテムとの重なり判定
-        //    ★ FindObjectsByType は重いので、ItemPool 管理外の既存アイテムだけを対象にする
-        Item[] activeItems = FindObjectsByType<Item>(FindObjectsSortMode.None);
+        //    ★ FindObjectsByType は重いので、同じフレーム内では一覧を再利用する
+        //      （取得元は従来どおり ItemPool 管理外のアイテムも含む全体探索のまま）
+        Item[] activeItems = GetActiveItemsForFrame();
         foreach (var activeItem in activeItems)
         {
             if (activeItem == null || !activeItem.gameObject.activeInHierarchy) continue;
@@ -997,7 +1075,7 @@ public class ItemSpawner : MonoBehaviour
     ///  ・重なり回避は既存の overlapAvoidanceXStep × maxPlacementAttempts を使い X 方向にのみ行う
     ///    （通常スポーンの TryPlaceItemWithoutOverlap と同じ考え方。無制限のリトライはしない）。
     ///  ・HugeObstacle もこのデバッグ経路では中央レーンを使う（通常出現の hugeObstacleSpawnY は変更しない）。
-    ///  ・BGM はこの経路では通常出現の残り時間制限(90秒)を受けない（LOUD_ITEM経路の確認用）。
+    ///  ・BGM はこの経路では通常出現の残り時間制限(120秒)を受けない（LOUD_ITEM経路の確認用）。
     /// </summary>
     private bool TrySpawnDebugItemAtMiddleLane(ItemType itemType, out GameObject spawnedItem)
     {
@@ -1064,18 +1142,18 @@ public class ItemSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// 既存のフィーバー状態（GameManager.IsFeverMagnetActive）を参照する。
+    /// 既存のフィーバー状態（GameManager.IsFeverActive）を参照する。
     /// デバッグ専用のフィーバーフラグは作らない。
     /// </summary>
     private static bool IsFeverActiveForSpawn()
     {
         GameManager gm = GameManager.instance;
-        return gm != null && gm.IsFeverMagnetActive;
+        return gm != null && gm.IsFeverActive;
     }
 
     /// <summary>
     /// BGMアイテムが通常出現できるか。子機のゲームタイマーの残り時間(GameManager.time)が
-    /// しきい値(bgmNormalSpawnRemainingSeconds, 既定90秒)未満のときだけ許可する。
+    /// しきい値(bgmNormalSpawnRemainingSeconds, 既定120秒)未満のときだけ許可する。
     /// ゲーム開始からの経過時間ではなく、実際の残り時間（時間の加算・減算の現在値）を参照する。
     /// </summary>
     private bool IsBgmNormalSpawnAllowed()

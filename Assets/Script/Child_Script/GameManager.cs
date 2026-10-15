@@ -39,19 +39,80 @@ public class GameManager : MonoBehaviour
     public static event System.Action ResultDataCommitted;
 
     public int score = 0;
-    public float time = 180f;
-    public float maxTime = 180f;
+    public float time = 240f;
+    public float maxTime = 240f;
+
+    // ── 得点段階による速度倍率 ─────────────────────────────────────────────────
+    //  ・段階は「そのプレイの最高到達スコア」で決める（現在スコアではない。減点で段階は下がらない）。
+    //  ・倍率はこの表から絶対値を選ぶ（毎回掛け重ねない）。
+    //  ・表はここ1か所だけに持ち、ItemMove / BackgroundScroll / ItemSpawner は
+    //    読み取り専用プロパティ（ScoreSpeedMultiplier / CurrentScoreSpeedMultiplier）経由で参照する。
+    [System.Serializable]
+    public struct ScoreSpeedStep
+    {
+        [Tooltip("この倍率になる最低スコア（最高到達スコアで判定）。")]
+        [Min(0)] public int score;
+        [Tooltip("速度倍率（アイテム・背景の元の速度に掛ける絶対値）。")]
+        [Min(0f)] public float multiplier;
+    }
+
+    [Header("得点段階による速度倍率（最高到達スコア → 倍率）")]
+    [Tooltip("段数・しきい値・倍率をここで変更する。並び順は問わない（実行時にソートしない）。" +
+             "負のしきい値・0以下の倍率・NaN/Infinity の倍率は無効として無視し、" +
+             "該当が無ければ1.0倍にフォールバックする。")]
+    [SerializeField] private ScoreSpeedStep[] scoreSpeedSteps = new ScoreSpeedStep[]
+    {
+        new ScoreSpeedStep { score = 0,      multiplier = 1.00f },
+        new ScoreSpeedStep { score = 3000,   multiplier = 1.10f },
+        new ScoreSpeedStep { score = 6000,   multiplier = 1.20f },
+        new ScoreSpeedStep { score = 10000,  multiplier = 1.30f },
+        new ScoreSpeedStep { score = 15000,  multiplier = 1.40f },
+        new ScoreSpeedStep { score = 25000,  multiplier = 1.50f },
+        new ScoreSpeedStep { score = 35000,  multiplier = 1.60f },
+        new ScoreSpeedStep { score = 45000,  multiplier = 1.70f },
+        new ScoreSpeedStep { score = 55000,  multiplier = 1.80f },
+        new ScoreSpeedStep { score = 65000,  multiplier = 1.90f },
+        new ScoreSpeedStep { score = 75000,  multiplier = 2.00f },
+        new ScoreSpeedStep { score = 85000,  multiplier = 2.10f },
+        new ScoreSpeedStep { score = 95000,  multiplier = 2.20f },
+        new ScoreSpeedStep { score = 100000, multiplier = 2.30f },
+    };
+
+    private int maxScore;                        // そのプレイの最高到達スコア
+    private float scoreSpeedMultiplier = 1f;     // 現在の段階倍率（表から選んだ絶対値）
+
+    /// <summary>このプレイの最高到達スコア（読み取り専用）。</summary>
+    public int MaxScore => maxScore;
+
+    /// <summary>
+    /// 現在の得点段階倍率（読み取り専用）。チュートリアル中は 1.0。
+    /// </summary>
+    public float ScoreSpeedMultiplier => isTutorialMode ? 1f : scoreSpeedMultiplier;
+
+    /// <summary>
+    /// 速度倍率の参照用アクセサ（GameManager 不在時は 1.0）。
+    /// ItemMove / BackgroundScroll / ItemSpawner が毎フレーム参照するため、
+    /// オブジェクト検索・ソート・配列の割り当ては行わない。
+    /// </summary>
+    public static float CurrentScoreSpeedMultiplier
+    {
+        get
+        {
+            GameManager gm = instance;
+            return gm != null ? gm.ScoreSpeedMultiplier : 1f;
+        }
+    }
 
     [Header("Fever")]
     public int feverCount = 0;
     public int feverNeeded = 5;
-    public int feverScoreBonus = 30;
+    [Tooltip("フィーバーの継続時間（秒）。名前は旧仕様の名残（現在は速度上昇には使わない）。")]
     public float feverBoostDuration = 8f;
-    public float feverBoostMultiplier = 1.5f;
     public FeverLoopEffect feverLoopEffect;
     public FeverLoopEffect feverLoopEffect2;
-    bool isFeverMagnetActive = false;
-    public bool IsFeverMagnetActive => isFeverMagnetActive;
+    // フィーバー実行中（得点2倍・継続時間・キラキラ・QTE新規出現禁止が参照する唯一の状態）
+    bool isFeverActive = false;
+    public bool IsFeverActive => isFeverActive;
 
     private Coroutine feverRoutine;
     private float feverEndTime = -1f;
@@ -89,6 +150,13 @@ public class GameManager : MonoBehaviour
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
     private bool isTutorialMode = false;
+
+    /// <summary>
+    /// チュートリアル中かどうか（読み取り専用）。
+    /// QTE成功報酬の「本プレイ中か」の判定に使う。GameManager が存在するだけでは本プレイと判断しない
+    /// （GameManager が無い場合・チュートリアル中は報酬を出さない）。
+    /// </summary>
+    public bool IsTutorialMode => isTutorialMode;
 
     // ── CAUGHT（親機の捕獲）の購読 ────────────────────────────────────────────
     //   受信後の結果処理（TriggerResult(GameOver)）は本クラスが担当する。
@@ -257,6 +325,16 @@ public class GameManager : MonoBehaviour
         _frozenScore = score;   // score 自体は以後変更されないため、この値が最終得点になる
 
         Debug.Log($"[GameManager] 得点を確定しました（理由={reason}）: {_frozenScore}点。結果画面まで加算しません");
+
+        // 捕獲でQTEが残らないように中断する（先に得点固定・捕獲待ちの状態を確定してから行う）。
+        //  ・QTEが実際に動作していたときだけ、QTE由来の時間停止（Time.timeScale = 0）を解除する。
+        //  ・捕獲待ちは結果確定前のため、結果処理の停止状態はまだ存在しない。
+        //  ・得点固定・演出完了待ち・入力ロック（ChildSleepLockApplier 管理）には触れない。
+        QTEManager qte = QTEManager.Instance;
+        if (qte != null && qte.CancelQteForResult())
+        {
+            Time.timeScale = 1f;
+        }
     }
 
     /// <summary>
@@ -387,20 +465,26 @@ public class GameManager : MonoBehaviour
 
         if (!isTutorialMode)
         {
-            time -= Time.deltaTime;
+            // QTE中は QTEManager が Time.timeScale = 0 にするため、ゲーム本体の残り時間は
+            // 実時間（unscaled）で進める。QTE中以外は従来どおり Time.deltaTime を使う
+            // （Time.deltaTime の一括置換はしない）。
+            bool qteActive = QTEManager.Instance != null && QTEManager.Instance.IsQteActive;
+            time -= qteActive ? Time.unscaledDeltaTime : Time.deltaTime;
 
             if (time <= 0f)
             {
                 time = 0f;
                 GameOver();
+
+                // 結果確定後はこのフレームの通常処理（得点表示・進行率通知など）を続けない。
+                // 時間表示だけは00:00へ更新する。
+                UpdateTimeText();
+                return;
             }
         }
 
         UpdateScoreDigits();
-
-        int minutes = (int)(time / 60);
-        int seconds = (int)(time % 60);
-        timeText.text = string.Format("{0:00}:{1:00}", minutes, seconds);
+        UpdateTimeText();
 
         if (feverText != null)
         {
@@ -409,6 +493,20 @@ public class GameManager : MonoBehaviour
 
         // 片付け演出用：進行率を親機へ定期通知する（出現率・得点には影響しない）。
         SendGameProgressIfDue();
+    }
+
+    /// <summary>
+    /// 残り時間の表示を更新する。
+    /// 表示は「残り時間を切り上げた総秒数」から算出する（減算直後に切り捨てると、
+    /// 開始直後が 04:00 ではなく 03:59 になってしまうため）。
+    /// 判定（時間切れ・片付け解禁・Loud Item解禁）には使わず、time の生値のみを使う。
+    /// </summary>
+    private void UpdateTimeText()
+    {
+        int displayTotalSeconds = Mathf.CeilToInt(Mathf.Max(0f, time));
+        int minutes = displayTotalSeconds / 60;
+        int seconds = displayTotalSeconds % 60;
+        timeText.text = string.Format("{0:00}:{1:00}", minutes, seconds);
     }
 
     /// <summary>
@@ -466,7 +564,65 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        score += amount;
+        // 結果確定後（捕獲以外の時間切れなど）に遅延して届いた取得でも最終得点を変えない。
+        if (isGameOver) return;
+
+        // フィーバー中は「正の得点」だけ2倍にする（減点は倍にしない）。
+        if (isFeverActive && amount > 0)
+        {
+            amount *= 2;
+        }
+
+        // 減点アイテムで合計スコアが負にならないよう、内部値も0以上に保つ。
+        score = Mathf.Max(0, score + amount);
+
+        // 最高到達スコアが更新されたときだけ速度段階を選び直す（毎フレームの再計算はしない）。
+        //  ・フィーバー2倍を適用した後の実スコアで判定する（上の amount *= 2 の後）。
+        //  ・減点でスコアが下がっても maxScore は下げないため、段階は下がらない。
+        //  ・チュートリアル中の取得は本プレイの最高到達スコアへ持ち込まない。
+        if (!isTutorialMode && score > maxScore)
+        {
+            maxScore = score;
+            UpdateScoreSpeedStage();
+        }
+    }
+
+    /// <summary>
+    /// 最高到達スコアから速度段階倍率を選び直す（表から絶対値を選ぶ。掛け重ねない）。
+    ///  ・表が空／該当なし／不正値のみの場合は 1.0 倍にフォールバックする。
+    ///  ・並び順に依存しない（全件走査して「該当する最大しきい値」を選ぶ。実行時ソートはしない）。
+    ///  ・同じしきい値が重複している場合は、その中で最大の倍率を使う（順序に依存しない）。
+    ///  ・負のしきい値、0以下の倍率、NaN/Infinity の倍率は無効として無視する。
+    ///  ・呼び出しは最高到達スコアが更新されたときだけ（毎フレームのソート・割り当てはしない）。
+    /// </summary>
+    private void UpdateScoreSpeedStage()
+    {
+        float selected = 1f;
+        int bestThreshold = -1;
+        bool found = false;
+
+        if (scoreSpeedSteps != null)
+        {
+            for (int i = 0; i < scoreSpeedSteps.Length; i++)
+            {
+                ScoreSpeedStep step = scoreSpeedSteps[i];
+
+                if (step.score < 0) continue;
+                if (step.multiplier <= 0f || float.IsNaN(step.multiplier) || float.IsInfinity(step.multiplier)) continue;
+                if (step.score > maxScore) continue;
+
+                bool isBetter = !found
+                                || step.score > bestThreshold
+                                || (step.score == bestThreshold && step.multiplier > selected);
+                if (!isBetter) continue;
+
+                bestThreshold = step.score;
+                selected = step.multiplier;
+                found = true;
+            }
+        }
+
+        scoreSpeedMultiplier = selected;
     }
 
     // Called when timer runs out — TIME_UP result
@@ -502,6 +658,12 @@ public class GameManager : MonoBehaviour
         }
 
         isGameOver = true;
+
+        // 結果確定の共通入口でQTEを片付ける（成功・失敗としては扱わない）。
+        //  ・時間切れ／捕獲／その他どの経路から確定してもQTEが残らないようにする。
+        //  ・Time.timeScale はここでは変更しない（この後の Time.timeScale = 0f が結果確定の停止を担う）。
+        QTEManager qte = QTEManager.Instance;
+        if (qte != null) qte.CancelQteForResult();
 
         // Save score under type-specific key
         string scoreKey = resultType == ResultType.GameOver
@@ -547,24 +709,12 @@ public class GameManager : MonoBehaviour
 
     private void ActivateFeverEffects()
     {
-        AddScore(feverScoreBonus);
+        // 成立時の固定加点（旧 feverScoreBonus）は廃止し、フィーバー中の得点2倍に置き換えた。
+        // 速度上昇（PlayerBoost）も廃止した（Boostアイテム単体の効果は変更しない）。
 
         float duration = Mathf.Max(0f, feverBoostDuration);
-        float multiplier = Mathf.Max(1f, feverBoostMultiplier);
 
-        GameObject player = GameObject.FindWithTag("Player");
-        if (player != null)
-        {
-            PlayerBoost boost = player.GetComponent<PlayerBoost>() ?? player.GetComponentInParent<PlayerBoost>();
-            if (boost == null)
-            {
-                boost = player.AddComponent<PlayerBoost>();
-            }
-
-            boost.StartBoost(duration, multiplier);
-        }
-
-        isFeverMagnetActive = true;
+        isFeverActive = true;
         feverEndTime = Mathf.Max(feverEndTime, Time.time + duration);
 
         if (feverLoopEffect != null)
@@ -734,6 +884,11 @@ public class GameManager : MonoBehaviour
         _sequenceDoneReceived = false;
         score = 0;
         feverCount = 0;
+
+        // 最高到達スコアと速度段階も初期化する（再プレイに前回の最高段階を残さない）。
+        maxScore = 0;
+        scoreSpeedMultiplier = 1f;
+
         StopFeverEffects();
         UpdateScoreDigits();
 
@@ -751,7 +906,7 @@ public class GameManager : MonoBehaviour
             feverRoutine = null;
         }
 
-        isFeverMagnetActive = false;
+        isFeverActive = false;
         feverEndTime = -1f;
 
         if (feverLoopEffect != null)

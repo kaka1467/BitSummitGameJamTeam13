@@ -138,15 +138,15 @@ public class MotherApproachWarning : MonoBehaviour
     public bool IsChoreBlocked => _choreBlocked;
 
     /// <summary>
-    /// ゲーム進行率（0〜1）。MotherApproachWarning の経過時間を監視時間（180秒）で割った値。
-    /// 片付け開始の判定に使う（子機からの通知がない環境でも機能する）。
+    /// ゲーム進行率（0〜1）。MotherApproachWarning の経過時間を監視時間（240秒）で割った値。
+    /// 親機側の参考値。片付け開始の判定は子機から届く実際の進行率のみで行い、この値では解禁しない。
     /// </summary>
     public float GameplayProgressRate =>
         Mathf.Clamp01(_gameplayElapsedSeconds / Mathf.Max(1f, gameplaySecondsForProgressRate));
 
     [Header("ゲーム進行率")]
-    [Tooltip("ゲーム進行率の計算に使う基準秒数（子機の制限時間と同じ180秒を想定）。")]
-    [SerializeField, Min(1f)] private float gameplaySecondsForProgressRate = 180f;
+    [Tooltip("ゲーム進行率の計算に使う基準秒数（子機の制限時間と同じ240秒を想定）。")]
+    [SerializeField, Min(1f)] private float gameplaySecondsForProgressRate = 240f;
 
     // ── 片付け演出の設定（ここを唯一の設定元にする） ─────────────────────────
     //   MotherChoreController / MotherApproachController はここを参照する

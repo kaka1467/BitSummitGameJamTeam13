@@ -9,6 +9,9 @@ public class ItemMagnet : MonoBehaviour
     public float maxMagnetSpeedPixels = 300f; // 引き寄せ開始時の最高速度（ピクセル単位）
     [SerializeField] private float screenEntryOffset = 0f;// 画面右端からどれだけ内側に入ったら引き寄せ開始するか（0なら画面右端で開始）
 
+    // 吸収の無効化フラグ（const にすると到達不能コード警告になるため static readonly で持つ）
+    private static readonly bool MagnetAbsorptionDisabled = true;
+
     Transform player;
     ItemEffect effect;
     private bool isMagnetizing = false;
@@ -25,8 +28,10 @@ public class ItemMagnet : MonoBehaviour
 
     void Update()
     {
-    // フィーバー中でなければ何もしない
-        if (GameManager.instance == null || !GameManager.instance.IsFeverMagnetActive) return;
+        // フィーバー由来のアイテム吸収は廃止した（吸収は行わない）。
+        //  ・Prefab／プールの isMagnetable は変更しない（ItemPool は従来どおり付与する）。
+        //  ・引き寄せ処理は将来の再開に備えて残すが、ここでは実行しない。
+        if (MagnetAbsorptionDisabled) return;
 
         if (player == null)
         {

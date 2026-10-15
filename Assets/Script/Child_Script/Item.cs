@@ -24,7 +24,7 @@ public class Item : MonoBehaviour
     public float bgmVolume = 1f;
 
     // アイテムの効果を適用するメソッド。ItemEffect はトリガー専任となり、このメソッドに処理を委譲する。
-    // onFinished: HugeObstacle の場合、QTE 完了（成功/失敗問わず）後に呼ばれるコールバック。
+    // onFinished: HugeObstacle の場合、QTE の終了（成功・失敗・中断のいずれでも）後に呼ばれるコールバック。
     public void ApplyEffect(Collider2D other, System.Action onFinished = null)
     {
         Debug.Log($"[Item] ApplyEffect type={itemType} on other={other.gameObject.name}");
@@ -48,6 +48,9 @@ public class Item : MonoBehaviour
             case ItemType.Clock:
                 // タイマー取得時にダメージアニメーション再生
                 TriggerPlayerDamage(other);
+
+                // 時計の減点（scoreAmount は Inspector で調整可能。負の値で減点）
+                if (gm != null) gm.AddScore(scoreAmount);
                 break;
 
             case ItemType.Boost:
@@ -76,21 +79,25 @@ public class Item : MonoBehaviour
                     new GameObject("QTEManager").AddComponent<QTEManager>();
                 }
 
-                bool started = QTEManager.Instance != null && QTEManager.Instance.StartHugeObstacleQte(success =>
+                bool started = QTEManager.Instance != null && QTEManager.Instance.StartHugeObstacleQte(outcome =>
                 {
                     restoreObstacleAnimators?.Invoke();
-                    if (!success)
+
+                    // 失敗（Failure）のときだけ追加ダメージと時間減算を行う。
+                    // 成功（Success）と中断（Cancelled：ゲーム時間切れ／捕獲）では効果を適用しない。
+                    if (outcome == QteOutcome.Failure)
                     {
                         // QTE失敗時にダメージアニメーション再生
                         TriggerPlayerDamage(other);
-                        
+
                         // 時間を減らす
                         if (gm != null)
                         {
                             gm.AddTime(-Mathf.Abs(timeAmount));
                         }
                     }
-                    // QTE 完了（成功・失敗どちらでも）を通知
+
+                    // アイテムのプール返却はどの終了状態でも行う（中断でもプールへ戻す）
                     onFinished?.Invoke();
                 });
 
@@ -115,6 +122,11 @@ public class Item : MonoBehaviour
             case ItemType.BGM:
                 // メガホン取得時にダメージアニメーション再生
                 TriggerPlayerDamage(other);
+
+                // Loud Item の減点（scoreAmount は Inspector で調整可能。負の値で減点）
+                //  ・音声処理や親機通知の成否にかかわらず、有効な取得1回につき1回だけ適用する
+                //    （下の AudioManager／bgmClip 未設定による早期 break より前に置く）。
+                if (gm != null) gm.AddScore(scoreAmount);
 
                 // BGMアイテム（ラウドアイテム）を拾った時に親機へUDP通知を送る
                 {

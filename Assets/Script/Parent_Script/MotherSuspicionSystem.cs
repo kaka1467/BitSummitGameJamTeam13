@@ -130,11 +130,6 @@ public class MotherSuspicionSystem : MonoBehaviour
     [Header("片付け演出")] [Tooltip("片付け演出を管理するMotherChoreController。未設定の場合は自動検索する。")] [SerializeField]
     private MotherChoreController motherChoreController;
 
-    [Tooltip("片付け演出に必要な通知（進行率・悪いアイテム）を受け取る親機側の最大許容レイテンシ（秒）。" +
-             "0以下で無効。既存の親イベント動作は変更しない。")]
-    [SerializeField, Min(0f)]
-    private float choreNotificationTimeout = 5f;
-
     // ── 片付け中の視線回数（怪しさ段階別の Min/Max） ──────────────────────────
     //   設定元は本クラスだけ。MotherChoreController は「片付けイベント開始時」に1回だけ取得し、
     //   その怪しさ段階の Min〜Max から目標回数を抽選して固定する（演技中に段階が変わっても変更しない）。
@@ -239,11 +234,8 @@ public class MotherSuspicionSystem : MonoBehaviour
     private GUIStyle _invincibleStyle;
     private bool _invincibleStyleReady;
 
-    /// <summary>子機から届いた進行率（0〜1）。親機側の経過率と併用する。</summary>
+    /// <summary>子機から届いた進行率（0〜1）。片付け解禁の判定に使う（親機の経過率とは併用しない）。</summary>
     private float _childProgressRate;
-
-    /// <summary>最後に片付け通知を受け取った時刻（Time.time）。</summary>
-    private float _lastChoreNotificationTime = -9999f;
 
     // ── 非公開状態 ────────────────────────────────────────────────────────────
     private Coroutine _dummyResetCoroutine;
@@ -889,16 +881,11 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
 
-        // 子機からの進行率通知がない環境（片付け通知を受けていない）でも、
-        // 親機側の経過率で片付け開始を判断できるようにする。
+        // 片付け演出の解禁は、子機から届く実際の進行率（GAME_PROGRESS）のみで判定する。
+        // 親機側の経過時間フォールバックは、子機のアイテムによる時間変化やQTE中の停止を再現できず、
+        // 残り120秒以上ある状態から早期に解禁される恐れがあるため使わない（安全側に統一）。
         if (motherChoreController == null)
             motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
-
-        if (motherChoreController != null && warningSystem != null &&
-            Time.time - _lastChoreNotificationTime > choreNotificationTimeout)
-        {
-            motherChoreController.NotifyGameProgress(warningSystem.GameplayProgressRate);
-        }
 
         if (Keyboard.current == null) return;
 
@@ -2473,24 +2460,19 @@ public class MotherSuspicionSystem : MonoBehaviour
 
     /// <summary>
     /// 子機から届いたゲーム進行率（0〜1）。片付けの開始条件判定に使う。
-    /// 親機側の経過率と併せて、常に大きい方を採用する。
+    /// 子機の実際の残り時間から算出された値（1 - time/maxTime）のみを採用する。
+    /// 親機側の経過時間は、子機のアイテムによる時間変化やQTE中の停止を再現できないため使わない。
     /// </summary>
     public void OnGameProgress(float progressRate)
     {
         _childProgressRate = Mathf.Clamp01(progressRate);
-        _lastChoreNotificationTime = Time.time;
 
         if (motherChoreController == null)
             motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
 
         if (motherChoreController == null) return;
 
-        // 親機側の経過率（MotherApproachWarning の _gameplayElapsedSeconds 相当）と併用する。
-        float parentRate = 0f;
-        if (warningSystem != null)
-            parentRate = warningSystem.GameplayProgressRate;
-
-        motherChoreController.NotifyGameProgress(Mathf.Max(_childProgressRate, parentRate));
+        motherChoreController.NotifyGameProgress(_childProgressRate);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
