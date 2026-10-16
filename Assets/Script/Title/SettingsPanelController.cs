@@ -83,14 +83,18 @@ public class SettingsPanelController : MonoBehaviour
     {
         EnsureAudioManager();
 
+        // 表示を合わせるだけなので、変更通知（onValueChanged）を起こさない方法で設定する。
+        // ここで通知を起こすと、未確定（各BGMが自分のInspector値のまま鳴っている状態）の
+        // 既定値1が「ユーザーが決めた音量」として確定してしまい、本編BGMの音量を上書きしてしまう。
         if (bgmSlider != null)
         {
-            bgmSlider.value = AudioManager.Instance.GetBgmVolume();
+            bgmSlider.SetValueWithoutNotify(AudioManager.Instance.GetBgmVolume());
         }
 
+        // SEスライダーも同じ方針（表示だけ。操作されるまで確定しない）。
         if (seSlider != null)
         {
-            seSlider.value = AudioManager.Instance.GetSeVolume();
+            seSlider.SetValueWithoutNotify(AudioManager.Instance.GetSeVolume());
         }
     }
 

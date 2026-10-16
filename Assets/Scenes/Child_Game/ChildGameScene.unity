@@ -5790,73 +5790,73 @@ MonoBehaviour:
   scoreSpeedSteps:
   - score: 0
     multiplier: 1
-  - score: 1750
+  - score: 1125
     multiplier: 1.1
-  - score: 3500
+  - score: 2250
     multiplier: 1.2
-  - score: 5750
+  - score: 3625
     multiplier: 1.3
-  - score: 8500
+  - score: 5250
     multiplier: 1.4
-  - score: 14000
+  - score: 8500
     multiplier: 1.5
-  - score: 19500
+  - score: 11750
     multiplier: 1.6
-  - score: 25000
+  - score: 15000
     multiplier: 1.7
-  - score: 30500
+  - score: 18250
     multiplier: 1.8
-  - score: 36000
+  - score: 21500
     multiplier: 1.9
-  - score: 41500
+  - score: 24750
     multiplier: 2
-  - score: 47000
+  - score: 28000
     multiplier: 2.1
-  - score: 52500
+  - score: 31250
     multiplier: 2.2
-  - score: 55500
+  - score: 33250
     multiplier: 2.3
-  - score: 60500
+  - score: 36250
     multiplier: 2.4
-  - score: 65500
+  - score: 39250
     multiplier: 2.5
-  - score: 70500
+  - score: 42250
     multiplier: 2.6
-  - score: 75500
+  - score: 45250
     multiplier: 2.7
-  - score: 80500
+  - score: 48250
     multiplier: 2.8
-  - score: 90500
+  - score: 54250
     multiplier: 2.9
-  - score: 100500
+  - score: 60250
     multiplier: 3
-  - score: 125500
+  - score: 75250
     multiplier: 3.5
-  - score: 150500
+  - score: 90250
     multiplier: 4
-  - score: 175500
+  - score: 105250
     multiplier: 4.5
-  - score: 200500
+  - score: 120250
     multiplier: 5
-  - score: 225500
+  - score: 135250
     multiplier: 5.5
-  - score: 250500
+  - score: 150250
     multiplier: 6
-  - score: 275500
+  - score: 165250
     multiplier: 6.5
-  - score: 300500
+  - score: 180250
     multiplier: 7
-  - score: 325500
+  - score: 195250
     multiplier: 7.5
-  - score: 350500
+  - score: 210250
     multiplier: 8
-  - score: 375500
+  - score: 225250
     multiplier: 8.5
-  - score: 400500
+  - score: 240250
     multiplier: 9
-  - score: 425500
+  - score: 255250
     multiplier: 9.5
-  - score: 450500
+  - score: 270250
     multiplier: 10
   feverCount: 0
   feverNeeded: 5

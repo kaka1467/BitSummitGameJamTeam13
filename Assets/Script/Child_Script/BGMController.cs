@@ -29,13 +29,23 @@ public class BGMController : MonoBehaviour
     /// <summary>現在の音量（読み取り専用）。</summary>
     public float CurrentVolume => audioSource != null ? audioSource.volume : 0f;
 
-    // AudioManager（設定パネルのBGMスライダー）の音量をこのBGMにも反映する
+    // 設定パネル（BGMスライダー）の音量をこのBGMへ反映する
     private void ApplyVolume()
     {
         if (audioSource == null) return;
         if (AudioManager.Instance == null) return;
 
-        audioSource.volume = AudioManager.Instance.GetBgmVolume();
+        // 設定パネルで音量がまだ決まっていない間は、このBGMのInspector設定値をそのまま使う。
+        // （AudioManagerが後から生成されても、初期値1で上書きしない）
+        if (!AudioManager.Instance.TryGetBgmVolume(out float volume)) return;
+
+        if (Mathf.Approximately(audioSource.volume, volume)) return;
+
+        float before = audioSource.volume;
+        audioSource.volume = volume;
+
+        if (AudioManager.Instance.LogBgmVolumeChanges)
+            Debug.Log($"[BGMController] '{name}' の音量を {before:F3} → {volume:F3} へ変更（設定パネルの値）。", this);
     }
 
     // BGMを止めるメソッド
