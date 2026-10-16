@@ -283,6 +283,9 @@ public class TutorialFlow : MonoBehaviour
                 gameManager.SetTutorialMode(false);
                 gameManager.ResetScoreAndFever();
             }
+
+            // 本編開始を記録する（子機の本編音を親機へ通知する側の判定条件）。
+            if (gameManager != null) gameManager.MarkMainPlayStarted();
         }
 
         HideInteractiveHint();

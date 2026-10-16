@@ -80,6 +80,12 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     /// <summary>開始コマンド（旧側 CMD_START と同じ値）。</summary>
     private const string StartCommand = "START_GAME";
 
+    /// <summary>本編の単発音（SE）通知の接頭辞。親機は同じ音IDのAudioClipをローカル再生する。</summary>
+    private const string GameAudioSePrefix = "GAME_AUDIO_SE:";
+
+    /// <summary>本編BGM等の状態通知の接頭辞（開始・曲変更・停止・音量）。</summary>
+    private const string GameAudioStatePrefix = "GAME_AUDIO_STATE:";
+
     // ── 所有（Initialize でのみ生成する。Awake では生成しない）──────────────────
     private ChildUdpRuntimeHostSettings _settingsFallback;
     private Func<ChildUdpRuntimeHostSettings> _settingsProvider;
@@ -1120,6 +1126,60 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     {
         SendState("LOUD_ITEM");
         Debug.Log("[ChildUdpRuntimeHost] Sent LOUD_ITEM packet to Parent.");
+    }
+
+    // ── 本編音の通知（親機は同じAudioClipをローカル再生する。音声データは送らない）────
+
+    /// <summary>
+    /// 本編中の単発音（SE）を親機へ送る。子機のローカル再生の直後に呼ぶ（まとめ送りしない）。
+    ///  ・宛先・接頭辞・失敗の扱いは SendState と同じ（失敗しても子機のゲームと音は止まらない）。
+    ///  ・playId は子機のプレイ識別子（プレイごとに変わる）。seq はプレイ内の連番。
+    /// </summary>
+    public void SendGameAudioSe(string playId, int seq, int soundId, float volume)
+    {
+        if (!IsGameAudioPayloadValid(playId, seq, soundId)) return;
+
+        int volumeMilli = ToVolumeMilli(volume);
+        SendState($"{GameAudioSePrefix}{playId}:{seq}:{soundId}:{volumeMilli}");
+
+        if (ShowDebug)
+            Debug.Log($"[ChildUdpRuntimeHost] Sent GAME_AUDIO_SE id={soundId} seq={seq} vol={volumeMilli}");
+    }
+
+    /// <summary>
+    /// 本編BGM等の状態を親機へ送る（開始・曲変更・停止・音量）。状態は最新のみ意味を持つ。
+    ///  ・soundId=0 かつ playing=false は「BGMなし（停止）」を表す。
+    ///  ・状態は数秒間隔で再送されるため、親機はシーン読み込みが遅れても追いつける。
+    /// </summary>
+    public void SendGameAudioState(string playId, int seq, int soundId, bool playing, bool loop, float volume)
+    {
+        if (!IsGameAudioPayloadValid(playId, seq, soundId)) return;
+
+        int volumeMilli = ToVolumeMilli(volume);
+        int playingFlag = playing ? 1 : 0;
+        int loopFlag = loop ? 1 : 0;
+        SendState($"{GameAudioStatePrefix}{playId}:{seq}:{soundId}:{playingFlag}:{loopFlag}:{volumeMilli}");
+
+        if (ShowDebug)
+            Debug.Log($"[ChildUdpRuntimeHost] Sent GAME_AUDIO_STATE id={soundId} seq={seq} playing={playingFlag} loop={loopFlag} vol={volumeMilli}");
+    }
+
+    private static int ToVolumeMilli(float volume)
+    {
+        return Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(volume) * 1000f), 0, 1000);
+    }
+
+    /// <summary>
+    /// 親機の受信側（ParentGameAudioEvent）と同じ前提を満たすか。
+    ///  ・playId は区切り文字 ':' を含まない1〜64文字。
+    ///  ・seq は 0 以上、soundId は 0 以上（0はBGM停止を表す）。
+    /// </summary>
+    private static bool IsGameAudioPayloadValid(string playId, int seq, int soundId)
+    {
+        if (string.IsNullOrEmpty(playId) || playId.Length > 64) return false;
+        if (playId.IndexOf(':') >= 0) return false;
+        if (seq < 0 || soundId < 0) return false;
+        return true;
     }
 
     /// <summary>

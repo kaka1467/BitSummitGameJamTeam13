@@ -1,4 +1,5 @@
 // AudioManager: シーンを跨いでBGMを管理するシンプルなシングルトン
+using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -11,6 +12,30 @@ public class AudioManager : MonoBehaviour
 
     [SerializeField]
     private AudioSource seSource;
+
+    // ── 本編音の親機通知用フック ────────────────────────────────────────────────
+    //   ここは「子機のローカル再生を壊さないための後段フック」。再生処理そのものは変更しない。
+    //   親機への送信は購読側（ChildGameAudioSync）が行い、AudioManager は何も送らない。
+
+    /// <summary>SEを再生した直後に発火（音量は0〜1）。</summary>
+    public static event Action<AudioClip, float> SePlayed;
+
+    /// <summary>BGMの再生状態が変わった直後に発火（clip / 再生中か / ループか / 音量）。BGMController からも発火する。</summary>
+    public static event Action<AudioClip, bool, bool, float> BgmStateChanged;
+
+    /// <summary>SE再生の通知（購読側の例外で子機のローカル再生を壊さないよう、ここで握る）。</summary>
+    public static void NotifySePlayed(AudioClip clip, float volume)
+    {
+        try { SePlayed?.Invoke(clip, volume); }
+        catch (Exception e) { Debug.LogWarning($"AudioManager.NotifySePlayed: subscriber error: {e.Message}"); }
+    }
+
+    /// <summary>BGM状態の通知（購読側の例外で子機のローカル再生を壊さないよう、ここで握る）。</summary>
+    public static void NotifyBgmStateChanged(AudioClip clip, bool playing, bool loop, float volume)
+    {
+        try { BgmStateChanged?.Invoke(clip, playing, loop, volume); }
+        catch (Exception e) { Debug.LogWarning($"AudioManager.NotifyBgmStateChanged: subscriber error: {e.Message}"); }
+    }
 
     void Awake()
     {
@@ -117,12 +142,23 @@ public class AudioManager : MonoBehaviour
         bgmSource.Play();
 
         Debug.Log($"AudioManager.PlayBGM: Play() called; isPlaying={bgmSource.isPlaying}, volume={bgmSource.volume}, spatialBlend={bgmSource.spatialBlend}, mute={bgmSource.mute}");
+
+        // ローカル再生の直後に、同じ処理経路から親機通知用に状態を流す。
+        NotifyBgmStateChanged(clip, true, loop, bgmSource.volume);
     }
 
     public void StopBGM()
     {
         if (bgmSource == null) return;
+
+        AudioClip stoppedClip = bgmSource.clip;
+        bool stoppedLoop = bgmSource.loop;
+        float stoppedVolume = bgmSource.volume;
+
         bgmSource.Stop();
+
+        // 停止も状態として流す（子機の既存音はそのまま。親機側だけ止める）。
+        NotifyBgmStateChanged(stoppedClip, false, stoppedLoop, stoppedVolume);
     }
 
     public void PlaySE(AudioClip clip, float volume = 1f)
@@ -146,6 +182,9 @@ public class AudioManager : MonoBehaviour
         }
 
         seSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+
+        // ローカル再生の直後に、同じ処理経路から親機通知用に流す（まとめ送りしない）。
+        NotifySePlayed(clip, Mathf.Clamp01(volume));
     }
 
     public void SetBgmVolume(float volume)

@@ -19,7 +19,9 @@ public enum ParentMessageType
     // 子機を唯一の基準としたランキング／スコアのスナップショット同期
     RankingSync,
     // 接続単位の同期元確認（Discovery 直後に子機が送る）
-    RankSyncHello
+    RankSyncHello,
+    // 子機の本編音（SE／BGM状態）。親機は同じ音IDのAudioClipをローカル再生する
+    GameAudio
 }
 
 public enum ChildGameResultType
@@ -57,6 +59,9 @@ public readonly struct ParentUdpMessage
     /// <summary>RANK_SYNC_HELLO のときだけ有効な接続確認情報（それ以外は default）。</summary>
     public RankSyncHello Hello { get; }
 
+    /// <summary>GAME_AUDIO のときだけ有効な本編音イベント（それ以外は default）。</summary>
+    public ParentGameAudioEvent GameAudio { get; }
+
     public ParentUdpMessage(
         ParentMessageType type,
         ChildGameResultType resultType = ChildGameResultType.Unknown,
@@ -67,7 +72,8 @@ public readonly struct ParentUdpMessage
         string playSessionId = "",
         bool returnToTitleFast = false,
         RankingSnapshot snapshot = default,
-        RankSyncHello hello = default)
+        RankSyncHello hello = default,
+        ParentGameAudioEvent gameAudio = default)
     {
         Type = type;
         ResultType = resultType;
@@ -79,6 +85,7 @@ public readonly struct ParentUdpMessage
         ReturnToTitleFast = returnToTitleFast;
         Snapshot = snapshot;
         Hello = hello;
+        GameAudio = gameAudio;
     }
 }
 
@@ -127,6 +134,25 @@ public static class ParentUdpMessageParser
                 return new ParentUdpMessage(ParentMessageType.LoadingComplete, rawPayload: payload);
             case "LOUD_ITEM":
                 return new ParentUdpMessage(ParentMessageType.LoudItem, rawPayload: payload);
+        }
+
+        // GAME_AUDIO_SE / GAME_AUDIO_STATE — 子機の本編音（親機は同じIDのAudioClipをローカル再生する）
+        //  ・内容の解釈と検証は ParentGameAudioEvent が担当する（ここはメッセージ種別への振り分けだけ）。
+        if (payload.StartsWith(ParentGameAudioEvent.SePrefix, StringComparison.Ordinal) ||
+            payload.StartsWith(ParentGameAudioEvent.StatePrefix, StringComparison.Ordinal))
+        {
+            if (ParentGameAudioEvent.TryParse(payload, out ParentGameAudioEvent gameAudio, out string gameAudioError))
+            {
+                return new ParentUdpMessage(
+                    ParentMessageType.GameAudio,
+                    rawPayload: payload,
+                    gameAudio: gameAudio);
+            }
+
+            return new ParentUdpMessage(
+                ParentMessageType.Invalid,
+                rawPayload: payload,
+                parseError: gameAudioError);
         }
 
         // RANK_SYNC_HELLO:<version>:<sourceId>:<sessionSeq> — 接続単位の同期元確認
