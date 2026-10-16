@@ -68,17 +68,13 @@ public class ParentConsoleScreenDisplay : MonoBehaviour
     [SerializeField, Min(0f)]
     private float screenLightIntensity;
 
-    [Header("画面のマテリアル元（任意）")]
-    [Tooltip("実行時に画面専用マテリアルを作るときの元。指定するとビルドでも確実に使えます。\n" +
-             "未設定なら下の Shader を使います。")]
+    [Header("画面のマテリアル元（必須）")]
+    [Tooltip("画面専用マテリアル（URP/Unlit）を指定します。\n" +
+             "Assets/Assets/Parent Assets/Console/ConsoleScreenUnlit.mat を指定してください。\n" +
+             "実行時にこれを複製して使うため、元アセットや他オブジェクトのマテリアルは変更しません。\n" +
+             "未設定のときは画面の点灯／消灯を行いません（警告を1回だけ出します）。")]
     [SerializeField]
     private Material screenMaterialTemplate;
-
-    [Tooltip("上のテンプレートが未設定のときに使うShader。\n" +
-             "未設定なら \"Universal Render Pipeline/Unlit\" → \"Unlit/Color\" → \"Sprites/Default\" の順で探します。\n" +
-             "（ビルドでShaderが見つからない場合はここに Universal Render Pipeline/Unlit を指定してください）")]
-    [SerializeField]
-    private Shader screenShader;
 
     [Header("デバッグ")]
     [Tooltip("点灯／消灯が切り替わったときにログを出します。")]
@@ -93,7 +89,7 @@ public class ParentConsoleScreenDisplay : MonoBehaviour
     private bool applied;
     private bool lastSleeping;
     private bool warnedMissingRenderer;
-    private bool warnedMissingShader;
+    private bool warnedMissingTemplate;
     private bool sleepingSearched;
 
     private Light cachedLight;
@@ -156,8 +152,7 @@ public class ParentConsoleScreenDisplay : MonoBehaviour
 
         if (!EnsureMaterial())
         {
-            // 参照が揃うまでは画面に触らない（補助Lightだけ状態に合わせ、例外は出さない）。
-            ApplyLight(sleeping);
+            // 参照が揃うまでは、画面にも補助Lightにも触らない（例外は出さず、警告のみ）。
             applied = false;
             lastSleeping = sleeping;
             return;
@@ -214,28 +209,21 @@ public class ParentConsoleScreenDisplay : MonoBehaviour
             return false;
         }
 
-        if (screenMaterialTemplate != null)
+        if (screenMaterialTemplate == null)
         {
-            // テンプレートの設定（テクスチャ等）を引き継いでインスタンス化する。
-            screenMaterial = new Material(screenMaterialTemplate);
-        }
-        else
-        {
-            Shader shader = ResolveScreenShader();
-            if (shader == null)
+            // テンプレート未設定では画面を制御しない（例外は出さず、警告を1回だけ出す）。
+            if (!warnedMissingTemplate)
             {
-                if (!warnedMissingShader)
-                {
-                    warnedMissingShader = true;
-                    Debug.LogWarning(
-                        "[ParentConsoleScreenDisplay] 画面用のShaderが見つかりません。" +
-                        "Inspectorの Screen Shader に Universal Render Pipeline/Unlit を指定してください（画面は変更しません）。", this);
-                }
-                return false;
+                warnedMissingTemplate = true;
+                Debug.LogWarning(
+                    "[ParentConsoleScreenDisplay] Screen Material Template が未設定です。" +
+                    "Inspectorに ConsoleScreenUnlit.mat を指定してください（画面の点灯／消灯は行いません）。", this);
             }
-
-            screenMaterial = new Material(shader);
+            return false;
         }
+
+        // テンプレートの設定（Shader・テクスチャ等）を引き継いで、実行時専用インスタンスを作る。
+        screenMaterial = new Material(screenMaterialTemplate);
 
         screenMaterial.name = "ConsoleScreen (Runtime)";
 
@@ -258,23 +246,6 @@ public class ParentConsoleScreenDisplay : MonoBehaviour
         screenRenderer.sharedMaterials = materials;
 
         return true;
-    }
-
-    /// <summary>
-    /// 画面用のShaderを決める。Inspector指定 → URP Unlit → Legacy Unlit の順。
-    ///  ライト・環境光・反射の影響を受けないShaderを使うことで、消灯時に黒のまま見える。
-    /// </summary>
-    private Shader ResolveScreenShader()
-    {
-        if (screenShader != null) return screenShader;
-
-        Shader found = Shader.Find("Universal Render Pipeline/Unlit");
-        if (found != null) return found;
-
-        found = Shader.Find("Unlit/Color");
-        if (found != null) return found;
-
-        return Shader.Find("Sprites/Default");
     }
 
     /// <summary>

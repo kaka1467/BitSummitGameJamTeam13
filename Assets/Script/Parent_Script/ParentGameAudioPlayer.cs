@@ -72,6 +72,28 @@ public class ParentGameAudioPlayer : MonoBehaviour
     [SerializeField]
     private float seVolume = 1f;
 
+    // ── ゲーム機の開閉音（子機ゲーム音とは別の専用音源で鳴らす）────────────────────
+    [Header("ゲーム機の開閉音（子機ゲーム音とは別枠）")]
+    [Tooltip("ゲーム機を閉じる（起きている→寝たふり）ときに1回だけ鳴らすClip。\n" +
+             "未設定なら鳴らしません（例外も出しません）。")]
+    [SerializeField]
+    private AudioClip consoleCloseClip;
+
+    [Tooltip("閉じる音の音量（0〜1）。子機ゲーム音のMaster／BGM／SEは掛かりません。")]
+    [Range(0f, 1f)]
+    [SerializeField]
+    private float consoleCloseVolume = 1f;
+
+    [Tooltip("ゲーム機を開ける（寝たふり→起きている）ときに1回だけ鳴らすClip。\n" +
+             "未設定なら鳴らしません（例外も出しません）。")]
+    [SerializeField]
+    private AudioClip consoleOpenClip;
+
+    [Tooltip("開ける音の音量（0〜1）。子機ゲーム音のMaster／BGM／SEは掛かりません。")]
+    [Range(0f, 1f)]
+    [SerializeField]
+    private float consoleOpenVolume = 1f;
+
     [Header("寝たふり中")]
     [Tooltip("未設定なら起動時に1回だけ SleepingController を探す（毎フレームは探さない）。")]
     [SerializeField]
@@ -104,6 +126,7 @@ public class ParentGameAudioPlayer : MonoBehaviour
     // ── 実行時生成する専用音源（BGMとSEで分ける）───────────────────────────────
     private AudioSource bgmSource;
     private AudioSource seSource;
+    private AudioSource consoleDoorSource;   // ゲーム機の開閉音専用（子機ゲーム音のMaster/BGM/SEとは独立）
     private GameObject audioRoot;
 
     // ── 子機の状態（プレイ単位）────────────────────────────────────────────────
@@ -156,7 +179,19 @@ public class ParentGameAudioPlayer : MonoBehaviour
         VerifyAudioRootParent();
 
         bool sleeping = IsSleepingNow();
-        if (sleeping && !wasSleeping) OnSleepStarted();
+        if (sleeping && !wasSleeping)
+        {
+            OnSleepStarted();
+
+            // 起きている → 寝たふり：閉じる音を1回だけ鳴らす（子機ゲーム音のミュートとは別音源）。
+            PlayConsoleSound(consoleCloseClip, consoleCloseVolume, "閉じる");
+        }
+        else if (!sleeping && wasSleeping)
+        {
+            // 寝たふり → 起きている：開ける音を1回だけ鳴らす。
+            PlayConsoleSound(consoleOpenClip, consoleOpenVolume, "開ける");
+        }
+
         wasSleeping = sleeping;
 
         // 音量は毎フレーム反映する（Inspectorの変更が再生中のBGMにもその場で効く＝ミュート状態は維持される）。
@@ -168,7 +203,14 @@ public class ParentGameAudioPlayer : MonoBehaviour
 
     private void EnsureAudioRoot()
     {
-        if (audioRoot != null && bgmSource != null && seSource != null) return;
+        if (audioRoot != null)
+        {
+            // 音源が欠けている場合だけ補う（ルートは作り直さない＝二重生成しない）。
+            if (bgmSource == null) bgmSource = CreateSource(audioRoot.transform, "ChildGameBgm", loop: true);
+            if (seSource == null) seSource = CreateSource(audioRoot.transform, "ChildGameSe", loop: false);
+            if (consoleDoorSource == null) consoleDoorSource = CreateConsoleDoorSource(audioRoot.transform);
+            return;
+        }
 
         Transform parent = ResolveAudioParent();
         if (parent == null)
@@ -190,6 +232,7 @@ public class ParentGameAudioPlayer : MonoBehaviour
 
         bgmSource = CreateSource(audioRoot.transform, "ChildGameBgm", loop: true);
         seSource = CreateSource(audioRoot.transform, "ChildGameSe", loop: false);
+        consoleDoorSource = CreateConsoleDoorSource(audioRoot.transform);
 
         if (showDebugLog)
             Debug.Log($"[ParentGameAudioPlayer] 専用音源を生成しました（parent='{parent.name}', origin={(audioOrigin != null ? audioOrigin.name : "Main Camera(既定)")}）。", this);
@@ -244,10 +287,24 @@ public class ParentGameAudioPlayer : MonoBehaviour
         return source;
     }
 
+    /// <summary>
+    /// ゲーム機の開閉音専用の3D AudioSourceを作る。
+    ///  ・子機ゲーム音（BGM/SE）とは別の音源なので、Master／BGM／SEの音量やミュートの影響を受けない。
+    ///  ・位置と距離減衰は既存の Audio Origin（コンソール）と同じ設定を使う（AudioListenerは追加しない）。
+    /// </summary>
+    private AudioSource CreateConsoleDoorSource(Transform parent)
+    {
+        AudioSource source = CreateSource(parent, "ConsoleDoorSe", loop: false);
+        source.volume = 1f;   // 音量はクリップごとの volumeScale（Inspectorの閉じる／開ける音量）で指定する
+        source.mute = false;
+        return source;
+    }
+
     private void DestroyAudioRoot()
     {
         bgmSource = null;
         seSource = null;
+        consoleDoorSource = null;
 
         if (audioRoot != null)
         {
@@ -448,6 +505,7 @@ public class ParentGameAudioPlayer : MonoBehaviour
 
         if (bgmSource != null) bgmSource.Stop();
         if (seSource != null) seSource.Stop();
+        if (consoleDoorSource != null) consoleDoorSource.Stop();
     }
 
     /// <summary>
@@ -482,6 +540,28 @@ public class ParentGameAudioPlayer : MonoBehaviour
 
         if (showDebugLog)
             Debug.Log("[ParentGameAudioPlayer] 寝たふりのため子機ゲーム音をミュートしました。", this);
+    }
+
+    /// <summary>
+    /// ゲーム機の開閉音を1回鳴らす（子機ゲーム音とは別の専用音源）。
+    ///  ・Clip未設定なら鳴らさない（例外も出さない）。
+    ///  ・素早い開閉で重ならないよう、直前の開閉音を止めてから鳴らす。
+    ///  ・子機ゲーム音のMaster／BGM／SEや寝たふりミュートの影響を受けない（専用音量で鳴る）。
+    /// </summary>
+    private void PlayConsoleSound(AudioClip clip, float volume, string label)
+    {
+        if (clip == null) return;
+
+        if (consoleDoorSource == null) EnsureAudioRoot();
+        if (consoleDoorSource == null) return;
+
+        // 直前の開閉音を止めてから鳴らす（開く音と閉じる音が重なって鳴らないようにする）。
+        consoleDoorSource.Stop();
+        consoleDoorSource.mute = false;
+        consoleDoorSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+
+        if (showDebugLog)
+            Debug.Log($"[ParentGameAudioPlayer] ゲーム機の{label}音を再生: clip='{clip.name}' / 音量={Mathf.Clamp01(volume):F2}", this);
     }
 
     private bool IsSleepingNow()

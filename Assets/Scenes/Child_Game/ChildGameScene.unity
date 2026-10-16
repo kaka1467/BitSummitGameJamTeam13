@@ -5790,73 +5790,73 @@ MonoBehaviour:
   scoreSpeedSteps:
   - score: 0
     multiplier: 1
-  - score: 500
+  - score: 1750
     multiplier: 1.1
-  - score: 1000
+  - score: 3500
     multiplier: 1.2
-  - score: 1500
+  - score: 5750
     multiplier: 1.3
-  - score: 2000
+  - score: 8500
     multiplier: 1.4
-  - score: 3000
-    multiplier: 1.5
-  - score: 4000
-    multiplier: 1.6
-  - score: 5000
-    multiplier: 1.7
-  - score: 6000
-    multiplier: 1.8
-  - score: 7000
-    multiplier: 1.9
-  - score: 8000
-    multiplier: 2
-  - score: 9000
-    multiplier: 2.1
-  - score: 10000
-    multiplier: 2.2
-  - score: 11000
-    multiplier: 2.3
-  - score: 12000
-    multiplier: 2.4
-  - score: 13000
-    multiplier: 2.5
   - score: 14000
-    multiplier: 2.6
-  - score: 15000
-    multiplier: 2.7
-  - score: 16000
-    multiplier: 2.8
-  - score: 18000
-    multiplier: 2.9
-  - score: 20000
-    multiplier: 3
+    multiplier: 1.5
+  - score: 19500
+    multiplier: 1.6
   - score: 25000
+    multiplier: 1.7
+  - score: 30500
+    multiplier: 1.8
+  - score: 36000
+    multiplier: 1.9
+  - score: 41500
+    multiplier: 2
+  - score: 47000
+    multiplier: 2.1
+  - score: 52500
+    multiplier: 2.2
+  - score: 55500
+    multiplier: 2.3
+  - score: 60500
+    multiplier: 2.4
+  - score: 65500
+    multiplier: 2.5
+  - score: 70500
+    multiplier: 2.6
+  - score: 75500
+    multiplier: 2.7
+  - score: 80500
+    multiplier: 2.8
+  - score: 90500
+    multiplier: 2.9
+  - score: 100500
+    multiplier: 3
+  - score: 125500
     multiplier: 3.5
-  - score: 30000
+  - score: 150500
     multiplier: 4
-  - score: 35000
+  - score: 175500
     multiplier: 4.5
-  - score: 40000
+  - score: 200500
     multiplier: 5
-  - score: 45000
+  - score: 225500
     multiplier: 5.5
-  - score: 50000
+  - score: 250500
     multiplier: 6
-  - score: 55000
+  - score: 275500
     multiplier: 6.5
-  - score: 60000
+  - score: 300500
     multiplier: 7
-  - score: 65000
+  - score: 325500
     multiplier: 7.5
-  - score: 70000
+  - score: 350500
     multiplier: 8
-  - score: 75000
+  - score: 375500
     multiplier: 8.5
-  - score: 80000
+  - score: 400500
     multiplier: 9
-  - score: 85000
+  - score: 425500
     multiplier: 9.5
-  - score: 90000
+  - score: 450500
     multiplier: 10
   feverCount: 0
   feverNeeded: 5
