@@ -29,6 +29,21 @@ public class SleepingController : MonoBehaviour
     [Tooltip("trueの場合、枕センサーを無視し、Space／GamepadのみでisSleepingを制御します。デバッグ時にセンサーが不安定な場合に便利です。")]
     [SerializeField] private bool ignoreSensorForDebug;
 
+    // ── 寝たふり中のカメラの震え ──────────────────────────────────────────────
+    //  ・設定値はこのコンポーネントが保持し、読み取り専用プロパティで公開する（調整元はここに一本化）。
+    //  ・カメラを実際に動かす処理は SleepVisionEffectController 側にあり、ここではカメラを動かさない。
+    //  ・プレイ中にInspectorで値を変更すると、そのまま次のフレームから反映される（値をキャッシュしない）。
+    //  ・震える条件（IsSleeping中だけ／捕獲・ゲームオーバーのカメラ演出中は止める）は変更しない。
+    [Header("寝たふり中のカメラの震え")]
+    [Tooltip("寝たふり中にゲーム用カメラを小さく震わせるか。OFFにすると震えません。")]
+    [SerializeField] private bool sleepCameraTremorEnabled = true;
+
+    [Tooltip("震えの位置の強さ（メートル）。0にすると震えません。大きいほど大きく揺れます（負値は0として扱います）。")]
+    [SerializeField] private float sleepCameraTremorAmplitude = 0.12f;
+
+    [Tooltip("震えの速さ（1秒あたりの振動数）。大きいほど細かく速く震えます。")]
+    [SerializeField] private float sleepCameraTremorFrequency = 12f;
+
     // プレイヤーの睡眠状態
     private bool _isSleeping;
     private bool _wasSleeping;
@@ -53,6 +68,19 @@ public class SleepingController : MonoBehaviour
     /// 公開読み取り専用プロパティ：プレイヤーが睡眠中か（MotherSuspicionSystemとCaughtReactionControllerが使用）
     /// </summary>
     public bool IsSleeping => _isSleeping;
+
+    /// <summary>
+    /// 寝たふり中のカメラの震え：有効か（読み取り専用）。
+    /// ・SleepVisionEffectController が毎フレーム参照するため、ここでは値をキャッシュしない
+    ///   （プレイ中にInspectorで変更した内容がそのまま反映される）。
+    /// </summary>
+    public bool SleepCameraTremorEnabled => sleepCameraTremorEnabled;
+
+    /// <summary>寝たふり中のカメラの震え：位置オフセットの振幅（メートル）。負値は0として扱う（読み取り専用）。</summary>
+    public float SleepCameraTremorAmplitude => Mathf.Max(0f, sleepCameraTremorAmplitude);
+
+    /// <summary>寝たふり中のカメラの震え：1秒あたりの振動数。0以下は最低0.1として扱う（読み取り専用）。</summary>
+    public float SleepCameraTremorFrequency => Mathf.Max(0.1f, sleepCameraTremorFrequency);
 
     private void Start()
     {

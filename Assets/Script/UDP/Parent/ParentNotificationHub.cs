@@ -53,6 +53,26 @@ public sealed class ParentNotificationHub
 
     // （未使用の RaiseGameProgress は削除：HandleGameProgressReceived が受信時処理として役割を代替）
 
+    // ── GAME_AUDIO（子機の本編音）────────────────────────────────────────────
+    /// <summary>
+    /// 子機の本編音イベント（SE／BGM状態）。購読しない限り何も起きない。
+    ///  ・保留はしない：遅れて届いた古いSEを、再接続や起床後にまとめて鳴らさないため。
+    ///  ・BGM状態は子機からの再送（ハートビート）で追いつけるため、保留しなくても鳴り続けにはならない。
+    /// </summary>
+    public event Action<ParentGameAudioEvent> GameAudioReceived;
+
+    /// <summary>実際の購読者が居るか。</summary>
+    public bool HasGameAudioSubscriber => GameAudioReceived != null;
+
+    /// <summary>
+    /// 子機の本編音イベントを購読者へ通知する（受信スレッドから呼ばず、メインスレッドの Dispatch から呼ぶ）。
+    /// 購読者不在は破棄する（保留しない）。
+    /// </summary>
+    public void HandleGameAudioReceived(ParentGameAudioEvent evt)
+    {
+        GameAudioReceived?.Invoke(evt);
+    }
+
     /// <summary>Updateからの保留消費の結果（呼び出し側が既存の診断ログを出し分けるために使う）。</summary>
     public enum PendingOutcome
     {

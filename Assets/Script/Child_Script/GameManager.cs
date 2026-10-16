@@ -63,19 +63,40 @@ public class GameManager : MonoBehaviour
     [SerializeField] private ScoreSpeedStep[] scoreSpeedSteps = new ScoreSpeedStep[]
     {
         new ScoreSpeedStep { score = 0,      multiplier = 1.00f },
-        new ScoreSpeedStep { score = 3000,   multiplier = 1.10f },
-        new ScoreSpeedStep { score = 6000,   multiplier = 1.20f },
-        new ScoreSpeedStep { score = 10000,  multiplier = 1.30f },
-        new ScoreSpeedStep { score = 15000,  multiplier = 1.40f },
-        new ScoreSpeedStep { score = 25000,  multiplier = 1.50f },
-        new ScoreSpeedStep { score = 35000,  multiplier = 1.60f },
-        new ScoreSpeedStep { score = 45000,  multiplier = 1.70f },
-        new ScoreSpeedStep { score = 55000,  multiplier = 1.80f },
-        new ScoreSpeedStep { score = 65000,  multiplier = 1.90f },
-        new ScoreSpeedStep { score = 75000,  multiplier = 2.00f },
-        new ScoreSpeedStep { score = 85000,  multiplier = 2.10f },
-        new ScoreSpeedStep { score = 95000,  multiplier = 2.20f },
-        new ScoreSpeedStep { score = 100000, multiplier = 2.30f },
+        new ScoreSpeedStep { score = 500,    multiplier = 1.10f },
+        new ScoreSpeedStep { score = 1000,   multiplier = 1.20f },
+        new ScoreSpeedStep { score = 1500,   multiplier = 1.30f },
+        new ScoreSpeedStep { score = 2000,   multiplier = 1.40f },
+        new ScoreSpeedStep { score = 3000,   multiplier = 1.50f },
+        new ScoreSpeedStep { score = 4000,   multiplier = 1.60f },
+        new ScoreSpeedStep { score = 5000,   multiplier = 1.70f },
+        new ScoreSpeedStep { score = 6000,   multiplier = 1.80f },
+        new ScoreSpeedStep { score = 7000,   multiplier = 1.90f },
+        new ScoreSpeedStep { score = 8000,   multiplier = 2.00f },
+        new ScoreSpeedStep { score = 9000,   multiplier = 2.10f },
+        new ScoreSpeedStep { score = 10000,  multiplier = 2.20f },
+        new ScoreSpeedStep { score = 11000,  multiplier = 2.30f },
+        new ScoreSpeedStep { score = 12000,  multiplier = 2.40f },
+        new ScoreSpeedStep { score = 13000,  multiplier = 2.50f },
+        new ScoreSpeedStep { score = 14000,  multiplier = 2.60f },
+        new ScoreSpeedStep { score = 15000,  multiplier = 2.70f },
+        new ScoreSpeedStep { score = 16000,  multiplier = 2.80f },
+        new ScoreSpeedStep { score = 18000,  multiplier = 2.90f },
+        new ScoreSpeedStep { score = 20000,  multiplier = 3.00f },
+        new ScoreSpeedStep { score = 25000,  multiplier = 3.50f },
+        new ScoreSpeedStep { score = 30000,  multiplier = 4.00f },
+        new ScoreSpeedStep { score = 35000,  multiplier = 4.50f },
+        new ScoreSpeedStep { score = 40000,  multiplier = 5.00f },
+        new ScoreSpeedStep { score = 45000,  multiplier = 5.50f },
+        new ScoreSpeedStep { score = 50000,  multiplier = 6.00f },
+        new ScoreSpeedStep { score = 55000,  multiplier = 6.50f },
+        new ScoreSpeedStep { score = 60000,  multiplier = 7.00f },
+        new ScoreSpeedStep { score = 65000,  multiplier = 7.50f },
+        new ScoreSpeedStep { score = 70000,  multiplier = 8.00f },
+        new ScoreSpeedStep { score = 75000,  multiplier = 8.50f },
+        new ScoreSpeedStep { score = 80000,  multiplier = 9.00f },
+        new ScoreSpeedStep { score = 85000,  multiplier = 9.50f },
+        new ScoreSpeedStep { score = 90000,  multiplier = 10.00f },
     };
 
     private int maxScore;                        // そのプレイの最高到達スコア
@@ -157,6 +178,26 @@ public class GameManager : MonoBehaviour
     /// （GameManager が無い場合・チュートリアル中は報酬を出さない）。
     /// </summary>
     public bool IsTutorialMode => isTutorialMode;
+
+    // ── 本編の開始（チュートリアル終了後）─────────────────────────────────────
+    //   音の親機通知など「本編中か」の判定に使う。
+    //   ChildGameScene にいるだけでは本編と見なさない（開始前カウントダウンも本編ではない）。
+    private bool isMainPlayActive;
+
+    /// <summary>本編が実際に始まっているか（読み取り専用）。</summary>
+    public bool IsMainPlayActive => isMainPlayActive;
+
+    /// <summary>
+    /// 本編が始まったことを記録する（TutorialFlow の本編開始処理から1回だけ呼ぶ）。
+    /// 二重呼び出しは無視する。
+    /// </summary>
+    public void MarkMainPlayStarted()
+    {
+        if (isMainPlayActive) return;
+
+        isMainPlayActive = true;
+        Debug.Log("[GameManager] 本編開始を記録しました（チュートリアル終了）。", this);
+    }
 
     // ── CAUGHT（親機の捕獲）の購読 ────────────────────────────────────────────
     //   受信後の結果処理（TriggerResult(GameOver)）は本クラスが担当する。

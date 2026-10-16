@@ -61,6 +61,58 @@ public class ItemSpawner : MonoBehaviour
     [Tooltip("スポーン関連の詳細ログを出力するかどうか")]
     [SerializeField] private bool showDebugLogs = false;
 
+    // ── 通常出現の成功間隔（同一フレームに複数成功して3レーン横並びになる状態を緩和する） ──
+    //  ・「実際に配置できた」ときだけ次の成功可能時刻を更新する（見送り・配置失敗・破棄では更新しない）。
+    //  ・休止中は通常予定の配置試行そのものを休む（失敗として retryCount を増やさない）。
+    //  ・休止は通常スケジュールの配置だけに適用する。チュートリアルの直接出現・デバッグキー・
+    //    巨大障害物の別枠出現には適用しない。
+    [Header("Normal Spawn Success Interval")]
+    [Tooltip("通常アイテムの配置に成功した後、次の通常配置を休止する基準時間（秒）。0 でこの追加制御を無効化する。" +
+             "実際の休止時間は 基準時間 × Random.Range(1-jitter, 1+jitter) になるため、最小値ではない。")]
+    [SerializeField, Min(0f)] private float normalSpawnSuccessInterval = 0.2f;
+
+    [Tooltip("基準待機時間のゆらぎ率（0〜1）。0 で固定、0.4 なら 0.6〜1.4 倍の範囲になる。")]
+    [SerializeField, Range(0f, 1f)] private float normalSpawnSuccessIntervalJitter = 0.4f;
+
+    [Tooltip("通常出現の予定をあきらめる猶予（秒）。元の予定時刻（再試行で更新しない時刻）からこの時間を過ぎた予定は破棄する。" +
+             "0 以下や不正値は既定の 3 秒として扱う（無期限に持ち越さない）。以前のリトライ予算（maxRetryCount × retryInterval ≒ 3 秒）を目安にしている。")]
+    [SerializeField] private float normalSpawnGiveUpSeconds = 3f;
+
+    // ── 調査用の集計（既定OFF。showDebugLogs とは独立で、ONにしない限り出力しない） ──
+    [Header("Spawn Stats (investigation)")]
+    [Tooltip("通常出現の配置成功数などを実時間10秒ごとに1行だけ出力する。showDebugLogs とは独立。既定は OFF。")]
+    [SerializeField] private bool enableSpawnStats = false;
+
+    [Tooltip("集計ログを出す間隔（実時間の秒）。")]
+    [SerializeField, Min(1f)] private float spawnStatsLogIntervalSeconds = 10f;
+
+    // ── 良いアイテム同士のX方向近接配置（今回の試作。まとまり制御・レーン優先・中央レーン対策は別工程） ──
+    //  ・有効時：良い同士（ItemType.Score＝Score/MoreScore、ItemType.Fever）のペアだけ
+    //    「実サイズの半幅合計＋余白」まで詰められる。
+    //  ・無効時：従来どおり Max(minSpawnDistanceX, 半幅合計) を使う。
+    //  ・余白0は「接するまで詰める」設定であり、無効化ではない（無効化はフラグで行う）。
+    //  ・片方が対象外（Clock/BGM/HugeObstacle(QTE)/Boost）または分類不明なら従来の判定を使う。
+    //  ・Y方向の判定・固定記録の保持時間・速度・Collider・予定個数は変更しない。
+    [Header("Good Item Close Placement (trial)")]
+    [Tooltip("良いアイテム同士（Score/MoreScore/Fever）のX方向の必要間隔を「実サイズ＋余白」にする。OFFで従来の判定。")]
+    [SerializeField] private bool enableGoodItemClosePlacement = true;
+
+    [Tooltip("良いアイテム同士で詰められる追加の余白（ワールド単位）。0 は「接するまで詰める」設定で、無効化ではない。" +
+             "負や NaN は 0 として扱う（サイズ合計より狭くはしない）。")]
+    [SerializeField, Min(0f)] private float goodItemCloseMarginX = 0.15f;
+
+    // ── レーン別の通常出現タイマー（今回の方式。旧・時刻付き予定方式の置き換え） ──
+    //  ・上/中央/下の各レーンが独立に「最小〜最大」の待ち時間を抽選し、その時刻に自分のレーンへ1個だけ配置を試す。
+    //  ・成功でも失敗でも、次回は「今回の現在時刻＋抽選値」で再抽選する（遅れの取り戻しはしない）。
+    //  ・0秒を抽選しても、同じレーンの次回試行は次フレーム以降（1フレームにつき各レーン最大1回）。
+    //  ・全体では同一フレームに最大3レーン分の試行を許可する（既存の全体成功間隔では直列化しない）。
+    [Header("Normal Spawn (per-lane timer)")]
+    [Tooltip("レーン別の通常出現：次の試行までの最小間隔（秒）。")]
+    [SerializeField, Min(0f)] private float laneSpawnIntervalMinSeconds = 0.15f;
+
+    [Tooltip("レーン別の通常出現：次の試行までの最大間隔（秒）。最小より小さい値・NaNは最小として扱う。")]
+    [SerializeField, Min(0f)] private float laneSpawnIntervalMaxSeconds = 0.85f;
+
     [Header("HugeObstacle")]
     [SerializeField, Min(0)] private int hugeObstacleSpawnCount = 1;
     [SerializeField] private float hugeObstacleSpawnY = 1.929803e-08f;
@@ -100,6 +152,9 @@ public class ItemSpawner : MonoBehaviour
         public float spawnTime;        // 出現を実行する絶対時刻（Time.unscaledTime と直接比較する）
         public float visibleByTime;    // 画面に入っているべき絶対時刻（締め切り計算に使う）
         public int retryCount;      // リトライ回数
+        public float plannedSpawnTime;   // 元の予定時刻（再試行で更新しない。待機期限と処理順の基準）
+        public float tieBreak;           // 同じ予定時刻の順序を構築時に固定する乱数（登録順の偏りを避ける）
+        public float bandEndSeconds;     // この予定が属する時間帯の終了（本プレイ開始からの相対秒。時間帯をまたいだ成功の判定に使う）
 
         // ループ用フィールド
         public bool loopEnabled;
@@ -115,6 +170,10 @@ public class ItemSpawner : MonoBehaviour
         public float time;
         public float halfSizeX;
         public float halfSizeY;
+        // 記録した時点の分類（良いアイテム＝Score/MoreScore/Fever か）。
+        // ・X方向の必要間隔を3つの判定経路で同じルールにするために保持する。
+        // ・アイテムがプールへ戻って別の用途に再利用されても、この記録の分類は作成時のまま固定される。
+        public bool isGoodItem;
     }
 
     // 画面右端からどれだけ外側に出現させるか
@@ -132,6 +191,32 @@ public class ItemSpawner : MonoBehaviour
 
     private float nextHugeSpawnTime = -1f;
     private bool isHugeSpawnScheduled = false;
+
+    // ── 通常出現の成功間隔の状態（BuildNormalSpawnSchedule で初期化する） ──
+    //  ・「配置に成功した時刻＋休止時間」を絶対時刻で保持する。Time.unscaledTime と比較する。
+    private float nextNormalSpawnAllowedTime;
+
+    // ── 調査用の集計カウンタ（ログ出力だけを enableSpawnStats で制御する） ──
+    private int _statNormalSuccessTotal;            // 通常配置成功の総数
+    private int _statSameFrameMultiSuccessFrames;   // 同一フレームに2件以上成功した「回数」（フレーム数）
+    private int _statRetryCount;                    // 配置失敗による再試行の回数
+    private int _statDiscardByRetryLimit;           // リトライ上限による破棄数
+    private int _statDiscardByDeadline;             // 待機期限（元の予定時刻＋猶予）による破棄数
+    private int _statBgmSkipped;                    // Loud Item の条件による見送り数
+    private int _statBandCrossingSuccess;           // 時間帯をまたいで配置成功した数（非ループ予定のみ）
+    private int[] _statLaneSuccess;                 // レーン別の配置成功数（lanesY の並び順）
+    private int[] _statPrefabSuccess;               // 種類別の配置成功数（_statPrefabs と同順）
+    private GameObject[] _statPrefabs;              // 集計対象のPrefab（通常出現ルールの並び）
+    private int _statSuccessInFrame;                // このフレームの成功数
+    private int _statSuccessFrameNumber = -1;       // _statSuccessInFrame を数えているフレーム番号
+    private float _statsNextLogTime;                // 次に集計ログを出す実時刻
+
+    // ── レーン別通常出現タイマーの状態（ResetLaneSpawnTimers で初期化する） ──
+    private float[] _laneNextSpawnTime;             // レーンごとの次回試行時刻（Time.unscaledTime 基準）
+    private int _laneRoundRobinStart;               // 同時刻に複数レーンが来たときの処理開始レーン（固定優先を避ける）
+    private bool _wasSpawnEnabled;                  // spawnEnabled の前フレーム値（停止明けの再抽選に使う）
+    private int[] _statLaneAttempts;                // レーン別の配置試行数
+    private int[] _statLaneFailures;                // レーン別の配置失敗数
 
     // 通常出現予定の基準時刻（＝本プレイ開始時刻。Start / RestartSchedule が呼ぶ
     // BuildNormalSpawnSchedule の中で更新する）。
@@ -192,7 +277,8 @@ public class ItemSpawner : MonoBehaviour
     void Start()
     {
         ValidateAndNormalizeSettings();
-        BuildNormalSpawnSchedule();
+        // 通常出現はレーン別タイマー方式（旧・時刻付き予定方式 BuildNormalSpawnSchedule は使わない）
+        ResetLaneSpawnTimers();
 
         nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
         isHugeSpawnScheduled = true;
@@ -230,9 +316,25 @@ public class ItemSpawner : MonoBehaviour
         // デバッグ出現キー（数字1〜6）。通常スポーンの有効/無効(spawnEnabled)とは独立に動作する。
         HandleDebugSpawnKeys();
 
-        if (!spawnEnabled) return;
+        if (!spawnEnabled)
+        {
+            // 通常出現が止まっている間はタイマーを進めない（再開時にまとめて出さない）
+            _wasSpawnEnabled = false;
+            return;
+        }
 
-        HandleScheduledNormalSpawns();
+        // 停止 → 再開の切り替わりでは、停止していた分をまとめて出さないよう全レーンを再抽選する
+        if (!_wasSpawnEnabled)
+        {
+            ResetLaneSpawnTimers();
+            _wasSpawnEnabled = true;
+        }
+
+        // 通常出現はレーン別タイマー方式のみ（旧・時刻付き予定方式は呼ばない＝二重実行しない）
+        UpdateNormalSpawnByLaneTimers();
+
+        // 調査用の集計ログ（enableSpawnStats が ON のときだけ、実時間の間隔で1行出力する）
+        LogSpawnStatsIfNeeded(Time.unscaledTime);
 
         if (!isHugeSpawnScheduled)
             return;
@@ -260,7 +362,8 @@ public class ItemSpawner : MonoBehaviour
     public void RestartSchedule()
     {
         ValidateAndNormalizeSettings();
-        BuildNormalSpawnSchedule();
+        // 本プレイ開始：レーン別タイマーを全レーン再抽選する（旧方式の予定は作らない）
+        ResetLaneSpawnTimers();
         nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
         isHugeSpawnScheduled = true;
     }
@@ -288,7 +391,7 @@ public class ItemSpawner : MonoBehaviour
         GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
         if (item == null) return false;
 
-        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane))
+        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane, float.PositiveInfinity, out _))
         {
             ItemPool.Instance.ReturnToPool(item);
             return false;
@@ -337,7 +440,7 @@ public class ItemSpawner : MonoBehaviour
             return false;
         }
 
-        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane: true))
+        if (!TryPlaceItemWithoutOverlap(item, true, float.PositiveInfinity, out _))
         {
             ItemPool.Instance.ReturnToPool(item);
             return false;
@@ -357,6 +460,23 @@ public class ItemSpawner : MonoBehaviour
         maxPlacementAttempts = Mathf.Max(1, maxPlacementAttempts);
         retryInterval = Mathf.Max(0f, retryInterval);
         maxRetryCount = Mathf.Max(1, maxRetryCount);
+
+        // 追加した設定値も不正値（負・NaN）をそのまま使わない。
+        normalSpawnSuccessInterval = SanitizeNonNegative(normalSpawnSuccessInterval);
+        normalSpawnSuccessIntervalJitter = SanitizeNonNegative(normalSpawnSuccessIntervalJitter);
+        if (normalSpawnSuccessIntervalJitter > 1f) normalSpawnSuccessIntervalJitter = 1f;
+        if (float.IsNaN(normalSpawnGiveUpSeconds) || normalSpawnGiveUpSeconds <= 0f) normalSpawnGiveUpSeconds = 3f;
+        spawnStatsLogIntervalSeconds = SanitizeNonNegative(spawnStatsLogIntervalSeconds);
+        if (spawnStatsLogIntervalSeconds < 1f) spawnStatsLogIntervalSeconds = 1f;
+
+        // 近接配置の余白：負・NaN は 0（＝接するまで詰める。無効化ではない）。
+        goodItemCloseMarginX = SanitizeNonNegative(goodItemCloseMarginX);
+
+        // レーン別タイマーの間隔：負・NaNは0、最大が最小より小さければ最小にそろえる。
+        laneSpawnIntervalMinSeconds = SanitizeNonNegative(laneSpawnIntervalMinSeconds);
+        laneSpawnIntervalMaxSeconds = SanitizeNonNegative(laneSpawnIntervalMaxSeconds);
+        if (laneSpawnIntervalMaxSeconds < laneSpawnIntervalMinSeconds)
+            laneSpawnIntervalMaxSeconds = laneSpawnIntervalMinSeconds;
 
         if (normalSpawnRules == null)
         {
@@ -433,6 +553,290 @@ public class ItemSpawner : MonoBehaviour
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  通常出現：レーン別タイマー方式（今回の唯一の通常出現起点）
+    //  ・上/中央/下が独立に「最小〜最大」を抽選し、その時刻に自分のレーンへ1個だけ配置を試す。
+    //  ・成功でも失敗でも、次回は「今回の現在時刻＋抽選値」で再抽選する（遅れの取り戻しをしない）。
+    //  ・失敗予定の蓄積、別レーンへの振り替え、他レーンの成功によるタイマー初期化は行わない。
+    //  ・1フレームにつき各レーン最大1回（0秒抽選でも次フレーム以降）。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>レーン別タイマーの最小間隔（秒）。負・NaNは0。</summary>
+    private float GetLaneSpawnIntervalMin()
+    {
+        return SanitizeNonNegative(laneSpawnIntervalMinSeconds);
+    }
+
+    /// <summary>レーン別タイマーの最大間隔（秒）。最小より小さい値・NaNは最小として扱う。</summary>
+    private float GetLaneSpawnIntervalMax()
+    {
+        float min = GetLaneSpawnIntervalMin();
+        float max = SanitizeNonNegative(laneSpawnIntervalMaxSeconds);
+        return (max < min) ? min : max;
+    }
+
+    /// <summary>次の試行までの待ち時間を抽選する（最小〜最大）。</summary>
+    private float DrawLaneSpawnInterval()
+    {
+        float min = GetLaneSpawnIntervalMin();
+        float max = GetLaneSpawnIntervalMax();
+        if (max <= min) return min;
+
+        return UnityEngine.Random.Range(min, max);
+    }
+
+    /// <summary>
+    /// レーン別タイマーを初期化する（Start / RestartSchedule / 停止明けに呼ぶ）。
+    /// 各レーンの初回待ち時間は個別に抽選し、時間帯判定・集計の基準時刻もここで確定する。
+    /// </summary>
+    private void ResetLaneSpawnTimers()
+    {
+        normalScheduleStartTime = Time.unscaledTime;
+
+        int laneCount = Mathf.Max(1, (lanesY != null) ? lanesY.Length : 0);
+        if (_laneNextSpawnTime == null || _laneNextSpawnTime.Length != laneCount)
+        {
+            _laneNextSpawnTime = new float[laneCount];
+        }
+
+        for (int i = 0; i < _laneNextSpawnTime.Length; i++)
+        {
+            // 初回もレーンごとに独立に抽選する
+            _laneNextSpawnTime[i] = normalScheduleStartTime + DrawLaneSpawnInterval();
+        }
+
+        _laneRoundRobinStart = 0;
+
+        RebuildSpawnStatsTables();
+        ResetSpawnStats();
+    }
+
+    /// <summary>
+    /// レーン別タイマーを進める。同時刻に複数レーンが来ても処理開始レーンを巡回させ、
+    /// 「毎回 上→中央→下」の固定優先にしない（レーンごとのタイマーは独立のまま）。
+    /// </summary>
+    private void UpdateNormalSpawnByLaneTimers()
+    {
+        if (_laneNextSpawnTime == null || _laneNextSpawnTime.Length == 0) return;
+
+        // 本プレイ終了後は通常出現しない（デバッグ出現と同じ判定を使う）
+        GameManager gm = GameManager.instance;
+        if (gm != null && gm.IsGameOver) return;
+
+        float now = Time.unscaledTime;
+        int laneCount = _laneNextSpawnTime.Length;
+        int start = Mathf.Abs(_laneRoundRobinStart) % laneCount;
+
+        for (int k = 0; k < laneCount; k++)
+        {
+            int lane = (start + k) % laneCount;
+
+            if (now < _laneNextSpawnTime[lane]) continue;
+
+            // このレーンに1個だけ試す（失敗しても別レーンへ移さない・蓄積しない）
+            TrySpawnNormalItemInLane(lane);
+
+            // 成功でも失敗でも「今回の現在時刻＋抽選値」で次回を決める。
+            // 0秒を引いても、このレーンの次回試行は次フレーム以降になる（whileで取り戻さない）。
+            _laneNextSpawnTime[lane] = now + DrawLaneSpawnInterval();
+        }
+
+        _laneRoundRobinStart = (start + 1) % laneCount;
+    }
+
+    /// <summary>
+    /// 指定レーンに通常アイテムを1個配置する。種類は「現在有効な時間帯の PrefabSpawnCount」を
+    /// 相対重みとして抽選する（個数のノルマではない）。有効な候補が無ければ見送る。
+    /// </summary>
+    private bool TrySpawnNormalItemInLane(int laneIndex)
+    {
+        if (ItemPool.Instance == null) return false;
+        if (lanesY == null || laneIndex < 0 || laneIndex >= lanesY.Length) return false;
+
+        if (_statLaneAttempts != null && laneIndex < _statLaneAttempts.Length) _statLaneAttempts[laneIndex]++;
+
+        GameObject prefab = SelectNormalPrefabByWeight();
+        if (prefab == null) return false;   // 有効な通常候補なし → 見送り
+
+        GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
+        if (item == null) return false;
+
+        Item itemComp = item.GetComponent<Item>();
+        if (itemComp == null)
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            return false;
+        }
+
+        // Loud(BGM) の残り時間条件など、既存の出現禁止条件はそのまま守る（予定は消費＝見送り）
+        if (itemComp.itemType == ItemType.BGM && !IsBgmNormalSpawnAllowed())
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            _statBgmSkipped++;
+            if (showDebugLogs)
+                Debug.Log($"[ItemSpawner] BGMは残り時間がしきい値({bgmNormalSpawnRemainingSeconds:F0}秒)未満でのみ通常出現します — 今回の予定は見送ります。");
+            return false;
+        }
+
+        if (!TryPlaceItemInSpecifiedLane(item, laneIndex, out int placedLaneIndex))
+        {
+            ItemPool.Instance.ReturnToPool(item);
+            if (_statLaneFailures != null && laneIndex < _statLaneFailures.Length) _statLaneFailures[laneIndex]++;
+            return false;
+        }
+
+        OnLaneNormalSpawnPlaced(prefab, placedLaneIndex);
+        return true;
+    }
+
+    /// <summary>
+    /// 現在の経過時間で有効な通常出現ルールから、PrefabSpawnCount を相対重みとして1つ抽選する。
+    /// ・count はノルマではなく重み（良い／悪いの重みを勝手に変えない）。
+    /// ・HugeObstacle／QTE、Itemが無いもの、count 0 は候補にしない。
+    /// ・毎回の配列・リスト生成はしない（重み合計と抽選の2回走査のみ）。
+    /// </summary>
+    private GameObject SelectNormalPrefabByWeight()
+    {
+        if (normalSpawnRules == null || normalSpawnRules.Count == 0) return null;
+
+        float elapsed = Time.unscaledTime - normalScheduleStartTime;
+
+        float total = 0f;
+        for (int r = 0; r < normalSpawnRules.Count; r++)
+        {
+            NormalSpawnRule rule = normalSpawnRules[r];
+            if (!IsNormalRuleActiveAt(rule, elapsed)) continue;
+
+            List<PrefabSpawnCount> entries = rule.prefabSpawnCounts;
+            if (entries == null) continue;
+
+            for (int e = 0; e < entries.Count; e++)
+            {
+                if (!IsValidNormalCandidate(entries[e])) continue;
+                total += entries[e].count;
+            }
+        }
+
+        if (total <= 0f) return null;
+
+        float pick = UnityEngine.Random.value * total;
+        for (int r = 0; r < normalSpawnRules.Count; r++)
+        {
+            NormalSpawnRule rule = normalSpawnRules[r];
+            if (!IsNormalRuleActiveAt(rule, elapsed)) continue;
+
+            List<PrefabSpawnCount> entries = rule.prefabSpawnCounts;
+            if (entries == null) continue;
+
+            for (int e = 0; e < entries.Count; e++)
+            {
+                PrefabSpawnCount entry = entries[e];
+                if (!IsValidNormalCandidate(entry)) continue;
+
+                pick -= entry.count;
+                if (pick <= 0f) return entry.prefab;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>そのルールが現在の経過時間で有効か（非ループ＝時間帯、ループ＝開始以降ずっと有効）。</summary>
+    private static bool IsNormalRuleActiveAt(NormalSpawnRule rule, float elapsedSeconds)
+    {
+        if (rule == null || rule.interval == null) return false;
+
+        float min = Mathf.Max(0f, rule.interval.minInterval);
+        float max = Mathf.Max(min, rule.interval.maxInterval);
+
+        if (rule.loopEnabled) return elapsedSeconds >= min;
+
+        return elapsedSeconds >= min && elapsedSeconds < max;
+    }
+
+    /// <summary>通常出現の候補として有効か（count>0・Prefabあり・Itemあり・HugeObstacle以外）。</summary>
+    private static bool IsValidNormalCandidate(PrefabSpawnCount entry)
+    {
+        if (entry == null || entry.prefab == null) return false;
+        if (entry.count <= 0) return false;
+
+        Item item = entry.prefab.GetComponent<Item>();
+        if (item == null) return false;
+        if (item.itemType == ItemType.HugeObstacle) return false;   // QTE／巨大障害物は通常候補に含めない
+
+        return true;
+    }
+
+    /// <summary>
+    /// 指定レーンへ配置する（通常出現用）。レーンのシャッフル・別レーンへのフォールバックはしない。
+    /// Xは画面右側の基準出現位置のみを使う（待ち時間をごまかすために遠いXへ積まない）。
+    /// 重なり防止は既存の占有判定（3経路）をそのまま使う。
+    /// </summary>
+    private bool TryPlaceItemInSpecifiedLane(GameObject item, int laneIndex, out int placedLaneIndex)
+    {
+        placedLaneIndex = -1;
+
+        if (item == null) return false;
+        if (lanesY == null || laneIndex < 0 || laneIndex >= lanesY.Length) return false;
+
+        using var placeScope = s_tryPlaceMarker.Auto();
+
+        float spawnX = GetSpawnXWorld();
+        float now = Time.unscaledTime;
+        Vector3 candidate = new Vector3(spawnX, lanesY[laneIndex], SpawnZ);
+
+        if (IsSpawnPositionOccupied(candidate, now, item)) return false;
+
+        item.transform.position = candidate;
+        RegisterRecentSpawn(item, candidate, now);
+        // 同じフレームの他レーンからも見えるよう仮レコードにも登録する
+        RegisterPendingFrameRecord(item, candidate, now);
+
+        placedLaneIndex = laneIndex;
+        return true;
+    }
+
+    /// <summary>レーン別タイマー方式の配置成功を集計する（成功数・レーン別・種類別・同一フレーム同時成功）。</summary>
+    private void OnLaneNormalSpawnPlaced(GameObject prefab, int laneIndex)
+    {
+        _statNormalSuccessTotal++;
+
+        if (_statLaneSuccess != null && laneIndex >= 0 && laneIndex < _statLaneSuccess.Length)
+        {
+            _statLaneSuccess[laneIndex]++;
+        }
+
+        if (prefab != null && _statPrefabs != null && _statPrefabSuccess != null)
+        {
+            for (int i = 0; i < _statPrefabs.Length; i++)
+            {
+                if (_statPrefabs[i] == prefab)
+                {
+                    _statPrefabSuccess[i]++;
+                    break;
+                }
+            }
+        }
+
+        // 同一フレームに2件以上成功した「回数」（フレーム数であって個数ではない）
+        if (_statSuccessFrameNumber != Time.frameCount)
+        {
+            _statSuccessFrameNumber = Time.frameCount;
+            _statSuccessInFrame = 0;
+        }
+        _statSuccessInFrame++;
+        if (_statSuccessInFrame == 2) _statSameFrameMultiSuccessFrames++;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  旧・時刻付き予定方式（現在は未使用。通常出現はレーン別タイマー方式が唯一の起点）
+    //  ・BuildNormalSpawnSchedule / ScheduleNormalSpawnsForRule / HandleScheduledNormalSpawns /
+    //    RescheduleToNextCycle / CompareScheduledNormalSpawns / SpawnItemByPrefab は
+    //    Start・RestartSchedule・Update から呼ばれていない（＝旧方式と二重実行しない）。
+    //  ・Inspectorの設定値（成功間隔・ゆらぎ・猶予・ルール表）は消さずに残している。
+    //    normalSpawnRules はレーン別タイマーの「種類の重み」として引き続き使う。
+    // ──────────────────────────────────────────────────────────────────────────
+
     private void HandleScheduledNormalSpawns()
     {
         if (scheduledNormalSpawns.Count == 0) return;
@@ -440,78 +844,355 @@ public class ItemSpawner : MonoBehaviour
         // 処理対象があるときだけ計測する（毎フレームの空呼び出しをマーカーに出さない）
         using var handleScope = s_handleScheduledMarker.Auto();
 
-        // 予定時刻（spawnTime）は基準時刻を含む絶対時刻なので、現在時刻とそのまま比較できる。
+        // 予定時刻（spawnTime）・元の予定時刻（plannedSpawnTime）は基準時刻を含む絶対時刻なので、
+        // 現在時刻（Time.unscaledTime）とそのまま比較できる。QTE中も時計は止めない（既存どおり）。
         float now = Time.unscaledTime;
 
-        // ★ 修正: リトライも含めて処理するため、逆順ループで安全に削除
-        for (int i = scheduledNormalSpawns.Count - 1; i >= 0; i--)
+        // 成功間隔の休止中か。休止中は「配置試行」を休むだけで、失敗としては数えない
+        // （retryCount も spawnTime も変更しない）。
+        bool canAttempt = now >= nextNormalSpawnAllowedTime;
+
+        // ★ 予定は「元の予定時刻 → 同着は構築時に固定した乱数」で並んでいるため、
+        //    先頭から順に処理すれば登録順（ルール順・Prefab順）による種類の偏りが出ない。
+        for (int i = 0; i < scheduledNormalSpawns.Count; i++)
         {
             var scheduled = scheduledNormalSpawns[i];
-            if (scheduled == null || now < scheduled.spawnTime) continue;
-
-            bool placed = SpawnItemByPrefab(scheduled.prefab, scheduled.visibleByTime);
-
-            if (placed)
+            if (scheduled == null)
             {
-                if (scheduled.loopEnabled && scheduled.loopCycleDuration > 0f)
-                {
-                    // ループ: 次サイクルの開始時刻へ再スケジュール
-                    float nextCycleStart = scheduled.cycleStartTime + scheduled.loopCycleDuration;
-                    float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
-                    float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
-
-                    // 再予約も同じ絶対時刻系で行う（基準時刻より前には生成しない）
-                    scheduled.spawnTime    = Mathf.Max(normalScheduleStartTime, nextVisible - leadTime);
-                    scheduled.visibleByTime = nextVisible;
-                    scheduled.cycleStartTime = nextCycleStart;
-                    scheduled.retryCount   = 0;
-                }
-                else
-                {
-                    // 非ループ: 配置成功 → キューから削除
-                    scheduledNormalSpawns.RemoveAt(i);
-                }
+                scheduledNormalSpawns.RemoveAt(i);
+                i--;
+                continue;
             }
-            else
+
+            // ① 待機期限（元の予定時刻＋猶予）を過ぎた予定は、休止中でもここで破棄する
+            //    （休止を理由に無期限へ持ち越さない）。
+            if (now > scheduled.plannedSpawnTime + GetNormalSpawnGiveUpSeconds())
             {
-                // ★ 配置失敗 → リトライ上限未満なら再スケジュール、超えたら諦めて削除
-                scheduled.retryCount++;
-                if (scheduled.retryCount >= maxRetryCount)
-                {
+                _statDiscardByDeadline++;
+                scheduledNormalSpawns.RemoveAt(i);
+                i--;
+                continue;
+            }
+
+            // ② まだ処理時刻に達していない（リトライ待ちも含む）
+            if (now < scheduled.spawnTime) continue;
+
+            // ③ 休止中は配置を試みない（この休止は失敗ではないので retryCount を増やさない）
+            if (!canAttempt) continue;
+
+            NormalPlacementResult result = SpawnItemByPrefab(
+                scheduled.prefab, scheduled.visibleByTime, out int placedLaneIndex, out _);
+
+            switch (result)
+            {
+                case NormalPlacementResult.Placed:
+                    // 実際に配置できたときだけ成功間隔を消費し、集計する
+                    OnNormalSpawnPlaced(scheduled, placedLaneIndex, now);
+                    canAttempt = now >= nextNormalSpawnAllowedTime;
+
                     if (scheduled.loopEnabled && scheduled.loopCycleDuration > 0f)
                     {
-                        // ループ中でも上限リトライ失敗時は次サイクルへ持ち越す
-                        float nextCycleStart = scheduled.cycleStartTime + scheduled.loopCycleDuration;
-                        float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
-                        float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
+                        RescheduleToNextCycle(scheduled);
+                    }
+                    else
+                    {
+                        scheduledNormalSpawns.RemoveAt(i);
+                        i--;
+                    }
+                    break;
 
-                        // 上限リトライ失敗時の次サイクル持ち越しも同じ絶対時刻系で行う
-                        scheduled.spawnTime    = Mathf.Max(normalScheduleStartTime, nextVisible - leadTime);
-                        scheduled.visibleByTime = nextVisible;
-                        scheduled.cycleStartTime = nextCycleStart;
-                        scheduled.retryCount   = 0;
+                case NormalPlacementResult.SkippedByCondition:
+                    // Loud Item の残り時間条件による見送り。予定は消費するが「配置成功」ではない
+                    // （成功間隔は消費しない）。
+                    _statBgmSkipped++;
+                    if (scheduled.loopEnabled && scheduled.loopCycleDuration > 0f)
+                    {
+                        RescheduleToNextCycle(scheduled);
+                    }
+                    else
+                    {
+                        scheduledNormalSpawns.RemoveAt(i);
+                        i--;
+                    }
+                    break;
 
-                        if (showDebugLogs)
+                default: // NormalPlacementResult.Failed
+                    // ★ 配置失敗 → リトライ上限未満なら再スケジュール、超えたら諦めて削除
+                    _statRetryCount++;
+                    scheduled.retryCount++;
+                    if (scheduled.retryCount >= maxRetryCount)
+                    {
+                        _statDiscardByRetryLimit++;
+                        if (scheduled.loopEnabled && scheduled.loopCycleDuration > 0f)
                         {
-                            Debug.Log($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため次サイクルへ持ち越します。");
+                            // ループ中でも上限リトライ失敗時は次サイクルへ持ち越す
+                            RescheduleToNextCycle(scheduled);
+
+                            if (showDebugLogs)
+                            {
+                                Debug.Log($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため次サイクルへ持ち越します。");
+                            }
+                        }
+                        else
+                        {
+                            if (showDebugLogs)
+                            {
+                                Debug.Log($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
+                            }
+                            scheduledNormalSpawns.RemoveAt(i);
+                            i--;
                         }
                     }
                     else
                     {
-                        if (showDebugLogs)
-                        {
-                            Debug.Log($"[ItemSpawner] '{scheduled.prefab?.name}' を {maxRetryCount} 回試みたが配置できなかったため破棄します。");
-                        }
-                        scheduledNormalSpawns.RemoveAt(i);
+                        // 少し後に再試行（now も予定時刻も同じ絶対時刻系なので、そのまま加算できる）
+                        scheduled.spawnTime = now + retryInterval;
                     }
-                }
-                else
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// ループ予定を次サイクルへ再予約する。
+    /// 元の予定時刻（plannedSpawnTime）・時間帯・同着順も更新する（待機期限と処理順に使うため）。
+    /// </summary>
+    private void RescheduleToNextCycle(ScheduledNormalSpawn scheduled)
+    {
+        float nextCycleStart = scheduled.cycleStartTime + scheduled.loopCycleDuration;
+        float leadTime = GetLeadTimeToScreenEnter(scheduled.prefab);
+        float nextVisible = nextCycleStart + scheduled.localVisibleOffset;
+
+        // 再予約も同じ絶対時刻系で行う（基準時刻より前には生成しない）
+        float planned = Mathf.Max(normalScheduleStartTime, nextVisible - leadTime);
+
+        scheduled.spawnTime        = planned;
+        scheduled.plannedSpawnTime = planned;
+        scheduled.visibleByTime    = nextVisible;
+        scheduled.cycleStartTime   = nextCycleStart;
+        scheduled.retryCount       = 0;
+        scheduled.tieBreak         = UnityEngine.Random.value;
+        scheduled.bandEndSeconds   = nextCycleStart - normalScheduleStartTime + scheduled.loopCycleDuration;
+    }
+
+    /// <summary>通常出現の配置結果。bool の兼用（配置成功と予定の正常消費）を分けるための最小構成。</summary>
+    private enum NormalPlacementResult
+    {
+        Placed,             // 実際に配置できた（＝成功間隔を消費し、集計に数える）
+        SkippedByCondition, // 条件による見送り（Loud Item の残り時間ゲート）。予定は消費するが成功ではない
+        Failed              // 配置に失敗した（リトライ対象）
+    }
+
+    /// <summary>
+    /// 予定の処理順。元の予定時刻が早い順、同着は構築時に固定した乱数（tieBreak）で決める。
+    /// リストを並べ替えるのは BuildNormalSpawnSchedule の1回だけで、毎フレームはソートしない。
+    /// </summary>
+    private static int CompareScheduledNormalSpawns(ScheduledNormalSpawn a, ScheduledNormalSpawn b)
+    {
+        if (a == null) return (b == null) ? 0 : 1;
+        if (b == null) return -1;
+
+        int byTime = a.plannedSpawnTime.CompareTo(b.plannedSpawnTime);
+        if (byTime != 0) return byTime;
+
+        return a.tieBreak.CompareTo(b.tieBreak);
+    }
+
+    /// <summary>負・NaN を 0 に丸める（不正な設定値をそのまま使わない）。</summary>
+    private static float SanitizeNonNegative(float value)
+    {
+        if (float.IsNaN(value) || value < 0f) return 0f;
+        return value;
+    }
+
+    /// <summary>通常出現の予定をあきらめる猶予（秒）。0以下・不正値は既定の3秒として扱う。</summary>
+    private float GetNormalSpawnGiveUpSeconds()
+    {
+        if (float.IsNaN(normalSpawnGiveUpSeconds) || normalSpawnGiveUpSeconds <= 0f) return 3f;
+        return normalSpawnGiveUpSeconds;
+    }
+
+    /// <summary>
+    /// 成功後の休止時間＝基準時間 × Random.Range(1-jitter, 1+jitter)。
+    /// 基準時間が0のときは 0（休止なし＝追加制御を無効化）。
+    /// </summary>
+    private float GetNormalSpawnInterval()
+    {
+        float baseInterval = SanitizeNonNegative(normalSpawnSuccessInterval);
+        if (baseInterval <= 0f) return 0f;
+
+        float jitter = SanitizeNonNegative(normalSpawnSuccessIntervalJitter);
+        if (jitter > 1f) jitter = 1f;
+        if (jitter <= 0f) return baseInterval;
+
+        return baseInterval * UnityEngine.Random.Range(1f - jitter, 1f + jitter);
+    }
+
+    /// <summary>
+    /// 通常アイテムの配置に成功したときの処理（成功間隔の更新と集計）。
+    /// 「実際に配置できた」ときだけ呼ぶ（Loud の見送り・配置失敗・破棄では呼ばない）。
+    /// </summary>
+    private void OnNormalSpawnPlaced(ScheduledNormalSpawn scheduled, int laneIndex, float now)
+    {
+        // 次の成功可能時刻（休止時間）。基準時間が0なら now のまま＝休止なし。
+        nextNormalSpawnAllowedTime = now + GetNormalSpawnInterval();
+
+        // ── 集計（カウントは常時。ログ出力だけを enableSpawnStats で制御する）──
+        _statNormalSuccessTotal++;
+
+        if (_statLaneSuccess != null && laneIndex >= 0 && laneIndex < _statLaneSuccess.Length)
+        {
+            _statLaneSuccess[laneIndex]++;
+        }
+
+        if (scheduled != null && _statPrefabs != null && _statPrefabSuccess != null)
+        {
+            for (int i = 0; i < _statPrefabs.Length; i++)
+            {
+                if (_statPrefabs[i] == scheduled.prefab)
                 {
-                    // 少し後に再試行（now も予定時刻も同じ絶対時刻系なので、そのまま加算できる）
-                    scheduled.spawnTime = now + retryInterval;
+                    _statPrefabSuccess[i]++;
+                    break;
                 }
             }
         }
+
+        // 時間帯をまたいだ成功（元の予定の時間帯の終端を過ぎてから成功した。ループ予定は対象外）
+        if (scheduled != null && !scheduled.loopEnabled &&
+            now - normalScheduleStartTime >= scheduled.bandEndSeconds)
+        {
+            _statBandCrossingSuccess++;
+        }
+
+        // 同一フレームに2件以上成功した「回数」（フレーム数であって個数ではない）
+        if (_statSuccessFrameNumber != Time.frameCount)
+        {
+            _statSuccessFrameNumber = Time.frameCount;
+            _statSuccessInFrame = 0;
+        }
+        _statSuccessInFrame++;
+        if (_statSuccessInFrame == 2) _statSameFrameMultiSuccessFrames++;
+    }
+
+    /// <summary>Y座標から最も近いレーンの番号を返す（集計用。lanesY が無い場合は -1）。</summary>
+    private int GetLaneIndexOfY(float y)
+    {
+        if (lanesY == null || lanesY.Length == 0) return -1;
+
+        int best = 0;
+        float bestDist = Mathf.Abs(lanesY[0] - y);
+        for (int i = 1; i < lanesY.Length; i++)
+        {
+            float d = Mathf.Abs(lanesY[i] - y);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// 集計対象のPrefab一覧とカウンタ配列を、通常出現ルールの並びから作り直す。
+    /// （巨大障害物は通常出現の集計対象外）
+    /// </summary>
+    private void RebuildSpawnStatsTables()
+    {
+        var prefabs = new List<GameObject>();
+        if (normalSpawnRules != null)
+        {
+            foreach (var rule in normalSpawnRules)
+            {
+                if (rule == null || rule.prefabSpawnCounts == null) continue;
+                foreach (var entry in rule.prefabSpawnCounts)
+                {
+                    if (entry == null || entry.prefab == null) continue;
+
+                    Item item = entry.prefab.GetComponent<Item>();
+                    if (item != null && item.itemType == ItemType.HugeObstacle) continue;
+                    if (!prefabs.Contains(entry.prefab)) prefabs.Add(entry.prefab);
+                }
+            }
+        }
+
+        _statPrefabs = prefabs.ToArray();
+        _statPrefabSuccess = new int[_statPrefabs.Length];
+
+        int laneCount = Mathf.Max(1, (lanesY != null) ? lanesY.Length : 0);
+        _statLaneSuccess = new int[laneCount];
+        _statLaneAttempts = new int[laneCount];
+        _statLaneFailures = new int[laneCount];
+    }
+
+    /// <summary>成功間隔と集計を初期化する（Start / RestartSchedule から呼ばれる）。</summary>
+    private void ResetSpawnStats()
+    {
+        _statNormalSuccessTotal = 0;
+        _statSameFrameMultiSuccessFrames = 0;
+        _statRetryCount = 0;
+        _statDiscardByRetryLimit = 0;
+        _statDiscardByDeadline = 0;
+        _statBgmSkipped = 0;
+        _statBandCrossingSuccess = 0;
+        _statSuccessInFrame = 0;
+        _statSuccessFrameNumber = -1;
+
+        if (_statLaneSuccess != null) System.Array.Clear(_statLaneSuccess, 0, _statLaneSuccess.Length);
+        if (_statLaneAttempts != null) System.Array.Clear(_statLaneAttempts, 0, _statLaneAttempts.Length);
+        if (_statLaneFailures != null) System.Array.Clear(_statLaneFailures, 0, _statLaneFailures.Length);
+        if (_statPrefabSuccess != null) System.Array.Clear(_statPrefabSuccess, 0, _statPrefabSuccess.Length);
+
+        nextNormalSpawnAllowedTime = 0f;
+        _statsNextLogTime = Time.unscaledTime + Mathf.Max(1f, spawnStatsLogIntervalSeconds);
+    }
+
+    /// <summary>
+    /// 調査用の集計ログ。enableSpawnStats が ON のときだけ、実時間の間隔で1行出力する。
+    /// ここで出す数値は「配置成功数」であり、画面到達数・取得数ではない。
+    /// </summary>
+    private void LogSpawnStatsIfNeeded(float now)
+    {
+        if (!enableSpawnStats) return;
+        if (now < _statsNextLogTime) return;
+
+        _statsNextLogTime = now + Mathf.Max(1f, spawnStatsLogIntervalSeconds);
+
+        var sb = new System.Text.StringBuilder(384);
+        sb.Append("[ItemSpawner] 通常出現（レーン別タイマー）の集計：配置の試行/成功/失敗（画面到達数・取得数ではない）");
+        sb.Append(" | 経過=").Append((now - normalScheduleStartTime).ToString("F1")).Append("s");
+        sb.Append(" | 成功計=").Append(_statNormalSuccessTotal);
+
+        // レーン別：試行数 / 成功数 / 配置失敗数（中央の偏りはこの3つを分けて見る）
+        sb.Append(" | レーン別(試行/成功/失敗)=");
+        if (_laneNextSpawnTime != null)
+        {
+            for (int i = 0; i < _laneNextSpawnTime.Length; i++)
+            {
+                int att = (_statLaneAttempts != null && i < _statLaneAttempts.Length) ? _statLaneAttempts[i] : 0;
+                int suc = (_statLaneSuccess != null && i < _statLaneSuccess.Length) ? _statLaneSuccess[i] : 0;
+                int fail = (_statLaneFailures != null && i < _statLaneFailures.Length) ? _statLaneFailures[i] : 0;
+
+                sb.Append("lane").Append(i).Append(':').Append(att).Append('/').Append(suc).Append('/').Append(fail).Append(' ');
+            }
+        }
+
+        sb.Append("| 種類別=");
+        if (_statPrefabs != null && _statPrefabSuccess != null)
+        {
+            for (int i = 0; i < _statPrefabs.Length; i++)
+            {
+                sb.Append(_statPrefabs[i] != null ? _statPrefabs[i].name : "null").Append(':').Append(_statPrefabSuccess[i]).Append(' ');
+            }
+        }
+
+        // 旧・時刻付き予定方式にしか意味のない集計（再試行・破棄・時間帯またぎ）は、新方式で有効であるかのように出さない。
+        sb.Append("| 同一フレーム2件以上の回数=").Append(_statSameFrameMultiSuccessFrames);
+        sb.Append(" | Loud見送り=").Append(_statBgmSkipped);
+        sb.Append(" | レーン間隔設定=").Append(GetLaneSpawnIntervalMin().ToString("F2"))
+          .Append("〜").Append(GetLaneSpawnIntervalMax().ToString("F2")).Append("s");
+
+        Debug.Log(sb.ToString());
     }
 
     private void BuildNormalSpawnSchedule()
@@ -525,6 +1206,11 @@ public class ItemSpawner : MonoBehaviour
         // 後から呼ばれた方が基準時刻として有効になる（本プレイ開始時の RestartSchedule が最後に来る）。
         normalScheduleStartTime = Time.unscaledTime;
 
+        // 追加状態（成功間隔・集計）もこの基準時刻で初期化する。
+        // Start と RestartSchedule の両方がここを通るため、再プレイへ状態を持ち越さない。
+        RebuildSpawnStatsTables();
+        ResetSpawnStats();
+
         if (normalSpawnRules == null || normalSpawnRules.Count == 0)
         {
             return;
@@ -536,6 +1222,11 @@ public class ItemSpawner : MonoBehaviour
             if (rule == null || rule.interval == null) continue;
             ScheduleNormalSpawnsForRule(rule);
         }
+
+        // 処理順を「元の予定時刻 → 同着は構築時に固定した乱数」で決める。
+        //  ・登録順（ルール順・Prefab順）で特定の種類だけが枠を取り続けないようにする。
+        //  ・並べ替えは構築時に1回だけ行い、毎フレームのソートや一時リスト生成は行わない。
+        scheduledNormalSpawns.Sort(CompareScheduledNormalSpawns);
     }
 
     private void ScheduleNormalSpawnsForRule(NormalSpawnRule rule)
@@ -572,13 +1263,17 @@ public class ItemSpawner : MonoBehaviour
                 // 予定が本プレイ開始時刻より前になる場合は基準時刻にクランプし、開始前には生成しない
                 // （その分だけ最初のアイテムが画面に入るのは遅れる。移動時間は残る）。
                 float visibleTime = normalScheduleStartTime + startTime + localOffset;
+                float plannedSpawnTime = Mathf.Max(normalScheduleStartTime, visibleTime - leadTime);
 
                 scheduledNormalSpawns.Add(new ScheduledNormalSpawn
                 {
                     prefab           = entry.prefab,
-                    spawnTime        = Mathf.Max(normalScheduleStartTime, visibleTime - leadTime),
+                    spawnTime        = plannedSpawnTime,
                     visibleByTime    = visibleTime,
                     retryCount       = 0,
+                    plannedSpawnTime = plannedSpawnTime,            // 元の予定時刻（再試行で更新しない）
+                    tieBreak         = UnityEngine.Random.value,    // 同着の処理順を構築時に固定する
+                    bandEndSeconds   = startTime + cycleDuration,   // この予定が属する時間帯の終了（相対秒）
                     loopEnabled      = rule.loopEnabled,
                     loopCycleDuration = rule.loopEnabled ? cycleDuration : 0f,
                     cycleStartTime   = normalScheduleStartTime + startTime,   // 第1サイクルの基準時刻（絶対）
@@ -625,45 +1320,56 @@ public class ItemSpawner : MonoBehaviour
         return result;
     }
 
-    // ★ 戻り値を bool に変更: 配置成功なら true
-    private bool SpawnItemByPrefab(GameObject prefab, float visibleByTime)
+    // 戻り値: 実際に配置できた（Placed）／条件で見送った（SkippedByCondition）／配置に失敗した（Failed）。
+    // ・以前は bool で「配置成功」と「予定の正常消費（Loud の見送り）」を兼用していた。
+    //   成功間隔を消費してよいのは Placed のときだけであることを区別できるようにした。
+    private NormalPlacementResult SpawnItemByPrefab(
+        GameObject prefab, float visibleByTime, out int placedLaneIndex, out GameObject placedItem)
     {
-        if (ItemPool.Instance == null) return false;
-        if (prefab == null) return false;
+        placedLaneIndex = -1;
+        placedItem = null;
+
+        if (ItemPool.Instance == null) return NormalPlacementResult.Failed;
+        if (prefab == null) return NormalPlacementResult.Failed;
 
         GameObject item = ItemPool.Instance.GetFromPoolByPrefab(prefab);
-        if (item == null) return false;
+        if (item == null) return NormalPlacementResult.Failed;
 
         Item itemComp = item.GetComponent<Item>();
         if (itemComp == null)
         {
             ItemPool.Instance.ReturnToPool(item);
-            return false;
+            return NormalPlacementResult.Failed;
         }
 
         // BGM は「子機のタイマーの残り時間がしきい値(既定120秒)未満」のときだけ通常出現を許可する。
         // 解禁前の予定はここで消費する（保留・毎フレーム再試行・解禁時のまとめ出現はしない）。
+        // これは配置成功ではないため、成功間隔は消費しない（SkippedByCondition で返す）。
         if (itemComp.itemType == ItemType.BGM && !IsBgmNormalSpawnAllowed())
         {
             ItemPool.Instance.ReturnToPool(item);
             if (showDebugLogs)
                 Debug.Log($"[ItemSpawner] BGMは残り時間がしきい値({bgmNormalSpawnRemainingSeconds:F0}秒)未満でのみ通常出現します — 今回の予定は見送ります。");
-            return true;
+            return NormalPlacementResult.SkippedByCondition;
         }
 
         float maxExtraX = GetAllowedExtraXForVisibleDeadline(prefab, visibleByTime, Time.unscaledTime);
-        if (TryPlaceItemWithoutOverlap(item, preferHugeLane: false, maxExtraX))
+        if (TryPlaceItemWithoutOverlap(item, false, maxExtraX, out placedLaneIndex))
         {
-            return true;
+            placedItem = item;
+            return NormalPlacementResult.Placed;
         }
 
         // ★ 配置失敗時はプールに戻してリトライを促す
         ItemPool.Instance.ReturnToPool(item);
-        return false;
+        return NormalPlacementResult.Failed;
     }
 
-    private bool TryPlaceItemWithoutOverlap(GameObject item, bool preferHugeLane, float maxExtraX = float.PositiveInfinity)
+    private bool TryPlaceItemWithoutOverlap(
+        GameObject item, bool preferHugeLane, float maxExtraX, out int placedLaneIndex)
     {
+        placedLaneIndex = -1;
+
         if (item == null) return false;
 
         using var placeScope = s_tryPlaceMarker.Auto();
@@ -693,6 +1399,7 @@ public class ItemSpawner : MonoBehaviour
                 RegisterRecentSpawn(item, candidate, now);
                 // ★ 同フレーム内の他アイテムからも見えるよう仮レコードにも登録
                 RegisterPendingFrameRecord(item, candidate, now);
+                placedLaneIndex = GetLaneIndexOfY(y);   // 集計用（レーン別の配置成功数）
                 return true;
             }
         }
@@ -773,13 +1480,15 @@ public class ItemSpawner : MonoBehaviour
 
         PruneRecentSpawns(now);
         Vector2 spawningHalf = GetApproxHalfSize(spawningItem);
+        // 配置しようとしているアイテムの分類は1回だけ取得する（毎判定で配列・一覧探索を増やさない）
+        bool spawningIsGood = IsGoodItem(spawningItem);
 
         // ① 最近スポーン記録との重なり判定
         foreach (var record in recentSpawnRecords)
         {
             if (record == null) continue;
 
-            float requiredX = Mathf.Max(minSpawnDistanceX, spawningHalf.x + record.halfSizeX);
+            float requiredX = GetRequiredXDistance(spawningIsGood, spawningHalf, record.isGoodItem, record.halfSizeX);
             float requiredY = Mathf.Max(minSpawnDistanceY, spawningHalf.y + record.halfSizeY);
 
             if (Mathf.Abs(record.position.x - candidate.x) < requiredX &&
@@ -794,7 +1503,7 @@ public class ItemSpawner : MonoBehaviour
         {
             if (record == null) continue;
 
-            float requiredX = Mathf.Max(minSpawnDistanceX, spawningHalf.x + record.halfSizeX);
+            float requiredX = GetRequiredXDistance(spawningIsGood, spawningHalf, record.isGoodItem, record.halfSizeX);
             float requiredY = Mathf.Max(minSpawnDistanceY, spawningHalf.y + record.halfSizeY);
 
             if (Mathf.Abs(record.position.x - candidate.x) < requiredX &&
@@ -815,7 +1524,7 @@ public class ItemSpawner : MonoBehaviour
 
             Vector3 pos = activeItem.transform.position;
             Vector2 targetHalf = GetApproxHalfSize(activeItem.gameObject);
-            float requiredX = Mathf.Max(minSpawnDistanceX, spawningHalf.x + targetHalf.x);
+            float requiredX = GetRequiredXDistance(spawningIsGood, spawningHalf, IsGoodItemType(activeItem.itemType), targetHalf.x);
             float requiredY = Mathf.Max(minSpawnDistanceY, spawningHalf.y + targetHalf.y);
 
             if (Mathf.Abs(pos.x - candidate.x) < requiredX &&
@@ -842,6 +1551,49 @@ public class ItemSpawner : MonoBehaviour
         return new Vector2(0.2f, 0.2f);
     }
 
+    /// <summary>
+    /// 良いアイテム（Score/MoreScore/Fever）かどうか。分類が取得できない場合は false
+    /// （不明な対象を良い扱いにしない）。
+    /// </summary>
+    private static bool IsGoodItemType(ItemType itemType)
+    {
+        return itemType == ItemType.Score || itemType == ItemType.Fever;
+    }
+
+    /// <summary>GameObject から良いアイテムかを判定する（Item が無い場合は false）。</summary>
+    private static bool IsGoodItem(GameObject obj)
+    {
+        if (obj == null) return false;
+
+        Item item = obj.GetComponent<Item>();
+        return item != null && IsGoodItemType(item.itemType);
+    }
+
+    /// <summary>
+    /// 近接配置の余白（ワールド単位）。負・NaN は 0（＝接するまで詰める設定。無効化ではない）。
+    /// </summary>
+    private float GetGoodItemCloseMarginX()
+    {
+        return SanitizeNonNegative(goodItemCloseMarginX);
+    }
+
+    /// <summary>
+    /// X方向の必要間隔（3つの判定経路で共通に使う）。
+    /// ・良い同士（A・Bとも Score/MoreScore/Fever）かつ機能有効のときだけ「半幅合計＋余白」。
+    /// ・それ以外（片方が対象外・分類不明・機能無効）は従来どおり Max(minSpawnDistanceX, 半幅合計)。
+    /// </summary>
+    private float GetRequiredXDistance(bool isGoodA, Vector2 halfA, bool isGoodB, float otherHalfX)
+    {
+        float sizeSum = halfA.x + otherHalfX;
+
+        if (enableGoodItemClosePlacement && isGoodA && isGoodB)
+        {
+            return sizeSum + GetGoodItemCloseMarginX();
+        }
+
+        return Mathf.Max(minSpawnDistanceX, sizeSum);
+    }
+
     private void RegisterRecentSpawn(GameObject spawnedItem, Vector3 position, float now)
     {
         Vector2 half = GetApproxHalfSize(spawnedItem);
@@ -850,7 +1602,9 @@ public class ItemSpawner : MonoBehaviour
             position = position,
             time = now,
             halfSizeX = half.x,
-            halfSizeY = half.y
+            halfSizeY = half.y,
+            // 分類は記録した時点のアイテム種別で固定する（プール再利用で別の対象と誤認しない）
+            isGoodItem = IsGoodItem(spawnedItem)
         });
     }
 
@@ -863,7 +1617,9 @@ public class ItemSpawner : MonoBehaviour
             position = position,
             time = now,
             halfSizeX = half.x,
-            halfSizeY = half.y
+            halfSizeY = half.y,
+            // ①と同じ分類保持（3経路で同じX判定にする）
+            isGoodItem = IsGoodItem(spawnedItem)
         });
     }
 
@@ -951,7 +1707,7 @@ public class ItemSpawner : MonoBehaviour
             return;
         }
 
-        if (!TryPlaceItemWithoutOverlap(item, preferHugeLane: true))
+        if (!TryPlaceItemWithoutOverlap(item, true, float.PositiveInfinity, out _))
         {
             ItemPool.Instance.ReturnToPool(item);
         }

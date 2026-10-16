@@ -570,6 +570,11 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
                 HandleLoudItemPrepared();
                 break;
 
+            case ParentMessageType.GameAudio:
+                // 子機の本編音（SE／BGM状態）。受信スレッドから直接呼ばず、この Dispatch（メインスレッド）から通知する。
+                HandleGameAudioPrepared(message.GameAudio);
+                break;
+
             case ParentMessageType.GameProgress:
                 HandleGameProgressPrepared(message.Score);
                 break;
@@ -1178,6 +1183,24 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
     {
         float progressRate = Mathf.Clamp01(rawScore / 1000f);
         _notifications.HandleGameProgressReceived(progressRate);
+    }
+
+    /// <summary>
+    /// GAME_AUDIO：子機の本編音（SE／BGM状態）。
+    ///  ・通信側は受信を通知するだけ。実際の再生は ParentGameScene 側（ParentGameAudioPlayer）が行う。
+    ///  ・ゲームシーン以外では通知しない（タイトル・ロード・結果へ音を持ち越さない）。
+    ///  ・親機から子機へ再通知しない（音が往復するループを作らない）。
+    /// </summary>
+    private void HandleGameAudioPrepared(ParentGameAudioEvent evt)
+    {
+        if (!ParentSceneBoundaryPolicy.IsGameplayScene(SceneManager.GetActiveScene().name, _settings.GameplaySceneName))
+        {
+            if (ShowDebug)
+                Debug.Log("[ParentUdpRuntimeHost] GAME_AUDIO discarded — ゲームシーンではないため再生しません。");
+            return;
+        }
+
+        _notifications.HandleGameAudioReceived(evt);
     }
 
     /// <summary>LOADING_COMPLETE：受信記録は ParentPlaySession。通知発生点を通す（旧イベント橋渡しは切替時）。</summary>
