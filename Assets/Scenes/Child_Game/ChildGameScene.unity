@@ -2929,7 +2929,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 8300000, guid: dbc959bb1fce1794aabdbb9da0f0a3aa, type: 3}
   m_PlayOnAwake: 0
-  m_Volume: 0.3
+  m_Volume: 0.201
   m_Pitch: 1
   Loop: 1
   Mute: 0
@@ -6700,6 +6700,23 @@ MonoBehaviour:
   sleepImageTremorPauseSeconds: 0.5
   showDebugLogs: 0
   enableSleepDebugKey: 1
+--- !u!114 &8734000004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8734000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcd41d759eb7746f9b61a7777ea536da, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChildGameAudioSync
+  catalog: {fileID: 11400000, guid: 09bef2523f8be4b5b804272470fa2c66, type: 2}
+  syncEnabled: 1
+  bgmStateHeartbeatSeconds: 1
+  showDebugLog: 0
+  bgmController: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -6720,21 +6737,3 @@ SceneRoots:
   - {fileID: 1533154178}
   - {fileID: 58495706}
   - {fileID: 8734000002}
---- !u!114 &8734000004
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8734000001}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fcd41d759eb7746f9b61a7777ea536da, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ChildGameAudioSync
-  catalog: {fileID: 11400000, guid: 09bef2523f8be4b5b804272470fa2c66, type: 2}
-  syncEnabled: 1
-  bgmStateHeartbeatSeconds: 1
-  showDebugLog: 0
-  bgmController: {fileID: 0}
-
