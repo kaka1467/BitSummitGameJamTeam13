@@ -13,6 +13,18 @@ public class AudioManager : MonoBehaviour
     [SerializeField]
     private AudioSource seSource;
 
+    // ── BGM音量の正本（設定パネルのBGMスライダー）──────────────────────────────
+    //  ・「まだ設定されていない（未設定）」状態を区別して持つ。
+    //    未設定の間は、各BGMは自分のInspector設定値のまま鳴らす（初期値1で上書きしない）。
+    //  ・AudioManager は用途ごとに生成タイミングが違う（設定パネル／アイテムSE／タイトルなど）ため、
+    //    生成順に左右されず、ユーザーが決めた音量だけを各BGMへ配る。
+    private bool hasBgmVolume;
+    private float bgmVolume = 1f;
+
+    [Tooltip("BGM音量の変更をConsoleへ出す（確認用。通常はOFFのままにしてください）。")]
+    [SerializeField]
+    private bool logBgmVolumeChanges = false;
+
     // ── 本編音の親機通知用フック ────────────────────────────────────────────────
     //   ここは「子機のローカル再生を壊さないための後段フック」。再生処理そのものは変更しない。
     //   親機への送信は購読側（ChildGameAudioSync）が行い、AudioManager は何も送らない。
@@ -190,7 +202,17 @@ public class AudioManager : MonoBehaviour
     public void SetBgmVolume(float volume)
     {
         EnsureBgmSource();
-        bgmSource.volume = Mathf.Clamp01(volume);
+
+        // ここで初めて「ユーザー設定」として確定する（この値だけが各BGMへ配られる）。
+        float applied = Mathf.Clamp01(volume);
+        bool changed = !hasBgmVolume || !Mathf.Approximately(bgmVolume, applied);
+
+        hasBgmVolume = true;
+        bgmVolume = applied;
+        bgmSource.volume = applied;
+
+        if (logBgmVolumeChanges && changed)
+            Debug.Log($"[AudioManager] BGM音量の正本を {applied:F3} に設定しました（この値を各BGMへ配ります）。");
     }
 
     public void SetSeVolume(float volume)
@@ -199,9 +221,32 @@ public class AudioManager : MonoBehaviour
         seSource.volume = Mathf.Clamp01(volume);
     }
 
+    /// <summary>
+    /// 設定パネルで決まったBGM音量（正本）。まだ決まっていなければ既定の1f。
+    ///  ・各BGMへ流してよい値かどうかは TryGetBgmVolume で判定する（未設定の間は流さない）。
+    ///  ・AudioManager自身のbgmSource音量（アイテムBGMの再生音量など）とは別に保持する。
+    /// </summary>
     public float GetBgmVolume()
     {
-        return bgmSource == null ? 1f : bgmSource.volume;
+        return bgmVolume;
+    }
+
+    /// <summary>
+    /// 設定パネルでBGM音量が確定しているか。false の間は、各BGMは自分のInspector設定値をそのまま使う。
+    /// </summary>
+    public bool HasBgmVolume => hasBgmVolume;
+
+    /// <summary>確認用ログのON/OFF（BGM音量の変更をConsoleへ出す）。</summary>
+    public bool LogBgmVolumeChanges => logBgmVolumeChanges;
+
+    /// <summary>
+    /// 確定済みのBGM音量を取り出す。まだ決まっていなければ false を返す（volume には既定値を入れる）。
+    ///  呼び出し側（BGMController／BgmVolumeSync）は false の間、自分のAudioSource音量を変更しない。
+    /// </summary>
+    public bool TryGetBgmVolume(out float volume)
+    {
+        volume = bgmVolume;
+        return hasBgmVolume;
     }
 
     public float GetSeVolume()
