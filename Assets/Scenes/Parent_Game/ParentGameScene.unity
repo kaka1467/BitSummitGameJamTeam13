@@ -1903,7 +1903,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GameOverPresentationController
   visualFeedback: {fileID: 797024499}
   heartbeat: {fileID: 1474122166}
-  gameOverAudioSource: {fileID: 0}
   maxGaugeReachedClip: {fileID: 8300000, guid: 6c03a2314444a4c3dbd09694c4bb025e, type: 3}
   maxGaugeReachedVolume: 1
   jumpScareClip: {fileID: 8300000, guid: 12cb29550dc984b25b8ad8e63b8bba26, type: 3}
@@ -10994,7 +10993,6 @@ MonoBehaviour:
   screenLight: {fileID: 687898443}
   screenLightIntensity: 0
   screenMaterialTemplate: {fileID: 2100000, guid: 0e6fc541363f542e3b6977fcbd39db71, type: 2}
-  screenShader: {fileID: 0}
   showDebugLog: 0
 --- !u!1 &91010000002
 GameObject:
@@ -11022,7 +11020,7 @@ Transform:
   m_GameObject: {fileID: 91010000002}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: -0.019, z: -0.0108}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -11043,13 +11041,17 @@ MonoBehaviour:
   catalog: {fileID: 11400000, guid: 09bef2523f8be4b5b804272470fa2c66, type: 2}
   audioOrigin: {fileID: 91010000003}
   cameraLocalPosition: {x: 0, y: -0.35, z: 0.45}
-  spatialBlend: 1
-  minDistance: 0.6
-  maxDistance: 30
-  rolloffMode: 1
-  masterVolume: 1
-  bgmVolume: 1
-  seVolume: 1
+  spatialBlend: 0.087
+  minDistance: 0.2
+  maxDistance: 10
+  rolloffMode: 0
+  masterVolume: 0.509
+  bgmVolume: 0.052
+  seVolume: 0.127
+  consoleCloseClip: {fileID: 8300000, guid: 87974f36462c0404681424da4fc1a251, type: 3}
+  consoleCloseVolume: 1
+  consoleOpenClip: {fileID: 8300000, guid: 5847b1095037f4acdb514c10ca50b642, type: 3}
+  consoleOpenVolume: 1
   sleepingController: {fileID: 2121813538}
   receiveWatchdogSeconds: 3
   showDebugLog: 0

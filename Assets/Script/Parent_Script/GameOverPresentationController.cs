@@ -31,10 +31,10 @@ public class GameOverPresentationController : MonoBehaviour
     [Tooltip("心拍音の担当。捕獲からドア開け完了までは通常制御を止め、以降は赤段階と同じテンポで鳴らします。")]
     [SerializeField] private SuspicionHeartbeat heartbeat;
 
-    [Header("音源")]
-    [Tooltip("ゲームオーバー演出の効果音を鳴らすAudioSource。未設定なら 2D（spatialBlend=0）のAudioSourceを自動で追加します。\n" +
-             "※距離で小さくならないよう2Dに設定します。既存の足音などのAudioSourceとは共有しないでください。")]
-    [SerializeField] private AudioSource gameOverAudioSource;
+    // ゲームオーバー演出の効果音専用のAudioSource（Inspectorでは割り当てない＝内部で用意する）。
+    //  ・2D（spatialBlend=0）で再生する：カメラ移動や母親との距離で音量が変わらないようにするため。
+    //  ・他用途（足音など）のAudioSourceを流用しない：Stopや2D設定の変更で別の音へ影響させないため。
+    private AudioSource gameOverAudioSource;
 
     [Header("怪しさメーターMAX到達音（捕獲確定で1回）")]
     [Tooltip("怪しさメーターが最大へ到達して捕獲が確定したときに1回だけ再生するClip。\n" +
@@ -60,7 +60,6 @@ public class GameOverPresentationController : MonoBehaviour
     private bool _maxSoundPlayed;
     private bool _jumpScareSoundPlayed;
     private bool _heartbeatStarted;
-    private bool _spatialWarningShown;
 
     /// <summary>この捕獲で既に捕獲確定処理を行ったか。</summary>
     public bool IsCaptured => _captured;
@@ -222,28 +221,20 @@ public class GameOverPresentationController : MonoBehaviour
             heartbeat = Object.FindFirstObjectByType<SuspicionHeartbeat>();
 
         if (gameOverAudioSource == null)
-        {
             gameOverAudioSource = Create2DAudioSource();
-        }
-        else if (gameOverAudioSource.spatialBlend > 0.01f && !_spatialWarningShown)
-        {
-            _spatialWarningShown = true;
-            Debug.LogWarning($"[GameOverPresentation] gameOverAudioSource（{gameOverAudioSource.name}）が3D設定です。" +
-                             "カメラ移動や距離で小さくならないよう 2D（spatialBlend=0）へ変更します", this);
-            gameOverAudioSource.spatialBlend = 0f;
-        }
     }
 
     /// <summary>
-    /// ゲームオーバー効果音専用の 2D AudioSource を用意する（このGameObjectに追加）。
+    /// ゲームオーバー効果音専用の 2D AudioSource を新しく用意する（このGameObjectへ追加）。
     ///  ・2D（spatialBlend=0）／Play On Awake OFF／Loop OFF。距離で音量が変わらない。
-    ///  ・既存の足音などのAudioSourceとは共有しない（それらの設定は変更しない）。
+    ///  ・既存のAudioSource（足音など）を流用しない：設定変更やStopで別の音へ影響させないため。
     /// </summary>
     private AudioSource Create2DAudioSource()
     {
-        AudioSource source = GetComponent<AudioSource>();
-        if (source == null)
-            source = gameObject.AddComponent<AudioSource>();
+        if (gameOverAudioSource != null) return gameOverAudioSource;
+
+        // 既存コンポーネントを取得せず、必ず専用のAudioSourceを追加する。
+        AudioSource source = gameObject.AddComponent<AudioSource>();
 
         source.playOnAwake = false;
         source.loop = false;
@@ -252,7 +243,7 @@ public class GameOverPresentationController : MonoBehaviour
         source.volume = 1f;         // 音量は PlayOneShot の volumeScale で指定する
 
         if (showDebugLogs)
-            Debug.Log($"[GameOverPresentation] 2DのAudioSourceを用意しました（{gameObject.name}）。" +
+            Debug.Log($"[GameOverPresentation] 効果音専用の2D AudioSourceを用意しました（{gameObject.name}）。" +
                       "Clipと音量はInspectorで設定してください", this);
 
         return source;
