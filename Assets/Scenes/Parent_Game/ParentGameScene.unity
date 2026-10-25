@@ -10020,7 +10020,7 @@ MonoBehaviour:
   enableGameOverLighting: 1
   routeDiagnosticsEnabled: 1
   diagnosticsStallSeconds: 5
-  motherAnimator: {fileID: 0}
+  motherAnimator: {fileID: 6137708869981802054}
   maxFramesToReachIdle: 120
 --- !u!1 &2057672896
 GameObject:
@@ -11046,12 +11046,12 @@ MonoBehaviour:
   maxDistance: 10
   rolloffMode: 0
   masterVolume: 0.509
-  bgmVolume: 0.052
-  seVolume: 0.127
-  consoleCloseClip: {fileID: 8300000, guid: 87974f36462c0404681424da4fc1a251, type: 3}
-  consoleCloseVolume: 1
-  consoleOpenClip: {fileID: 8300000, guid: 5847b1095037f4acdb514c10ca50b642, type: 3}
-  consoleOpenVolume: 1
+  bgmVolume: 0.254
+  seVolume: 0.341
+  consoleCloseClip: {fileID: 8300000, guid: 1e173bd06ce6c40168bf10f43bb86b13, type: 3}
+  consoleCloseVolume: 0.168
+  consoleOpenClip: {fileID: 8300000, guid: 2caa242775fab474a91b0b166672a78e, type: 3}
+  consoleOpenVolume: 0.168
   sleepingController: {fileID: 2121813538}
   receiveWatchdogSeconds: 3
   showDebugLog: 0
@@ -11837,7 +11837,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 529b31bd118a0434a93f10d079b343d9, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -17973,7 +17973,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 529b31bd118a0434a93f10d079b343d9, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
