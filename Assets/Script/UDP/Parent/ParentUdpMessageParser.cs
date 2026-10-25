@@ -847,7 +847,7 @@ public static class RankSyncDisplay
         switch (state)
         {
             case RankSyncDisplayState.NoData: return "未同期";
-            case RankSyncDisplayState.PreviousData: return "前回同期データ";
+            case RankSyncDisplayState.PreviousData: return "前回同期データ（現在未確認）";
             default: return "同期完了";
         }
     }
