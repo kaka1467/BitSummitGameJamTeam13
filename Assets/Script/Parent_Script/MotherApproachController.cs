@@ -1211,6 +1211,51 @@ public class MotherApproachController : MonoBehaviour
         yield return RotateToWaypointForward(waypoint, turnRotation, "gameover");
     }
 
+    /// <summary>
+    /// 【ゲームオーバー演出専用】位置と向きを同時に合わせる（テレポート）。
+    ///  ・位置：通常のゲームオーバー移動と同じ到達点（OffsetGoalPosition＝waypoint位置＋motherHeightOffset を1回だけ加算）。
+    ///    書き込み先は MoveToWaypointForGameOver と同じ transform（＝MotherRouteRoot）で、原点を残さない。
+    ///  ・向き：FaceWaypointForwardForGameOver と同じ規則（waypoint のワールド＋Zを水平投影した yaw）を、
+    ///    RotateToYaw と同じ姿勢の作り方（_fixedPitch / yaw / _fixedRoll）で即座に適用する。
+    ///    新しい傾き・ロールは導入しない（既存の固定ピッチ・ロールをそのまま使う）。
+    ///  ・歩行移動 Coroutine（MoveToWaypointForGameOver）を使わないため、時間・移動ステート到達待ちは発生しない。
+    ///  ・テレポート後に同じ向きへ徐々に旋回する待機は重ねない（呼び出し側は本APIの後に FaceWaypointForwardForGameOver を呼ばない）。
+    ///  ・ゲームオーバー専用制御が成立していない場合と、向きを決められない場合は false を返す
+    ///    （成功扱いで強行せず、呼び出し側が既存の失敗終了規則へ合流させる）。
+    /// </summary>
+    public bool TeleportForGameOver(Transform waypoint)
+    {
+        if (!IsGameOverSequenceActive)
+        {
+            Debug.LogWarning("[MotherApproachController] ゲームオーバー専用制御が成立していないため、テレポートしません", this);
+            return false;
+        }
+
+        if (waypoint == null)
+        {
+            Debug.LogWarning("[MotherApproachController] テレポート先Waypointが未設定です（スキップ）", this);
+            return false;
+        }
+
+        // 向きは「waypoint の＋Zの水平投影」から求める（既存の向き合わせと同じ入口）。
+        // 決められない場合は位置だけ書き換えて中途半端な姿勢を残さないよう、何もせず失敗を返す。
+        if (!TryGetTargetYawFromForward(waypoint, out float targetYaw, $"gameover teleport:{waypoint.name}"))
+        {
+            Debug.LogWarning($"[MotherApproachController] テレポート先 '{waypoint.name}' の向きを決められないため、テレポートしません", this);
+            return false;
+        }
+
+        Vector3 goal = OffsetGoalPosition(waypoint.position);
+        transform.position = goal;
+
+        // 姿勢は RotateToYaw と同じ作り方（固定ピッチ・固定ロールを維持し、yaw だけ目標へ合わせる）。
+        transform.rotation = Quaternion.Euler(_fixedPitch, NormalizeAngle(targetYaw), _fixedRoll);
+
+        Debug.Log($"[MotherApproachController] ゲームオーバー演出：テレポート '{waypoint.name}' へ " +
+                  $"位置={goal.ToString("F2")} / yaw={NormalizeAngle(targetYaw):F1}", this);
+        return true;
+    }
+
     /// <summary>再プレイ・シーン開始時に片付けルートの状態を初期化する。</summary>
     public void ResetChoreRoute()
     {
@@ -1288,7 +1333,10 @@ public class MotherApproachController : MonoBehaviour
         // 3) 行きのドア開け地点①（choreApproachPoint_1）へ移動し、向きを合わせる。
         //    ※ doorPoint は通らない（既存廊下ルートの HallwayPoint_4 から直接ここへ向かう）。
         //    ここでは Door_Open を再生してドアを全開にする。
-        yield return MoveAndFaceWaypoint(choreApproachPoint_1, choreTurnRotationSpeed, "choreApproachPoint_1");
+        //    ※ 経由地点のため旋回完了は待たない（直後の MovementStateChanged(false) で
+        //      ドア操作のため停止し、その間に旋回が進む）。
+        yield return MoveAndFaceWaypoint(choreApproachPoint_1, choreTurnRotationSpeed, "choreApproachPoint_1",
+            waitForTurnCompletion: false);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1312,7 +1360,9 @@ public class MotherApproachController : MonoBehaviour
 
         // 5) 行きのドア閉め地点②（choreApproachPoint_2）へ移動し、停止して向きを合わせる。
         //    ※ ドア閉めは「リストの先頭」ではなく、この明示参照の到着時だけ行う。
-        yield return MoveAndFaceWaypoint(choreApproachPoint_2, choreTurnRotationSpeed, "choreApproachPoint_2");
+        //    ※ 経由地点のため旋回完了は待たない（直後のドア閉めの間に旋回が進む）。
+        yield return MoveAndFaceWaypoint(choreApproachPoint_2, choreTurnRotationSpeed, "choreApproachPoint_2",
+            waitForTurnCompletion: false);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1322,16 +1372,15 @@ public class MotherApproachController : MonoBehaviour
         // ドアを通過して部屋側へ入ったことを記録する（ゲームオーバー演出でドア開けをやり直さないため）。
         IsChoreDoorPassed = true;
 
-        // 5-2) 一時停止してドアを閉め、閉じ終わるまで待つ（モデルのアニメーションは再生しない）。
-        MovementStateChanged?.Invoke(false);   // ドア閉めのため停止する
-        Debug.Log($"[MotherApproachController] 片付けルート：choreApproachPoint_2('{choreApproachPoint_2.name}')到着 — ドアを閉めます");
-
-        yield return ChoreDoorCloseRoutine();
-        if (_choreRouteAborted || _routeExecutionFailed)
-        {
-            FinishChoreRouteAborted();
-            yield break;
-        }
+        // 5-2) ドア閉めを開始する（歩行は止めない・完了も待たない）。
+        //   ・位置移動（MotherRouteRoot.transform.position）とドア回転（door.localRotation）は
+        //     別オブジェクトのため競合しない。ドア閉め中も机（chorePoint）へ歩き続けられる。
+        //   ・ドア閉めでは位置移動抑止（IsChoreMovementSuppressedNow）を立てない
+        //     （立てるのはドア開け時のみ）。ここで MovementStateChanged(false) を出すと
+        //     歩行アニメ・足音・位置移動が止まり、経由地点で足が止まるため出さない。
+        //   ・閉じ切ったかどうかは机到着後に確認する（下の 6-2）。待機上限は DoorController 側が持つ。
+        Debug.Log($"[MotherApproachController] 片付けルート：choreApproachPoint_2('{choreApproachPoint_2.name}')到着 — ドアを閉めながら机へ向かいます");
+        Coroutine doorClose = StartCoroutine(ChoreDoorCloseRoutine());
 
         // 5-3) 自由な途中地点（choreApproachPoints）を登録順に通過する。
         //      null要素は警告してスキップする。ドア操作は行わない（番号から勝手に決めない）。
@@ -1345,6 +1394,18 @@ public class MotherApproachController : MonoBehaviour
         // 6) 片付け地点（chorePoint）へ移動し、その＋Zへ向き合わせる。
         //    片付け演技の開始は、途中地点ではなくこの chorePoint 到着時のみ。
         yield return MoveAndFaceWaypoint(chorePoint, choreTurnRotationSpeed, "chorePoint");
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        // 6-2) 机到着後に、並行実行していたドア閉めの完了を確認する。
+        //   演技（onChoreArrived）を開始する前にドアが閉じ切っていることを保証する。
+        //   ・机への移動と並行していた分をここで回収するため、通常は即座に完了する。
+        //   ・失敗・タイムアウトでも DoorController.WaitForDoorState は必ず終了する（無限待機しない）。
+        if (doorClose != null)
+            yield return doorClose;
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1392,7 +1453,9 @@ public class MotherApproachController : MonoBehaviour
 
         // 2) 帰りの停止地点①（choreReturnPoint_1）へ移動し、停止して向きを合わせる。
         //    帰りでドアを開けるのはこの地点だけ。
-        yield return MoveAndFaceWaypoint(choreReturnPoint_1, choreTurnRotationSpeed, "choreReturnPoint_1");
+        //    ※ 経由地点のため旋回完了は待たない（直後のドア開けの間に旋回が進む）。
+        yield return MoveAndFaceWaypoint(choreReturnPoint_1, choreTurnRotationSpeed, "choreReturnPoint_1",
+            waitForTurnCompletion: false);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -1414,7 +1477,9 @@ public class MotherApproachController : MonoBehaviour
 
         // 4) 帰りの停止地点②（choreReturnPoint_2）へ移動して停止・向き合わせ。
         //    ここでドアを閉める（Door_Open は再生しない）。ドア閉めはこの地点だけ。
-        yield return MoveAndFaceWaypoint(choreReturnPoint_2, choreTurnRotationSpeed, "choreReturnPoint_2");
+        //    ※ 経由地点のため旋回完了は待たない（直後のドア閉めの間に旋回が進む）。
+        yield return MoveAndFaceWaypoint(choreReturnPoint_2, choreTurnRotationSpeed, "choreReturnPoint_2",
+            waitForTurnCompletion: false);
         if (_choreRouteAborted || _routeExecutionFailed)
         {
             FinishChoreRouteAborted();
@@ -2619,8 +2684,10 @@ public class MotherApproachController : MonoBehaviour
             if (_routeExecutionFailed) yield break;
         }
 
-        // TurnPoint：ここは方向転換の要所なので、到着して＋Zへ旋回完了まで待つ。
-        yield return MoveAndFaceWaypoint(turnPoint, turnRotation, "turnPoint");
+        // TurnPoint：方向転換の要所だが経由地点のため、旋回完了は待たずに次区間へ進む。
+        // （旋回は次区間の移動と並行して継続し、到着のたびに足が止まるのを避ける）
+        yield return MoveAndFaceWaypoint(turnPoint, turnRotation, "turnPoint",
+            waitForTurnCompletion: false);
         if (_routeExecutionFailed) yield break;
         DiagPhase("TurnPoint到着", $"'{turnPoint.name}' 旋回完了");
     }
@@ -2938,7 +3005,8 @@ public class MotherApproachController : MonoBehaviour
     /// HallwayとGardenで同じルールを使う（経路ごとの分岐なし）。
     /// 同じWaypointで旋回が二重に走らないよう、旋回はこの関数の中だけで実行する。
     /// </summary>
-    private IEnumerator MoveAndFaceWaypoint(Transform waypoint, float turnSpeed, string routeLabel)
+    private IEnumerator MoveAndFaceWaypoint(Transform waypoint, float turnSpeed, string routeLabel,
+        bool waitForTurnCompletion = true)
     {
         if (waypoint == null) yield break; // null要素はスキップ
 
@@ -2949,8 +3017,24 @@ public class MotherApproachController : MonoBehaviour
         // 到着成功の通知（1回だけ・行き／帰りを区別して通知する）。
         NotifyWaypointArrived(waypoint);
 
-        // 3-4. 到着したWaypointの＋Zへ旋回し、完了を待つ
-        yield return RotateToWaypointForward(waypoint, turnSpeed, routeLabel);
+        // 3-4. 到着したWaypointの＋Zへ旋回する。
+        //  ・waitForTurnCompletion=true（既定）：旋回完了を待つ。作業・演出のために停止する地点
+        //    （chorePoint／doorPoint／gardenPeekPoint など）は、この既定のまま使う。
+        //    位置移動は MovePositionOnly の完了時点で止まる（＝到着して旋回してから次へ進む）。
+        //  ・waitForTurnCompletion=false：旋回完了を待たずに次の区間へ進む（途中の経由地点）。
+        //    旋回は次区間の移動と並行して継続する（PassThroughWaypoint と同じ方式）。
+        //    位置移動は次区間の移動ヘルパーが再開するため、経由地点で足が止まらない。
+        //    停止が必要な地点で使うと「旋回中に次の処理（ドア操作・演技）へ進む」ため、
+        //    停止地点には使わないこと。
+        if (waitForTurnCompletion)
+        {
+            yield return RotateToWaypointForward(waypoint, turnSpeed, routeLabel);
+        }
+        else
+        {
+            // 完了を待たない旋回を開始する（古い目標は破棄して新しい目標へ差し替える）。
+            StartRotateTowardsWaypoint(waypoint, turnSpeed, routeLabel);
+        }
     }
 
     /// <summary>

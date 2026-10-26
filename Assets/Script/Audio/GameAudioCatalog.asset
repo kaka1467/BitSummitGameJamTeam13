@@ -39,7 +39,7 @@ MonoBehaviour:
     clip: {fileID: 8300000, guid: ac32139f734dc41e7bd9b9406c3dc0c4, type: 3}
   - id: 15
     isBgm: 0
-    volumeScale: 1
+    volumeScale: 1.8
     clip: {fileID: 8300000, guid: 657922445111b42d8970d37f4cb6b9b9, type: 3}
   - id: 16
     isBgm: 0

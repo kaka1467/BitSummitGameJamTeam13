@@ -77,6 +77,10 @@ public class MotherApproachWarning : MonoBehaviour
     [SerializeField] private AudioSource passByDoorAudioSource;
     [Tooltip("通過完了から偽ドア音を再生するまでの秒数。")]
     [SerializeField, Min(0f)] private float passByDoorSoundDelay = 1f;
+    [Tooltip("庭の窓覗きで、窓の外に親が来たことに気づくための効果音。")]
+    [SerializeField] private AudioSource windowPeekAudioSource;
+    [Tooltip("窓覗きの効果音を、覗き開始から何秒後に再生するか（秒）。")]
+    [SerializeField, Min(0f)] private float windowPeekSoundDelaySeconds = 1.7f;
 
     // ── 予兆の段階間の待機（旧: secondFloorDelay / approachDelay） ─────────────
     //   実際の待機は次の2つ。旧名は「2階」「接近」という場所名に依存していたため、
@@ -223,6 +227,9 @@ public class MotherApproachWarning : MonoBehaviour
 
     /// <summary>廊下通過後の偽ドア音の遅延再生コルーチン（MotherSuspicionSystem から移管）。</summary>
     private Coroutine _passByDoorSoundCoroutine;
+
+    /// <summary>窓覗きの効果音（覗き開始から windowPeekSoundDelaySeconds 後に再生）の遅延再生コルーチン。</summary>
+    private Coroutine _windowPeekSoundCoroutine;
     private float     _gameplayElapsedSeconds;
     private bool      _gameplayClockActive;
     private int       _consecutiveAutomaticFeints;
@@ -922,6 +929,24 @@ public class MotherApproachWarning : MonoBehaviour
         SetLightActive(outsideLight, false);
     }
 
+    // ── 庭Peek専用：廊下・ドア前の灯りだけを消す ────────────────────────────────
+    //  庭で母親が覗いている間に、廊下・ドア前まで点灯したままにならないようにする。
+    //  ・outsideLight（庭灯）は操作しない。庭灯の点灯仕様（自動／手動の差）は変更しない。
+    //  ・既存の共通点灯メソッド（TurnOnFirstStageLights / TurnOnSecondStageLights）の意味は変えない。
+    //  ・通常終了時は既存の TurnOffAllLights（全消灯）がそのまま働く。
+    /// <summary>
+    /// 【庭Peek専用】廊下灯1・2・3と frontLight だけを消す（outsideLight は操作しない）。
+    /// 呼び出し元は庭Peekの覗き開始通知（HandleGardenPeekStarted）のみ。
+    /// GardenPassBy はこの通知を発生させないため、GardenPassBy の照明タイミングは変わらない。
+    /// </summary>
+    private void TurnOffHallwayAndFrontLights()
+    {
+        SetLightActive(hallwayLight1, false);
+        SetLightActive(hallwayLight2, false);
+        SetLightActive(hallwayLight3, false);
+        SetLightActive(frontLight, false);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     //  母親の足音の再生・停止・音量更新
     //   ・MotherApproachController が通知する歩行状態・位置から、
@@ -1284,6 +1309,47 @@ public class MotherApproachWarning : MonoBehaviour
     /// <summary>大きな音による突入の直後に再生する。</summary>
     public void PlayRushIn() => rushInAudioSource?.Play();
 
+    /// <summary>庭の窓覗きで、窓の外に親が来たことに気づくための効果音を1回再生する。</summary>
+    public void PlayWindowPeek() => windowPeekAudioSource?.Play();
+
+    /// <summary>
+    /// 窓覗きの効果音を windowPeekSoundDelaySeconds 秒後に1回だけ再生する。
+    ///  ・連続呼び出し時は前回の予約を破棄してから張り直す（PlayPassByDoorSound と同じ扱い）。
+    ///  ・待機中に警告が終了（中断）した場合は再生しない（別イベントの音を遅れて鳴らさない）。
+    /// </summary>
+    public void ScheduleWindowPeekSound()
+    {
+        CancelWindowPeekSound();
+        _windowPeekSoundCoroutine = StartCoroutine(WindowPeekSoundCoroutine());
+    }
+
+    /// <summary>予約済みの窓覗き効果音を取り消す（再生待ちも止める）。</summary>
+    public void CancelWindowPeekSound()
+    {
+        if (_windowPeekSoundCoroutine == null) return;
+        StopCoroutine(_windowPeekSoundCoroutine);
+        _windowPeekSoundCoroutine = null;
+    }
+
+    private IEnumerator WindowPeekSoundCoroutine()
+    {
+        float delay = Mathf.Max(0f, windowPeekSoundDelaySeconds);
+        Debug.Log($"[MotherApproachWarning] Window peek sound: waiting {delay:F1}s");
+        yield return new WaitForSeconds(delay);
+
+        // 待機中に中断（警告終了）した場合は再生しない。
+        if (!isWarningActive)
+        {
+            Debug.Log("[MotherApproachWarning] Window peek sound: skipped — warning not active");
+            _windowPeekSoundCoroutine = null;
+            yield break;
+        }
+
+        Debug.Log("[MotherApproachWarning] Window peek sound: PLAY");
+        PlayWindowPeek();
+        _windowPeekSoundCoroutine = null;
+    }
+
     /// <summary>
     /// 廊下通過後に再生する偽ドア音。passByDoorSoundDelay 秒遅延して1回だけ再生する。
     /// 連続呼び出し時は前回の予約を破棄してから張り直す。
@@ -1322,6 +1388,7 @@ public class MotherApproachWarning : MonoBehaviour
     {
         StopMotherFootsteps();
         CancelPassByDoorSound();
+        CancelWindowPeekSound();
     }
 
     private void SubscribeApproachEvents()
@@ -1335,6 +1402,8 @@ public class MotherApproachWarning : MonoBehaviour
         approachController.onReachedDoor.AddListener(HandleReachedDoor);
         approachController.onStoppedAtDoor.AddListener(HandleStoppedAtDoor);
         approachController.onPassedByDoor.AddListener(HandlePassedByDoor);
+        // 庭Peek専用：庭で覗き始めた時点で廊下・ドア前の灯りを消す（outsideLight は操作しない）。
+        approachController.onGardenPeekStarted.AddListener(HandleGardenPeekStarted);
         approachController.MovementStateChanged += HandleMovementStateChanged;
         // 到着通知：行きの段階切替だけに使う（帰路は通知側が区別して無視する）。
         approachController.WaypointArrived += HandleWaypointArrived;
@@ -1352,6 +1421,7 @@ public class MotherApproachWarning : MonoBehaviour
         approachController.onReachedDoor.RemoveListener(HandleReachedDoor);
         approachController.onStoppedAtDoor.RemoveListener(HandleStoppedAtDoor);
         approachController.onPassedByDoor.RemoveListener(HandlePassedByDoor);
+        approachController.onGardenPeekStarted.RemoveListener(HandleGardenPeekStarted);
         approachController.MovementStateChanged -= HandleMovementStateChanged;
         approachController.WaypointArrived -= HandleWaypointArrived;
 
@@ -1410,6 +1480,36 @@ public class MotherApproachWarning : MonoBehaviour
         }
         else
             Debug.LogWarning("[MotherApproachWarning] HandlePassedByDoor: parentDetection is NULL");
+    }
+
+    /// <summary>
+    /// 【庭Peek専用】庭で覗き始めた時点（MotherApproachController.onGardenPeekStarted）で、
+    /// 廊下・ドア前の灯り（廊下灯1・2・3と frontLight）を消す。
+    ///  ・消灯するのは「庭の覗き開始」であり、移動開始ではない。
+    ///    予告中・庭へ向かう移動中は従来どおり点灯したままにする。
+    ///  ・outsideLight（庭灯）は操作しない。
+    ///  ・GardenPassBy はこの通知を発生させないため、GardenPassBy の照明タイミングは変わらない。
+    ///  ・帰還中は再点灯しない（消えたまま）。通常終了時は EndWarningSequence → TurnOffAllLights が全消灯する。
+    ///  ・購読は SubscribeApproachEvents／UnsubscribeApproachEvents で対にして行う
+    ///    （MotherSuspicionSystem 側の同じ通知の購読とは別リスナーで、互いに影響しない）。
+    /// </summary>
+    private void HandleGardenPeekStarted()
+    {
+        // 既存の兄弟ハンドラ（HandleStoppedAtDoor／HandlePassedByDoor）と同じ扱いにする。
+        // 警告が終了している場合は消灯しない（中断後に別イベントの照明を消さない）。
+        if (!isWarningActive)
+        {
+            Debug.Log("[MotherApproachWarning] HandleGardenPeekStarted: ignoring — warning not active");
+            return;
+        }
+
+        Debug.Log("[MotherApproachWarning] EVENT: Garden peek started — 廊下・ドア前の灯りを消灯（outsideLight は操作しない）");
+        TurnOffHallwayAndFrontLights();
+
+        // 窓の外に親が来たことに気づけるよう、覗き開始から windowPeekSoundDelaySeconds 後に効果音を鳴らす。
+        //  ・待機中に中断（isWarningActive=false）した場合は再生しない（コルーチン内で判定）。
+        //  ・AudioSource 未設定なら PlayWindowPeek が何もしない（null 安全）。
+        ScheduleWindowPeekSound();
     }
 
     private bool ValidateController()
