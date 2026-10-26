@@ -1581,7 +1581,8 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// DoorPoint到着後にドアを全開にし（既存DoorController APIを再利用）、猫を見せて鳴き声を再生する。
     /// 母親は移動せず、母親のドア到着イベント・本チェック・疑惑加算・捕獲判定は発生しない。
     /// 鳴き声は猫専用のAudioSource（CatFeintController）から再生し、既存の親の音源やUDPには触れない。
-    /// ドアを開けておく時間は CatFeintController の catDoorHoldOpenSeconds（＋現在ゲージ）で調整する。
+    /// ドアは「猫のジャンプを見せ終えるまで」開けておき、見せ終えたら追加待機なしで猫を隠して閉じる
+    /// （怪しさゲージや固定開放時間は閉扉開始の条件に使わない）。
     /// </summary>
     public bool TriggerCatFeintEvent()
     {
@@ -1599,29 +1600,27 @@ public class MotherSuspicionSystem : MonoBehaviour
             return false;
         }
 
-        int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
-
-        // ドアを開けておく時間の管理元は CatFeintController のみ（catDoorHoldOpenSeconds）。
-        //   怪しさゲージ分の加算は従来どおり行う（＝旧 peekDurationBase + gauge と同じ扱いを維持）。
-        float holdOpenSeconds = catFeintController.DoorHoldOpenSeconds + gauge;
-
+        // 閉扉開始はジャンプ完了（CatFeintController の観測）だけで決まる。
+        // 怪しさゲージ・catDoorHoldOpenSeconds は閉扉開始の条件に使わない（ここでは読まない）。
         Debug.Log(
-            $"[PD] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door FULL open for {holdOpenSeconds:F1}s" +
-            $"（CatFeintController.catDoorHoldOpenSeconds={catFeintController.DoorHoldOpenSeconds:F1}s + gauge={gauge}／母親は登場しない）" +
-            "（開放時間はFull到達から計測・ジャンプ動作が長い場合は完了まで延長）");
-        _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence(holdOpenSeconds));
+            "[PD] TriggerCatFeintEvent — cat walks StartPoint→DoorPoint, then door stays FULL open until the cat jump finishes" +
+            "（母親は登場しない／閉扉開始はジャンプ完了のみ。怪しさゲージ・固定開放時間は使わない）");
+        _catFeintCoroutine = StartCoroutine(HandleCatFeintSequence());
         return true;
     }
 
     /// <summary>
-    /// 猫フェイントの本体。猫の移動 → ドアを全開（目標開度へ到達まで待つ）＋鳴き声 → 設定時間待機
-    /// → ジャンプ動作の完了を待つ → 猫を隠す → ドアを閉める → 猫を開始状態へ戻す。
-    /// ドアを開けておく時間は「Full到達時点」から holdOpenSeconds（CatFeintController 設定＋ゲージ）だけ数える。
-    ///  ・Full へ到達しなかった場合は開放時間を数えず、猫を隠す→ドアを閉める→状態解除の安全な失敗終了（警告ログで区別）。
-    ///  ・ジャンプ動作が設定時間より長い場合は、見せ終えるまでドアを開けたままにする（実測をログ出力）。
+    /// 猫フェイントの本体。猫の移動 → ドアを全開（目標開度へ到達まで待つ）＋鳴き声 → ジャンプを見せ終えるまで待機
+    /// → 猫を隠す → ドアを閉める → 猫を開始状態へ戻す。
+    ///  ・閉扉開始の条件は「ジャンプを見せ終えたこと（CatFeintController の観測）」だけ。
+    ///    怪しさゲージ・catDoorHoldOpenSeconds による固定待機は入れない。
+    ///  ・猫を隠した後の追加待機（catHideBeforeCloseSeconds）は行わない。
+    ///  ・Full へ到達しなかった場合は猫を隠す→ドアを閉める→状態解除の安全な失敗終了（警告ログで区別）。
+    ///  ・ジャンプが開始／完了しない場合は JumpWaitTimeoutSeconds を1回だけ安全弁として使い、
+    ///    タイムアウト時は警告ログを出して猫を隠す→ドアを閉める（待機上限を二重に加算しない）。
     ///  ・中断（警告終了）時はジャンプ完了を待たず、猫・ドア・警告状態を必ず戻す。
     /// </summary>
-    private IEnumerator HandleCatFeintSequence(float holdOpenSeconds)
+    private IEnumerator HandleCatFeintSequence()
     {
         // 2. 猫オブジェクトだけを母親と同じwaypoint順で移動させる（母親・母親イベントは発火しない）。
         yield return
@@ -1679,7 +1678,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             }
         }
 
-        // 開放時間の計測開始（Full 到達後）。以降のジャンプ完了待ちもこの時間に含めて実測する。
+        // 開放時間の計測開始（Full 到達後）。閉扉開始までの実測をログに残す（演出の調整用）。
         float holdStartTime = Time.time;
 
         catFeintController.TriggerJump();
@@ -1687,64 +1686,51 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         warningSystem?.PlayDummyDoor();
 
-        // 4. 設定した開放時間（Full到達後・怪しさゲージ分込み）が過ぎるまで待つ。
-        //    catHideBeforeCloseSeconds は「この開放時間のうちに猫を隠すタイミング」であり、
-        //    合計は設定時間のまま（同じ待ち時間を二重に加算しない）。
-        //    中断があればループを抜けて後始末する。
-        float hideBeforeClose = catFeintController.HideBeforeCloseSeconds;
-        float catVisibleDuration = Mathf.Max(0f, Mathf.Max(0f, holdOpenSeconds) - hideBeforeClose);
-        float elapsed = 0f;
-        while (elapsed < catVisibleDuration && warningSystem != null && warningSystem.isWarningActive)
-        {
-            // TriggerJump の時点から、この既存の待機ループ内でジャンプの開始／終了を観測する
-            //（開放時間内に終わったジャンプを「未完了」と誤判定しないため）。
-            catFeintController.ObserveJumpProgress();
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        // 5. 正常終了では、猫のジャンプ動作を見せ終えてから隠す（固定秒数で完了と断定せず Animator 状態で判定）。
-        //    中断時は動作完了を待たずに安全終了する（後始末はこの下の共通処理で実施）。
+        // 4. ジャンプを見せ終えるまでドアを開けたまま待つ。閉扉開始の条件はこれだけ。
+        //    怪しさゲージ・catDoorHoldOpenSeconds による固定待機は入れない。
+        //    待機は1本だけ（完了／設定不備／タイムアウト／中断を区別し、待機上限を二重に加算しない）。
+        //     ・完了：Jump状態とその退出遷移まで抜けた（CatFeintController の観測に従う）。
+        //     ・設定不備：Animator／Jump設定が無い等で NotConfigured。警告を出して追加待機なしで閉扉へ進む。
+        //     ・タイムアウト：ジャンプが開始／完了しない。JumpWaitTimeoutSeconds を1回だけ安全弁として使う。
+        //     ・中断：警告状態が解除された（isWarningActive=false）。通常完了として続けず共通の後始末へ進む。
+        CatFeintController.JumpWaitResult jumpResult = CatFeintController.JumpWaitResult.NotConfigured;
         if (warningSystem != null && warningSystem.isWarningActive)
         {
-            CatFeintController.JumpWaitResult jumpResult = CatFeintController.JumpWaitResult.NotConfigured;
+            // shouldContinue で毎フレームの警告解除を待機へ渡す（待機中に中断されたら onResult は呼ばれず、
+            // 下の warningStillActive 判定で中断として扱う。タイムアウトは待機内の1回だけ）。
             yield return catFeintController.WaitForJumpFinished(
-                catFeintController.JumpWaitTimeoutSeconds, result => jumpResult = result);
-
-            float actualHold = Time.time - holdStartTime;
-            if (jumpResult == CatFeintController.JumpWaitResult.TimedOut)
-            {
-                // 開始できない／終了遷移を抜けない＝タイムアウト失敗。アニメ完了と断定せず猫を隠して安全終了。
-                Debug.LogWarning("[PD] 猫フェイント: ジャンプ動作の開始／終了を確認できませんでした" +
-                                 $"（{catFeintController.JumpWaitTimeoutSeconds:F1}s タイムアウト）" +
-                                 " — アニメ完了と断定せず、猫を隠して安全終了します（ドアは閉じます）");
-            }
-            else if (jumpResult == CatFeintController.JumpWaitResult.NotConfigured)
-            {
-                // ジャンプ設定なし（Jumpパラメーター無し等）＝待機対象なし。「ジャンプ完了」とは区別してログする。
-                Debug.Log("[PD] 猫フェイント: ジャンプ設定なし・待機対象なし（ジャンプ完了とは区別）" +
-                          $" — 開放時間 実測 {actualHold:F1}s（設定 {holdOpenSeconds:F1}s）");
-            }
-            else if (actualHold > Mathf.Max(0f, holdOpenSeconds) + 0.05f)
-            {
-                Debug.Log($"[PD] 猫フェイント: ジャンプ動作の完了を待つため開放時間が延長されました" +
-                          $"（設定 {holdOpenSeconds:F1}s → 実測 {actualHold:F1}s）");
-            }
-            else
-            {
-                // 通常終了（ジャンプ完了待ち込みの実測をログに残す：設定時間と実測を区別できるようにする）。
-                Debug.Log($"[PD] 猫フェイント: 開放時間 実測 {actualHold:F1}s（設定 {holdOpenSeconds:F1}s／ジャンプ完了待ち込み）");
-            }
+                catFeintController.JumpWaitTimeoutSeconds, result => jumpResult = result,
+                () => warningSystem != null && warningSystem.isWarningActive);
         }
-        else
+
+        // 中断の判定（待機前・待機後の両方）。待機中に警告が解除された場合は通常完了として扱わない。
+        bool warningStillActive = warningSystem != null && warningSystem.isWarningActive;
+
+        if (!warningStillActive)
         {
             Debug.Log("[PD] 猫フェイント: 中断のためジャンプ動作の完了を待たずに安全終了します（猫を隠す→ドアを閉める）");
         }
+        else if (jumpResult == CatFeintController.JumpWaitResult.TimedOut)
+        {
+            // 開始できない／終了遷移を抜けない＝タイムアウト失敗。アニメ完了と断定せず猫を隠して安全終了。
+            Debug.LogWarning("[PD] 猫フェイント: ジャンプ動作の開始／終了を確認できませんでした" +
+                             $"（{catFeintController.JumpWaitTimeoutSeconds:F1}s タイムアウト）" +
+                             " — アニメ完了と断定せず、猫を隠して安全終了します（ドアは閉じます）");
+        }
+        else if (jumpResult == CatFeintController.JumpWaitResult.NotConfigured)
+        {
+            // ジャンプ設定なし（Jumpパラメーター無し等）＝待機対象なし。「ジャンプ完了」とは区別して警告する。
+            Debug.LogWarning("[PD] 猫フェイント: ジャンプ設定なし・待機対象なしのためジャンプ完了を待ちません" +
+                             "（Animator／Jumpパラメーターを確認してください） — 追加待機なしで猫を隠して閉扉します");
+        }
+        else
+        {
+            // 通常終了：ジャンプを見せ終えた実測をログに残す（固定開放時間は使わない）。
+            Debug.Log($"[PD] 猫フェイント: ジャンプ完了までの開放時間 実測 {Time.time - holdStartTime:F1}s" +
+                      "（閉扉開始はジャンプ完了のみ。怪しさゲージ・固定開放時間は未使用）");
+        }
 
         catFeintController.HideCat();
-
-        if (hideBeforeClose > 0f)
-            yield return new WaitForSeconds(hideBeforeClose);
 
         warningSystem?.PlayMainDoorClose();
 

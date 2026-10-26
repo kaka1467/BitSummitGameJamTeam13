@@ -45,12 +45,17 @@ public struct MotherGameOverCaptureContext
 public class MotherGameOverSequenceController : MonoBehaviour
 {
     /// <summary>移動区間の動作。</summary>
+    /// <remarks>
+    /// Teleport は既存値の意味と数値を変えないため必ず末尾へ追加する
+    /// （None=0 / Walk=1 / WalkFast=2 / FaceOnly=3 はそのまま。既存 Scene のシリアライズ値を壊さない）。
+    /// </remarks>
     public enum MoveStyle
     {
         None,      // 移動しない（位置・向きも変えない）
         Walk,      // 通常歩き（Walk）で移動し、到着後に Waypoint の＋Zへ向きを合わせる
         WalkFast,  // 早歩き（Walk_Fast）で移動し、到着後に Waypoint の＋Zへ向きを合わせる
-        FaceOnly   // 現在位置のまま向きだけ合わせる（位置を書き換えない。JumpscareChorePoint 用）
+        FaceOnly,  // 現在位置のまま向きだけ合わせる（位置を書き換えない。JumpscareChorePoint 用）
+        Teleport   // 位置と向きを同時に合わせる（歩行移動・移動ステート到達待ち・旋回待ちを行わない。庭ゲームオーバーの大回り省略用）
     }
 
     /// <summary>到着・向き合わせ後の動作。</summary>
@@ -541,7 +546,36 @@ public class MotherGameOverSequenceController : MonoBehaviour
             RequestGameOverHeartbeatStartOnce("最初の停止到達（ドア開け無しルート）");
 
         // 2) 移動（FaceOnly は移動しない。向き合わせだけ行う）。
-        if (step.moveStyle != MoveStyle.None && step.moveStyle != MoveStyle.FaceOnly)
+        //    Teleport は「位置と向きを同時に合わせる」専用区間のため、
+        //    歩行アニメ要求・移動ステート到達待ち・歩行移動Coroutine・移動後の停止待ちを行わない。
+        //    位置と向きは approachController.TeleportForGameOver が同時に適用する。
+        bool rotationHandledByTeleport = false;
+
+        if (step.moveStyle == MoveStyle.Teleport)
+        {
+            bool teleported = approachController != null &&
+                              approachController.TeleportForGameOver(step.waypoint);
+
+            // 成功時は「到着済み」として後続の到着動作を許可する。
+            // 失敗時は古い移動結果を持ち越さず、既存の失敗終了規則へ合流する。
+            _lastMoveArrived = teleported;
+
+            if (!teleported)
+            {
+                Debug.LogError($"[MotherGameOverSequence] 【再生失敗】テレポートできませんでした" +
+                               $"（waypoint={(step.waypoint != null ? step.waypoint.name : "NULL")}）。" +
+                               "演出を打ち切り、結果画面へ進みます", this);
+                _stepFailed = true;
+                yield break;
+            }
+
+            // 向きは TeleportForGameOver が同時に合わせ済み。
+            // 下の向き合わせを実行すると、同じ向きへ徐々に旋回する待機が重なるためスキップする。
+            rotationHandledByTeleport = true;
+        }
+
+        if (step.moveStyle != MoveStyle.None && step.moveStyle != MoveStyle.FaceOnly &&
+            step.moveStyle != MoveStyle.Teleport)
         {
             // Idle から早歩き／通常歩きを要求する。
             if (!PlayMoveAnimation(step.moveStyle))
@@ -589,7 +623,8 @@ public class MotherGameOverSequenceController : MonoBehaviour
         }
 
         // 3) 向き合わせ（FaceOnly もここで位置を変えずに向きだけ合わせる）。
-        if (approachController != null)
+        //    Teleport は位置と同時に向きを合わせ済みのため、同じ向きへ徐々に旋回する待機を重ねない。
+        if (approachController != null && !rotationHandledByTeleport)
             yield return approachController.FaceWaypointForwardForGameOver(target);
 
         // 4) 到着後の動作（なし／ドア開け／ジャンプスケア）。停止状態で行う。

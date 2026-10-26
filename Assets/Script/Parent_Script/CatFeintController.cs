@@ -48,20 +48,20 @@ public class CatFeintController : MonoBehaviour
     [Tooltip("ドアが開いてから鳴き声を再生するまでの秒数。")]
     [SerializeField] private float meowDelaySeconds;
 
-    [Tooltip("ドアを閉じる前に猫を非表示にしておく秒数（ドアを閉じるX秒前に消す）。")]
+    [Tooltip("【猫フェイントの通常の閉扉タイミングでは未使用】ドアを閉じる前に猫を非表示にしておく秒数。\n" +
+             "現在の猫フェイントは「ジャンプを見せ終えたら、追加待機なしで猫を隠して閉扉する」ため、\n" +
+             "この値は閉扉開始時刻に使われません（値は削除・改名せず保持）。")]
     [SerializeField] private float catHideBeforeCloseSeconds;
 
     // ── ドア開放時間（猫フェイント） ──────────────────────────────────────────
+    //  現在の猫フェイントは「ジャンプを見せ終えるまでドアを開けておく」ため、
+    //  この固定開放時間は閉扉開始時刻に使わない（値は削除・改名せず保持）。
     [Header("ドア開放時間")]
-    [Tooltip("猫フェイントでドアを開けておく時間（秒）。\n" +
-             "ドアの開く・閉じる速度は変更しない。\n" +
-             "・カウントは「ドアが目標開度（Full）に実際に到達した時点」から始めます。\n" +
-             "・怪しさゲージ分（MotherSuspicionSystem の現在ゲージ）が加算されます（従来と同じ扱い）。\n" +
-             "・猫は閉める前に必ず非表示になります（catHideBeforeCloseSeconds はこの時間のうちに\n" +
-             "  猫を隠すタイミングで、待ち時間は加算されません）。\n" +
-             "・猫のジャンプ動作がこの時間より長い場合は、ジャンプを見せ終えるまで\n" +
-             "  ドアを開けたままにします（その分、実際の開放時間は長くなります）。\n" +
-             "・catHideBeforeCloseSeconds がこの値より大きい場合だけ、その時間までドアが開いたままになります。")]
+    [Tooltip("【猫フェイントの通常の閉扉タイミングでは未使用】ドアを開けておく固定時間（秒）。\n" +
+             "現在の猫フェイントは「ジャンプを見せ終えたら、怪しさゲージやこの固定時間に関係なく、\n" +
+             "追加待機なしで猫を隠して閉扉する」ため、閉扉開始時刻には使われません。\n" +
+             "・ジャンプが開始／完了しない場合の安全弁は jumpWaitTimeoutSeconds（下の項目）。\n" +
+             "・ドアの開く・閉じる速度は変更しない。")]
     [SerializeField, Min(0f)] private float catDoorHoldOpenSeconds = 7f;
 
     [Tooltip("ドアが目標開度（Full）へ到達するのを待つ上限（秒）。\n" +
@@ -123,13 +123,18 @@ public class CatFeintController : MonoBehaviour
         }
     }
 
-    /// <summary>ドアを閉じる前に猫を隠しておく秒数（MotherSuspicionSystemのドア閉鎖タイミング計算に使う）。</summary>
+    /// <summary>
+    /// 【猫フェイントの通常の閉扉タイミングでは未使用】ドアを閉じる前に猫を隠しておく秒数。
+    ///  ・現在の猫フェイントは「ジャンプを見せ終えたら、追加待機なしで猫を隠して閉扉する」ため、
+    ///    この値を閉扉開始時刻の計算に使わない（値は削除・改名せず保持）。
+    /// </summary>
     public float HideBeforeCloseSeconds => Mathf.Max(0f, catHideBeforeCloseSeconds);
 
     /// <summary>
-    /// 猫フェイントでドアを開けておく時間（秒）。0以上。
-    ///  ・MotherSuspicionSystem が「ドアがFullへ到達した時点」からこの時間を数えてドアを閉める。
-    ///  ・怪しさゲージ分の加算は呼び出し側（MotherSuspicionSystem）が行う（従来と同じ扱い）。
+    /// 【猫フェイントの通常の閉扉タイミングでは未使用】猫フェイントでドアを開けておく固定時間（秒）。0以上。
+    ///  ・現在の猫フェイントは「ジャンプを見せ終えたら、怪しさゲージやこの固定時間に関係なく、
+    ///    追加待機なしで猫を隠して閉扉する」ため、この値を閉扉開始時刻の計算に使わない。
+    ///  ・ジャンプが開始／完了しない場合の安全弁は JumpWaitTimeoutSeconds（WaitForJumpFinished の上限）。
     ///  ・ドアの回転速度・開度は変更しない（既存 DoorController の通常速度を使う）。
     /// </summary>
     public float DoorHoldOpenSeconds => Mathf.Max(0f, catDoorHoldOpenSeconds);
@@ -140,16 +145,17 @@ public class CatFeintController : MonoBehaviour
     /// <summary>
     /// ジャンプ完了待ちの観測結果。
     ///  ・bool と違い「ジャンプ設定なし（待機対象なし）」と「完了」「タイムアウト失敗」を区別する。
+    ///  ・呼び出し側（MotherSuspicionSystem）は、この結果で閉扉へ進む（追加待機はしない）。
     /// </summary>
     public enum JumpWaitResult
     {
-        /// <summary>Jump パラメーターが無い、または今回のフェイントでジャンプ要求が無い＝待機対象なし（「完了」とは区別）。</summary>
+        /// <summary>Jump パラメーターが無い、または今回のフェイントでジャンプ要求が無い＝待機対象なし（「完了」とは区別）。呼び出し側は警告を出して閉扉へ進む。</summary>
         NotConfigured,
 
-        /// <summary>開始（Jump状態への遷移開始を含む）を確認し、その後に Jump状態と終了遷移から抜けた。</summary>
+        /// <summary>開始（Jump状態への遷移開始を含む）を確認し、その後に Jump状態と終了遷移から抜けた。呼び出し側は閉扉へ進む。</summary>
         Completed,
 
-        /// <summary>上限時間内に開始または終了を確認できなかった（開始できない場合を含む）。呼び出し側は失敗として安全終了する。</summary>
+        /// <summary>上限時間内に開始または終了を確認できなかった（開始できない場合を含む）。呼び出し側は警告を出して安全終了する。</summary>
         TimedOut,
     }
 
@@ -180,8 +186,8 @@ public class CatFeintController : MonoBehaviour
     public float JumpWaitTimeoutSeconds => Mathf.Max(0.1f, jumpWaitTimeoutSeconds);
 
     /// <summary>
-    /// ジャンプの進行を1フレーム分観測する。TriggerJump の時点から、猫フェイントの待機ループと
-    /// WaitForJumpFinished が毎フレーム呼ぶ（開放時間内に終わったジャンプも「完了」として記録するため）。
+    /// ジャンプの進行を1フレーム分観測する。TriggerJump の時点から、猫フェイントの待機
+    /// （WaitForJumpFinished のループ）が毎フレーム呼ぶ。
     ///  ・開始＝「Jump状態への遷移開始」または「Jump状態」を確認したこと。
     ///  ・終了＝開始を確認した後に、Jump状態でも Jump状態への遷移中でもなくなったこと
     ///    （＝終了遷移も抜けた。既存 Animator の ExitTime=0.8889 は変更しない／「クリップの最後まで再生」とは断定しない）。
@@ -204,14 +210,17 @@ public class CatFeintController : MonoBehaviour
 
     /// <summary>
     /// ジャンプ動作を見せ終えるまで待つ。判定は Animator の状態で行い、固定秒数で完了と断定しない。
-    ///  ・開始を確認していない状態で「Jump状態でない」ことを完了とみなさない（開放時間0秒でも開始前に即成功しない）。
+    ///  ・開始を確認していない状態で「Jump状態でない」ことを完了とみなさない（開始前に即成功しない）。
     ///  ・開始（遷移開始を含む）と、その後の終了遷移からの退出の両方を確認できた場合のみ Completed。
     ///  ・開始できない／終了遷移を抜けない場合は timeoutSeconds 内で TimedOut（待機を無制限に増やさない）。
-    ///  ・Jump パラメーターが無い／ジャンプ要求が無い場合は NotConfigured（「ジャンプ完了」とは区別）。
-    ///  ・観測は TriggerJump の時点から始まっており、開放時間内に完了したジャンプは即 Completed になる。
-    ///  ・中断時は呼び出し側がこの待機を行わない（安全に終了してよい）。
+    ///  ・Jump パラメーターが無い／ジャンプ要求が無い場合は即座に NotConfigured（「完了」とも「タイムアウト」とも区別）。
+    ///  ・タイムアウトの計測はこの1ループのみ（待機上限を二重に加算しない）。
+    ///  ・shouldContinue が false を返した場合は待機を中断して終了する。中断時は onResult を呼ばない
+    ///    （「中断かどうか」の判断元を呼び出し側に一本化し、同じ状態を二重管理しない）。
+    ///    既存の呼び出し元は shouldContinue を渡さないため、従来と同じ動作になる。
     /// </summary>
-    public IEnumerator WaitForJumpFinished(float timeoutSeconds, Action<JumpWaitResult> onResult = null)
+    public IEnumerator WaitForJumpFinished(float timeoutSeconds, Action<JumpWaitResult> onResult = null,
+        Func<bool> shouldContinue = null)
     {
         if (_animator == null || !_hasJumpParameter || !_jumpRequested)
         {
@@ -222,7 +231,7 @@ public class CatFeintController : MonoBehaviour
         ObserveJumpProgress();
         if (_jumpExited)
         {
-            onResult?.Invoke(JumpWaitResult.Completed);   // 開放時間の待機中に終了まで観測済み
+            onResult?.Invoke(JumpWaitResult.Completed);   // 待機前に終了まで観測済み
             yield break;
         }
 
@@ -231,6 +240,10 @@ public class CatFeintController : MonoBehaviour
 
         while (elapsed < timeout)
         {
+            // 中断（警告状態の解除など）を毎フレーム確認する。通常完了として扱わず、ここで待機を終える。
+            if (shouldContinue != null && !shouldContinue())
+                yield break;
+
             ObserveJumpProgress();
             if (_jumpExited)
             {
