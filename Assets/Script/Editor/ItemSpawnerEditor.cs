@@ -22,12 +22,24 @@ public class ItemSpawnerEditor : Editor
 
     // 以前はカスタムインスペクタに出ておらず、Debugモードでしか触れなかった設定
     private SerializedProperty spawnEnabledProp;
-    private SerializedProperty bgmNormalSpawnRemainingSecondsProp;
+    private SerializedProperty bgmNormalSpawnElapsedSecondsProp;
     private SerializedProperty hugeFeverDeferralSecondsProp;
     private SerializedProperty retryIntervalProp;
     private SerializedProperty maxRetryCountProp;
     private SerializedProperty enableDebugSpawnKeysProp;
     private SerializedProperty showDebugSpawnKeyLogsProp;
+
+    // 調整値・配置パターン
+    private SerializedProperty itemSpeedMultiplierProp;
+    private SerializedProperty spawnAmountMultiplierProp;
+    private SerializedProperty badItemWeightMultiplierProp;
+    private SerializedProperty patternsEnabledProp;
+    private SerializedProperty firstPatternDelaySecondsProp;
+    private SerializedProperty patternIntervalMinSecondsProp;
+    private SerializedProperty patternIntervalMaxSecondsProp;
+    private SerializedProperty patternClearanceSecondsProp;
+    private SerializedProperty spawnFeverPatternOnFeverStartProp;
+    private SerializedProperty patternsProp;
 
     private void OnEnable()
     {
@@ -46,12 +58,23 @@ public class ItemSpawnerEditor : Editor
         showDebugLogsProp = serializedObject.FindProperty("showDebugLogs");
 
         spawnEnabledProp = serializedObject.FindProperty("spawnEnabled");
-        bgmNormalSpawnRemainingSecondsProp = serializedObject.FindProperty("bgmNormalSpawnRemainingSeconds");
+        bgmNormalSpawnElapsedSecondsProp = serializedObject.FindProperty("bgmNormalSpawnElapsedSeconds");
         hugeFeverDeferralSecondsProp = serializedObject.FindProperty("hugeFeverDeferralSeconds");
         retryIntervalProp = serializedObject.FindProperty("retryInterval");
         maxRetryCountProp = serializedObject.FindProperty("maxRetryCount");
         enableDebugSpawnKeysProp = serializedObject.FindProperty("enableDebugSpawnKeys");
         showDebugSpawnKeyLogsProp = serializedObject.FindProperty("showDebugSpawnKeyLogs");
+
+        itemSpeedMultiplierProp = serializedObject.FindProperty("itemSpeedMultiplier");
+        spawnAmountMultiplierProp = serializedObject.FindProperty("spawnAmountMultiplier");
+        badItemWeightMultiplierProp = serializedObject.FindProperty("badItemWeightMultiplier");
+        patternsEnabledProp = serializedObject.FindProperty("patternsEnabled");
+        firstPatternDelaySecondsProp = serializedObject.FindProperty("firstPatternDelaySeconds");
+        patternIntervalMinSecondsProp = serializedObject.FindProperty("patternIntervalMinSeconds");
+        patternIntervalMaxSecondsProp = serializedObject.FindProperty("patternIntervalMaxSeconds");
+        patternClearanceSecondsProp = serializedObject.FindProperty("patternClearanceSeconds");
+        spawnFeverPatternOnFeverStartProp = serializedObject.FindProperty("spawnFeverPatternOnFeverStart");
+        patternsProp = serializedObject.FindProperty("patterns");
 
         EnsureRules();
     }
@@ -150,11 +173,34 @@ public class ItemSpawnerEditor : Editor
 
         EditorGUILayout.Space(6f);
         EditorGUILayout.LabelField("BGM Spawn Condition", EditorStyles.boldLabel);
-        if (bgmNormalSpawnRemainingSecondsProp != null)
+        if (bgmNormalSpawnElapsedSecondsProp != null)
         {
-            EditorGUILayout.PropertyField(bgmNormalSpawnRemainingSecondsProp);
-            EditorGUILayout.HelpBox("BGM（ラウドアイテム）は、子機のゲームタイマーの『残り時間』がこの秒数未満になったときだけ通常出現します。" +
-                                    "ゲーム開始からの経過時間ではなく、時間の加算・減算を反映した現在の残り時間で判定します。", MessageType.Info);
+            EditorGUILayout.PropertyField(bgmNormalSpawnElapsedSecondsProp);
+            EditorGUILayout.HelpBox("BGM（ラウドアイテム）は、本編開始（チュートリアル終了）からの経過時間がこの秒数以上になってから通常出現します。" +
+                                    "QTE中の時間停止の影響は受けません。", MessageType.Info);
+        }
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Tuning（速度・出現量・悪い割合）", EditorStyles.boldLabel);
+        DrawIfExists(itemSpeedMultiplierProp);
+        DrawIfExists(spawnAmountMultiplierProp);
+        DrawIfExists(badItemWeightMultiplierProp);
+        EditorGUILayout.HelpBox("速度・出現量は通常出現とパターンのアイテムに掛かります（巨大障害物・チュートリアルには掛かりません）。" +
+                                "悪い割合は上の Rule の個数(重み)に倍率を掛けて変えます。1 で従来どおりです。", MessageType.None);
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Placement Patterns（配置パターン）", EditorStyles.boldLabel);
+        DrawIfExists(patternsEnabledProp);
+        if (patternsEnabledProp == null || patternsEnabledProp.boolValue)
+        {
+            DrawIfExists(firstPatternDelaySecondsProp);
+            DrawIfExists(patternIntervalMinSecondsProp);
+            DrawIfExists(patternIntervalMaxSecondsProp);
+            DrawIfExists(patternClearanceSecondsProp);
+            DrawIfExists(spawnFeverPatternOnFeverStartProp);
+            if (patternsProp != null) EditorGUILayout.PropertyField(patternsProp, true);
+            EditorGUILayout.HelpBox("パターンを出している間（と余裕の秒数）は、ランダム出現を止めて二重に出ないようにします。" +
+                                    "休憩は、slots を空にして Rest Seconds を設定します。デバッグ中は数字キー7で一覧を順に1つずつ出せます。", MessageType.Info);
         }
 
         EditorGUILayout.Space(6f);

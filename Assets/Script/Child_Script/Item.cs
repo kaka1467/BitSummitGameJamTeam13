@@ -5,9 +5,6 @@ public class Item : MonoBehaviour
     public ItemType itemType;
 
     public int scoreAmount = 10;
-    // 正なら加算、負なら減算。Enemy/HugeObstacle では減少量として扱われる。
-    public float timeAmount = 10f;
-
     public float boostDuration = 0f;
     public float boostMultiplier = 0f;
 
@@ -31,9 +28,16 @@ public class Item : MonoBehaviour
         var gm = GameManager.instance;
         PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();
 
-        TryPlayItemSE();
+        // フィーバー中はサイレン（BGM／Loud Item）の効果を無効にする。
+        //  ・減点・ダメージ・親機への通知・SE/BGM をすべて行わない（取得したアイテムはそのまま消える）。
+        //  ・フィーバー終了後の取得は通常どおり有効。終了直後の保護時間は設けない。
+        if (itemType == ItemType.BGM && gm != null && gm.IsFeverActive)
+        {
+            Debug.Log("[Item] フィーバー中のためサイレンの効果を無効にしました。");
+            return;
+        }
 
-        bool applyTimeOnCollect = itemType != ItemType.HugeObstacle;
+        TryPlayItemSE();
 
         switch (itemType)
         {
@@ -41,12 +45,8 @@ public class Item : MonoBehaviour
                 if (gm != null) gm.AddScore(scoreAmount);
                 break;
 
-            // case ItemType.Enemy:
-            //     if (gm != null) gm.AddTime(-Mathf.Abs(timeAmount));
-            //     break;
-
             case ItemType.Clock:
-                // タイマー取得時にダメージアニメーション再生
+                // 時計取得時にダメージアニメーション再生
                 TriggerPlayerDamage(other);
 
                 // 時計の減点（scoreAmount は Inspector で調整可能。負の値で減点）
@@ -83,18 +83,13 @@ public class Item : MonoBehaviour
                 {
                     restoreObstacleAnimators?.Invoke();
 
-                    // 失敗（Failure）のときだけ追加ダメージと時間減算を行う。
-                    // 成功（Success）と中断（Cancelled：ゲーム時間切れ／捕獲）では効果を適用しない。
+                    // 失敗（Failure）のときだけ追加ダメージを与える（時間・得点の増減はしない）。
+                    // 成功（Success）と中断（Cancelled：捕獲など）では効果を適用しない。
+                    // QTEの報酬（成功時の加点）は QTEManager が付与する。
                     if (outcome == QteOutcome.Failure)
                     {
                         // QTE失敗時にダメージアニメーション再生
                         TriggerPlayerDamage(other);
-
-                        // 時間を減らす
-                        if (gm != null)
-                        {
-                            gm.AddTime(-Mathf.Abs(timeAmount));
-                        }
                     }
 
                     // アイテムのプール返却はどの終了状態でも行う（中断でもプールへ戻す）
@@ -106,13 +101,8 @@ public class Item : MonoBehaviour
                     restoreObstacleAnimators?.Invoke();
                     // QTEが開始できなかった場合もダメージアニメーション再生
                     TriggerPlayerDamage(other);
-                    if (gm != null)
-                    {
-                        gm.AddTime(-Mathf.Abs(timeAmount));
-                    }
                     onFinished?.Invoke();
                 }
-                applyTimeOnCollect = false;
                 break;
 
             case ItemType.Fever:
@@ -170,11 +160,6 @@ public class Item : MonoBehaviour
                 Debug.Log($"Item.ApplyEffect: Calling PlayBGM for clip '{bgmClip.name}' (loop={loopBgm}, vol={vol})");
                 AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
                 break;
-        }
-
-        if (applyTimeOnCollect && gm != null && !Mathf.Approximately(timeAmount, 0f))
-        {
-            gm.AddTime(timeAmount);
         }
     }
 

@@ -9,8 +9,8 @@ using UnityEngine.UI;
 /// QTEの終了状態。成功・失敗・中断を区別する。
 ///  ・Success   … 入力完了など、正常に成功して終了した。
 ///  ・Failure   … 失敗として終了した（現状のQTEは失敗終了を生成しない。開始できなかった場合は Item 側が処理する）。
-///  ・Cancelled … 結果確定（ゲーム時間切れ／捕獲）のために中断した。
-///                追加ダメージ・追加時間減算・HugeQteFinished による次回予約は行わない。
+///  ・Cancelled … 結果確定（捕獲など）のために中断した。
+///                追加ダメージ・HugeQteFinished による次回予約は行わない。
 /// </summary>
 public enum QteOutcome
 {
@@ -58,10 +58,12 @@ public class QTEManager : MonoBehaviour
     [SerializeField] private Color remainingColor = Color.black;
 
     [Header("QTE成功報酬（本プレイの入力クリア時のみ）")]
-    [Tooltip("ミス0回で本プレイのQTEを入力でクリアしたときの報酬（点）。")]
-    [SerializeField] private int successBaseScore = 1000;
-    [Tooltip("ミス1回（誤入力または制限時間切れ）ごとに減らす報酬（点）。報酬は0未満にはしない。")]
-    [SerializeField] private int successMissPenalty = 100;
+    [Tooltip("ミス0回（一発成功）で本プレイのQTEを入力でクリアしたときの報酬（点）。")]
+    [SerializeField] private int successBaseScore = 5000;
+    [Tooltip("ミス1回（誤入力または制限時間切れ）ごとに減らす報酬（点）。")]
+    [SerializeField] private int successMissPenalty = 1000;
+    [Tooltip("報酬の下限（点）。ミスが重なってもクリアすればこの点は必ず得られる。")]
+    [SerializeField] private int successMinScore = 1000;
 
     private bool isQteActive;
     private string currentSequence = string.Empty;
@@ -321,7 +323,8 @@ public class QTEManager : MonoBehaviour
     /// <summary>
     /// 成功報酬の点を確定し、「報酬可能」状態を消費する（1回だけ）。
     ///  ・本プレイの入力完了（fromPlayerInput）以外は0（強制成功・ブースト回避・チュートリアル・Cancelled・Failure）。
-    ///  ・ミス1回（誤入力またはタイムアウト）ごとに successMissPenalty 点を減らし、0未満にはしない。
+    ///  ・一発成功で successBaseScore 点。ミス1回（誤入力またはタイムアウト）ごとに successMissPenalty 点を減らし、
+    ///    successMinScore 点を下回らない（5,000 → 4,000 → … → 1,000 が下限）。
     /// </summary>
     private int ConsumeSuccessReward(QteOutcome outcome, bool fromPlayerInput)
     {
@@ -330,7 +333,7 @@ public class QTEManager : MonoBehaviour
 
         if (!eligible || !fromPlayerInput || outcome != QteOutcome.Success) return 0;
 
-        return Mathf.Max(0, successBaseScore - (missCount * successMissPenalty));
+        return Mathf.Max(successMinScore, successBaseScore - (missCount * successMissPenalty));
     }
 
     /// <summary>
@@ -348,8 +351,8 @@ public class QTEManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 結果確定（ゲーム時間切れ／捕獲）のためにQTEを中断する。成功・失敗としては扱わない。
-    ///  ・追加ダメージ・追加時間減算は行わない（Item 側が QteOutcome.Cancelled で抑止する）。
+    /// 結果確定（捕獲など）のためにQTEを中断する。成功・失敗としては扱わない。
+    ///  ・追加ダメージは与えない（Item 側が QteOutcome.Cancelled で抑止する）。
     ///  ・HugeQteFinished は発火しない（次回巨大障害物の予約・チュートリアルの完了判定を起こさない）。
     ///  ・コールバックは「アイテムのプール返却と IsQteLocked 解除」のためだけに1回呼ぶ。
     ///  ・Time.timeScale はここでは変更しない（時間停止の所有権は呼び出し側の結果処理・捕獲待ちにある）。
@@ -361,7 +364,7 @@ public class QTEManager : MonoBehaviour
 
         isQteActive = false;
 
-        // 中断（ゲーム時間切れ／捕獲）では報酬を出さない。報酬可能状態もここで消費する。
+        // 中断（捕獲など）では報酬を出さない。報酬可能状態もここで消費する。
         successRewardPending = false;
 
         // コールバック参照を先に取り出し、元の参照を消す（再入・二重呼び出しで重複実行しない）。

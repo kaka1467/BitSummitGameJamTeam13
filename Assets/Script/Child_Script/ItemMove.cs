@@ -10,7 +10,18 @@ public class ItemMove : MonoBehaviour
     /// 参照のたびに計算するため、プール返却と再取得を繰り返しても倍率は累積しない。
     /// すでに画面にいるアイテムにも新規出現アイテムにも同じ倍率が反映される。
     /// </summary>
-    public float EffectiveSpeed => speed * GameManager.CurrentScoreSpeedMultiplier;
+    public float EffectiveSpeed => speed * SpeedScale * GameManager.CurrentScoreSpeedMultiplier;
+
+    /// <summary>
+    /// 出現側（ItemSpawner）が設定する速度倍率（調整用）。元の速度 speed は書き換えない。
+    /// プールへ返却（無効化）されたら 1 に戻るため、次の出現に持ち越さない。
+    /// </summary>
+    public float SpeedScale { get; set; } = 1f;
+
+    private void OnDisable()
+    {
+        SpeedScale = 1f;
+    }
 
     [SerializeField]
     private float deleteOffsetFromLeft = 1f; // 画面左端からどれだけ外に出たら消すか

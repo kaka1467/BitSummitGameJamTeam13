@@ -39,8 +39,6 @@ public class GameManager : MonoBehaviour
     public static event System.Action ResultDataCommitted;
 
     public int score = 0;
-    public float time = 240f;
-    public float maxTime = 240f;
 
     // ── 得点段階による速度倍率 ─────────────────────────────────────────────────
     //  ・段階は「そのプレイの最高到達スコア」で決める（現在スコアではない。減点で段階は下がらない）。
@@ -146,27 +144,9 @@ public class GameManager : MonoBehaviour
 
     private const int SCORE_DIGITS = 6;
 
-    public TextMeshProUGUI timeText;
     public TextMeshProUGUI feverText;
     // 既存UDP GameObject（ルート）への参照。実行時にそのルート上のHostを解決する。
     public GameObject udpReceiver;
-
-    [Header("Time Change Display")]
-    [SerializeField] private TextMeshProUGUI timeChangeText;
-    [SerializeField] private float timeChangeDisplaySeconds = 1.5f;
-
-    private Coroutine timeChangeRoutine;
-
-    // ── 片付け演出用：ゲーム進行率の通知 ─────────────────────────────────────
-    //   親機の片付け開始条件（後半に入室するか）に使う。
-    //   送信頻度を抑えるため、更新は間隔制御して行う（毎フレームは送らない）。
-    [Header("Game Progress Notification")]
-    [Tooltip("親機へ進行率（0〜1）を送信する間隔（秒）。片付け演出の開始判定に使用。")]
-    [SerializeField, Min(0.1f)] private float gameProgressSendInterval = 1f;
-    [Tooltip("進行率通知を有効にする。OFFにすると片付け演出の開始は親機側の経過時間で判定される。")]
-    [SerializeField] private bool sendGameProgress = true;
-
-    private float _nextGameProgressSendTime;
 
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
@@ -184,8 +164,17 @@ public class GameManager : MonoBehaviour
     //   ChildGameScene にいるだけでは本編と見なさない（開始前カウントダウンも本編ではない）。
     private bool isMainPlayActive;
 
+    private float mainPlayStartUnscaledTime;
+
     /// <summary>本編が実際に始まっているか（読み取り専用）。</summary>
     public bool IsMainPlayActive => isMainPlayActive;
+
+    /// <summary>
+    /// 本編開始からの経過秒（実時間）。本編が始まっていなければ 0。
+    /// 時間制限ではなく、出現条件（BGMアイテムの解禁など）の判定にだけ使う。QTE中の時間停止の影響を受けない。
+    /// </summary>
+    public float MainPlayElapsedSeconds =>
+        isMainPlayActive ? Mathf.Max(0f, Time.unscaledTime - mainPlayStartUnscaledTime) : 0f;
 
     /// <summary>
     /// 本編が始まったことを記録する（TutorialFlow の本編開始処理から1回だけ呼ぶ）。
@@ -196,6 +185,7 @@ public class GameManager : MonoBehaviour
         if (isMainPlayActive) return;
 
         isMainPlayActive = true;
+        mainPlayStartUnscaledTime = Time.unscaledTime;
         Debug.Log("[GameManager] 本編開始を記録しました（チュートリアル終了）。", this);
     }
 
@@ -477,11 +467,6 @@ public class GameManager : MonoBehaviour
             fadeCanvasGroup.blocksRaycasts = false;
         }
 
-        if (timeChangeText != null)
-        {
-            timeChangeText.gameObject.SetActive(false);
-        }
-
         if (feverLoopEffect != null)
         {
             feverLoopEffect.StopEffect();
@@ -501,73 +486,12 @@ public class GameManager : MonoBehaviour
 
         if (isGameOver) return;
 
-        // 捕獲演出の待機中はタイマーを進めない（TIME_UPが先に確定して GameClear へ進まないようにする）。
-        if (_capturePending) return;
-
-        if (!isTutorialMode)
-        {
-            // QTE中は QTEManager が Time.timeScale = 0 にするため、ゲーム本体の残り時間は
-            // 実時間（unscaled）で進める。QTE中以外は従来どおり Time.deltaTime を使う
-            // （Time.deltaTime の一括置換はしない）。
-            bool qteActive = QTEManager.Instance != null && QTEManager.Instance.IsQteActive;
-            time -= qteActive ? Time.unscaledDeltaTime : Time.deltaTime;
-
-            if (time <= 0f)
-            {
-                time = 0f;
-                GameOver();
-
-                // 結果確定後はこのフレームの通常処理（得点表示・進行率通知など）を続けない。
-                // 時間表示だけは00:00へ更新する。
-                UpdateTimeText();
-                return;
-            }
-        }
-
         UpdateScoreDigits();
-        UpdateTimeText();
 
         if (feverText != null)
         {
             feverText.text = string.Format("{0}/{1}", feverCount, feverNeeded);
         }
-
-        // 片付け演出用：進行率を親機へ定期通知する（出現率・得点には影響しない）。
-        SendGameProgressIfDue();
-    }
-
-    /// <summary>
-    /// 残り時間の表示を更新する。
-    /// 表示は「残り時間を切り上げた総秒数」から算出する（減算直後に切り捨てると、
-    /// 開始直後が 04:00 ではなく 03:59 になってしまうため）。
-    /// 判定（時間切れ・片付け解禁・Loud Item解禁）には使わず、time の生値のみを使う。
-    /// </summary>
-    private void UpdateTimeText()
-    {
-        int displayTotalSeconds = Mathf.CeilToInt(Mathf.Max(0f, time));
-        int minutes = displayTotalSeconds / 60;
-        int seconds = displayTotalSeconds % 60;
-        timeText.text = string.Format("{0:00}:{1:00}", minutes, seconds);
-    }
-
-    /// <summary>
-    /// 現在のゲーム進行率（0〜1）を算出し、間隔どおりに親機へ送信する。
-    /// 片付け演出（母親の後半入室）の開始条件に使用する。
-    /// </summary>
-    private void SendGameProgressIfDue()
-    {
-        if (!sendGameProgress) return;
-        if (isGameOver || isTutorialMode) return;
-        if (Time.unscaledTime < _nextGameProgressSendTime) return;
-
-        ChildUdpRuntimeHost host = ResolveHost();
-        if (host == null) return;
-
-        float maxTimeSafe = Mathf.Max(1f, maxTime);
-        float progressRate = Mathf.Clamp01(1f - (time / maxTimeSafe));
-        host.SendGameProgress(progressRate);
-
-        _nextGameProgressSendTime = Time.unscaledTime + Mathf.Max(0.1f, gameProgressSendInterval);
     }
 
     /// <summary>
@@ -666,14 +590,8 @@ public class GameManager : MonoBehaviour
         scoreSpeedMultiplier = selected;
     }
 
-    // Called when timer runs out — TIME_UP result
-    // 【修正済み】ゲームオーバー時の不要なフィーバー加算バグを除去
-    public void GameOver()
-    {
-        TriggerResult(ResultType.TimeUp);
-    }
-
-    // Called when parent catches child — GAME_OVER result
+    // 子機の時間制限は廃止したため、時間切れ（TIME_UP）で結果が確定する経路は無い。
+    // 結果の確定は、親機の捕獲（CAUGHT）または下記の旧互換入口のみ。
     public void GameOver(string udpMessage)
     {
         // Legacy entry point: "TIME_UP" and "CHILD_DEAD" use TIME_UP result;
@@ -717,8 +635,13 @@ public class GameManager : MonoBehaviour
         PlayerPrefs.SetInt(scoreKey, score);
         PlayerPrefs.SetString(KeyResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
 
-        // ランキングの更新
-        UpdateRanking(rankKey, score);
+        // ランキングの更新：ゲームオーバー（捕獲）の得点は正式ランキングへ新規登録しない。
+        //  ・最新得点（LastGameOverScore）は上で保存済みのため、結果画面の得点表示には影響しない。
+        //  ・既に保存されている順位はそのまま残す（消すのは RankingResetButton のみ）。
+        if (resultType == ResultType.GameOver)
+            Debug.Log($"[GameManager] ゲームオーバーの得点はランキングへ登録しません（score={score}）");
+        else
+            UpdateRanking(rankKey, score);
 
         PlayerPrefs.Save();
         Debug.Log($"[GameManager] Result={resultType} score={score} saved to '{scoreKey}'");
@@ -863,52 +786,6 @@ public class GameManager : MonoBehaviour
             feverCount = 0; // Reset fever count
             ActivateFeverEffects();
         }
-    }
-
-    public void AddTime(float amount)
-    {
-        if (amount < 0f)
-        {
-            ShowTimeDecrease(amount);
-        }
-
-        time += amount;
-        if (time > maxTime) time = maxTime;
-    }
-
-    private void ShowTimeDecrease(float amount)
-    {
-        if (timeChangeText == null) return;
-
-        int totalSeconds = Mathf.Abs(Mathf.RoundToInt(amount));
-        int minutes = totalSeconds / 60;
-        int seconds = totalSeconds % 60;
-
-        timeChangeText.text = $"-{minutes:00}:{seconds:00}";
-        timeChangeText.gameObject.SetActive(true);
-
-        if (timeChangeRoutine != null)
-        {
-            StopCoroutine(timeChangeRoutine);
-        }
-
-        timeChangeRoutine = StartCoroutine(HideTimeChangeAfterDelay());
-    }
-
-    private IEnumerator HideTimeChangeAfterDelay()
-    {
-        float duration = Mathf.Max(0f, timeChangeDisplaySeconds);
-        if (duration > 0f)
-        {
-            yield return new WaitForSecondsRealtime(duration);
-        }
-
-        if (timeChangeText != null)
-        {
-            timeChangeText.gameObject.SetActive(false);
-        }
-
-        timeChangeRoutine = null;
     }
 
     public void SetTutorialMode(bool active)
