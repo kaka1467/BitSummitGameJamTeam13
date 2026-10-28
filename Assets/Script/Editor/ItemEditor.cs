@@ -6,7 +6,6 @@ public class ItemEditor : Editor
 {
     private SerializedProperty itemTypeProp;
     private SerializedProperty scoreAmountProp;
-    private SerializedProperty timeAmountProp;
     private SerializedProperty boostDurationProp;
     private SerializedProperty boostMultiplierProp;
     private SerializedProperty isMagnetableProp;
@@ -20,7 +19,6 @@ public class ItemEditor : Editor
     {
         itemTypeProp = serializedObject.FindProperty("itemType");
         scoreAmountProp = serializedObject.FindProperty("scoreAmount");
-        timeAmountProp = serializedObject.FindProperty("timeAmount");
         boostDurationProp = serializedObject.FindProperty("boostDuration");
         boostMultiplierProp = serializedObject.FindProperty("boostMultiplier");
         isMagnetableProp = serializedObject.FindProperty("isMagnetable");
@@ -40,19 +38,6 @@ public class ItemEditor : Editor
 
         ItemType itemType = (ItemType)itemTypeProp.enumValueIndex;
 
-        EditorGUILayout.LabelField("Time Settings", EditorStyles.boldLabel);
-        if (itemType == ItemType.HugeObstacle)
-        {
-            EditorGUILayout.HelpBox("HugeObstacle は QTE 失敗時に timeAmount 分の時間が減少します。", MessageType.Info);
-            EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Penalty"));
-        }
-        else
-        {
-            EditorGUILayout.HelpBox("timeAmount は取得時にそのまま加算されます。正で時間増加、負で時間減少です。", MessageType.Info);
-            EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Amount"));
-        }
-        EditorGUILayout.Space(4f);
-
         switch (itemType)
         {
             // case ItemType.Carrot:
@@ -62,19 +47,14 @@ public class ItemEditor : Editor
                 break;
 
             case ItemType.Clock:
-                // 時計は減点アイテムのため、Score と同じ scoreAmount を編集できるようにする
+                // 時計は減点アイテム（時間ではなくポイントを減らす）のため、Score と同じ scoreAmount を編集できるようにする
                 // （負の値で減点。新しい設定フィールドは増やさない）。
                 EditorGUILayout.LabelField("Score Settings", EditorStyles.boldLabel);
                 EditorGUILayout.PropertyField(scoreAmountProp, new GUIContent("Score Amount"));
                 break;
 
-            // case ItemType.Enemy:
-            //     EditorGUILayout.LabelField("Penalty Settings", EditorStyles.boldLabel);
-            //     EditorGUILayout.HelpBox("Enemy は timeAmount の絶対値を時間減少として適用します。", MessageType.Info);
-            //     EditorGUILayout.PropertyField(timeAmountProp, new GUIContent("Time Penalty"));
-            //     break;
-
             case ItemType.HugeObstacle:
+                EditorGUILayout.HelpBox("HugeObstacle は QTE の報酬（成功時の加点）を QTEManager で設定します。", MessageType.None);
                 break;
 
             case ItemType.Boost:

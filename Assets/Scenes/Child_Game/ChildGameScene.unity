@@ -3611,7 +3611,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1344561279
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4736,7 +4736,7 @@ MonoBehaviour:
   laneSpawnIntervalMaxSeconds: 0.85
   hugeObstacleSpawnCount: 1
   hugeObstacleSpawnY: 0.00000001929803
-  bgmNormalSpawnRemainingSeconds: 120
+  bgmNormalSpawnElapsedSeconds: 120
   enableDebugSpawnKeys: 1
   showDebugSpawnKeyLogs: 1
   minSpawnDistanceX: 1.2
@@ -4960,8 +4960,9 @@ MonoBehaviour:
   timeLimitSeconds: 5
   enteredColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
   remainingColor: {r: 0, g: 0, b: 0, a: 1}
-  successBaseScore: 1000
-  successMissPenalty: 100
+  successBaseScore: 5000
+  successMissPenalty: 1000
+  successMinScore: 1000
 --- !u!4 &1671829137
 Transform:
   m_ObjectHideFlags: 0
@@ -5785,8 +5786,6 @@ MonoBehaviour:
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 240
-  maxTime: 240
   scoreSpeedSteps:
   - score: 0
     multiplier: 1
@@ -5870,13 +5869,8 @@ MonoBehaviour:
   - {fileID: 1149731200}
   - {fileID: 355733664}
   - {fileID: 407332927}
-  timeText: {fileID: 1365839925}
   feverText: {fileID: 0}
   udpReceiver: {fileID: 243933950}
-  timeChangeText: {fileID: 852103714}
-  timeChangeDisplaySeconds: 1.5
-  gameProgressSendInterval: 1
-  sendGameProgress: 1
   sequenceWaitTimeoutSeconds: 45
 --- !u!4 &1949956397
 Transform:

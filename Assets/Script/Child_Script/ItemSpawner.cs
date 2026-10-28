@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine.InputSystem;
 using Unity.Profiling;
 
-public class ItemSpawner : MonoBehaviour
+public partial class ItemSpawner : MonoBehaviour
 {
     // ── 計測用マーカー（Profilerで処理時間と呼び出し回数を見る。動作は変更しない）──
     private static readonly ProfilerMarker s_buildScheduleMarker =
@@ -118,18 +118,18 @@ public class ItemSpawner : MonoBehaviour
     [SerializeField] private float hugeObstacleSpawnY = 1.929803e-08f;
 
     // ── BGMの通常出現条件 ─────────────────────────────────────────────────────
-    //   BGMは「子機のゲームタイマーの残り時間がこの値(秒)未満」のときだけ通常出現を許可する。
-    //   ゲーム開始からの経過時間ではなく、GameManager が管理する実際の残り時間を参照する
-    //   （時間の加算・減算があれば、その現在値に従う）。
+    //   子機の時間制限は廃止したため、BGMは「本編開始からの経過時間がこの値(秒)以上」になってから通常出現を許可する。
+    //   （従来の『残り120秒未満』＝制限240秒での経過120秒以降と同じ既定値）
     [Header("BGM Spawn Condition")]
-    [Tooltip("BGMアイテムを通常出現させてよい残り時間のしきい値（秒）。残り時間がこの値未満のときだけ通常出現を許可する。")]
-    [SerializeField, Min(0f)] private float bgmNormalSpawnRemainingSeconds = 120f;
+    [Tooltip("BGMアイテムを通常出現させてよい、本編開始からの経過時間のしきい値（秒）。経過時間がこの値以上になってから通常出現を許可する。")]
+    [UnityEngine.Serialization.FormerlySerializedAs("bgmNormalSpawnRemainingSeconds")]
+    [SerializeField, Min(0f)] private float bgmNormalSpawnElapsedSeconds = 120f;
 
     // ── デバッグ出現キー（数字1〜6） ──────────────────────────────────────────
     //   子機のゲーム中のみ有効。タイトル・ロード中・ゲーム終了後は出現させない。
-    //   1:Score / 2:Boost / 3:Fever / 4:Clock / 5:BGM / 6:HugeObstacle
+    //   1:Score / 2:Boost / 3:Fever / 4:Clock / 5:BGM / 6:HugeObstacle / 7:配置パターン（順番に1つ）
     [Header("Debug Spawn Keys")]
-    [Tooltip("数字キー(1〜6)によるデバッグ出現を有効にする。")]
+    [Tooltip("数字キー(1〜7)によるデバッグ出現を有効にする。7は配置パターンを一覧の順に1つずつ出す。")]
     [SerializeField] private bool enableDebugSpawnKeys = true;
     [Tooltip("デバッグ出現に関するログを出力する。")]
     [SerializeField] private bool showDebugSpawnKeyLogs = true;
@@ -329,6 +329,9 @@ public class ItemSpawner : MonoBehaviour
             ResetLaneSpawnTimers();
             _wasSpawnEnabled = true;
         }
+
+        // 配置パターン（短い並び・休憩区間）。出したらその間はランダム出現を止める（二重に出さない）
+        UpdatePatternDirector();
 
         // 通常出現はレーン別タイマー方式のみ（旧・時刻付き予定方式は呼ばない＝二重実行しない）
         UpdateNormalSpawnByLaneTimers();
@@ -580,9 +583,10 @@ public class ItemSpawner : MonoBehaviour
     {
         float min = GetLaneSpawnIntervalMin();
         float max = GetLaneSpawnIntervalMax();
-        if (max <= min) return min;
+        float interval = (max <= min) ? min : UnityEngine.Random.Range(min, max);
 
-        return UnityEngine.Random.Range(min, max);
+        // 出現量の倍率と休憩区間の薄さで割る（量が多いほど間隔が短くなる）
+        return interval / GetSpawnDensityFactor(Time.unscaledTime);
     }
 
     /// <summary>
@@ -598,6 +602,9 @@ public class ItemSpawner : MonoBehaviour
         {
             _laneNextSpawnTime = new float[laneCount];
         }
+
+        // 休憩・パターンの状態を先に初期化する（前回の休憩の濃さを最初の抽選に持ち込まない）
+        ResetPatternDirector();
 
         for (int i = 0; i < _laneNextSpawnTime.Length; i++)
         {
@@ -624,6 +631,10 @@ public class ItemSpawner : MonoBehaviour
         if (gm != null && gm.IsGameOver) return;
 
         float now = Time.unscaledTime;
+
+        // 配置パターンが出現位置を抜けきるまでは、ランダム出現を止める（パターンと重ねて出さない）
+        if (IsRandomSpawnBlockedByPattern(now)) return;
+
         int laneCount = _laneNextSpawnTime.Length;
         int start = Mathf.Abs(_laneRoundRobinStart) % laneCount;
 
@@ -674,7 +685,7 @@ public class ItemSpawner : MonoBehaviour
             ItemPool.Instance.ReturnToPool(item);
             _statBgmSkipped++;
             if (showDebugLogs)
-                Debug.Log($"[ItemSpawner] BGMは残り時間がしきい値({bgmNormalSpawnRemainingSeconds:F0}秒)未満でのみ通常出現します — 今回の予定は見送ります。");
+                Debug.Log($"[ItemSpawner] BGMは本編開始から{bgmNormalSpawnElapsedSeconds:F0}秒経過後にのみ通常出現します — 今回の予定は見送ります。");
             return false;
         }
 
@@ -713,7 +724,7 @@ public class ItemSpawner : MonoBehaviour
             for (int e = 0; e < entries.Count; e++)
             {
                 if (!IsValidNormalCandidate(entries[e])) continue;
-                total += entries[e].count;
+                total += GetNormalCandidateWeight(entries[e]);
             }
         }
 
@@ -733,7 +744,7 @@ public class ItemSpawner : MonoBehaviour
                 PrefabSpawnCount entry = entries[e];
                 if (!IsValidNormalCandidate(entry)) continue;
 
-                pick -= entry.count;
+                pick -= GetNormalCandidateWeight(entry);
                 if (pick <= 0f) return entry.prefab;
             }
         }
@@ -788,6 +799,7 @@ public class ItemSpawner : MonoBehaviour
         if (IsSpawnPositionOccupied(candidate, now, item)) return false;
 
         item.transform.position = candidate;
+        ApplySpawnSpeedScale(item);
         RegisterRecentSpawn(item, candidate, now);
         // 同じフレームの他レーンからも見えるよう仮レコードにも登録する
         RegisterPendingFrameRecord(item, candidate, now);
@@ -1342,14 +1354,14 @@ public class ItemSpawner : MonoBehaviour
             return NormalPlacementResult.Failed;
         }
 
-        // BGM は「子機のタイマーの残り時間がしきい値(既定120秒)未満」のときだけ通常出現を許可する。
+        // BGM は「本編開始からの経過時間がしきい値(既定120秒)以上」のときだけ通常出現を許可する。
         // 解禁前の予定はここで消費する（保留・毎フレーム再試行・解禁時のまとめ出現はしない）。
         // これは配置成功ではないため、成功間隔は消費しない（SkippedByCondition で返す）。
         if (itemComp.itemType == ItemType.BGM && !IsBgmNormalSpawnAllowed())
         {
             ItemPool.Instance.ReturnToPool(item);
             if (showDebugLogs)
-                Debug.Log($"[ItemSpawner] BGMは残り時間がしきい値({bgmNormalSpawnRemainingSeconds:F0}秒)未満でのみ通常出現します — 今回の予定は見送ります。");
+                Debug.Log($"[ItemSpawner] BGMは本編開始から{bgmNormalSpawnElapsedSeconds:F0}秒経過後にのみ通常出現します — 今回の予定は見送ります。");
             return NormalPlacementResult.SkippedByCondition;
         }
 
@@ -1758,6 +1770,7 @@ public class ItemSpawner : MonoBehaviour
         if (IsDebugKeyPressedThisFrame(keyboard, 4)) SpawnDebugItemByKey(4, ItemType.Clock);
         if (IsDebugKeyPressedThisFrame(keyboard, 5)) SpawnDebugItemByKey(5, ItemType.BGM);
         if (IsDebugKeyPressedThisFrame(keyboard, 6)) SpawnDebugItemByKey(6, ItemType.HugeObstacle);
+        if (IsDebugKeyPressedThisFrame(keyboard, 7)) SpawnDebugPattern();   // 配置パターンを順番に1つ出す
     }
 
     /// <summary>
@@ -1776,6 +1789,7 @@ public class ItemSpawner : MonoBehaviour
             case 4: return keyboard.digit4Key.wasPressedThisFrame || keyboard.numpad4Key.wasPressedThisFrame;
             case 5: return keyboard.digit5Key.wasPressedThisFrame || keyboard.numpad5Key.wasPressedThisFrame;
             case 6: return keyboard.digit6Key.wasPressedThisFrame || keyboard.numpad6Key.wasPressedThisFrame;
+            case 7: return keyboard.digit7Key.wasPressedThisFrame || keyboard.numpad7Key.wasPressedThisFrame;
             default: return false;
         }
     }
@@ -1908,14 +1922,14 @@ public class ItemSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// BGMアイテムが通常出現できるか。子機のゲームタイマーの残り時間(GameManager.time)が
-    /// しきい値(bgmNormalSpawnRemainingSeconds, 既定120秒)未満のときだけ許可する。
-    /// ゲーム開始からの経過時間ではなく、実際の残り時間（時間の加算・減算の現在値）を参照する。
+    /// BGMアイテムが通常出現できるか。本編開始からの経過時間(GameManager.MainPlayElapsedSeconds)が
+    /// しきい値(bgmNormalSpawnElapsedSeconds, 既定120秒)以上のときだけ許可する。
+    /// チュートリアル中（本編未開始）は経過0のため許可しない。
     /// </summary>
     private bool IsBgmNormalSpawnAllowed()
     {
         GameManager gm = GameManager.instance;
-        if (gm == null) return false; // 残り時間を取得できない場合は許可しない
-        return gm.time < bgmNormalSpawnRemainingSeconds;
+        if (gm == null || !gm.IsMainPlayActive) return false; // 本編が始まっていなければ許可しない
+        return gm.MainPlayElapsedSeconds >= bgmNormalSpawnElapsedSeconds;
     }
 }
