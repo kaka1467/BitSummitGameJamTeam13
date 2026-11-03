@@ -76,6 +76,7 @@ public class TutorialFlow : MonoBehaviour
     [Header("Skip UI")]
     [SerializeField] private TextMeshProUGUI skipHintText;
     [SerializeField] private string skipHintMessage = "Kキー長押しでスキップ";
+    [SerializeField] private string skipHintMessageJa = "Aボタン長押しでスキップ";
 
     [Header("Interactive Collect (prototype)")]
     [Tooltip("アイテム取得ステップをプレイヤー操作にする。false で従来どおりの自動演示。")]
@@ -92,8 +93,11 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private TextMeshProUGUI interactiveHintText;
     [Tooltip("矢印記号は多くのフォントに無いため、文字で書くのを推奨。")]
     [SerializeField] private string collectHintMessage = "キーで動かしてアイテムを取ろう！";
+    [SerializeField] private string collectHintMessageJa = "←→↑↓  アイテムをとろう！";
     [SerializeField] private string collectRetryMessage = "とりのがした… もういちど！";
+    [SerializeField] private string collectRetryMessageJa = "いてて… もういちど！";
     [SerializeField] private string collectSuccessMessage = "nice!";
+    [SerializeField] private string collectSuccessMessageJa = "ナイス！";
     [Tooltip("アイテム／障害物がプレイヤーのX座標からこの距離だけ左へ流れたら『通過した』とみなす。")]
     [SerializeField, Min(0.05f)] private float collectMissMargin = 0.5f;
 
@@ -107,8 +111,11 @@ public class TutorialFlow : MonoBehaviour
     [Tooltip("回避の成否メッセージ／リトライ前に見せる秒数。")]
     [SerializeField, Min(0f)] private float avoidResultPauseSeconds = 0.4f;
     [SerializeField] private string avoidHintMessage = "しょうがいぶつが くる！レーンをかえて よけよう";
+    [SerializeField] private string avoidHintMessageJa = "あぶない！";
     [SerializeField] private string avoidRetryMessage = "ぶつかった… もういちど！";
+    [SerializeField] private string avoidRetryMessageJa = "いてて… もういちど！";
     [SerializeField] private string avoidSuccessMessage = "よけた！";
+    [SerializeField] private string avoidSuccessMessageJa = "よけた！";
 
     [Header("Interactive QTE (prototype)")]
     [Tooltip("QTE ステップにガイド文を出す。QTE の入力自体は元から実操作。false でガイドなし。")]
@@ -116,9 +123,12 @@ public class TutorialFlow : MonoBehaviour
     [Tooltip("QTE 突破メッセージを見せる秒数。")]
     [SerializeField, Min(0f)] private float qteResultPauseSeconds = 0.5f;
     [SerializeField] private string qteApproachMessage = "おおきな しょうがいぶつ！ ぶつかると ボタンれんだ";
+    [SerializeField] private string qteApproachMessageJa = "ぶつかる！";
     [Tooltip("QTE 中に出すガイド。空にすると QTE 側の表示だけになる。")]
     [SerializeField] private string qteActiveMessage = "ボタンを ひょうじの じゅんに おそう！ まちがえても OK";
+    [SerializeField] private string qteActiveMessageJa = "ボタンをおせ！";
     [SerializeField] private string qteSuccessMessage = "とっぱ！";
+    [SerializeField] private string qteSuccessMessageJa = "ナイス！";
 
     private bool tutorialRunning;
     private bool skipRequested;
@@ -235,7 +245,7 @@ public class TutorialFlow : MonoBehaviour
         // スキップ案内を表示
         if (skipHintText != null)
         {
-            skipHintText.text = skipHintMessage;
+            skipHintText.text = Msg(skipHintMessage, skipHintMessageJa);
             skipHintText.gameObject.SetActive(enableHoldToSkip);
         }
 
@@ -402,7 +412,7 @@ public class TutorialFlow : MonoBehaviour
             playerMove.SetAutoTargetX(null);
             playerMove.SetAutoDrive(false);
             playerMove.SetInputEnabled(true);
-            ShowInteractiveHint(attempt == 0 ? collectHintMessage : collectRetryMessage);
+            ShowInteractiveHint(attempt == 0 ? Msg(collectHintMessage, collectHintMessageJa) : Msg(collectRetryMessage, collectRetryMessageJa));
 
             float waited = 0f;
             while (!skipRequested
@@ -422,7 +432,7 @@ public class TutorialFlow : MonoBehaviour
 
             if (collected && !skipRequested)
             {
-                ShowInteractiveHint(collectSuccessMessage);
+                ShowInteractiveHint(Msg(collectSuccessMessage, collectSuccessMessageJa));
                 if (collectSuccessPauseSeconds > 0f)
                 {
                     yield return new WaitForSecondsRealtime(collectSuccessPauseSeconds);
@@ -436,7 +446,7 @@ public class TutorialFlow : MonoBehaviour
                 if (attempt + 1 < attempts)
                 {
                     // 取り逃しメッセージを出したまま、次が来るまで一拍おく
-                    ShowInteractiveHint(collectRetryMessage);
+                    ShowInteractiveHint(Msg(collectRetryMessage, collectRetryMessageJa));
                     if (retryDelaySeconds > 0f)
                     {
                         yield return new WaitForSecondsRealtime(retryDelaySeconds);
@@ -466,6 +476,16 @@ public class TutorialFlow : MonoBehaviour
 
             yield return TrackAutoTargetToItem(item, collectTimeout, AutoTargetMode.Collect);
         }
+    }
+
+    /// <summary>
+    /// 現在の言語の文言を返す。元の文言（英語。Inspectorで編集）に対して、日本語は「…Ja」。
+    /// 元の文言が空なら、日本語でも出さない（空＝非表示の指定を言語で変えない）。
+    /// </summary>
+    private static string Msg(string english, string japanese)
+    {
+        if (string.IsNullOrEmpty(english)) return english;
+        return GameLanguage.Pick(japanese, english);
     }
 
     private void ShowInteractiveHint(string message)
@@ -547,7 +567,7 @@ public class TutorialFlow : MonoBehaviour
             playerMove.SetAutoTargetX(null);
             playerMove.SetAutoDrive(false);
             playerMove.SetInputEnabled(true);
-            ShowInteractiveHint(attempt == 0 ? avoidHintMessage : avoidRetryMessage);
+            ShowInteractiveHint(attempt == 0 ? Msg(avoidHintMessage, avoidHintMessageJa) : Msg(avoidRetryMessage, avoidRetryMessageJa));
 
             float waited = 0f;
             while (!skipRequested
@@ -571,7 +591,7 @@ public class TutorialFlow : MonoBehaviour
 
             if (dodged && !skipRequested)
             {
-                ShowInteractiveHint(avoidSuccessMessage);
+                ShowInteractiveHint(Msg(avoidSuccessMessage, avoidSuccessMessageJa));
                 if (avoidResultPauseSeconds > 0f)
                 {
                     yield return new WaitForSecondsRealtime(avoidResultPauseSeconds);
@@ -585,7 +605,7 @@ public class TutorialFlow : MonoBehaviour
                 if (attempt + 1 < attempts)
                 {
                     // 「ぶつかった」メッセージを出したまま、次が来るまで一拍おく
-                    ShowInteractiveHint(avoidRetryMessage);
+                    ShowInteractiveHint(Msg(avoidRetryMessage, avoidRetryMessageJa));
                     if (retryDelaySeconds > 0f)
                     {
                         yield return new WaitForSecondsRealtime(retryDelaySeconds);
@@ -646,7 +666,7 @@ public class TutorialFlow : MonoBehaviour
 
             if (explainQte && !skipRequested)
             {
-                ShowInteractiveHint(qteApproachMessage);
+                ShowInteractiveHint(Msg(qteApproachMessage, qteApproachMessageJa));
             }
 
             int laneIndex = GetNearestLaneIndex(huge.transform.position.y);
@@ -683,7 +703,7 @@ public class TutorialFlow : MonoBehaviour
 
         if (explainQte && qteDone && !skipRequested)
         {
-            ShowInteractiveHint(qteSuccessMessage);
+            ShowInteractiveHint(Msg(qteSuccessMessage, qteSuccessMessageJa));
             if (qteResultPauseSeconds > 0f)
             {
                 yield return new WaitForSecondsRealtime(qteResultPauseSeconds);
@@ -699,13 +719,13 @@ public class TutorialFlow : MonoBehaviour
         if (alreadySwapped || !explainQte || skipRequested) return alreadySwapped;
         if (QTEManager.Instance == null || !QTEManager.Instance.IsQteActive) return false;
 
-        if (string.IsNullOrEmpty(qteActiveMessage))
+        if (string.IsNullOrEmpty(Msg(qteActiveMessage, qteActiveMessageJa)))
         {
             HideInteractiveHint();
         }
         else
         {
-            ShowInteractiveHint(qteActiveMessage);
+            ShowInteractiveHint(Msg(qteActiveMessage, qteActiveMessageJa));
         }
         return true;
     }

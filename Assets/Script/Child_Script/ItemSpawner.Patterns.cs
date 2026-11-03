@@ -416,6 +416,46 @@ public partial class ItemSpawner
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    //  寝たふり中の停止からの再開（出現が「まとめて」起きないようにする）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 再開時に、実時間で管理している出現の時刻を停止していた秒数だけ後ろへずらす。
+    /// そのうえで各レーンは待ち時間を引き直し、停止前に溜まっていた分が再開直後に同時に出ないようにする。
+    /// </summary>
+    private void OnGameResumed(float pausedSeconds)
+    {
+        if (pausedSeconds <= 0f) return;
+
+        float now = Time.unscaledTime;
+
+        normalScheduleStartTime += pausedSeconds;
+        nextNormalSpawnAllowedTime += pausedSeconds;
+        if (isHugeSpawnScheduled) nextHugeSpawnTime += pausedSeconds;
+
+        if (_nextPatternTime > 0f) _nextPatternTime += pausedSeconds;
+        if (_patternBlockUntil > 0f) _patternBlockUntil += pausedSeconds;
+        if (_restFrom > 0f) _restFrom += pausedSeconds;
+        if (_restUntil > 0f) _restUntil += pausedSeconds;
+
+        // 直近の出現記録（重なり判定用）も、アイテムが動いていない分だけ寿命を延ばす。
+        for (int i = 0; i < recentSpawnRecords.Count; i++)
+        {
+            if (recentSpawnRecords[i] != null) recentSpawnRecords[i].time += pausedSeconds;
+        }
+
+        // 各レーンは再開時点から改めて待ち時間を引く（同時に出さない・遅れを取り戻さない）。
+        if (_laneNextSpawnTime != null)
+        {
+            for (int i = 0; i < _laneNextSpawnTime.Length; i++)
+                _laneNextSpawnTime[i] = Mathf.Max(_laneNextSpawnTime[i] + pausedSeconds, now + DrawLaneSpawnInterval());
+        }
+
+        if (showDebugLogs)
+            Debug.Log($"[ItemSpawner] 停止から再開しました（停止={pausedSeconds:F1}s）。出現の時刻をずらし、各レーンの待ち時間を引き直しました。");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     //  デバッグ：数字キー7で、一覧のパターンを順番に1つずつ出す（時刻・フィーバー条件を無視）
     // ──────────────────────────────────────────────────────────────────────────
 

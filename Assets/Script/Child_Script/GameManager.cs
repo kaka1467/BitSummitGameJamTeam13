@@ -38,6 +38,11 @@ public class GameManager : MonoBehaviour
     /// </summary>
     public static event System.Action ResultDataCommitted;
 
+    /// <summary>
+    /// 得点が実際に増減したとき（増減した量, フィーバー2倍が掛かったか）。表示専用の通知で、得点処理には影響しない。
+    /// </summary>
+    public static event System.Action<int, bool> ScoreAdded;
+
     public int score = 0;
 
     // ── 得点段階による速度倍率 ─────────────────────────────────────────────────
@@ -165,16 +170,19 @@ public class GameManager : MonoBehaviour
     private bool isMainPlayActive;
 
     private float mainPlayStartUnscaledTime;
+    private float mainPlayPausedBase;   // 本編開始時点での停止時間の合計（停止中の分を経過時間に数えない）
 
     /// <summary>本編が実際に始まっているか（読み取り専用）。</summary>
     public bool IsMainPlayActive => isMainPlayActive;
 
     /// <summary>
     /// 本編開始からの経過秒（実時間）。本編が始まっていなければ 0。
-    /// 時間制限ではなく、出現条件（BGMアイテムの解禁など）の判定にだけ使う。QTE中の時間停止の影響を受けない。
+    /// 時間制限ではなく、出現条件（BGMアイテムの解禁など）の判定にだけ使う。QTE中の時間停止の影響は受けないが、寝たふり中の停止分は数えない。
     /// </summary>
     public float MainPlayElapsedSeconds =>
-        isMainPlayActive ? Mathf.Max(0f, Time.unscaledTime - mainPlayStartUnscaledTime) : 0f;
+        isMainPlayActive
+            ? Mathf.Max(0f, Time.unscaledTime - mainPlayStartUnscaledTime - (ChildGamePause.TotalPausedSeconds - mainPlayPausedBase))
+            : 0f;
 
     /// <summary>
     /// 本編が始まったことを記録する（TutorialFlow の本編開始処理から1回だけ呼ぶ）。
@@ -186,6 +194,7 @@ public class GameManager : MonoBehaviour
 
         isMainPlayActive = true;
         mainPlayStartUnscaledTime = Time.unscaledTime;
+        mainPlayPausedBase = ChildGamePause.TotalPausedSeconds;
         Debug.Log("[GameManager] 本編開始を記録しました（チュートリアル終了）。", this);
     }
 
@@ -230,6 +239,14 @@ public class GameManager : MonoBehaviour
     private void Start()
     {
         ResolveHost();
+
+        // フィーバー中の「スコア2倍」表示（シーンに無ければ追加する）。
+        if (FindFirstObjectByType<ScoreMultiplierDisplay>() == null)
+            gameObject.AddComponent<ScoreMultiplierDisplay>();
+
+        // 得点が増減したとき、プレイヤーの右上に数字を出す（シーンに無ければ追加する）。
+        if (FindFirstObjectByType<PlayerScorePopup>() == null)
+            gameObject.AddComponent<PlayerScorePopup>();
 
         // 初期化完了を記録してから CAUGHT の購読を開始する。
         _started = true;
@@ -532,14 +549,27 @@ public class GameManager : MonoBehaviour
         // 結果確定後（捕獲以外の時間切れなど）に遅延して届いた取得でも最終得点を変えない。
         if (isGameOver) return;
 
+        // 寝たふり中（子機全体の停止中）は得点を動かさない。
+        if (ChildGamePause.IsPaused)
+        {
+            Debug.Log($"[GameManager] 停止中のためポイント加算を無視します（amount={amount}）");
+            return;
+        }
+
         // フィーバー中は「正の得点」だけ2倍にする（減点は倍にしない）。
+        bool doubled = false;
         if (isFeverActive && amount > 0)
         {
             amount *= 2;
+            doubled = true;
         }
 
         // 減点アイテムで合計スコアが負にならないよう、内部値も0以上に保つ。
+        int before = score;
         score = Mathf.Max(0, score + amount);
+
+        if (score != before)
+            ScoreAdded?.Invoke(score - before, doubled);
 
         // 最高到達スコアが更新されたときだけ速度段階を選び直す（毎フレームの再計算はしない）。
         //  ・フィーバー2倍を適用した後の実スコアで判定する（上の amount *= 2 の後）。
