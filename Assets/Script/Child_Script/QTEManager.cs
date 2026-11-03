@@ -65,6 +65,25 @@ public class QTEManager : MonoBehaviour
     [Tooltip("報酬の下限（点）。ミスが重なってもクリアすればこの点は必ず得られる。")]
     [SerializeField] private int successMinScore = 1000;
 
+    [Header("報酬表示（獲得予定の報酬と、ミスによる減少）")]
+    [Tooltip("今クリアしたら得られる報酬を出すテキスト。未割り当てなら、残り秒数(timerText)と同じフォントで実行時に作る。")]
+    [SerializeField] private TextMeshProUGUI rewardText;
+    [Tooltip("自動で作る場合の位置。残り秒数(timerText)の位置からのずれ。")]
+    [SerializeField] private Vector2 rewardTextOffset = new Vector2(0f, 90f);
+    [SerializeField] private string rewardLabel = "BONUS ";
+    [SerializeField] private Color rewardColor = new Color(1f, 0.85f, 0.2f, 1f);
+    [Tooltip("ミスで報酬が減ったときに出す「-1000」などの色。")]
+    [SerializeField] private Color rewardDecreaseColor = new Color(1f, 0.25f, 0.25f, 1f);
+    [Tooltip("報酬が減ったとき、報酬テキストが減少色で光る秒数。")]
+    [SerializeField, Min(0f)] private float rewardFlashSeconds = 0.5f;
+    [Tooltip("「-1000」が下へ流れて消えるまでの秒数。")]
+    [SerializeField, Min(0.1f)] private float rewardDecreaseSeconds = 0.9f;
+
+    private TextMeshProUGUI rewardDecreaseText;
+    private float rewardDecreaseAge = -1f;     // 負なら非表示
+    private float rewardFlashLeft;
+    private Vector2 rewardDecreaseStart;
+
     private bool isQteActive;
     private string currentSequence = string.Empty;
     private int currentIndex;
@@ -97,6 +116,11 @@ public class QTEManager : MonoBehaviour
     private void Update()
     {
         if (!isQteActive) return;
+
+        // 寝たふり中は子機全体が止まっている。QTEの制限時間（実時間）も進めない。
+        if (ChildGamePause.IsPaused) return;
+
+        UpdateRewardAnimation();
 
         if (timeLimitSeconds > 0f)
         {
@@ -180,7 +204,13 @@ public class QTEManager : MonoBehaviour
     {
         // 誤入力とタイムアウトの共通処理。ミス回数はここだけで数える（同じミスを二重に数えない）。
         // ミス時にスコアは直接減らさない（ダメージ演出のみ。減額は成功報酬の計算でのみ行う）。
+        int rewardBefore = GetCurrentReward();
         missCount++;
+
+        // 報酬が減った分を画面に出す（既に下限なら減らないので出さない）。
+        int rewardAfter = GetCurrentReward();
+        if (successRewardPending && rewardAfter < rewardBefore)
+            ShowRewardDecrease(rewardBefore - rewardAfter);
 
         if (playerAnimator != null)
         {
@@ -333,7 +363,7 @@ public class QTEManager : MonoBehaviour
 
         if (!eligible || !fromPlayerInput || outcome != QteOutcome.Success) return 0;
 
-        return Mathf.Max(successMinScore, successBaseScore - (missCount * successMissPenalty));
+        return GetCurrentReward();
     }
 
     /// <summary>
@@ -418,10 +448,115 @@ public class QTEManager : MonoBehaviour
         }
     }
 
+    /// <summary>今クリアした場合の報酬（点）。一発成功で最大、ミス1回ごとに減り、下限を下回らない。</summary>
+    private int GetCurrentReward()
+    {
+        return Mathf.Max(successMinScore, successBaseScore - (missCount * successMissPenalty));
+    }
+
+    /// <summary>報酬表示用のTMPを（初回だけ）用意する。割り当て済みならそれを使い、無ければ timerText と同じ見た目で作る。</summary>
+    private void EnsureRewardUi()
+    {
+        if (rewardText == null && timerText != null)
+            rewardText = CreateRewardText("QteRewardText", rewardTextOffset, 0.8f);
+
+        if (rewardDecreaseText == null && timerText != null)
+        {
+            rewardDecreaseText = CreateRewardText("QteRewardDecreaseText", rewardTextOffset, 0.7f);
+            if (rewardDecreaseText != null) rewardDecreaseText.gameObject.SetActive(false);
+        }
+    }
+
+    private TextMeshProUGUI CreateRewardText(string objectName, Vector2 offset, float sizeRatio)
+    {
+        RectTransform src = timerText.rectTransform;
+        RectTransform parent = src.parent as RectTransform;
+        if (parent == null) return null;
+
+        var go = new GameObject(objectName, typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = src.anchorMin;
+        rect.anchorMax = src.anchorMax;
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(Mathf.Max(600f, src.sizeDelta.x * 3f), src.sizeDelta.y);
+        rect.localScale = src.localScale;
+        rect.anchoredPosition = src.anchoredPosition + offset;
+
+        TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
+        text.font = timerText.font;
+        text.fontSharedMaterial = timerText.fontSharedMaterial;
+        text.fontSize = timerText.fontSize * sizeRatio;
+        text.alignment = TextAlignmentOptions.Center;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.raycastTarget = false;
+        text.color = rewardColor;
+        return text;
+    }
+
+    /// <summary>ミスで報酬が減ったことを示す（報酬テキストを減少色で光らせ、「-1000」を下へ流す）。</summary>
+    private void ShowRewardDecrease(int amount)
+    {
+        EnsureRewardUi();
+        if (rewardDecreaseText == null || rewardText == null) return;
+
+        rewardFlashLeft = rewardFlashSeconds;
+        rewardDecreaseAge = 0f;
+        rewardDecreaseStart = rewardText.rectTransform.anchoredPosition + new Vector2(0f, -50f);
+        rewardDecreaseText.text = $"-{amount}";
+        rewardDecreaseText.color = rewardDecreaseColor;
+        rewardDecreaseText.rectTransform.anchoredPosition = rewardDecreaseStart;
+        rewardDecreaseText.gameObject.SetActive(true);
+    }
+
+    /// <summary>減少表示の動き（実時間。QTE中は timeScale=0 なので unscaled で進める）。</summary>
+    private void UpdateRewardAnimation()
+    {
+        if (rewardText != null)
+        {
+            if (rewardFlashLeft > 0f)
+            {
+                rewardFlashLeft = Mathf.Max(0f, rewardFlashLeft - Time.unscaledDeltaTime);
+                float k = (rewardFlashSeconds > 0f) ? rewardFlashLeft / rewardFlashSeconds : 0f;
+                rewardText.color = Color.Lerp(rewardColor, rewardDecreaseColor, k);
+            }
+            else
+            {
+                rewardText.color = rewardColor;
+            }
+        }
+
+        if (rewardDecreaseText != null && rewardDecreaseAge >= 0f)
+        {
+            rewardDecreaseAge += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(rewardDecreaseAge / rewardDecreaseSeconds);
+
+            rewardDecreaseText.rectTransform.anchoredPosition = rewardDecreaseStart + new Vector2(0f, -40f * t);
+            Color c = rewardDecreaseColor;
+            c.a = 1f - t * t;
+            rewardDecreaseText.color = c;
+
+            if (t >= 1f)
+            {
+                rewardDecreaseAge = -1f;
+                rewardDecreaseText.gameObject.SetActive(false);
+            }
+        }
+    }
+
     private void UpdateQteText()
     {
         if (!isQteActive) return;
         if (string.IsNullOrEmpty(currentSequence)) return;
+
+        // 獲得予定の報酬（本プレイのQTEだけ。チュートリアルなど報酬の無いQTEでは出さない）
+        if (rewardText != null)
+        {
+            rewardText.gameObject.SetActive(successRewardPending);
+            if (successRewardPending) rewardText.text = rewardLabel + GetCurrentReward();
+        }
 
         if (timerText != null)
         {
@@ -458,6 +593,25 @@ public class QTEManager : MonoBehaviour
         if (qteBack != null) qteBack.SetActive(visible);
         if (titleText != null) titleText.gameObject.SetActive(visible);
         if (timerText != null) timerText.gameObject.SetActive(visible);
+
+        if (visible)
+        {
+            EnsureRewardUi();
+            rewardFlashLeft = 0f;
+            rewardDecreaseAge = -1f;
+            if (rewardText != null)
+            {
+                rewardText.color = rewardColor;
+                rewardText.gameObject.SetActive(successRewardPending);
+            }
+        }
+        else
+        {
+            if (rewardText != null) rewardText.gameObject.SetActive(false);
+        }
+
+        // 減少表示は、QTEの開始・終了のどちらでも消す（前回の表示を持ち越さない）。
+        if (rewardDecreaseText != null) rewardDecreaseText.gameObject.SetActive(false);
 
         if (slots == null) return;
         foreach (QteSlot slot in slots)

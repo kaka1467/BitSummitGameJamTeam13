@@ -20,6 +20,13 @@ public class Item : MonoBehaviour
     public bool loopBgm = true;
     public float bgmVolume = 1f;
 
+    private void OnEnable()
+    {
+        // サイレンには、フィーバー中に効果が無効なことを示す「×」を付ける（表示の切り替えは FeverDisabledMark が行う）。
+        if (itemType == ItemType.BGM && GetComponent<FeverDisabledMark>() == null)
+            gameObject.AddComponent<FeverDisabledMark>();
+    }
+
     // アイテムの効果を適用するメソッド。ItemEffect はトリガー専任となり、このメソッドに処理を委譲する。
     // onFinished: HugeObstacle の場合、QTE の終了（成功・失敗・中断のいずれでも）後に呼ばれるコールバック。
     public void ApplyEffect(Collider2D other, System.Action onFinished = null)

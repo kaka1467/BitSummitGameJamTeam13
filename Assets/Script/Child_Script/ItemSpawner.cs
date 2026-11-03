@@ -292,11 +292,13 @@ public partial class ItemSpawner : MonoBehaviour
     private void OnEnable()
     {
         QTEManager.HugeQteFinished += OnHugeQteFinished;
+        ChildGamePause.Resumed += OnGameResumed;
     }
 
     private void OnDisable()
     {
         QTEManager.HugeQteFinished -= OnHugeQteFinished;
+        ChildGamePause.Resumed -= OnGameResumed;
     }
 
     private void OnHugeQteFinished(bool success)
@@ -312,6 +314,9 @@ public partial class ItemSpawner : MonoBehaviour
     {
         // ★ フレーム先頭で仮レコードをクリア
         pendingFrameRecords.Clear();
+
+        // 寝たふり中は子機全体が止まっている。出現（通常・パターン・巨大障害物・デバッグ）も行わない。
+        if (ChildGamePause.IsPaused) return;
 
         // デバッグ出現キー（数字1〜6）。通常スポーンの有効/無効(spawnEnabled)とは独立に動作する。
         HandleDebugSpawnKeys();

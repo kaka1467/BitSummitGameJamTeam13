@@ -138,11 +138,15 @@ public class ChildSleepLockApplier : MonoBehaviour
 
         ClearSleepImageTremor();
         Unsubscribe();
+
+        // このシーンの担当が居なくなるのに、停止だけが残らないようにする。
+        ChildGamePause.SetPaused(false);
     }
 
     private void OnDestroy()
     {
         Unsubscribe();
+        ChildGamePause.SetPaused(false);
     }
 
     /// <summary>
@@ -346,6 +350,12 @@ public class ChildSleepLockApplier : MonoBehaviour
     /// </summary>
     private void LateUpdate()
     {
+        // 寝たふり中は子機ゲーム全体を止める（移動・出現・接触・取得・得点）。
+        //  ・捕獲待機中は従来どおり入力ロックだけ（寝たふりより捕獲を優先する）。
+        //  ・結果確定後は止めない（結果処理が timeScale を管理する）。
+        //  ・他の処理が timeScale を戻してしまった場合も、停止中は 0 に保つ。
+        UpdateGamePause();
+
         if (_sleepImageRect == null)
         {
             ClearSleepImageTremor();
@@ -360,7 +370,8 @@ public class ChildSleepLockApplier : MonoBehaviour
             float burstSeconds = Mathf.Max(0f, sleepImageTremorBurstSeconds);
             float pauseSeconds = Mathf.Max(0f, sleepImageTremorPauseSeconds);
 
-            _sleepImageTremorCycleTime += Time.deltaTime;
+            // ゲーム停止中（timeScale=0）でも震えるよう、実時間で進める
+            _sleepImageTremorCycleTime += Time.unscaledDeltaTime;
 
             if (_sleepImageTremorInBurst)
             {
@@ -384,7 +395,7 @@ public class ChildSleepLockApplier : MonoBehaviour
 
             if (_sleepImageTremorInBurst && burstSeconds > 0f)
             {
-                _sleepImageTremorPhase += Time.deltaTime * Mathf.Max(0.1f, sleepImageTremorFrequency);
+                _sleepImageTremorPhase += Time.unscaledDeltaTime * Mathf.Max(0.1f, sleepImageTremorFrequency);
 
                 float amplitude = Mathf.Max(0f, sleepImageTremorAmplitude);
                 if (amplitude > 0f)
@@ -397,6 +408,25 @@ public class ChildSleepLockApplier : MonoBehaviour
         }
 
         ApplySleepImageTremorOffset(desiredOffset);
+    }
+
+    /// <summary>寝たふり中の子機ゲーム全体の停止／再開を、現在の状態に合わせる。</summary>
+    private void UpdateGamePause()
+    {
+        GameManager gm = GameManager.instance;
+        bool resultFixed = gm != null && gm.IsGameOver;
+        bool shouldPause = _sleepEffective && !_captureWaitLocked && !resultFixed;
+
+        if (shouldPause != ChildGamePause.IsPaused)
+        {
+            ChildGamePause.SetPaused(shouldPause);
+            if (showDebugLogs)
+                Debug.Log($"[ChildSleepLockApplier] 子機ゲーム全体を{(shouldPause ? "停止" : "再開")}しました。", this);
+        }
+        else if (shouldPause && !Mathf.Approximately(Time.timeScale, 0f))
+        {
+            Time.timeScale = 0f;
+        }
     }
 
     /// <summary>
