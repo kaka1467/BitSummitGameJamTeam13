@@ -67,7 +67,8 @@ public class MotherSuspicionSystem : MonoBehaviour
     [Header("部屋チェックのタイミング")] [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")] [SerializeField]
     private float peekDurationBase = 3f;
 
-    [Tooltip("RushInでドアに到着してから覗き続ける秒数。通常の本チェック時間とは別管理。")] [SerializeField]
+    [Tooltip("RushIn（大きな音／0キー）で、ドア覗き演出の開始から覗き続ける秒数（既定6秒）。" +
+             "この時間の経過でドア閉鎖・帰路へ進む。通常の本チェック時間（peekDurationBase + gauge）とは別管理。")] [SerializeField]
     private float rushInPeekDurationSeconds = 6f;
 
     [Tooltip("本チェック（全開）イベントで、プレイヤーが枕で眠るまで親機が部屋に留まる時間。 " +
@@ -86,8 +87,6 @@ public class MotherSuspicionSystem : MonoBehaviour
     [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")] [SerializeField]
     private float leaveAfterSleepDelayMax = 6f;
 
-    [Tooltip("部屋からの退室を要求してから退室完了（OnExitedRoom）を待つ最大秒数。超過した場合は従来どおりドアを閉じて終了する。")] [SerializeField]
-    private float roomExitSafetyTimeout = 15f;
 
     // ── 部屋侵入時の疑惑 ──────────────────────────────────────────────────────
     [Header("部屋侵入時の疑惑")] [Tooltip("親機が部屋に入り、プレイヤーが睡眠中でないときに発生する3回の増加の間隔（秒）。")] [SerializeField]
@@ -241,17 +240,13 @@ public class MotherSuspicionSystem : MonoBehaviour
     private Coroutine _dummyResetCoroutine;
     private Coroutine _primaryResetCoroutine;
     private Coroutine _continuousRoomCoroutine;
-    private Coroutine _rushInPeekCoroutine;
     private bool _hasPermanentGameOver;
     private float _activePeekDuration = 3f;
 
-    // ── 部屋入室（案B）：疑惑開始を「部屋入室完了」にずらすための状態 ────────────
-    private bool _roomEntryAccepted; // このサイクルでRequestRoomEntry()が受理されたか
-    private bool _roomEntryStarted; // OnEnteredRoom後に疑惑コルーチンを開始済みか
-    private bool _roomExitCompleted; // OnExitedRoomを受信済みか
-    private bool _approachEventsSubscribed; // MotherApproachControllerの入退室イベントを購読中か
-    private int _roomCycleId; // OnApproachReachedDoorのたびに増えるサイクル識別子
-    private int _primaryResetCycleId; // HandlePrimaryResetSequence開始時点の_roomCycleId
+    // ── サイクル識別子・イベント購読 ──────────────────────────────────────────
+    private bool _approachEventsSubscribed; // MotherApproachControllerのイベントを購読中か
+    private int _primaryCycleId; // OnApproachReachedDoorのたびに増えるサイクル識別子
+    private int _primaryResetCycleId; // HandlePrimaryResetSequence開始時点の_primaryCycleId
     private float _approachSpeed = 1.5f;
     private bool _animatorWarningLogged;
     public float CurrentApproachSpeed => _approachSpeed;
@@ -338,11 +333,6 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (motherAnimator == null && approachController != null)
             motherAnimator = approachController.MotherAnimator;
 
-        // 廊下ルートの移行判定を、経路を使うどの処理よりも先に確定させる。
-        // 母子で共有するルート設定を、Start実行順に依存させないための前倒し。
-        if (approachController != null)
-            approachController.MigrateLegacyHallwayPoints();
-
         _approachSpeed = initialApproachSpeed;
         // 再プレイで RushIn の速度上書き状態を持ち越さない。
         ClearRushInSpeedState();
@@ -352,7 +342,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             HandleWalkingStateChanged(false);
         }
 
-        // 部屋入室（案B）：入室完了／退室完了の通知を受け取る。
+        // 庭覗きイベントの通知を受け取る。
         // approachControllerはコード上で解決するため、OnEnable()ではなくStart()末尾で購読する。
         SubscribeApproachEvents();
 
@@ -765,100 +755,25 @@ public class MotherSuspicionSystem : MonoBehaviour
             "[MotherSuspicionSystem] 母親AnimatorまたはWalk/Peekパラメータが未設定のため、アニメーション制御をスキップします。",
             this);
     }
-    // ── 部屋入室（案B）：MotherApproachControllerイベントの購読 ────────────────
+    // ── 庭覗きイベントの購読 ──────────────────────────────────────────────────
 
     private void SubscribeApproachEvents()
     {
         if (_approachEventsSubscribed || approachController == null) return;
 
-        approachController.onEnteredRoom.AddListener(HandleEnteredRoom);
-        approachController.onExitedRoom.AddListener(HandleExitedRoom);
         approachController.onGardenPeekStarted.AddListener(HandleGardenPeekStarted);
 
         _approachEventsSubscribed = true;
-        Debug.Log(
-            "[PD] Subscribed to MotherApproachController events (OnEnteredRoom/OnExitedRoom/OnGardenPeekStarted)");
+        Debug.Log("[PD] Subscribed to MotherApproachController events (OnGardenPeekStarted)");
     }
 
     private void UnsubscribeApproachEvents()
     {
         if (!_approachEventsSubscribed || approachController == null) return;
 
-        approachController.onEnteredRoom.RemoveListener(HandleEnteredRoom);
-        approachController.onExitedRoom.RemoveListener(HandleExitedRoom);
         approachController.onGardenPeekStarted.RemoveListener(HandleGardenPeekStarted);
 
         _approachEventsSubscribed = false;
-    }
-
-    /// <summary>
-    /// MotherApproachControllerから、親機が部屋内部への移動を完了し入室したときに呼び出される。
-    /// ここで初めて部屋侵入時の疑惑（バースト／継続疑惑／睡眠退出待ち）を開始する。
-    /// </summary>
-    private void HandleEnteredRoom()
-    {
-        Debug.Log(
-            $"[PD] OnEnteredRoom | roomEntryAccepted={_roomEntryAccepted} roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
-
-        // 片付け演出のサイクル中は、部屋入室時の疑惑を開始しない（重複防止）。
-        if (IsChoreOverrideActive)
-        {
-            Debug.Log("[PD] OnEnteredRoom: ignored — 片付け演出のサイクル中");
-            return;
-        }
-
-        if (isCaught || _hasPermanentGameOver) return;
-
-        if (approachController != null && approachController.IsRushIn)
-        {
-            StartRushInPeek();
-            return;
-        }
-
-        // 入室が受理されていないサイクル（ダミー／覗き／通過／突入など）では疑惑を開始しない。
-        if (!_roomEntryAccepted)
-        {
-            Debug.Log("[PD] OnEnteredRoom: ignored — room entry was not accepted for this cycle");
-            return;
-        }
-
-        if (_roomEntryStarted) return;
-        _roomEntryStarted = true;
-
-        StartPrimaryRoomSuspicion();
-    }
-
-    /// <summary>
-    /// MotherApproachControllerから、親機が部屋内部から退室しdoorPointへ戻ったときに呼び出される。
-    /// 退室順序の最終段（ドアを閉じる→ResetCycle→EndWarningSequence）をここで実行する。
-    /// </summary>
-    private void HandleExitedRoom()
-    {
-        Debug.Log(
-            $"[PD] OnExitedRoom | roomEntryStarted={_roomEntryStarted} isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver}");
-        _roomExitCompleted = true;
-
-        // 片付け演出のサイクル中は、通常のサイクル終了処理を行わない（片付け側が管理する）。
-        if (IsChoreOverrideActive)
-        {
-            Debug.Log("[PD] OnExitedRoom: ignored — 片付け演出のサイクル中");
-            return;
-        }
-
-        // ゲームオーバー確定後はドア状態・疑惑状態を変更しない（従来のサイクル終了と同じ扱い）。
-        if (isCaught || _hasPermanentGameOver) return;
-
-        warningSystem?.PlayMainDoorClose();
-
-        if (targetDoorController != null)
-            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-
-        ResetCycle();
-
-        if (warningSystem != null)
-            warningSystem.EndWarningSequence();
-
-        Debug.Log("[PD] OnExitedRoom: cycle finished — door closed, warning sequence ended");
     }
 
 
@@ -952,20 +867,11 @@ public class MotherSuspicionSystem : MonoBehaviour
             Debug.Log($"[PD] Branch: fallback random isDummy={isDummy} (dummyProbability={dummyProbability:F2})");
         }
 
-        // 部屋入室（案B）のサイクル状態を初期化する（前サイクルの状態を持ち越さない）。
+        // サイクル状態を初期化する（前サイクルの状態を持ち越さない）。
         // 新しいサイクルが始まったことを、進行中のHandlePrimaryResetSequenceにも伝える。
-        _roomCycleId++;
-        _roomEntryAccepted = false;
-        _roomEntryStarted = false;
-        _roomExitCompleted = false;
+        _primaryCycleId++;
         // 無敵による「捕獲抑止」の印もサイクル開始で解除する（次イベントへ持ち越さない）。
         _captureSuppressedDuringPeek = false;
-
-        // Primaryの場合のみ、親機へ部屋入室を要求する。
-        // 受理された場合は、疑惑（バースト／継続疑惑）の開始を「部屋入室完了（OnEnteredRoom）」まで遅らせる。
-        // 受理されなかった場合は、従来どおりドア停止時点で疑惑を開始する。
-        if (primary && approachController != null)
-            _roomEntryAccepted = approachController.RequestRoomEntry();
 
         TriggerFinalEvent(primary: primary);
     }
@@ -1007,59 +913,6 @@ public class MotherSuspicionSystem : MonoBehaviour
             motherChoreController.AbortChore("ゲームオーバー");
     }
 
-    private void StartRushInPeek()
-    {
-        Debug.Log($"[PD] RushIn reached door — starting dedicated peek for {rushInPeekDurationSeconds:F1}s");
-
-        _roomCycleId++;
-        _roomEntryAccepted = false;
-        _roomEntryStarted = false;
-        _roomExitCompleted = false;
-        isMotherLookingNow = true;
-
-        if (targetDoorController != null)
-            targetDoorController.SetDoorState(DoorController.DoorState.Peek);
-        if (approachController != null)
-            TriggerPeekAnimation("Peek_Door");
-
-        // 覗きの再生を確定させてから、歩行状態を反映し直す（Walkで上書きさせない）。
-        RefreshWalkingAnimationState();
-
-        warningSystem?.PlayMainDoorOpen();
-        if (caughtReactionController != null)
-            caughtReactionController.OnMotherCheck(isFullCheck: false);
-
-        bool sleeping = sleepingController != null && sleepingController.IsSleeping;
-        if (!sleeping && motherGauge != null)
-            StartCoroutine(RoomEntryBurstSuspicionCoroutine());
-        else
-            Debug.Log("[PD] RushIn suspicion burst skipped — player is sleeping or gauge is unavailable");
-
-        if (_rushInPeekCoroutine != null)
-            StopCoroutine(_rushInPeekCoroutine);
-        _rushInPeekCoroutine = StartCoroutine(RushInPeekCoroutine());
-    }
-
-    private IEnumerator RushInPeekCoroutine()
-    {
-        yield return new WaitForSeconds(Mathf.Max(0f, rushInPeekDurationSeconds));
-
-        if (_hasPermanentGameOver || isCaught)
-        {
-            _rushInPeekCoroutine = null;
-            yield break;
-        }
-
-        warningSystem?.PlayMainDoorClose();
-        if (targetDoorController != null)
-            targetDoorController.SetDoorState(DoorController.DoorState.Closed);
-
-        ResetCycle();
-        if (warningSystem != null)
-            warningSystem.EndWarningSequence();
-        _rushInPeekCoroutine = null;
-    }
-
     /// <summary>
     /// 子機の大きな音のアイテムが発生したとき（LOUD_ITEM 受信時）に、メインスレッドで1回だけ呼ばれる。
     ///
@@ -1084,6 +937,22 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         if (isCaught || _hasPermanentGameOver) return;
+
+        // 本プレイ終了（時間切れ・通常結果確定を含む）後は新規反応・ゲージ加算を行わない。
+        //  ・既存の捕獲ガード（isCaught / _hasPermanentGameOver）は維持する。
+        //  ・片付け中の反応仕様・フィーバー・有効判定・通知重複の扱いは変更しない。
+        //  ・TriggerSoon へ経路は付け替えない。
+        //  ・warningSystem の有無で判定を飛ばさない（共通窓口へ委譲）。
+        var autoStart = ParentGameTimeManager.EvaluateAutoStart();
+        if (autoStart == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+            autoStart == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+        {
+            if (autoStart == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+                ParentGameTimeManager.LogUnavailableRejectOnce();
+
+            Debug.Log("[PD] Loud item ignored — 本プレイ終了／開始不可のため新規反応しません");
+            return;
+        }
 
         // イベントが進行中か（実際の警告／RushInシーケンス状態で判定）。
         bool eventInProgress = warningSystem != null && warningSystem.isWarningActive;
@@ -1242,20 +1111,12 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (caughtReactionController != null)
             caughtReactionController.OnMotherCheck(isFullCheck: true);
 
-        // 部屋入室（案B）：入室が受理された場合は、入室完了（OnEnteredRoom）まで疑惑を開始しない。
-        if (_roomEntryAccepted)
-        {
-            Debug.Log(
-                "[PD] Room entry accepted — suspicion burst/continuous will start on OnEnteredRoom (mother is walking into the room)");
-            return;
-        }
-
         StartPrimaryRoomSuspicion();
     }
 
     /// <summary>
     /// 部屋侵入時の疑惑（3回のバースト／継続疑惑／睡眠退出待ち）を開始する。
-    /// 従来はドア停止時に呼ばれていたが、部屋入室が受理された場合は入室完了時（OnEnteredRoom）に呼ばれる。
+    /// ドア停止時に呼ばれる。
     /// 加算量・間隔・ゲームオーバー条件は従来と同じ。
     /// </summary>
     private void StartPrimaryRoomSuspicion()
@@ -1296,12 +1157,31 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         // このシーケンスが担当するサイクルを記録する。
         // 別のサイクル（強制突入など）が始まった場合は、以降のドア操作をそのサイクルへ譲る。
-        _primaryResetCycleId = _roomCycleId;
+        _primaryResetCycleId = _primaryCycleId;
 
         float elapsed = 0f;
         float timeout = Mathf.Max(0f, roomCheckSafetyTimeout);
         // 無敵ONでも「設定された覗き時間」は再生する（覗きを途中で打ち切らないための経過時間）。
         float peekElapsed = 0f;
+
+        // 【無敵モード】この終了が「無敵用覗き時間の経過」で成立したか。
+        //  ・true のときは、睡眠由来の退出遅延（leaveAfterSleepDelay）を適用しない。
+        //    退出遅延は「プレイヤーが眠ってから親機が退出するまで」の設定であり、
+        //    無敵中は眠っていないため成立しない。
+        //  ・通常の睡眠終了・捕獲抑止終了では従来どおり退出遅延を適用する。
+        bool exitedByInvinciblePeekTime = false;
+
+        // 【RushIn（大きな音／0キー）】このサイクルが突入として開始されたか。
+        //  ・BeginApproach→ResetStateFlags で IsRushIn は false になるため、IsRushIn では判定しない。
+        //  ・開始時のサイクル識別（Controller が BeginApproach で捕捉した値）を読み取り専用で参照する。
+        bool isRushInCycle = approachController != null && approachController.CycleStartedAsRushIn;
+
+        // 【RushIn】この終了が「RushInの覗き時間（rushInPeekDurationSeconds）の経過」で成立したか。
+        bool exitedByRushInPeekTime = false;
+
+        // 【RushIn】覗き開始の記録（この時点＝onStoppedAtDoor/Peek開始からの経過で6秒を数える。毎フレームは出さない）。
+        if (isRushInCycle)
+            Debug.Log($"[PD] RushIn：覗き開始 — ここから {rushInPeekDurationSeconds:F1}s で帰路へ進みます（寝たふり・無敵に依存しない）");
 
         while (true)
         {
@@ -1311,21 +1191,31 @@ public class MotherSuspicionSystem : MonoBehaviour
                 yield break;
             }
 
-            if (_roomCycleId != _primaryResetCycleId)
+            if (_primaryCycleId != _primaryResetCycleId)
             {
                 Debug.Log("[PD] HandlePrimaryResetSequence: a newer cycle has started — aborting");
                 _primaryResetCoroutine = null;
                 yield break;
             }
 
-            // 部屋からの退室が既に完了している場合（親機側の滞在タイムアウト等）は、
-            // ドア閉・ResetCycle・EndWarningSequenceはOnExitedRoom側で完了済みなので打ち切る。
-            if (_roomExitCompleted)
+            // 【RushIn 専用】大きな音からの突入は「速く来る→6秒覗く→帰る」。
+            //  ・起点は「覗き演出の開始」＝このシーケンスの開始（onStoppedAtDoor→Peek開始）からの経過。
+            //  ・寝たふりで短縮しない／無敵・捕獲抑止でも延長しない（正常終了は常に同じ rushInPeekDurationSeconds）。
+            //  ・捕獲・ゲームオーバー確定は上の早期returnで優先される（ここへは来ない）。
+            //  ・ここでは全開・入室・強制捕獲を行わない（既存の帰路経路へ進むだけ）。
+            if (isRushInCycle)
             {
-                Debug.Log(
-                    "[PD] HandlePrimaryResetSequence: room exit already completed — aborting (finished by OnExitedRoom)");
-                _primaryResetCoroutine = null;
-                yield break;
+                if (peekElapsed >= Mathf.Max(0f, rushInPeekDurationSeconds))
+                {
+                    Debug.Log($"[PD] RushIn：覗き開始から {rushInPeekDurationSeconds:F1}s 経過（実測={peekElapsed:F2}s）" +
+                              " — ドア閉鎖・帰路へ進みます（寝たふり・無敵には依存しない）");
+                    exitedByRushInPeekTime = true;
+                    break;
+                }
+
+                peekElapsed += Time.deltaTime;
+                yield return null;
+                continue;   // 睡眠・無敵・安全タイムアウトの分岐は RushIn では使わない
             }
 
             // 【無敵モード】通常は「捕獲（ゲームオーバー）」で終わる状況では、捕獲が終了の役割を担う。
@@ -1352,6 +1242,7 @@ public class MotherSuspicionSystem : MonoBehaviour
                     Debug.Log($"[PD] 無敵モード中でプレイヤーが起きているため（通常なら捕獲に至る状況）、" +
                               $"設定された覗き時間 {_activePeekDuration:F1}s の経過後に通常の覗き終了処理" +
                               "（退出・ドア閉め・帰路・終了通知）へ進みます");
+                    exitedByInvinciblePeekTime = true;
                     break;
                 }
             }
@@ -1380,6 +1271,20 @@ public class MotherSuspicionSystem : MonoBehaviour
             ? Mathf.Clamp01((float)motherGauge.currentGauge / motherGauge.maxGauge)
             : 0f;
         float leaveDelay = Mathf.Max(0f, Mathf.Lerp(leaveAfterSleepDelay, leaveAfterSleepDelayMax, suspicionFraction));
+
+        // 【無敵モード / RushIn】覗き時間（無敵用 or RushInの6秒）で終了した場合は、睡眠由来の退出遅延を適用しない。
+        //  ・眠っていないため「眠ってから退出するまで」の遅延は成立しない。
+        //  ・遅延を残すと、覗き時間ぶんドア前で立ち止まったままになる。
+        //  ・通常の睡眠終了・捕獲抑止終了では従来どおり遅延を適用する（通常モードの退出遅延は変更しない）。
+        //  ・演出（ドア開放・覗き・スライド）は既に完了しているため開始処理は飛ばさず、
+        //    既存の帰路経路（帰路→非表示→位置復帰→終了通知）をそのまま使う。
+        if (exitedByInvinciblePeekTime || exitedByRushInPeekTime)
+        {
+            Debug.Log($"[PD] HandlePrimaryResetSequence: {(exitedByRushInPeekTime ? "RushInの覗き時間" : "無敵用覗き時間")}で終了したため、" +
+                      $"睡眠由来の退出遅延 {leaveDelay:F1}s を適用しません（即時に帰路・非表示・位置復帰・終了通知へ進みます）");
+            leaveDelay = 0f;
+        }
+
         Debug.Log($"[PD] HandlePrimaryResetSequence: leave delay={leaveDelay:F1}s (suspicion={suspicionFraction:F2})");
         if (leaveDelay > 0f)
             yield return new WaitForSeconds(leaveDelay);
@@ -1390,75 +1295,11 @@ public class MotherSuspicionSystem : MonoBehaviour
             yield break;
         }
 
-        if (_roomCycleId != _primaryResetCycleId)
+        if (_primaryCycleId != _primaryResetCycleId)
         {
             Debug.Log("[PD] HandlePrimaryResetSequence: a newer cycle has started — aborting");
             _primaryResetCoroutine = null;
             yield break;
-        }
-
-        if (_roomExitCompleted)
-        {
-            // 滞在タイムアウト等で先に退室が完了している — 終了処理はOnExitedRoom側で完了済み。
-            Debug.Log(
-                "[PD] HandlePrimaryResetSequence: room exit already completed — skipping door close (finished by OnExitedRoom)");
-            _primaryResetCoroutine = null;
-            yield break;
-        }
-
-        // 部屋入室（案B）：入室済みの場合は、親機へ退室を要求し、doorPointへ戻るまで待つ。
-        // ドアを閉じる／ResetCycle／EndWarningSequenceは退室完了（OnExitedRoom）側で実行する。
-        if (_roomEntryStarted && approachController != null)
-        {
-            if (approachController.RequestLeaveRoom())
-            {
-                Debug.Log("[PD] RequestLeaveRoom sent — waiting for the mother to leave the room");
-
-                float exitElapsed = 0f;
-                float exitTimeout = Mathf.Max(0f, roomExitSafetyTimeout);
-
-                while (!_roomExitCompleted && !_hasPermanentGameOver && !isCaught
-                       && _roomCycleId == _primaryResetCycleId)
-                {
-                    if (exitTimeout > 0f)
-                    {
-                        exitElapsed += Time.deltaTime;
-                        if (exitElapsed >= exitTimeout)
-                        {
-                            Debug.LogWarning(
-                                $"[PD] OnExitedRoom not received within {exitTimeout:F1}s — closing the door anyway");
-                            break;
-                        }
-                    }
-
-                    yield return null;
-                }
-
-                if (_hasPermanentGameOver || isCaught)
-                {
-                    _primaryResetCoroutine = null;
-                    yield break;
-                }
-
-                if (_roomCycleId != _primaryResetCycleId)
-                {
-                    // 新しいサイクル（強制突入など）が始まった — ドア操作はそのサイクルに任せる。
-                    Debug.Log("[PD] HandlePrimaryResetSequence: a newer cycle has started — aborting");
-                    _primaryResetCoroutine = null;
-                    yield break;
-                }
-
-                if (_roomExitCompleted)
-                {
-                    // 退室完了 — 終了処理はOnExitedRoom側で完了済み。
-                    _primaryResetCoroutine = null;
-                    yield break;
-                }
-            }
-            else
-            {
-                Debug.LogWarning("[PD] RequestLeaveRoom was rejected — falling back to the legacy door close");
-            }
         }
 
         warningSystem?.PlayMainDoorClose();
@@ -1592,7 +1433,12 @@ public class MotherSuspicionSystem : MonoBehaviour
             return false;
         }
 
-        if (isCaught || _hasPermanentGameOver) return false;
+        if (isCaught || _hasPermanentGameOver)
+        {
+            // 開始失敗の理由を判別できるように1回だけ記録する（毎フレームは出さない）。
+            Debug.Log("[PD] TriggerCatFeintEvent: 捕獲／ゲームオーバー確定のため猫フェイントを開始しません");
+            return false;
+        }
 
         if (catFeintController == null)
         {
@@ -2274,9 +2120,6 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// <summary>無敵で捕獲が抑止された印が立っているか（診断用・読み取り専用）。</summary>
     public bool CaptureSuppressedDuringPeek => _captureSuppressedDuringPeek;
 
-    /// <summary>このサイクルで部屋入室の疑惑を開始済みか（診断用・読み取り専用）。</summary>
-    public bool IsRoomEntryStarted => _roomEntryStarted;
-
     /// <summary>無敵状態を設定する。ON/OFFのログと表示を更新する。</summary>
     public void SetInvincible(bool value, string reason = null)
     {
@@ -2316,7 +2159,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         Debug.Log($"[MotherSuspicion] {trigger} 時点のフェーズ | 警告中={IsWarningSequenceActive} ルート={route} | " +
                   $"ゲージ={gauge}/{max} 捕獲={isCaught} 永久GO={_hasPermanentGameOver} ドア覗き={isMotherLookingNow} " +
-                  $"部屋入室開始={_roomEntryStarted} 捕獲抑止印={_captureSuppressedDuringPeek} | {approach}");
+                  $"捕獲抑止印={_captureSuppressedDuringPeek} | {approach}");
 
         if (approachController != null &&
             (approachController.IsApproaching || approachController.IsReturningHome ||
@@ -2498,12 +2341,6 @@ public class MotherSuspicionSystem : MonoBehaviour
             Debug.Log("[PD] 庭覗き中の継続疑惑 stopped — ResetCycle");
         }
 
-        if (_rushInPeekCoroutine != null)
-        {
-            StopCoroutine(_rushInPeekCoroutine);
-            _rushInPeekCoroutine = null;
-        }
-
         // サイクルリセット時も、片付け視線の加算コルーチン・ハンドルを残さない（無効化・再プレイ対策）。
         StopChoreLookSuspicion();
 
@@ -2537,7 +2374,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             // 覗き中（＝通常は捕獲で終わる覗き）に抑止した場合は、通常の覗き終了処理
             // （ドア閉め・帰路・終了通知）へ進めるための印を立てる。
             // 捕獲は実行していないので isCaught / ゲームオーバーは立てない。
-            if (_primaryResetCoroutine != null || _roomEntryStarted)
+            if (_primaryResetCoroutine != null)
             {
                 _captureSuppressedDuringPeek = true;
                 Debug.Log("[PD] OnPlayerCaught: 無敵モード中のため捕獲を抑止 — 通常の覗き終了処理（ドア閉め・帰路・終了通知）へ進めます。" +

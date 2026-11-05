@@ -11,8 +11,8 @@ using UnityEngine.Serialization;
 ///   廊下ルート（TurnPointの前後で可変）：
 ///     startPoint → hallwayPointsBeforeTurn[]（登録順）→ turnPoint（旋回）
 ///     → hallwayPointsAfterTurn[]（登録順）
-///   DoorPeek：上記の廊下ルート → doorPoint（停止・扉前で向きを合わせる）
-///             →（PDが入室を要求した場合のみ）roomEntryPoints[]へ入室 → doorPointへ復帰（退室）
+///   DoorPeek：上記の廊下ルート → doorPoint（停止・扉前で向きを合わせる・横スライド・覗き）
+///             → 帰路（画面外到達点へ移動し非表示）
 ///   フェイントA（HallwayPassBy）：廊下ルート → doorPoint（停止せず通過・ドア操作なし）
 ///             → hallwayPassByPoint（画面外で停止）→ onPassedByDoor（PD.OnApproachPassedBy経由でサイクル終了）
 ///   庭側素通り（GardenPassBy）：TurnPointでドア側経路から分岐し、gardenRoutePoints[]の中間ウェイポイントを
@@ -20,10 +20,6 @@ using UnityEngine.Serialization;
 ///   庭側覗き（GardenPeek）：GardenPassByと同じ経路でGardenPeekPointまで進み、そこで停止して
 ///             gardenPeekPoint.rotationのY角（＝覗き位置Waypointの向き）へ回転し、
 ///             Peek_Windowアニメーションを再生する。覗き時間経過後はGardenPassByPointへ進む。
-///
-/// 部屋入室（任意）：
-///   PDがOnStoppedAtDoorの処理中にRequestRoomEntry()を呼んだときのみ、ドア停止後にroomEntryPoints[]へ進む。
-///   入室完了でonEnteredRoom、退室完了（doorPoint復帰）でonExitedRoomを発生する。
 ///
 /// 向きの仕様（X/Z固定、Yのみ）【新仕様：Waypoint到着時だけ旋回する】：
 ///   1. 移動中は母親の向きを変更しない（位置のみ更新）。
@@ -49,10 +45,7 @@ using UnityEngine.Serialization;
 ///
 ///   適用先：hallwayPointsBeforeTurn / turnPoint / hallwayPointsAfterTurn /
 ///           doorPoint / gardenRoutePoints / gardenPeekPoint / gardenPassByPoint /
-///           roomEntryPoints / hallwayPassByPoint
-///
-///   例外：退室開始時の向きだけは固定角度 roomExitYaw のまま（対応する向き指定Waypointが
-///         存在しないため。詳細は RoomPhaseCoroutine のコメント参照）。
+///           hallwayPassByPoint
 ///
 /// 突入モード（IsRushIn=true）：
 ///   大きな音による突入でStartApproachDoorOnly()を呼ぶ前にMotherApproachWarningが設定する。
@@ -61,69 +54,18 @@ using UnityEngine.Serialization;
 public class MotherApproachController : MonoBehaviour
 {
     // ── ウェイポイント ────────────────────────────────────────────────────────
-    [Header("ウェイポイント")] [Tooltip("親機が出現し、リセット時に戻る場所。")]
+    [Header("ウェイポイント")]
+    [Tooltip("待機位置（default point）。イベント終了後、モデル非表示後にこの位置・向きへ戻る。" +
+             "シーンの 'Default Point'（Waypoints 配下）を割り当てる。" +
+             "位置は「生座標＋motherHeightOffset（1回だけ）」の既存規約で適用する。" +
+             "未設定の場合は原点へ移動せず、警告して位置復帰を省略する。")]
     public Transform startPoint;
 
-    // ── 廊下ルート（TurnPointの前後で可変） ─────────────────────────────────
-    // 経路は Inspector から自由に追加・削除・並べ替えできる List で指定する。
-    //
-    // 旧個別フィールド（hallwayPoint1〜3）からの移行は2種類ある。混同しないこと：
-    //   ・【編集時の移行】Editor メニュー「Tools/親機ルート: 選択中を移行」
-    //       → 編集時のオブジェクトを実際に書き換え、Undo・Dirty・PrefabOverride を伴う。
-    //         ユーザーがシーンを保存して初めて永続化される（保存は自動では行わない）。
-    //   ・【実行時の互換移行】MigrateLegacyHallwayPoints()
-    //       → 未移行の古いシーンを動かすための、そのPlay限りの読み替え。
-    //         メモリ上だけで完結し、編集時のシーンへは書き戻さない（Play停止で元に戻る）。
-    // 編集時に移行済み（hallwayRouteMigrated == true）なら、実行時は List が唯一の設定元になる。
-    [Header("廊下ルート（TurnPointより前）")]
-    [Tooltip("TurnPointより前に、登録順に通過するウェイポイント。\n" +
-             "ここが経路の唯一の設定元。空にするとTurnPointより前の経路を持たない（旧値は復活しない）。")]
-    public List<Transform> hallwayPointsBeforeTurn = new List<Transform>();
-
-    [Header("廊下ルート（TurnPoint）")]
-    [Tooltip("方向転換地点。到着後、このTransformのローカル＋Z（青い矢印）が示す方向へ滑らかに回転する。\n" +
-             "未設定の場合は警告を出して廊下ルートを安全に中断する。")]
-    public Transform turnPoint;
-
-    [Header("廊下ルート（TurnPointより後）")]
-    [Tooltip("TurnPointより後に、登録順に通過するウェイポイント（ドア確認ルートのみ使用）。\n" +
-             "ここが経路の唯一の設定元。空にするとTurnPointより後の経路を持たない（旧値は復活しない）。")]
+    // ── 廊下フェイント・通過区間 ──────────────────────────────────────────────
+    [Header("廊下フェイント：通過ポイント")]
+    [Tooltip("廊下フェイント（HallwayPassBy）および片付け・猫フェイントで通過するウェイポイント（登録順）。\n" +
+             "保存済み参照を保つためフィールド名は hallwayPointsAfterTurn を維持しています。")]
     public List<Transform> hallwayPointsAfterTurn = new List<Transform>();
-
-    /// <summary>
-    /// 旧個別フィールド（hallwayPoint1〜3）から List への移行が【編集時に確定して保存された】か。
-    /// true のとき、List が経路の唯一の設定元になる（空リストも「空」として尊重する）。
-    ///
-    /// この値は通常のInspectorでは表示しない（[SerializeField, HideInInspector]）。
-    /// 編集時に移行するには Editor メニュー「Tools/親機ルート: 選択中を移行」を使う（Assets/Script/Editor/ParentApproachRouteMigrator.cs）。
-    ///
-    /// 【重要】実行時に MigrateLegacyHallwayPoints() がこの値を true にしても、
-    /// それはメモリ上だけで、編集時のシーン/Prefabへは書き戻されない（Playを止めると元に戻る）。
-    /// 永続化するには Editor メニューから移行し、ユーザー自身がシーン/Prefabを保存する必要がある。
-    /// </summary>
-    [SerializeField, HideInInspector] private bool hallwayRouteMigrated;
-
-    /// <summary>
-    /// 未移行のシーンを実行したときだけ行う「実行時の互換移行」を有効にするか。
-    /// OFFのときは実行時に旧フィールドを一切見ず、List だけを使う。
-    /// （編集時に移行済みなら、この値に関係なく List がそのまま使われる）
-    /// </summary>
-    [Tooltip("未移行のシーンを実行したときだけ、旧hallwayPoint1〜3をListへ読み替える実行時の互換処理。\n" +
-             "編集時に移行済み（Editorメニューで移行）なら、この設定に関係なくListがそのまま使われます。")]
-    [SerializeField]
-    private bool allowRuntimeCompatMigration = true;
-
-    // ── 旧フィールド（互換用・非表示） ──────────────────────────────────────
-    // 既存シーン／Prefabの参照を消さないため、フィールド名は変更せず残す。
-    // 実際の経路は上記の List に自動移行される（Inspector では折りたたみ表示）。
-    [HideInInspector] [Tooltip("（互換用）TurnPointより前の1つ目のウェイポイント。通常は hallwayPointsBeforeTurn を使用する。")]
-    public Transform hallwayPoint1;
-
-    [HideInInspector] [Tooltip("（互換用）TurnPointより前の2つ目のウェイポイント。通常は hallwayPointsBeforeTurn を使用する。")]
-    public Transform hallwayPoint2;
-
-    [HideInInspector] [Tooltip("（互換用）TurnPointより後のウェイポイント。通常は hallwayPointsAfterTurn を使用する。")]
-    public Transform hallwayPoint3;
 
     [Tooltip("ドア前の位置。到着時にこのTransformのローカル＋Z（青い矢印）が示す方向へ回転する。")]
     public Transform doorPoint;
@@ -140,6 +82,37 @@ public class MotherApproachController : MonoBehaviour
 
     [Tooltip("庭側ルートの中間ウェイポイント（TurnPointからGardenPeekPointへ向かう順番に設定）。未設定の場合はGardenPassByを開始しない。")]
     public Transform[] gardenRoutePoints;
+
+    // ── 短縮接近の配置地点（既存の2地点をイベント間で共用する） ──────────────
+    //  ・DoorPeek / HallwayPassBy / 片付け → doorPeekShortApproachPlacementPoint（ドア側共通）
+    //  ・GardenPeek / GardenPassBy           → gardenPeekShortApproachPlacementPoint（庭側共通）
+    //  ・イベントごとに配置地点を増やさない（新しい配置Transformをユーザーへ要求しない）。
+    //  ・フィールド名は保存済み参照を保つため変更しない（Unityはフィールド名で直列化する）。
+    //  ・取得は ResolveShortApproachPlacementPoint() の1箇所だけを通す
+    //    （事前検証・開始直前検証・実際の配置で同じ地点を使う）。
+    [Header("庭側共通の配置地点（GardenPeek / GardenPassBy）")]
+    [Tooltip("庭側共通：GardenPeek / GardenPassBy の短縮接近で母親を配置する不可視地点" +
+             "（gardenPeekPoint近傍・カメラ視錐台外）。未設定なら庭側の短縮接近は開始しない。")]
+    [SerializeField] private Transform gardenPeekShortApproachPlacementPoint;
+
+    [Tooltip("発見可能になるまでの最低反応時間（秒）。予兆開始からこの秒数に満たない場合だけ不足分を待つ" +
+             "（既存待機に常時加算するものではない）。0以下は設定異常として扱う。")]
+    [SerializeField, Min(0f)] private float gardenPeekShortApproachMinReactionSeconds = 2f;
+
+    [Header("ドア側共通の配置地点（DoorPeek / HallwayPassBy / 片付け）")]
+    [Tooltip("ドア側共通：DoorPeek / HallwayPassBy / 片付け の短縮接近で母親を配置する不可視地点" +
+             "（doorPoint近傍・カメラ視錐台外・廊下側）。未設定ならドア側の短縮接近は開始しない。")]
+    [SerializeField] private Transform doorPeekShortApproachPlacementPoint;
+
+    /// <summary>ドア側共通の短縮接近配置地点（DoorPeek / HallwayPassBy / 片付け / 猫フェイントで共用）。</summary>
+    public Transform DoorPeekShortApproachPlacementPoint => doorPeekShortApproachPlacementPoint;
+
+    [Tooltip("DoorPeekの発見可能になるまでの最低反応時間（秒）。予兆開始からこの秒数に満たない場合だけ不足分を待つ" +
+             "（既存待機に常時加算するものではない）。0以下は設定異常として扱う。")]
+    [SerializeField, Min(0f)] private float doorPeekShortApproachMinReactionSeconds = 2f;
+
+    /// <summary>この実行の予兆開始時刻（実行に紐づくローカル情報。共有時刻に依存しない）。</summary>
+    private float _shortApproachForeshadowStartTime;
 
     // ── 帰路（Door Peek / Window Peek 終了後） ───────────────────────────────
     // 通常のPeek終了後、その場で帰る向きへ旋回し、帰路Listを順に通って
@@ -176,10 +149,6 @@ public class MotherApproachController : MonoBehaviour
              "未設定なら帰路を開始せず、警告を出して安全に非表示・終了する。")]
     public Transform hallwayPassThroughPoint;
 
-    [Tooltip("帰路の最終点に到着してモデルを非表示にしたときに発生する。\n" +
-             "（サイクル終了は既存の ResetCycle／EndWarningSequence／ResetApproach が担当する）")]
-    public UnityEvent onReturnedHome;
-
     // ── Pass By（素通り）の立ち止まり ────────────────────────────────────────
     // 2キー（Hallway Pass By）／5キー（Garden Pass By）だけで使用する。
     // 往路リストの「最後の有効な点」へ到着 → 向き合わせ → 指定秒数立ち止まり →
@@ -200,22 +169,10 @@ public class MotherApproachController : MonoBehaviour
     [SerializeField, Min(0f)]
     private float gardenPassByPauseSeconds = 1f;
 
-    // ── 部屋内部（入室） ──────────────────────────────────────────────────────
-    [Header("部屋内部（入室）")] [Tooltip("部屋内部の立ち位置。doorPointから近い順に設定する。未設定または空の場合は入室せず、従来どおりdoorPointで停止する。")]
-    public Transform[] roomEntryPoints;
-
-    [Tooltip("部屋から出るとき（doorPointへ戻るとき）に親機が向くY角度（度）。入室時はdoorPointでの向き（Y=90）を維持する。")] [SerializeField]
-    private float roomExitYaw = -90f;
-
-    [Tooltip("部屋内に留まれる最大秒数。この時間を超えると、退室要求がなくても自動的に退室する。0以下で無効（無制限）。")] [SerializeField]
-    private float roomStayTimeoutSeconds = 20f;
-
     // ── 片付け専用ルート（MotherChoreController から開始される） ──────────────
     //   既存の廊下ルート（hallwaypeak）と固定地点はそのまま使い、途中地点だけを
     //   この List<Transform> で追加指定する。既存の廊下／庭ルートと同じ
     //   「Inspectorで登録順に通過」する形式。
-    //   roomEntryPoints（入室ルート）とは独立で、片付けではこちらだけを使う
-    //   （専用経路と roomEntryPoints を続けて再生しない）。
     [Header("片付け専用ルート")]
     [Tooltip("行きのドア開け地点①。既存廊下ルート（HallwayPoint_4 まで）の後にここへ到着し、" +
              "Door_Open を再生してドアを全開にする。必須参照（未設定なら片付けを開始しない）。")]
@@ -225,9 +182,8 @@ public class MotherApproachController : MonoBehaviour
              "必須参照（未設定なら片付けを開始しない）。")]
     public Transform choreApproachPoint_2;
 
-    [Tooltip("行きの自由な途中地点。ドア閉め後に登録順に通過してから chorePoint へ向かう。\n" +
-             "0個なら chorePoint へ直接進む。途中地点では停止・Idle待機をしない（通過のみ）。\n" +
-             "null要素は警告してスキップする。固定のドア操作地点（_1/_2）とは役割を分けて維持する。")]
+    [Tooltip("行きの自由な追加中継地点。ドア閉め（choreApproachPoint_2）後に登録順に通過してから chorePoint へ向かう。\n" +
+             "0件なら chorePoint へ直接移動する。途中地点では停止・Idle待機をせず通過のみ行う。")]
     public List<Transform> choreApproachPoints = new List<Transform>();
 
     [Tooltip("片付けを行う固定地点（choreapproachpoint）。ここで停止して向きを合わせ、Chore を開始する。未設定なら片付けを開始しない。")]
@@ -273,7 +229,8 @@ public class MotherApproachController : MonoBehaviour
     [Tooltip("歩く親機モデルのルートGameObject。接近開始時にSetActive(true)にする。ここではSetActive(false)を呼ばず、PDがrealMotherObject経由で非表示を管理する。")]
     public GameObject motherModelRoot;
 
-    [Tooltip("任意：motherModelRootだけでは不十分な場合に有効／無効にする子Renderer（例：LODの子）。")]
+    [Tooltip("任意：motherModelRoot の配下以外にある子Rendererや、LOD等で個別に表示切替が必要なRendererを指定する。\n" +
+             "空の場合は motherModelRoot の SetActive および配下の全Rendererの自動取得で一括制御される。")]
     public Renderer[] motherModelRenderers;
 
     // ── 演出 ──────────────────────────────────────────────────────────────────
@@ -381,33 +338,27 @@ public class MotherApproachController : MonoBehaviour
     [Tooltip("大きな音による突入ルートで、OnStoppedAtDoorイベント前にドアで停止する秒数。")]
     public float rushInPauseAtDoorSeconds = 0.2f;
 
-    // ── イベント ──────────────────────────────────────────────────────────────
-    [Header("イベント")] [FormerlySerializedAs("OnApproachStarted")]
+    // ── イベント（コード購読専用のためInspectorから非表示） ──────────────────
+    [HideInInspector, FormerlySerializedAs("OnApproachStarted")]
     public UnityEvent onApproachStarted;
 
-    [FormerlySerializedAs("OnReachedDoor")]
+    [HideInInspector, FormerlySerializedAs("OnReachedDoor")]
     public UnityEvent onReachedDoor;
 
-    [FormerlySerializedAs("OnStoppedAtDoor")]
+    [HideInInspector, FormerlySerializedAs("OnStoppedAtDoor")]
     public UnityEvent onStoppedAtDoor;
 
-    [FormerlySerializedAs("OnPassedByDoor")]
+    [HideInInspector, FormerlySerializedAs("OnPassedByDoor")]
     public UnityEvent onPassedByDoor;
 
-    [Tooltip("親機が部屋内部への入室を完了したときに発生する（入室が受理されたサイクルのみ）。")]
-    public UnityEvent onEnteredRoom;
-
-    [Tooltip("親機が部屋内部からの退室を完了し、doorPointへ戻ったときに発生する。")]
-    public UnityEvent onExitedRoom;
-
-    [Tooltip("親機がGardenPeekPointで覗き待機を開始したときに発生する。庭覗き中の継続疑惑（MotherSuspicionSystem）の開始トリガー。")]
+    [HideInInspector, Tooltip("親機がGardenPeekPointで覗き待機を開始したときに発生する。庭覗き中の継続疑惑（MotherSuspicionSystem）の開始トリガー。")]
     public UnityEvent onGardenPeekStarted;
 
     // ── 片付け専用ルートのイベント・状態 ─────────────────────────────────────
-    [Tooltip("片付けルートで chorePoint へ到着し、向き合わせが完了したときに発生する（演技開始の合図）。")]
+    [HideInInspector, Tooltip("片付けルートで chorePoint へ到着し、向き合わせが完了したときに発生する（演技開始の合図）。")]
     public UnityEvent onChoreArrived;
 
-    [Tooltip("片付けルートで choreReturnPoint_2 へ到着し、ドアを閉め終えたときに発生する。")]
+    [HideInInspector, Tooltip("片付けルートで choreReturnPoint_2 へ到着し、ドアを閉め終えたときに発生する。")]
     public UnityEvent onChoreCompleted;
 
     /// <summary>片付け専用ルートが進行中か（行き〜帰りの完了まで）。</summary>
@@ -468,6 +419,14 @@ public class MotherApproachController : MonoBehaviour
     /// <summary>大きな音による突入開始前にMotherApproachWarningが設定する。移動ループ音を抑制し、rushInPauseAtDoorSecondsを使用する。</summary>
     public bool IsRushIn { get; set; }
 
+    /// <summary>
+    /// このサイクルが突入（大きな音＝RushIn）として開始されたか（読み取り専用）。
+    ///  ・BeginApproach() で捕捉する（ResetStateFlags() で IsRushIn が false になっても残る）。
+    ///  ・覗き終了側が「IsRushIn ではなくこの値」で RushIn を識別するために公開する。
+    ///  ・IsRushIn を true のまま維持する修正はしない（帰路要求の受理条件を壊さないため）。
+    /// </summary>
+    public bool CycleStartedAsRushIn => _cycleStartedAsRushIn;
+
     // ── 非公開 ───────────────────────────────────────────────────────────────
     private Coroutine _approachCoroutine;
     private float _fixedPitch;
@@ -514,16 +473,12 @@ public class MotherApproachController : MonoBehaviour
     /// </summary>
     private Coroutine _rotateCoroutine;
 
-    // 部屋入室（案B）の状態
     private bool _cycleStartedAsRushIn; // このサイクルが突入（大きな音）として開始されたか — BeginApproach()で捕捉する
-    private bool _doorRoutineActive; // DoorRoutine()が実行中か（入室要求の受付条件）
+    private bool _doorRoutineActive; // DoorRoutine()が実行中か
 
     // 【LOUD_ITEM 即時中断用】見た目を消すために無効化したRenderer（ShowMotherModel/ResetStateFlagsで戻す）。
     //   モデルルートの SetActive(false) は使わない（Animator を止めないため）。
     private Renderer[] _immediateHiddenRenderers;
-    private bool _roomEntryRequested; // OnStoppedAtDoor中にPDから入室要求を受けたか
-    private bool _roomPhaseActive; // 入室フェーズ（部屋内部への移動〜doorPoint復帰）が進行中か
-    private bool _leaveRoomRequested; // 部屋内部からの退室要求を受けたか
     private bool _routeExecutionFailed; // 必須条件に失敗して現在のルートを中断したか
 
     // 片付け専用ルートの状態
@@ -536,159 +491,20 @@ public class MotherApproachController : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  廊下ルートの解決（List ＋ 旧個別フィールドの互換）
+    //  廊下ルートの解決
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>このインスタンスで実行時の互換移行を実施済みか（多重実行を避けるためのメモリ上フラグ）。</summary>
-    private bool _hallwayRouteResolved;
-
-    /// <summary>編集時に移行済みか（Editorツール・テストから参照するための読み取り専用公開）。</summary>
-    public bool IsHallwayRouteMigrated => hallwayRouteMigrated;
-
     /// <summary>
-    /// 【Editor専用】旧フィールドから List への移行を、編集時のオブジェクトへ反映する。
-    /// 呼び出し側（Editorツール）が Undo・SetDirty・PrefabOverride を担当する。
-    ///
-    /// 戻り値：実際に List へ追加した点数（0 なら「既に移行済み」または「旧フィールドが空」）。
-    /// 既存の List 要素は変更・削除しない（重複追加もしない）。
-    /// 片側だけ未設定の場合は、その側だけを取り込む。
-    /// </summary>
-    public int ApplyEditTimeMigration()
-    {
-        int migrated = 0;
-
-        if (hallwayPointsBeforeTurn == null) hallwayPointsBeforeTurn = new List<Transform>();
-        if (hallwayPointsAfterTurn == null) hallwayPointsAfterTurn = new List<Transform>();
-
-        // 未移行のときだけ旧フィールドを取り込む（移行済みなら旧フィールドは読まない）。
-        if (!hallwayRouteMigrated)
-        {
-            // TurnPointより前：旧フィールドを登録順（hallwayPoint1 → hallwayPoint2）に追加する。
-            // 既にListに入っている点は追加しない（重複防止）。
-            if (hallwayPoint1 != null && !hallwayPointsBeforeTurn.Contains(hallwayPoint1))
-            {
-                hallwayPointsBeforeTurn.Add(hallwayPoint1);
-                migrated++;
-            }
-
-            if (hallwayPoint2 != null && !hallwayPointsBeforeTurn.Contains(hallwayPoint2))
-            {
-                hallwayPointsBeforeTurn.Add(hallwayPoint2);
-                migrated++;
-            }
-
-            // TurnPointより後：旧フィールドを追加する。
-            if (hallwayPoint3 != null && !hallwayPointsAfterTurn.Contains(hallwayPoint3))
-            {
-                hallwayPointsAfterTurn.Add(hallwayPoint3);
-                migrated++;
-            }
-
-            hallwayRouteMigrated = true;
-        }
-
-        return migrated;
-    }
-
-    /// <summary>
-    /// 【Editor専用】旧フィールドから List を作り直す（既存の List 内容を破棄する）。
-    /// 「移行はしたが経路を旧値の状態からやり直したい」場合の明示的な操作で、
-    /// 通常の ApplyEditTimeMigration() とは別物。呼び出し側が事前に警告すること。
-    /// </summary>
-    public int RebuildFromLegacyFields()
-    {
-        hallwayPointsBeforeTurn = new List<Transform>();
-        hallwayPointsAfterTurn = new List<Transform>();
-
-        if (hallwayPoint1 != null) hallwayPointsBeforeTurn.Add(hallwayPoint1);
-        if (hallwayPoint2 != null) hallwayPointsBeforeTurn.Add(hallwayPoint2);
-        if (hallwayPoint3 != null) hallwayPointsAfterTurn.Add(hallwayPoint3);
-
-        hallwayRouteMigrated = true;
-        _hallwayRouteResolved = true;
-
-        return hallwayPointsBeforeTurn.Count + hallwayPointsAfterTurn.Count;
-    }
-
-    /// <summary>
-    /// 実行時の互換移行。未移行の古いシーンを実行するためだけの処理で、
-    /// メモリ上の List を埋めるだけで、編集時のシーン/Prefabへは一切書き戻さない。
-    ///
-    ///   ・編集時に移行済み（hallwayRouteMigrated == true）→ List を唯一の設定元としてそのまま使う
-    ///     （空リストも「空」という設定として尊重し、旧フィールドは読まない）
-    ///   ・未移行 → allowRuntimeCompatMigration が ON のときだけ旧フィールドを List へ読み替える
-    ///
-    /// 呼び出し元は MotherSuspicionSystem／MotherApproachController／CatFeintController のいずれでも、
-    /// 判定がシリアライズ値のみなので、呼び出し順によって結果が変わらない。
-    /// </summary>
-    public void MigrateLegacyHallwayPoints()
-    {
-        _hallwayRouteResolved = true;
-
-        if (hallwayPointsBeforeTurn == null) hallwayPointsBeforeTurn = new List<Transform>();
-        if (hallwayPointsAfterTurn == null) hallwayPointsAfterTurn = new List<Transform>();
-
-        // 編集時に移行済み：Listが唯一の設定元（空でもそのまま尊重し、旧フィールドは読まない）。
-        if (hallwayRouteMigrated) return;
-
-        // 実行時の互換移行を無効化している場合は何もしない（Listだけを使う）。
-        if (!allowRuntimeCompatMigration) return;
-
-        int migrated = 0;
-
-        // TurnPointより前：旧フィールドを登録順（hallwayPoint1 → hallwayPoint2）に取り込む。
-        if (hallwayPoint1 != null && !hallwayPointsBeforeTurn.Contains(hallwayPoint1))
-        {
-            hallwayPointsBeforeTurn.Add(hallwayPoint1);
-            migrated++;
-        }
-
-        if (hallwayPoint2 != null && !hallwayPointsBeforeTurn.Contains(hallwayPoint2))
-        {
-            hallwayPointsBeforeTurn.Add(hallwayPoint2);
-            migrated++;
-        }
-
-        // TurnPointより後：旧フィールドを取り込む。
-        if (hallwayPoint3 != null && !hallwayPointsAfterTurn.Contains(hallwayPoint3))
-        {
-            hallwayPointsAfterTurn.Add(hallwayPoint3);
-            migrated++;
-        }
-
-        if (migrated > 0)
-        {
-            Debug.LogWarning($"[MotherApproachController] 未移行のシーンのため、実行時だけ旧hallwayPoint1〜3をListへ読み替えました" +
-                             $"（取り込み={migrated}点）。これはメモリ上だけで、編集時のシーンには保存されません。" +
-                             "永続化するには Editor メニュー「Tools/親機ルート: 選択中を移行」を実行し、シーンを保存してください。", this);
-        }
-    }
-
-    /// <summary>
-    /// 廊下ルート（TurnPointより前）の通過順リストを取得する。
-    /// 猫フェイントが母親とまったく同じ経路を辿れるよう、MotherApproachController側の設定をそのまま使う。
-    ///
-    /// 経路取得の入口として、未解決ならここで1度だけ実行時の互換移行を実施する。
-    /// これにより「猫と母親のどちらが先に取得しても」「Startを経由せず取得しても」、
-    /// 初期化前の空Listを返さず、同じ経路設定になる（実行順設定には依存しない）。
-    /// </summary>
-    public List<Transform> GetHallwayPointsBeforeTurn() => BuildHallwayPath(hallwayPointsBeforeTurn);
-
-    /// <summary>
-    /// 廊下ルート（TurnPointより後）の通過順リストを取得する（ドア確認ルート／猫フェイント用）。
-    /// 取得順に依存しないよう、こちらも入口で1度だけ解決する（GetHallwayPointsBeforeTurn参照）。
+    /// 廊下フェイント通過順リストを取得する（ドア確認ルート／猫フェイント用）。
     /// </summary>
     public List<Transform> GetHallwayPointsAfterTurn() => BuildHallwayPath(hallwayPointsAfterTurn);
 
     /// <summary>
     /// 経路を「通過する順」の一時リストで返す。
-    /// 未解決なら先に実行時の互換移行を実施する（＝経路取得のどの入口から呼ばれても初期化前の空Listを返さない）。
     /// 同じTransformの連続登録は後に来る方を残す（同じ点で停止し続けるのを防ぐ）。
     /// </summary>
     private List<Transform> BuildHallwayPath(List<Transform> points)
     {
-        if (!_hallwayRouteResolved) MigrateLegacyHallwayPoints();
-
         var path = new List<Transform>();
         if (points == null) return path;
 
@@ -727,9 +543,6 @@ public class MotherApproachController : MonoBehaviour
 
     private void Start()
     {
-        // 実行時の互換移行を1回だけ実施する（編集時に移行済みなら List がそのまま使われる）。
-        MigrateLegacyHallwayPoints();
-
         CacheFaceLightIntensity();
         // 起動時は母親モデル非表示のため、グループ（A)(B）とも消灯しておく。
         SetMotherStageLighting(false);
@@ -785,6 +598,12 @@ public class MotherApproachController : MonoBehaviour
     }
 
     /// <summary>ドア停止ルートを開始する：親機がdoorPointまで歩き、部屋の方向を向いて停止する。突入ルートでも使用する。</summary>
+    /// <summary>
+    /// DoorPeek（通常のドア前確認）を開始する。
+    ///  ・正式方式（短縮接近）：不可視地点へ配置してから doorPoint へ短く接近する（長い往路は省略する）。
+    ///  ・配置地点が未設定、または最低反応時間が不正な場合は「利用不可」として開始しない
+    ///    （旧方式へはフォールバックしない）。
+    /// </summary>
     public bool StartApproachDoorOnly()
     {
         if (IsApproaching || IsReturningHome)
@@ -794,10 +613,31 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        if (!ValidateWaypoints()) return false;
+        // ── 開始直前検証（ドア側共通の配置地点＋DoorPeekに必要な経路）──
+        //  ・灯り・足音は MotherApproachWarning 側で既に流れているため、ここで拒否したら
+        //    呼び出し側が自分の予兆を閉じる（本体開始の失敗を成功として扱わない）。
+        //  ・短縮接近では startPoint を使わないため、startPoint 未設定は開始条件にしない。
+        if (!IsShortApproachRouteReady(ShortApproachRouteKind.DoorPeek, out string doorPeekRejectReason))
+        {
+            Debug.LogWarning($"[MotherApproachController] DoorPeek：開始拒否 — {doorPeekRejectReason}", this);
+            return false;
+        }
 
-        BeginApproach();
-        return true;
+        if (!IsValidMinReactionSeconds(doorPeekShortApproachMinReactionSeconds))
+        {
+            Debug.LogWarning("[MotherApproachController] DoorPeek：開始拒否 — 最低反応時間が不正（NaN/Infinity/0以下）", this);
+            return false;
+        }
+
+        // 予兆開始時刻が未設定なら下限判定が成立しないため開始しない。
+        if (_shortApproachForeshadowStartTime <= 0f)
+        {
+            Debug.LogWarning("[MotherApproachController] DoorPeek：開始拒否 — 予兆開始時刻が未設定", this);
+            return false;
+        }
+
+        // BeginApproach が拒否した場合は開始APIも false を返す（開始成功の偽装をしない）。
+        return BeginApproach(shortApproachRoute: true);
     }
 
     /// <summary>
@@ -816,18 +656,15 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        if (hallwayPassByPoint == null)
+        // ── 開始直前検証（ドア側共通の配置地点＋HallwayPassByに必要な経路）──
+        //  ・ホール側の長い往路は使わない。配置後は「見せたい通過区間」へ直接つなぐ。
+        if (!IsShortApproachRouteReady(ShortApproachRouteKind.HallwayPassBy, out string hallwayPassByRejectReason))
         {
-            Debug.LogWarning(
-                "[MotherApproachController] hallwayPassByPointが未設定のためHallwayPassByを開始しません。SceneでTransformを割り当ててください。",
-                this);
+            Debug.LogWarning($"[MotherApproachController] HallwayPassBy：開始拒否 — {hallwayPassByRejectReason}", this);
             return false;
         }
 
-        if (!ValidateWaypoints()) return false;
-
-        BeginApproach(hallwayPassBy: true);
-        return true;
+        return BeginApproach(hallwayPassBy: true, shortApproachRoute: true);
     }
 
     /// <summary>
@@ -842,26 +679,15 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        if (gardenPassByPoint == null)
+        // ── 開始直前検証（庭側共通の配置地点＋GardenPassByに必要な経路）──
+        //  ・庭側の長い往路は使わない。配置後は「見せたい通過区間」へ直接つなぐ。
+        if (!IsShortApproachRouteReady(ShortApproachRouteKind.GardenPassBy, out string gardenPassByRejectReason))
         {
-            Debug.LogWarning(
-                "[MotherApproachController] gardenPassByPointが未設定のためGardenPassByを開始しません。SceneでTransformを割り当ててください。",
-                this);
+            Debug.LogWarning($"[MotherApproachController] GardenPassBy：開始拒否 — {gardenPassByRejectReason}", this);
             return false;
         }
 
-        if (!HasValidGardenRoutePoints())
-        {
-            Debug.LogWarning(
-                "[MotherApproachController] gardenRoutePointsが未設定のためGardenPassByを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。",
-                this);
-            return false;
-        }
-
-        if (!ValidateWaypoints()) return false;
-
-        BeginApproach(gardenPassBy: true);
-        return true;
+        return BeginApproach(gardenPassBy: true, shortApproachRoute: true);
     }
 
     /// <summary>
@@ -882,6 +708,12 @@ public class MotherApproachController : MonoBehaviour
     /// 庭側覗きを開始する。GardenPassByと同じ経路でGardenPeekPointまで進み、停止して覗き方向へ回転する。
     /// 覗き時間（MotherApproachWarning の庭覗き時間 + GardenPeekPoint到着時のゲージ値。到着時に一度だけ取得）経過後、
     /// GardenPassByPointまで進み、onPassedByDoorを一度だけ発生させて既存の終了処理でStartPointへ復帰する。
+    ///
+    /// 【正式方式（短縮接近）】
+    ///  ・不可視地点（gardenPeekShortApproachPlacementPoint）へ配置してから gardenPeekPoint へ短く接近する。
+    ///  ・自動・手動4キーの両方で同じ実行処理を使う（旧方式の長い往路は使わない）。
+    ///  ・配置地点が未設定、または最低反応時間が不正な場合は「利用不可」として開始しない
+    ///    （旧方式へはフォールバックしない）。
     /// </summary>
     public bool StartApproachGardenPeek()
     {
@@ -892,80 +724,113 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        if (gardenPeekPoint == null)
+        // ── 開始直前検証（庭側共通の配置地点＋GardenPeekに必要な経路）──
+        //  ・庭ルートの中間ウェイポイント（gardenRoutePoints）は GardenPeek では使わない。
+        //  ・配置地点が未設定、または最低反応時間が NaN/±Infinity/0以下 なら開始しない。
+        if (!IsShortApproachRouteReady(ShortApproachRouteKind.GardenPeek, out string gardenPeekRejectReason))
         {
-            Debug.LogWarning(
-                "[MotherApproachController] gardenPeekPointが未設定のためGardenPeekを開始しません。SceneでTransformを割り当ててください。", this);
+            Debug.LogWarning($"[MotherApproachController] GardenPeek：開始拒否 — {gardenPeekRejectReason}", this);
             return false;
         }
 
-        if (!HasValidGardenRoutePoints())
+        // 予兆開始時刻は MotherApproachWarning が「この実行の予兆開始時」に設定済み
+        // （MarkShortApproachForeshadowStart → その後 StartApproachGardenPeek の順で呼ばれる）。
+        //  ・ここでリセットすると時刻が失われるため、リセットしない。
+        //  ・未設定（0以下）は異常として開始しない（下限判定が成立しないため）。
+        if (_shortApproachForeshadowStartTime <= 0f)
         {
-            Debug.LogWarning(
-                "[MotherApproachController] gardenRoutePointsが未設定のためGardenPeekを開始しません。SceneでTurnPoint→GardenPeekPoint間の中間ウェイポイントを順番に割り当ててください。",
-                this);
+            Debug.LogWarning("[MotherApproachController] GardenPeek：開始拒否 — 予兆開始時刻が未設定" +
+                             "（下限判定が成立しないため利用不可）", this);
             return false;
         }
 
-        if (!ValidateWaypoints()) return false;
+        return BeginApproach(gardenPeek: true, shortApproachRoute: true);
+    }
 
-        BeginApproach(gardenPeek: true);
+    /// <summary>
+    /// 予兆開始時刻を、この実行に紐づけて記録する（MotherApproachWarning から呼ぶ）。
+    ///  ・共有時刻（別イベントで上書きされ得るもの）には依存しない。
+    ///  ・Time.time を使い、既存待機（WaitForSeconds）と同じ時間基準にする。
+    /// </summary>
+    public void MarkShortApproachForeshadowStart(float foreshadowStartTime)
+    {
+        _shortApproachForeshadowStartTime = foreshadowStartTime;
+    }
+
+    /// <summary>
+    /// 自動開始で GardenPeek を利用できるか（P15 の候補構築から参照される）。
+    ///  ・庭側共通の配置地点が設定済みで、最低反応時間が正の有限値のときだけ true。
+    ///  ・副作用なし（読み取りのみ）。
+    /// </summary>
+    public bool IsGardenPeekAvailableForAutoStart()
+    {
+        return IsShortApproachConfigurationValid() &&
+               IsShortApproachRouteReady(ShortApproachRouteKind.GardenPeek, out _);
+    }
+
+    /// <summary>
+    /// 短縮接近の設定が有効か（庭側共通の配置地点あり・最低反応時間が正の有限値）。
+    ///  ・配置地点が向きを持たない（真上・真下）場合も配置できないため false。
+    ///  ・試作スイッチの値は見ない（デバッグ起動でも同じ検証を使うため）。
+    ///  ・副作用なし（読み取りのみ）。
+    /// </summary>
+    public bool IsShortApproachConfigurationValid()
+    {
+        if (!IsShortApproachPlacementReady(ShortApproachRouteKind.GardenPeek)) return false;
+        if (!IsValidMinReactionSeconds(gardenPeekShortApproachMinReactionSeconds)) return false;
         return true;
     }
 
     /// <summary>
-    /// 親機を部屋内部へ入室させる要求。OnStoppedAtDoorの処理中（＝ドア停止ルート実行中）にPDから呼ばれる。
-    /// 受理した場合は、ドア停止後にroomEntryPoints[]へ移動し、入室完了でonEnteredRoomを発生する。
-    /// 次のいずれかに該当する場合はfalseを返し、呼び出し側は従来どおりの即時処理を行う：
-    ///   ドア停止ルートが実行中ではない／突入（IsRushIn）サイクルである／roomEntryPointsが未設定または空である。
+    /// 最低反応時間として有効か（正の有限値のみ許可。NaN・±Infinity・0以下は不正）。
     /// </summary>
-    public bool RequestRoomEntry()
+    private static bool IsValidMinReactionSeconds(float seconds)
     {
-        if (!_doorRoutineActive)
-        {
-            Debug.Log("[MotherApproachController] RequestRoomEntry 却下：ドア停止ルートが実行中ではない");
-            return false;
-        }
+        if (float.IsNaN(seconds)) return false;
+        if (float.IsInfinity(seconds)) return false;
+        return seconds > 0f;
+    }
 
-        if (_cycleStartedAsRushIn)
-        {
-            Debug.Log("[MotherApproachController] RequestRoomEntry 却下：突入サイクルのため入室しない");
-            return false;
-        }
+    /// <summary>この実行の予兆開始時刻（短縮接近の下限判定に使う。読み取り専用）。</summary>
+    public float ShortApproachForeshadowStartTime => _shortApproachForeshadowStartTime;
 
-        if (CountValidRoomEntryPoints() == 0)
-        {
-            // 未設定／全要素Noneの場合はログを出さず、従来どおりdoorPointで停止する挙動へフォールバックする。
-            // 有効なTransformが1個以上あるときだけ入室を受理する。
-            return false;
-        }
-
-        if (doorPoint == null)
-        {
-            Debug.LogWarning("[MotherApproachController] RequestRoomEntry 却下：doorPointがNULLです。", this);
-            return false;
-        }
-
-        _roomEntryRequested = true;
-        Debug.Log($"[MotherApproachController] RequestRoomEntry 受理 | roomEntryPoints={roomEntryPoints.Length}");
-        return true;
+    /// <summary>
+    /// DoorPeek を利用できるか（P15 の候補構築から参照される）。
+    ///  ・ドア側共通の配置地点が設定済みで、DoorPeekの最低反応時間が正の有限値のときだけ true。
+    ///  ・副作用なし（読み取りのみ）。
+    /// </summary>
+    public bool IsDoorPeekAvailableForAutoStart()
+    {
+        return IsValidMinReactionSeconds(doorPeekShortApproachMinReactionSeconds) &&
+               IsShortApproachRouteReady(ShortApproachRouteKind.DoorPeek, out _);
     }
 
     /// <summary>
-    /// 親機を部屋内部から退室させる要求。入室フェーズが進行中の場合のみ受理する。
-    /// 親機は入室時と逆順でdoorPointへ戻り、退室完了でonExitedRoomを発生する。
+    /// HallwayPassBy を利用できるか（P15 の候補構築から参照される）。
+    ///  ・ドア側共通の配置地点と hallwayPassByPoint が設定済みのときだけ true。
+    ///  ・予兆10秒が反応時間を保証するため、下限時間の追加設定は持たない。
     /// </summary>
-    public bool RequestLeaveRoom()
+    public bool IsHallwayPassByAvailableForAutoStart()
     {
-        if (!_roomPhaseActive)
-        {
-            Debug.Log("[MotherApproachController] RequestLeaveRoom 却下：入室フェーズが進行中ではない");
-            return false;
-        }
+        return IsShortApproachRouteReady(ShortApproachRouteKind.HallwayPassBy, out _);
+    }
 
-        _leaveRoomRequested = true;
-        Debug.Log("[MotherApproachController] RequestLeaveRoom 受理 — 部屋から退室する");
-        return true;
+    /// <summary>
+    /// GardenPassBy を利用できるか（P15 の候補構築から参照される）。
+    ///  ・庭側共通の配置地点と、通過区間（gardenRoutePoints の有効要素）が設定済みのときだけ true。
+    /// </summary>
+    public bool IsGardenPassByAvailableForAutoStart()
+    {
+        return IsShortApproachRouteReady(ShortApproachRouteKind.GardenPassBy, out _);
+    }
+
+    /// <summary>
+    /// 片付けを利用できるか（開始前の検証から参照される）。
+    ///  ・ドア側共通の配置地点と、片付けに必要な固定地点が設定済みのときだけ true。
+    /// </summary>
+    public bool IsChoreAvailableForAutoStart()
+    {
+        return IsShortApproachRouteReady(ShortApproachRouteKind.Chore, out _);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1058,13 +923,22 @@ public class MotherApproachController : MonoBehaviour
             return false;
         }
 
-        if (startPoint == null)
+        // ── 開始直前検証（ドア側共通の配置地点＋片付けの必須参照）──
+        //  ・短縮接近では startPoint を使わないため、startPoint 未設定は開始条件にしない。
+        //  ・設定不備は、灯り・足音を開始した後の本体開始で初めて分からないよう、
+        //    ChoreController 側でも灯りより前に IsShortApproachRouteReady(Chore) で確認している。
+        if (!IsShortApproachRouteReady(ShortApproachRouteKind.Chore, out string choreRejectReason))
         {
-            Debug.LogWarning("[MotherApproachController] startPoint が未設定のため片付けルートを開始できません。", this);
+            Debug.LogWarning($"[MotherApproachController] 片付け：開始拒否 — {choreRejectReason}", this);
             return false;
         }
 
-        BeginApproach(choreRoute: true);
+        if (!BeginApproach(choreRoute: true, shortApproachRoute: true))
+        {
+            Debug.LogWarning("[MotherApproachController] 片付け：開始拒否 — BeginApproach が拒否しました");
+            return false;
+        }
+
         Debug.Log("[MotherApproachController] StartChoreRoute：検証OK — 片付けルート（行き）を開始します");
         return true;
     }
@@ -1130,10 +1004,7 @@ public class MotherApproachController : MonoBehaviour
         IsApproaching = false;
         IsInHallwayPhase = false;
         IsChoreRouteActive = false;
-        _roomPhaseActive = false;
         _doorRoutineActive = false;
-        _roomEntryRequested = false;
-        _leaveRoomRequested = false;
         _isGardenPeeking = false;
         _choreRouteAborted = true;      // 片付けルートの各判定が真でも移動しないように
         _routeExecutionFailed = false;  // 演出の移動が失敗扱いで止まらないように
@@ -1305,33 +1176,19 @@ public class MotherApproachController : MonoBehaviour
         // ドア通過の記憶を新しいサイクルで初期化する（前サイクルの通過を持ち越さない）。
         IsChoreDoorPassed = false;
 
-        // ══ 行き：hallwaypeak と同じ既存廊下ルートを歩く ═══════════════════════
-        //   startPoint → hallwayPointsBeforeTurn → turnPoint → hallwayPointsAfterTurn（HallwayPoint_4 まで）
-        //   → choreApproachPoint_1（Door_Open で全開）→ choreApproachPoint_2（ドア閉め）
-        //   → choreApproachPoints（自由通過）→ chorePoint（停止・向き合わせ）
+        // ══ 行き：ドア側共通の配置地点から、片付けの経路へ接続する ══════════════
+        //   配置地点（doorPeekShortApproachPlacementPoint）→ choreApproachPoint_1（Door_Open で全開）
+        //   → choreApproachPoint_2（ドア閉め）→ choreApproachPoints（自由通過）→ chorePoint（停止・向き合わせ）
+        // ※ 長い往路（startPoint → turnPoint → hallwayPointsAfterTurn）は歩かない。
         // ※ doorPoint は通らない（行きのドア操作は choreApproachPoint_1/_2 で行う）。
         // ※ Door_Peek は再生しない（片付けのドア開けは Door_Open 専用）。
         // ※ roomEntryPoints（通常の入室ルート）は使わない。
-        Debug.Log($"[MotherApproachController] 片付けルート：行き開始（既存廊下ルートを再利用）| chorePoint='{chorePoint.name}'");
-
-        // 1) 廊下ルート（TurnPointまで）。既存の DoorRoutine と同じ移動処理。
-        yield return MoveToTurnPoint();
-        if (_choreRouteAborted || _routeExecutionFailed)
-        {
-            FinishChoreRouteAborted();
-            yield break;
-        }
-
-        // 2) TurnPointより後の廊下（HallwayPoint_3 / HallwayPoint_4）を通過する。
-        yield return MoveAlongHallwayAfterTurn();
-        if (_choreRouteAborted || _routeExecutionFailed)
-        {
-            FinishChoreRouteAborted();
-            yield break;
-        }
+        //    ※ 配置は BeginApproach で完了済み（ShowMotherModel より前）。
+        //    最初の移動先は choreApproachPoint_1（ドア開け地点）。
+        Debug.Log("[MotherApproachController] 片付けルート：行き開始（短縮接近）| " +
+                  $"choreApproachPoint_1='{(choreApproachPoint_1 != null ? choreApproachPoint_1.name : "NULL")}'");
 
         // 3) 行きのドア開け地点①（choreApproachPoint_1）へ移動し、向きを合わせる。
-        //    ※ doorPoint は通らない（既存廊下ルートの HallwayPoint_4 から直接ここへ向かう）。
         //    ここでは Door_Open を再生してドアを全開にする。
         //    ※ 経由地点のため旋回完了は待たない（直後の MovementStateChanged(false) で
         //      ドア操作のため停止し、その間に旋回が進む）。
@@ -1504,7 +1361,7 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 6) 既存の非表示・退場処理を使って消える（初期位置へのリセットは呼び出し側に委ねる）。
+        // 6) 既存の非表示・退場処理を使って消える（非表示後に HideMotherForReturn が default point へ戻す）。
         HideMotherForReturn("Chore", "hallwayPassBy到達", success: true);
 
         Debug.Log("[MotherApproachController] 片付けルート：退場完了 — onChoreCompletedを発生");
@@ -1816,7 +1673,7 @@ public class MotherApproachController : MonoBehaviour
             $"  位置={transform.position.ToString("F2")} 実効速度={CurrentApproachSpeed:F2} " +
             $"旋回中={_rotateCoroutine != null} 接近中={IsApproaching} 廊下={IsInHallwayPhase} 庭ルート={IsGardenRoute}\n" +
             $"  Door到達={ReachedDoor} Door停止={StoppedAtDoor} 通過={PassedByDoor} 庭覗き中={_isGardenPeeking} " +
-            $"DoorRoutine={_doorRoutineActive} 入室={_roomPhaseActive} スライド={_peekSlideCoroutine != null}\n" +
+            $"DoorRoutine={_doorRoutineActive} スライド={_peekSlideCoroutine != null}\n" +
             $"  帰路={ReturnHomePhase} 帰路中断={_returnHomeAbortFlag} 経路失敗={_routeExecutionFailed} " +
             $"終了通知済み={_routeEndNotified}\n" +
             $"  Animator: {animState}\n" +
@@ -1824,7 +1681,7 @@ public class MotherApproachController : MonoBehaviour
                 ? $"  PD: 無敵={pd.IsInvincible} 捕獲={pd.isCaught} 永久GO={pd.HasPermanentGameOver} " +
                   $"ドア覗き={pd.isMotherLookingNow} 警告中={pd.IsWarningSequenceActive} " +
                   $"移動抑止={pd.IsChoreMovementSuppressed} 歩行抑止={pd.IsChoreWalkingOverrideSuppressed} " +
-                  $"覗き捕獲抑止={pd.CaptureSuppressedDuringPeek} 部屋入室開始={pd.IsRoomEntryStarted} " +
+                  $"覗き捕獲抑止={pd.CaptureSuppressedDuringPeek} " +
                   $"ゲージ={(pd.motherGauge != null ? pd.motherGauge.currentGauge : -1)}/" +
                   $"{(pd.motherGauge != null ? pd.motherGauge.maxGauge : -1)}"
                 : "  PD: none"),
@@ -1858,6 +1715,79 @@ public class MotherApproachController : MonoBehaviour
         return "n/a";
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    //  待機位置（default point）への復帰
+    //   ・startPoint が「待機位置」を兼ねる（同用途のフィールドを増やさない）。
+    //   ・シーンでは Waypoints 配下の 'Default Point' が割り当て済み。
+    //   ・通常完了（非表示後）だけが呼ぶ。捕獲演出・別ルート進行中は復帰しない。
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>待機位置（default point）。未設定なら null。</summary>
+    public Transform DefaultPoint => startPoint;
+
+    /// <summary>待機位置（default point）が設定されているか。</summary>
+    public bool HasDefaultPoint => startPoint != null;
+
+    /// <summary>
+    /// 演出の終了後、待機位置（default point）へ位置・向きを戻す。
+    ///  ・呼ぶのは「モデルを非表示にし、そのイベントの移動・回転・スライドが位置を書き換えなくなった後」。
+    ///    ReturnHomeRoutine → HideMotherForReturn の直後、または Pass By の画面外最終点到達直後。
+    ///  ・位置は既存規約どおり OffsetGoalPosition（生座標＋motherHeightOffset を1回だけ）を使う。
+    ///    ResetApproach と同じ式のため、何度呼んでも累積しない。
+    ///  ・復帰しない条件（戻さないことが正しい場面）：
+    ///      1) ゲームオーバー演出中（IsGameOverSequenceActive）／捕獲確定（isCaught）
+    ///      2) 待機位置が未設定 → 警告して位置復帰のみ省略（原点へは飛ばさない。
+    ///         終了通知・ロック解除は呼び出し側がそのまま続行する）
+    ///      3) 別ルートが接近中（IsApproaching）＝新しい配置位置を消さない
+    ///      4) モデル表示中のまま復帰しようとした（非表示後に呼ぶこと）
+    ///  戻り値：実際に位置を書き換えたら true。
+    /// </summary>
+    public bool RestoreToDefaultPoint(string reason)
+    {
+        // 1) 捕獲演出中は動かさない（演出が位置を所有している）。
+        if (IsGameOverSequenceActive)
+        {
+            Debug.Log($"[MotherApproachController] default point復帰をスキップ（ゲームオーバー演出中 / {reason}）");
+            return false;
+        }
+
+        if (parentDetection != null && parentDetection.isCaught)
+        {
+            Debug.Log($"[MotherApproachController] default point復帰をスキップ（捕獲確定 / {reason}）");
+            return false;
+        }
+
+        // 2) 待機位置が無い場合は原点へ飛ばさない（位置復帰だけを省略する）。
+        if (startPoint == null)
+        {
+            Debug.LogWarning($"[MotherApproachController] default point（startPoint）が未設定のため" +
+                             $"位置復帰を省略します（原点へは移動しません / {reason}）", this);
+            return false;
+        }
+
+        // 3) 新しいルートが既に配置済みなら、その位置を消さない（サイレン切替など）。
+        if (IsApproaching)
+        {
+            Debug.Log($"[MotherApproachController] default point復帰をスキップ（別ルート接近中 / {reason}）");
+            return false;
+        }
+
+        // 4) 見えている最中に瞬間移動させない。
+        if (motherModelRoot != null && motherModelRoot.activeSelf)
+        {
+            Debug.LogWarning($"[MotherApproachController] default point復帰をスキップ（モデル表示中のため / {reason}）");
+            return false;
+        }
+
+        // 既存規約：生座標＋motherHeightOffset（1回だけ。累積しない）。
+        transform.position = OffsetGoalPosition(startPoint.position);
+        transform.rotation = startPoint.rotation;
+
+        Debug.Log($"[MotherApproachController] default pointへ復帰 | '{startPoint.name}' " +
+                  $"pos={transform.position} yaw={transform.rotation.eulerAngles.y:F1} | {reason}");
+        return true;
+    }
+
     public void ResetApproach()
     {
         // ゲームオーバー演出中は位置リセット（startPointへ戻す）を行わない。
@@ -1880,14 +1810,15 @@ public class MotherApproachController : MonoBehaviour
         // 片付け専用ルートの状態も初期化する（次のサイクルへ持ち越さない）。
         ResetChoreRoute();
 
-        if (startPoint != null)
+        if (startPoint == null)
         {
-            transform.position = OffsetGoalPosition(startPoint.position);
-            transform.rotation = startPoint.rotation;
+            // 待機位置が無い場合は原点へ飛ばさない（位置復帰のみ省略）。
+            Debug.LogWarning("[MotherApproachController] ResetApproach: startPoint is NULL — cannot reposition.");
         }
         else
         {
-            Debug.LogWarning("[MotherApproachController] ResetApproach: startPoint is NULL — cannot reposition.");
+            transform.position = OffsetGoalPosition(startPoint.position);
+            transform.rotation = startPoint.rotation;
         }
     }
 
@@ -1895,14 +1826,14 @@ public class MotherApproachController : MonoBehaviour
     //  内部開始ヘルパー
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void BeginApproach(bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false,
-        bool choreRoute = false)
+    private bool BeginApproach(bool hallwayPassBy = false, bool gardenPassBy = false, bool gardenPeek = false,
+        bool choreRoute = false, bool shortApproachRoute = false)
     {
         // ゲームオーバー演出中は通常の経路を開始しない（演出の移動と位置を二重に書かないため）。
         if (IsGameOverSequenceActive)
         {
             Debug.LogWarning("[MotherApproachController] ゲームオーバー演出中のため、通常の経路を開始しません");
-            return;
+            return false;
         }
 
         MovementStateChanged?.Invoke(false);
@@ -1923,18 +1854,56 @@ public class MotherApproachController : MonoBehaviour
         ResetStateFlags();
 
         // 診断ログ：このルートの開始（段階ログの基点）。
-        DiagRouteBegin($"ルート={(choreRoute ? "Chore" : gardenPeek ? "GardenPeek" : gardenPassBy ? "GardenPassBy" : hallwayPassBy ? "HallwayPassBy" : "DoorPeek")}");
+        DiagRouteBegin($"ルート={ResolveShortApproachRouteKind(hallwayPassBy, gardenPassBy, gardenPeek, choreRoute)}");
 
         // 接近開始時は遠い段階の音量から初期化
 
-        // startPoint.rotationからピッチ／ロールを取得し、キャンセルされたサイクル後に
+        // 固定ピッチ／ロールは startPoint.rotation から取得し、キャンセルされたサイクル後に
         // 実行途中の古いTransformが誤った値を引き継がないようにする。
-        Vector3 startEuler = startPoint.rotation.eulerAngles;
+        //  ・短縮接近では startPoint を経由しない（シーンによっては未設定）ため、
+        //    未設定なら傾き0（identity）として扱う。配置地点の向きは既存規則どおり
+        //    「地点の＋Z」から yaw だけを決める。
+        Vector3 startEuler = startPoint != null ? startPoint.rotation.eulerAngles : Vector3.zero;
         _fixedPitch = startEuler.x;
         _fixedRoll = startEuler.z;
 
-        transform.position = OffsetGoalPosition(startPoint.position);
-        transform.rotation = startPoint.rotation;
+        if (shortApproachRoute)
+        {
+            // ── 短縮接近（正式方式）：startPoint へは配置しない ──
+            //  ・startPoint へ一度置いてから配置地点へ移すと、旧位置が1フレーム見える経路が生じる。
+            //    そこで開始時点で配置地点へ直接置く（ShowMotherModel より前）。
+            //  ・姿勢は既存規則（固定ピッチ／ロールを維持し、配置地点の＋Zへ向ける）を使う。
+            //  ・配置地点は1箇所（ResolveShortApproachPlacementPoint）で解決する（ドア側共通／庭側共通）。
+            ShortApproachRouteKind placeKind =
+                ResolveShortApproachRouteKind(hallwayPassBy, gardenPassBy, gardenPeek, choreRoute);
+            Transform placementPoint = ResolveShortApproachPlacementPoint(placeKind);
+            if (!TryPlaceAtShortApproachPoint(placementPoint, placeKind.ToString()))
+            {
+                // 配置に失敗した場合は移動を開始しない（安全側）。
+                Debug.LogWarning($"[MotherApproachController] 短縮接近：配置結果=失敗" +
+                                 $"（{placeKind} / 配置地点={(placementPoint != null ? placementPoint.name : "NULL")}）" +
+                                 " — 通常経路を開始しません", this);
+                _routeExecutionFailed = true;
+                MovementStateChanged?.Invoke(false);
+                IsApproaching = false;
+                return false;
+            }
+
+            Debug.Log($"[MotherApproachController] 短縮接近：配置結果=成功 | ルート={placeKind} | " +
+                      $"配置地点='{placementPoint.name}' pos={transform.position} yaw={transform.rotation.eulerAngles.y:F1}");
+        }
+        else
+        {
+            // 長い往路（startPoint 起点）。短縮接近を使わない場合のみ startPoint が必須。
+            if (startPoint == null)
+            {
+                Debug.LogWarning("[MotherApproachController] 開始拒否 — startPoint が未設定のため経路を開始できません", this);
+                return false;
+            }
+
+            transform.position = OffsetGoalPosition(startPoint.position);
+            transform.rotation = startPoint.rotation;
+        }
 
         ShowMotherModel();
         // グループ（A）基本：モデル表示中は顔ライト・目の発光を常時ONにする。
@@ -1962,6 +1931,8 @@ public class MotherApproachController : MonoBehaviour
             _approachCoroutine = StartCoroutine(HallwayPassByRoutine());
         else
             _approachCoroutine = StartCoroutine(DoorRoutine());
+
+        return true;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1971,17 +1942,56 @@ public class MotherApproachController : MonoBehaviour
     private IEnumerator DoorRoutine()
     {
         _doorRoutineActive = true;
-        Debug.Log("[MotherApproachController] DoorRoutine：開始");
+        Debug.Log("[MotherApproachController] DoorRoutine（DoorPeek・短縮接近）：開始");
 
-        yield return MoveToTurnPoint();
-        if (_routeExecutionFailed) yield break;
+        // ── DoorPeek（正式方式）：不可視地点へは BeginApproach で配置済み ──
+        //  ・長い往路（startPoint → turnPoint → 中間ウェイポイントの巡回）は歩かない。
+        //  ・配置後は MoveAndFaceWaypoint(doorPoint) を必ず通す（到着・向き合わせを省略しない）。
+        //  ・足音は「接近開始前（発見可能前の猶予）」を残す位置で通知する（Waypoint 省略はしない）。
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Mid, "DoorPeek：短縮接近の開始");
 
-        yield return MoveAlongHallwayAfterTurn();
-        if (_routeExecutionFailed) yield break;
+        // 最低反応時間の不足分は、できるだけ不可視地点で待つ（発見可能前の猶予を確保する）。
+        float minReaction = doorPeekShortApproachMinReactionSeconds;
+        float elapsedSinceForeshadow = Time.time - _shortApproachForeshadowStartTime;
+        float shortfall = minReaction - elapsedSinceForeshadow;
+        if (shortfall > 0f)
+        {
+            Debug.Log($"[MotherApproachController] DoorPeek：最低反応時間の不足分を配置地点で待機 {shortfall:F2}s " +
+                      $"（下限={minReaction:F2}s / 経過={elapsedSinceForeshadow:F2}s）");
 
-        // 扉前フェーズ：目標音量を扉前（最大段階）に設定
-        Debug.Log($"[MotherApproachController] Phase: DOOR | moving to '{doorPoint.name}' then face its forward (+Z)");
-        // 【新仕様】doorPointへ移動 → 到着 → この点の＋Zへ旋回（旋回完了を待つ）。
+            float beforeClose = Mathf.Max(0f, shortfall - 0.5f);
+            if (beforeClose > 0f)
+            {
+                float waited = 0f;
+                while (waited < beforeClose)
+                {
+                    if (IsAutoStartRejectedNow())
+                    {
+                        Debug.LogWarning("[MotherApproachController] DoorPeek：待機中に開始不可となったため、" +
+                                         "接近へ進まず既存の安全な経路終了（AbortApproach）で閉じます");
+                        AbortApproach();
+                        yield break;
+                    }
+
+                    waited += Time.deltaTime;
+                    yield return null;
+                }
+            }
+        }
+
+        // 接近の直前に通知する（発見可能前の猶予を残す位置）。
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Close, "DoorPeek：接近開始前（発見可能前の猶予）");
+
+        // 接近の直前にも開始可否を確認する（待機明けの終了を拾う）。
+        if (IsAutoStartRejectedNow())
+        {
+            Debug.LogWarning("[MotherApproachController] DoorPeek：接近直前に開始不可となったため、" +
+                             "接近へ進まず既存の安全な経路終了（AbortApproach）で閉じます");
+            AbortApproach();
+            yield break;
+        }
+
+        // 短い接近：doorPoint への到着と向き合わせは既存処理をそのまま使う（省略しない）。
         yield return MoveAndFaceWaypoint(doorPoint, doorTurnRotationSpeed, "doorPoint");
         if (_routeExecutionFailed) yield break;
 
@@ -2001,6 +2011,31 @@ public class MotherApproachController : MonoBehaviour
         // IsInHallwayPhaseは意図的にここでは解除しない。
         // 完全なサイクル終了後、ResetApproach経由のResetStateFlags()で解除する。
 
+        // ── onStoppedAtDoor（発見可能になる起点）直前の最終確認 ──
+        //  ・下限反応時間を満たしていること。
+        //  ・共通開始可否が許可状態であること（終了・判定不能でない）。
+        //  ・自分のルートが中断されていないこと。
+        //  ・拒否時は既存の安全な中断経路（AbortApproach）を使い、状態を残さない。
+        {
+            float minReactionFinal = doorPeekShortApproachMinReactionSeconds;
+            float elapsedFinal = Time.time - _shortApproachForeshadowStartTime;
+            float shortfallFinal = minReactionFinal - elapsedFinal;
+            if (shortfallFinal > 0f)
+            {
+                Debug.Log($"[MotherApproachController] DoorPeek：onStoppedAtDoor 直前の最終保証として不足分を待機 {shortfallFinal:F2}s " +
+                          $"（下限={minReactionFinal:F2}s / 経過={elapsedFinal:F2}s）");
+                yield return new WaitForSeconds(shortfallFinal);
+            }
+
+            if (IsAutoStartRejectedNow())
+            {
+                Debug.LogWarning("[MotherApproachController] DoorPeek：onStoppedAtDoor 直前に開始不可のため、" +
+                                 "新しい覗きを始めず既存の安全な経路終了（AbortApproach）で閉じます");
+                AbortApproach();
+                yield break;
+            }
+        }
+
         Debug.Log("[MotherApproachController] ドアで停止 — OnStoppedAtDoorを発生");
         onStoppedAtDoor?.Invoke();
         DiagPhase("ドア停止（Peek開始）", $"'{doorPoint.name}' 到着・停止 → PDの覗き/帰路要求待ち");
@@ -2011,25 +2046,10 @@ public class MotherApproachController : MonoBehaviour
         // （BeginDoorPeekSlide 内で待ってから開始する）。
         // 通常Door Peekの位置・向きの適用処理（BeginDoorPeekSlide）を、RushInのドア覗きでも
         // 同じタイミングで再利用する（RushInだけ別配置にしない）。
-        // 入室ルート（_roomEntryRequested）だけはドア前停止をしないため対象外。
         Debug.Log($"[MotherApproachController] Door Peek 配置処理の呼び出し | " +
-                  $"roomEntryRequested={_roomEntryRequested} isRushIn={IsRushIn} rushInCycle={_cycleStartedAsRushIn} " +
+                  $"isRushIn={IsRushIn} rushInCycle={_cycleStartedAsRushIn} " +
                   $"doorRoutineActive={_doorRoutineActive}");
-        if (!_roomEntryRequested)
-            BeginDoorPeekSlide();
-        else
-            SlideLog("CALLSITE_SKIP", "入室要求のためスライド対象外");
-
-        // OnStoppedAtDoorの処理中にPDが入室を要求した場合のみ、部屋内部へ移動する。
-        // 要求がない場合は従来どおりドア前で停止したままコルーチンを終了する。
-        if (_roomEntryRequested)
-        {
-            _roomEntryRequested = false;
-            yield return RoomPhaseCoroutine();
-            // 退室後もモデル表示中はグループ（A）基本の点灯を維持する（帰路の非表示で消灯）。
-            _doorRoutineActive = false;
-            yield break; // 入室ルートは既存の終了処理に委ねる（帰路は通常Peek終了のみ）
-        }
+        BeginDoorPeekSlide();
 
         // 【重要】onStoppedAtDoor の Invoke が戻った時点は「Peek開始」であって終了ではない。
         // 購読側（MotherApproachWarning → MotherSuspicionSystem.OnApproachReachedDoor）は
@@ -2352,48 +2372,354 @@ public class MotherApproachController : MonoBehaviour
     /// </summary>
     private IEnumerator HallwayPassByRoutine()
     {
-        Debug.Log("[MotherApproachController] HallwayPassByRoutine（フェイントA：ドア前を停止せず通り過ぎる）：開始");
+        Debug.Log("[MotherApproachController] HallwayPassByRoutine（フェイントA・短縮接近：ドア前を停止せず通り過ぎる）：開始");
 
-        // TurnPointが未設定ならMoveToTurnPointが警告を出して中断するため、ここでも安全に終了する。
-        yield return MoveToTurnPoint();
-        if (_routeExecutionFailed) yield break;
+        // ── 短縮接近（正式方式）：不可視地点へは BeginApproach で配置済み ──
+        //  ・長い往路（startPoint → turnPoint → 中間ウェイポイントの巡回）は歩かない。
+        //  ・予兆10秒が反応時間を保証するため、追加の下限待機は置かない。
+        //  ・足音は通過演出の開始前に段階を進める（Waypoint 省略のための専用通知）。
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Mid, "HallwayPassBy：短縮接近の開始");
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Close, "HallwayPassBy：通過演出の開始前");
 
-        // 往路の残り（hallwayPointsAfterTurn）→ 最後の点で立ち止まり → Back Points → hallwayPassByPoint。
+        // 短い移動：通過演出の停止点へ向かう（PassByTailRoutine が最終点まで担当する）。
+        //  ・PassByTailRoutine の第1要素（routePoints の先頭）へ短く移動する。
+        //  ・routePoints は既存の hallwayPointsAfterTurn（先頭の有効点）を使う。
+        List<Transform> route = BuildTransformPath(hallwayPointsAfterTurn);
+        if (route.Count > 0)
+        {
+            yield return MoveAndFaceWaypoint(route[0], turnRotation, "hallwayPassBy shortApproach first point");
+            if (_routeExecutionFailed) yield break;
+
+            // 先頭は消化済みなので、残りを PassByTailRoutine に渡す。
+            route.RemoveAt(0);
+        }
+
+        // 往路の残り → 最後の点で立ち止まり → Back Points → hallwayPassByPoint。
         // ※ doorPoint は通らない。Turn Back Point も使わない（それはPeek後の帰路専用）。
-        yield return PassByTailRoutine(hallwayPointsAfterTurn, hallwayGoBackPoints,
+        yield return PassByTailRoutine(route, hallwayGoBackPoints,
             hallwayPassByPoint, hallwayPassByPauseSeconds, "HallwayPassBy");
         if (_routeExecutionFailed) yield break;
 
+        // 1) モデル非表示
+        HideMotherModel();
+
+        // 2) 位置更新停止
+        MovementStateChanged?.Invoke(false);
+        StopRotateCoroutine();
+        SetPeekLighting(false);
+        SetMotherStageLighting(false);
         PassedByDoor = true;
         IsApproaching = false;
         // IsInHallwayPhaseは既存DoorRoutineと同じくResetStateFlags()でのみ解除する。
 
+        // 3) Default Point復帰（画面外で停止・非表示後に待機位置へ戻す）
+        RestoreToDefaultPoint("HallwayPassBy:最終点到達");
+
+        // 4) 完了通知
         Debug.Log("[MotherApproachController] フェイントA完了 — 画面外で停止しOnPassedByDoorを発生");
         onPassedByDoor?.Invoke();
     }
 
     private IEnumerator GardenPassByRoutine()
     {
-        Debug.Log("[MotherApproachController] GardenPassByRoutine（庭側素通り）：開始");
+        Debug.Log("[MotherApproachController] GardenPassByRoutine（庭側素通り・短縮接近）：開始");
 
-        // TurnPointが未設定なら MoveToTurnPoint が警告を出して中断するため、ここで安全に終了する。
-        yield return MoveToTurnPoint();
-        if (_routeExecutionFailed || turnPoint == null) yield break;
+        // ── 短縮接近（正式方式）：不可視地点へは BeginApproach で配置済み ──
+        //  ・長い往路（startPoint → turnPoint → 中間ウェイポイントの巡回）は歩かない。
+        //  ・予兆10秒が反応時間を保証するため、追加の下限待機は置かない。
+        //  ・足音は通過演出の開始前に段階を進める（Waypoint 省略のための専用通知）。
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Mid, "GardenPassBy：短縮接近の開始");
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Close, "GardenPassBy：通過演出の開始前");
 
-        // TurnPointから庭側経路を分岐し、庭側のウェイポイントを設定順に進む。
-        // 往路の残り（gardenRoutePoints）→ 最後の点で立ち止まり → Back Points → gardenPassByPoint。
+        // 短い移動：通過演出の停止点へ向かう（PassByTailRoutine が最終点まで担当する）。
+        //  ・2点以上あるときだけ先頭をここで消化する（HallwayPassByと同じ扱い）。
+        //  ・1点しかない場合に先頭を消すと「往路の最後の点での立ち止まり（gardenPassByPauseSeconds）」が
+        //    対象点を失い、停止が省略される。そのため1点のときは PassByTailRoutine にそのまま渡す
+        //    （停止点＝最後の有効点として MoveAndFace → 立ち止まりが実行される）。
+        List<Transform> route = BuildTransformPath(new List<Transform>(gardenRoutePoints));
+        if (route.Count > 1)
+        {
+            yield return MoveAndFaceWaypoint(route[0], turnRotation, "gardenPassBy shortApproach first point");
+            if (_routeExecutionFailed) yield break;
+
+            route.RemoveAt(0);
+        }
+
+        // 往路の残り → 最後の点で立ち止まり → Back Points → gardenPassByPoint。
         // ※ gardenPeekPoint は通らない（Window Peek の覗き地点へ寄らない）。
         // ※ Turn Back Point も使わない（それはPeek後の帰路専用）。
-        yield return PassByTailRoutine(new List<Transform>(gardenRoutePoints), gardenGoBackPoints,
+        yield return PassByTailRoutine(route, gardenGoBackPoints,
             gardenPassByPoint, gardenPassByPauseSeconds, "GardenPassBy");
         if (_routeExecutionFailed) yield break;
 
+        // 1) モデル非表示
+        HideMotherModel();
+
+        // 2) 位置更新停止
         MovementStateChanged?.Invoke(false);
+        StopRotateCoroutine();
+        SetPeekLighting(false);
+        SetMotherStageLighting(false);
         PassedByDoor = true;
         IsApproaching = false;
 
+        // 3) Default Point復帰（画面外で停止・非表示後に待機位置へ戻す）
+        RestoreToDefaultPoint("GardenPassBy:最終点到達");
+
+        // 4) 完了通知
         Debug.Log("[MotherApproachController] 庭側素通り完了 — OnPassedByDoorを発生");
         onPassedByDoor?.Invoke();
+    }
+
+    /// <summary>
+    /// 共通の自動開始可否で「開始してはいけない」と判定されるか（終了または判定不能）。
+    ///  ・共通窓口（ParentGameTimeManager.EvaluateAutoStart）へ委譲する（判定を複製しない）。
+    ///  ・判定不能（RejectUnavailable）も「開始しない」に含める。
+    /// </summary>
+    private static bool IsAutoStartRejectedNow()
+    {
+        var decision = ParentGameTimeManager.EvaluateAutoStart();
+        return decision == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+               decision == ParentGameTimeManager.AutoStartDecision.RejectUnavailable;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  短縮接近の配置地点（既存のドア側・庭側を共用する唯一の入口）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 短縮接近を使う経路の種別。配置地点の共用先（ドア側／庭側）を決めるためだけに使う。
+    /// </summary>
+    public enum ShortApproachRouteKind
+    {
+        DoorPeek,
+        HallwayPassBy,
+        GardenPeek,
+        GardenPassBy,
+        Chore,
+    }
+
+    /// <summary>
+    /// 経路が庭側か（庭側共通の配置地点を使うか）。
+    ///  ・GardenPeek / GardenPassBy だけが庭側。DoorPeek / HallwayPassBy / 片付けはドア側。
+    /// </summary>
+    public static bool IsGardenSideRoute(ShortApproachRouteKind kind)
+    {
+        return kind == ShortApproachRouteKind.GardenPeek || kind == ShortApproachRouteKind.GardenPassBy;
+    }
+
+    /// <summary>
+    /// BeginApproach のフラグから経路種別を求める（配置地点の共用先を決める）。
+    ///  ・優先順位は既存の診断ラベルと同じ（片付け → GardenPeek → GardenPassBy → HallwayPassBy → DoorPeek）。
+    /// </summary>
+    private static ShortApproachRouteKind ResolveShortApproachRouteKind(
+        bool hallwayPassBy, bool gardenPassBy, bool gardenPeek, bool choreRoute)
+    {
+        if (choreRoute) return ShortApproachRouteKind.Chore;
+        if (gardenPeek) return ShortApproachRouteKind.GardenPeek;
+        if (gardenPassBy) return ShortApproachRouteKind.GardenPassBy;
+        if (hallwayPassBy) return ShortApproachRouteKind.HallwayPassBy;
+        return ShortApproachRouteKind.DoorPeek;
+    }
+
+    /// <summary>
+    /// 短縮接近で使う配置地点を1箇所にまとめて解決する（ドア側共通／庭側共通）。
+    ///  ・DoorPeek / HallwayPassBy / 片付け → doorPeekShortApproachPlacementPoint（ドア側共通）。
+    ///  ・GardenPeek / GardenPassBy           → gardenPeekShortApproachPlacementPoint（庭側共通）。
+    ///  ・既存の保存済み参照をそのまま使う（新しい配置Transformを要求しない）。
+    ///  ・事前検証・開始直前検証・実際の配置は、すべてこのメソッドを通す。
+    /// </summary>
+    private Transform ResolveShortApproachPlacementPoint(ShortApproachRouteKind kind)
+    {
+        return IsGardenSideRoute(kind)
+            ? gardenPeekShortApproachPlacementPoint
+            : doorPeekShortApproachPlacementPoint;
+    }
+
+    /// <summary>
+    /// 共用配置地点が「配置に使える」か（参照あり＋向きが水平）。
+    ///  ・配置の向きは地点の＋Zから作るため、真上・真下（水平成分なし）は配置できない。
+    ///  ・副作用なし（読み取りのみ）。
+    /// </summary>
+    public bool IsShortApproachPlacementReady(ShortApproachRouteKind kind)
+    {
+        Transform point = ResolveShortApproachPlacementPoint(kind);
+        if (point == null) return false;
+
+        Vector3 forward = point.forward;
+        forward.y = 0f;
+        return forward.sqrMagnitude > 0.0001f;   // TryGetYawFromTransformForward と同じ閾値
+    }
+
+    /// <summary>
+    /// 短縮接近の経路が開始できる状態か（灯り・足音より前に呼ぶ）。
+    ///  ・共用配置地点（ドア側／庭側）と、その経路に必要な参照だけを見る。
+    ///  ・「配置地点はあるが経路が無い」状態で灯り・足音だけが流れる失敗を防ぐための入口。
+    ///  ・副作用なし（読み取りのみ）。利用不可の理由を rejectionReason に返す。
+    /// </summary>
+    public bool IsShortApproachRouteReady(ShortApproachRouteKind kind, out string rejectionReason)
+    {
+        rejectionReason = null;
+
+        if (!IsShortApproachPlacementReady(kind))
+        {
+            rejectionReason = IsGardenSideRoute(kind)
+                ? "庭側共通の配置地点（gardenPeekShortApproachPlacementPoint）が未設定、または向きが不正（水平成分なし）"
+                : "ドア側共通の配置地点（doorPeekShortApproachPlacementPoint）が未設定、または向きが不正（水平成分なし）";
+            return false;
+        }
+
+        switch (kind)
+        {
+            case ShortApproachRouteKind.DoorPeek:
+                if (doorPoint == null)
+                {
+                    rejectionReason = "doorPoint が未設定（接近先が無い）";
+                    return false;
+                }
+
+                if (!IsValidMinReactionSeconds(doorPeekShortApproachMinReactionSeconds))
+                {
+                    rejectionReason = "DoorPeekの最低反応時間が不正（NaN/Infinity/0以下）";
+                    return false;
+                }
+
+                return true;
+
+            case ShortApproachRouteKind.HallwayPassBy:
+                if (hallwayPassByPoint == null)
+                {
+                    rejectionReason = "hallwayPassByPoint が未設定（画面外の到達点が無い）";
+                    return false;
+                }
+
+                return true;
+
+            case ShortApproachRouteKind.GardenPeek:
+                if (gardenPeekPoint == null)
+                {
+                    rejectionReason = "gardenPeekPoint が未設定（覗き位置が無い）";
+                    return false;
+                }
+
+                if (gardenPassByPoint == null)
+                {
+                    rejectionReason = "gardenPassByPoint が未設定（覗き後の帰路の最終点が無い）";
+                    return false;
+                }
+
+                if (!IsValidMinReactionSeconds(gardenPeekShortApproachMinReactionSeconds))
+                {
+                    rejectionReason = "GardenPeekの最低反応時間が不正（NaN/Infinity/0以下）";
+                    return false;
+                }
+
+                return true;
+
+            case ShortApproachRouteKind.GardenPassBy:
+                if (gardenPassByPoint == null)
+                {
+                    rejectionReason = "gardenPassByPoint が未設定（庭側の到達点が無い）";
+                    return false;
+                }
+
+                if (!HasValidGardenRoutePoints())
+                {
+                    rejectionReason = "gardenRoutePoints に有効な通過地点が無い（見せたい通過区間が無い）";
+                    return false;
+                }
+
+                return true;
+
+            case ShortApproachRouteKind.Chore:
+                if (choreApproachPoint_1 == null)
+                {
+                    rejectionReason = "choreApproachPoint_1（行きのドア開け地点）が未設定";
+                    return false;
+                }
+
+                if (choreApproachPoint_2 == null)
+                {
+                    rejectionReason = "choreApproachPoint_2（行きのドア閉め地点）が未設定";
+                    return false;
+                }
+
+                if (chorePoint == null)
+                {
+                    rejectionReason = "chorePoint（片付け地点）が未設定";
+                    return false;
+                }
+
+                if (choreReturnPoint_1 == null)
+                {
+                    rejectionReason = "choreReturnPoint_1（帰りのドア開け地点）が未設定";
+                    return false;
+                }
+
+                if (choreReturnPoint_2 == null)
+                {
+                    rejectionReason = "choreReturnPoint_2（帰りのドア閉め地点）が未設定";
+                    return false;
+                }
+
+                if (hallwayPassByPoint == null)
+                {
+                    rejectionReason = "hallwayPassByPoint（帰りの最終点）が未設定";
+                    return false;
+                }
+
+                return true;
+
+            default:
+                rejectionReason = $"未対応の短縮接近ルート（{kind}）";
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// 【短縮接近 共通】配置地点へ位置と向きを設定する（テレポート）。
+    ///  ・ルートごとの配置地点を引数で受け取る（位置・向き設定だけの小さなヘルパー）。
+    ///  ・既存の姿勢規則（_fixedPitch / _fixedRoll を維持し、配置地点の＋Zへ yaw を合わせる）を再利用する。
+    ///  ・位置は OffsetGoalPosition（motherHeightOffset を1回だけ加算）で決める（既存と同じ規則）。
+    ///  ・成功で true、参照不足・向き決定不能で false（呼び出し側が開始を中止する）。
+    /// </summary>
+    private bool TryPlaceAtShortApproachPoint(Transform placementPoint, string label)
+    {
+        if (placementPoint == null) return false;
+
+        if (!TryGetTargetYawFromForward(placementPoint, out float targetYaw, $"{label}:{placementPoint.name}"))
+            return false;
+
+        transform.position = OffsetGoalPosition(placementPoint.position);
+        transform.rotation = Quaternion.Euler(_fixedPitch, NormalizeAngle(targetYaw), _fixedRoll);
+        return true;
+    }
+
+    /// <summary>
+    /// 【GardenPeek短縮接近専用】足音の段階を短縮方式用に進める。
+    ///  ・通過していない Waypoint の到達通知は偽装しない（専用の段階通知として Warning 側へ依頼する）。
+    ///  ・ApplyFootstepStage は「逆行は無視」するため、旧 Waypoint 通知と重複しても段階は戻らない。
+    ///  ・停止済みの旧処理が後から段階を変更しないよう、失敗・帰路中断・ゲームオーバー演出中は通知しない。
+    /// </summary>
+    private void NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage stage, string reason)
+    {
+        if (_routeExecutionFailed || IsReturnHomeAborted || IsGameOverSequenceActive) return;
+        if (shortApproachFootstepListener == null) return;
+
+        shortApproachFootstepListener(stage, reason);
+    }
+
+    /// <summary>
+    /// 短縮接近の足音段階通知リスナー（MotherApproachWarning が購読時に設定する）。
+    ///  ・null なら通知しない（Warning 未設定でも安全）。
+    /// </summary>
+    private System.Action<MotherApproachWarning.FootstepStage, string> shortApproachFootstepListener;
+
+    /// <summary>短縮接近の足音段階通知リスナーを設定する（MotherApproachWarning から購読時に呼ぶ）。</summary>
+    public void SetShortApproachFootstepListener(
+        System.Action<MotherApproachWarning.FootstepStage, string> listener)
+    {
+        shortApproachFootstepListener = listener;
     }
 
     /// <summary>
@@ -2409,26 +2735,60 @@ public class MotherApproachController : MonoBehaviour
     /// </summary>
     private IEnumerator GardenPeekRoutine()
     {
-        Debug.Log("[MotherApproachController] GardenPeekRoutine（庭側覗き）：開始");
+        Debug.Log("[MotherApproachController] GardenPeekRoutine（庭側覗き・短縮接近）：開始");
 
-        // 5キーと同じ経路：MoveToTurnPoint → gardenRoutePointsを設定順に進む。
-        // 移動中は進行方向を向く。TurnPointより後の廊下ウェイポイント／doorPointはドア側の経由点のため、庭ルートでは通らない。
-        yield return MoveToTurnPoint();
-        if (_routeExecutionFailed || turnPoint == null) yield break;
+        // ── 不可視地点へは BeginApproach で配置済み ──
+        //  ・Waypoint を省略するため、足音は専用の段階通知で進める
+        //    （通過していない Waypoint の到達通知は偽装しない）。
+        //  ・Mid は「短い接近の開始」、Close は「発見可能前の猶予を残す位置（接近の直前）」で通知する。
+        //  ・最低反応時間の不足分も、この不可視地点で待つ
+        //    （窓に現れたまま停止しないよう、待機は接近前へ配分する）。
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Mid, "短縮接近の開始");
 
-        DiagPhase("庭ルート開始", $"中間点={gardenRoutePoints.Length}件 → gardenPeekPoint=" +
-                                  $"{(gardenPeekPoint != null ? gardenPeekPoint.name : "NULL")}");
-
-        // 【新仕様】各点へ移動 → 到着 → その点の＋Zへ旋回（Hallwayと同じルール）。
-        for (int i = 0; i < gardenRoutePoints.Length; i++)
+        float minReaction = gardenPeekShortApproachMinReactionSeconds;
+        float elapsedSinceForeshadow = Time.time - _shortApproachForeshadowStartTime;
+        float shortfall = minReaction - elapsedSinceForeshadow;
+        if (shortfall > 0f)
         {
-            // 庭の中間点も止まらずに通過する。
-            yield return PassThroughWaypoint(gardenRoutePoints[i], turnRotation, $"gardenRoutePoints[{i}]");
-            if (_routeExecutionFailed) yield break;
+            Debug.Log($"[MotherApproachController] 短縮接近：最低反応時間の不足分を配置地点で待機 {shortfall:F2}s " +
+                      $"（下限={minReaction:F2}s / 経過={elapsedSinceForeshadow:F2}s）");
+
+            // 待機の前半で Mid のまま聞かせ、後半の手前で Close へ進める
+            // （Close 直後に即発見可能にならないよう、Close の後に接近の距離を残す）。
+            float beforeClose = Mathf.Max(0f, shortfall - 0.5f);
+            if (beforeClose > 0f)
+            {
+                // 待機中に本プレイが終了した場合は、接近へ進まず既存の安全な経路終了で閉じる。
+                float waited = 0f;
+                while (waited < beforeClose)
+                {
+                    if (IsAutoStartRejectedNow())
+                    {
+                        Debug.LogWarning("[MotherApproachController] 短縮接近：待機中に開始不可となったため、" +
+                                         "接近へ進まず既存の安全な経路終了（AbortApproach）で閉じます");
+                        AbortApproach();
+                        yield break;
+                    }
+
+                    waited += Time.deltaTime;
+                    yield return null;
+                }
+            }
         }
 
-        // GardenPeekPointへ到着し、この点の＋Zへ旋回し終えてから覗きを再生する。
-        // 旋回は MoveAndFaceWaypoint が完了まで待つため、覗き開始時に移動は残っていない。
+        // Close は接近の直前（発見可能前の猶予を残す位置）で通知する。
+        NotifyShortApproachFootstepStage(MotherApproachWarning.FootstepStage.Close, "接近開始前（発見可能前の猶予）");
+
+        // 接近の直前にも開始可否を確認する（待機明けの終了を拾う）。
+        if (IsAutoStartRejectedNow())
+        {
+            Debug.LogWarning("[MotherApproachController] 短縮接近：接近直前に開始不可となったため、" +
+                             "接近へ進まず既存の安全な経路終了（AbortApproach）で閉じます");
+            AbortApproach();
+            yield break;
+        }
+
+        // 短い接近：gardenPeekPoint への到着と向き合わせは既存処理をそのまま使う（省略しない）。
         yield return MoveAndFaceWaypoint(gardenPeekPoint, doorTurnRotationSpeed, "gardenPeekPoint");
         if (_routeExecutionFailed) yield break;
 
@@ -2463,6 +2823,32 @@ public class MotherApproachController : MonoBehaviour
             $"[MotherApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={peekBaseSeconds:F1} + gauge={gaugeAtPeekStart})");
         DiagPhase("Window Peek開始", $"duration={_gardenPeekDuration:F1}s base={peekBaseSeconds:F1} gaugeAtPeekStart={gaugeAtPeekStart}");
 
+        // ── 覗き・発見可能の切り替え直前：最低反応時間の最終保証と終了確認 ──
+        //  ・接近前の待機配分だけでは、移動・Idle待ちが残り時間を消費する保証がない。
+        //    ここで予兆開始からの経過を再確認し、不足分を必ず補う（残り0.5秒を仮定しない）。
+        //  ・本プレイ終了後は新しく _isGardenPeeking = true にしない。
+        //    拒否時は既存の安全なルート終了手段（AbortApproach）を使う。
+        {
+            float minReactionFinal = gardenPeekShortApproachMinReactionSeconds;
+            float elapsedFinal = Time.time - _shortApproachForeshadowStartTime;
+            float shortfallFinal = minReactionFinal - elapsedFinal;
+            if (shortfallFinal > 0f)
+            {
+                Debug.Log($"[MotherApproachController] 短縮接近：発見可能前の最終保証として不足分を待機 {shortfallFinal:F2}s " +
+                          $"（下限={minReactionFinal:F2}s / 経過={elapsedFinal:F2}s）");
+                yield return new WaitForSeconds(shortfallFinal);
+            }
+
+            // 発見可能状態へ入る直前に共通判定を確認する（終了・判定不能なら入らない）。
+            if (IsAutoStartRejectedNow())
+            {
+                Debug.LogWarning("[MotherApproachController] 短縮接近：発見可能前に開始不可のため、" +
+                                 "覗きへ入らず既存の安全な経路終了（AbortApproach）で閉じます");
+                AbortApproach();
+                yield break;
+            }
+        }
+
         // 覗き待機開始：庭覗き中の継続疑惑（PD）に開始を通知する。
         _isGardenPeeking = true;
         onGardenPeekStarted?.Invoke();
@@ -2496,100 +2882,6 @@ public class MotherApproachController : MonoBehaviour
         // モデルは既に非表示のため、ResetApproach で初期位置へ戻しても画面内で瞬間移動しない。
         Debug.Log("[MotherApproachController] 庭側覗き完了（帰路済み） — OnPassedByDoorを発生");
         onPassedByDoor?.Invoke();
-    }
-
-    /// <summary>
-    /// roomEntryPointsのうち有効（null以外）な要素の数を返す。
-    /// </summary>
-    private int CountValidRoomEntryPoints()
-    {
-        if (roomEntryPoints == null) return 0;
-
-        int count = 0;
-        for (int i = 0; i < roomEntryPoints.Length; i++)
-        {
-            if (roomEntryPoints[i] != null) count++;
-        }
-
-        return count;
-    }
-
-    /// <summary>
-    /// ドア停止後、親機を部屋内部へ移動させ、退室要求（または安全タイムアウト）まで部屋に留まらせる。
-    /// 【新仕様】各roomEntryPointsへ「位置移動 → 到着 → その点の＋Zへ旋回」を順に行う。
-    /// 退室開始時のみ、対応する向き指定Waypointが無いため固定角度 roomExitYaw を使う（要確認）。
-    /// 入室完了でonEnteredRoom、doorPointへ戻った時点でonExitedRoomを発生する。
-    /// </summary>
-    private IEnumerator RoomPhaseCoroutine()
-    {
-        _roomPhaseActive = true;
-
-        int entryCount = CountValidRoomEntryPoints();
-        Debug.Log(
-            $"[MotherApproachController] RoomPhase：入室開始 | 有効なroomEntryPoints={entryCount} | yaw={transform.rotation.eulerAngles.y:F1}");
-
-        if (entryCount > 0)
-        {
-            // 部屋内部へ入る（doorPointから近い順に設定されたウェイポイントを順に進む）。
-            // 【新仕様】各点へ移動 → 到着 → その点の＋Zへ旋回。
-            foreach (Transform entryPoint in roomEntryPoints)
-            {
-                yield return MoveAndFaceWaypoint(entryPoint, doorTurnRotationSpeed, "roomEntryPoints");
-                if (_routeExecutionFailed) yield break;
-            }
-        }
-        else
-        {
-            // 有効なウェイポイントがない場合はその場（doorPoint）を部屋内部とみなす。
-            // onEnteredRoomは必ず発生させ、呼び出し側が待ち続けないようにする。
-            Debug.LogWarning("[MotherApproachController] RoomPhase：有効なroomEntryPointsがないため、doorPointで入室完了とする。", this);
-        }
-
-        Debug.Log("[MotherApproachController] 入室完了 — OnEnteredRoomを発生");
-        onEnteredRoom?.Invoke();
-
-        // 退室要求（RequestLeaveRoom）または安全タイムアウトまで部屋に留まる。
-        float timeout = Mathf.Max(0f, roomStayTimeoutSeconds);
-        float elapsed = 0f;
-        while (!_leaveRoomRequested)
-        {
-            if (timeout > 0f && elapsed >= timeout)
-            {
-                Debug.Log($"[MotherApproachController] 部屋滞在が安全タイムアウト（{timeout:F1}s）に達した — 自動的に退室する");
-                break;
-            }
-
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        _leaveRoomRequested = false;
-
-        // 部屋から出る：退室の向きへ回転してから、入室時と逆順でdoorPointへ戻る。
-        //
-        // 【新仕様との関係・要確認】
-        // 退室時の向きは、対応する「向きを指定するWaypoint」が現在存在しないため、
-        // 既存の固定角度 roomExitYaw を使い続けています（今回この値は変更していません）。
-        // Waypointの＋Zで指定したい場合は、退室用の向き指定Transformを新設して
-        // Inspectorで割り当てる必要があります（勝手にシーンへ追加していません）。
-        Debug.Log($"[MotherApproachController] RoomPhase：退室開始 | yaw={roomExitYaw:F1}（固定角度。対応Waypoint未設定）");
-        yield return RotateToYaw(roomExitYaw, doorTurnRotationSpeed);
-        if (_routeExecutionFailed) yield break;
-
-        // 退室経路：入室時と逆順に各点へ移動 → 到着 → その点の＋Zへ旋回。
-        for (int i = roomEntryPoints.Length - 1; i >= 0; i--)
-        {
-            yield return MoveAndFaceWaypoint(roomEntryPoints[i], doorTurnRotationSpeed, $"roomExit[{i}]");
-            if (_routeExecutionFailed) yield break;
-        }
-
-        // doorPointへ戻り、その点の＋Zへ旋回する（＝ドア前の既定の向きに復帰）。
-        yield return MoveAndFaceWaypoint(doorPoint, doorTurnRotationSpeed, "doorPoint（退室）");
-        if (_routeExecutionFailed) yield break;
-
-        _roomPhaseActive = false;
-        Debug.Log("[MotherApproachController] 退室完了 — OnExitedRoomを発生");
-        onExitedRoom?.Invoke();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -2630,7 +2922,6 @@ public class MotherApproachController : MonoBehaviour
 
         StopRotateCoroutine();
         _doorRoutineActive = false;
-        _roomEntryRequested = false;
 
         // 進行を中断するため、スライドの予約を取り消す（位置の復帰は非表示側が担当）。
         ResetDoorPeekSlideState();
@@ -2659,55 +2950,6 @@ public class MotherApproachController : MonoBehaviour
     /// 移動中は向きを変えない。旋回が完了してから次のWaypointへ進む。
     /// turnPoint が未設定の場合は警告を出して廊下フェーズを安全に中断する（無限待機しない）。
     /// </summary>
-    private IEnumerator MoveToTurnPoint()
-    {
-        IsInHallwayPhase = true;
-        // 中間段階（廊下）：turnPointで方向転換するまでは中間音量を維持する
-        Debug.Log("[MotherApproachController] フェーズ：廊下 | IsInHallwayPhase=true");
-        DiagPhase("廊下開始", $"turnPoint={(turnPoint != null ? turnPoint.name : "NULL")} " +
-                              $"中間点={BuildHallwayPath(hallwayPointsBeforeTurn).Count}件");
-
-        // TurnPointが未設定なら、その経路は成立しないため警告して安全に中断する。
-        if (turnPoint == null)
-        {
-            Debug.LogError("[MotherApproachController] turnPointが未設定のため廊下ルートを開始できません。" +
-                           "この経路はTurnPointが必須です。SceneでTurnPointのTransformを割り当ててください。", this);
-            AbortApproach();
-            yield break;
-        }
-
-        // TurnPointより前は中間点：止まらず通過し、到着した点の＋Zを次区間と並行して向く。
-        List<Transform> beforeTurn = BuildHallwayPath(hallwayPointsBeforeTurn);
-        for (int i = 0; i < beforeTurn.Count; i++)
-        {
-            yield return PassThroughWaypoint(beforeTurn[i], turnRotation, $"hallwayBeforeTurn[{i}]");
-            if (_routeExecutionFailed) yield break;
-        }
-
-        // TurnPoint：方向転換の要所だが経由地点のため、旋回完了は待たずに次区間へ進む。
-        // （旋回は次区間の移動と並行して継続し、到着のたびに足が止まるのを避ける）
-        yield return MoveAndFaceWaypoint(turnPoint, turnRotation, "turnPoint",
-            waitForTurnCompletion: false);
-        if (_routeExecutionFailed) yield break;
-        DiagPhase("TurnPoint到着", $"'{turnPoint.name}' 旋回完了");
-    }
-
-    /// <summary>
-    /// TurnPointより後の廊下ウェイポイントを登録順に進む（ドア確認ルート／フェイントA用）。
-    /// 【新仕様】各点へ移動 → 到着 → その点の＋Zへ旋回。
-    /// 未設定／空なら何もせずスキップする。
-    /// </summary>
-    private IEnumerator MoveAlongHallwayAfterTurn()
-    {
-        // 中間点なので止まらずに通過する（停止するのはdoorPointだけ）。
-        List<Transform> afterTurn = BuildHallwayPath(hallwayPointsAfterTurn);
-        for (int i = 0; i < afterTurn.Count; i++)
-        {
-            yield return PassThroughWaypoint(afterTurn[i], turnRotation, $"hallwayAfterTurn[{i}]");
-            if (_routeExecutionFailed) yield break;
-        }
-    }
-
     // ──────────────────────────────────────────────────────────────────────────
     //  帰路（Door Peek / Window Peek 終了後）
     // ──────────────────────────────────────────────────────────────────────────
@@ -2832,7 +3074,7 @@ public class MotherApproachController : MonoBehaviour
 
     /// <summary>
     /// 帰路の最後：旋回・歩行・足音・演出状態をすべて解除してからモデルを非表示にする。
-    /// 画面内で瞬間移動しない（初期位置へのリセットは既存の ResetApproach に委ねる）。
+    /// 非表示後、その場で待機位置（default point）へ戻す（画面内で瞬間移動しない）。
     /// success=false のときは「失敗／中断」として確定する（非表示と後始末は同じく実施する）。
     /// </summary>
     private void HideMotherForReturn(string routeLabel, string reason, bool success)
@@ -2856,19 +3098,7 @@ public class MotherApproachController : MonoBehaviour
         StopDoorPeekSlideCoroutine();
 
         // モデルを非表示にする。
-        if (motherModelRoot != null)
-        {
-            motherModelRoot.SetActive(false);
-            Debug.Log($"[MotherApproachController] 母親モデルを非表示にしました（{routeLabel}:{reason}）");
-        }
-
-        if (motherModelRenderers != null)
-        {
-            foreach (var r in motherModelRenderers)
-            {
-                if (r != null) r.enabled = false;
-            }
-        }
+        HideMotherModel();
 
         // 非表示にした後で、スライドによる位置ずれを解除する（古いずれを次サイクルへ残さない）。
         ApplyHorizontalPosition(_peekSlideOriginPosition);
@@ -2891,7 +3121,12 @@ public class MotherApproachController : MonoBehaviour
 
         Debug.Log($"[MotherApproachController] 帰路確定 — {ReturnHomePhase}（{routeLabel}:{reason}）");
         DiagPhase("帰路完了", $"{routeLabel}:{reason} success={success} 帰路={ReturnHomePhase}");
-        onReturnedHome?.Invoke();
+
+        // 非表示・移動停止・スライド解除が済んだ後で、待機位置（default point）へ戻す。
+        //  ・ここから先、この経路のコルーチンは位置を書き換えない（帰路の最終処理）。
+        //  ・捕獲演出中／別ルート接近中は RestoreToDefaultPoint 側が復帰を見送る。
+        //  ・失敗・中断（success=false）でも非表示後なので復帰してよい（見えない場所での移動）。
+        RestoreToDefaultPoint($"{routeLabel}:{reason}");
     }
 
     /// <summary>
@@ -4495,6 +4730,23 @@ public class MotherApproachController : MonoBehaviour
         RestoreImmediateHiddenRenderers();
     }
 
+    private void HideMotherModel()
+    {
+        if (motherModelRoot != null)
+        {
+            motherModelRoot.SetActive(false);
+            Debug.Log($"[MotherApproachController] 母親モデルを非表示にしました | object='{motherModelRoot.name}'");
+        }
+
+        if (motherModelRenderers != null)
+        {
+            foreach (var r in motherModelRenderers)
+            {
+                if (r != null) r.enabled = false;
+            }
+        }
+    }
+
     /// <summary>
     /// 【LOUD_ITEM 即時中断用】見た目を消すために無効化したRendererを元に戻す（未使用時は何もしない）。
     /// </summary>
@@ -4533,12 +4785,7 @@ public class MotherApproachController : MonoBehaviour
         SetPeekLighting(false);
         SetMotherStageLighting(false);
 
-        // 部屋入室（案B）の状態を初期化する。_cycleStartedAsRushInはBeginApproach()で
-        // ResetStateFlags()より前に設定されるため、ここではクリアしない。
         _doorRoutineActive = false;
-        _roomEntryRequested = false;
-        _roomPhaseActive = false;
-        _leaveRoomRequested = false;
 
         // 帰路の状態も初期化する（リセット・中断時に古い要求/実行が残らないようにする）。
         // ReturnHomePhase を Idle に戻すことで、前サイクルの結果が次サイクルへ持ち越されない。
@@ -4560,24 +4807,6 @@ public class MotherApproachController : MonoBehaviour
 
         // 【LOUD_ITEM 即時中断】で見た目だけ消したRendererを戻す（サイクル／RushIn開始で見た目を必ず戻す）。
         RestoreImmediateHiddenRenderers();
-    }
-
-    private bool ValidateWaypoints()
-    {
-        if (startPoint == null)
-        {
-            Debug.LogWarning("[MotherApproachController] startPointがNULLです。", this);
-            return false;
-        }
-
-        if (doorPoint == null)
-        {
-            Debug.LogWarning("[MotherApproachController] doorPointがNULLです。", this);
-            return false;
-        }
-
-        // 中間ウェイポイントは List が空でも（=旧フィールド未設定でも）続行する。
-        return true;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -4632,29 +4861,10 @@ public class MotherApproachController : MonoBehaviour
             Gizmos.DrawSphere(startPoint.position, 0.08f);
         }
 
-        // TurnPointより前の廊下ウェイポイント — 緑（登録順）
+        // 廊下フェイント通過ウェイポイント — 緑（登録順）
         Gizmos.color = Color.green;
-        List<Transform> beforeTurnGizmo = BuildHallwayPath(hallwayPointsBeforeTurn);
-        foreach (Transform wp in beforeTurnGizmo)
-        {
-            Gizmos.DrawSphere(wp.position, 0.06f);
-            if (prev != null) Gizmos.DrawLine(prev.position, wp.position);
-            prev = wp;
-        }
-
-        // turnPoint — 青（方向転換）
-        if (turnPoint != null)
-        {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawSphere(turnPoint.position, 0.09f);
-            if (prev != null) Gizmos.DrawLine(prev.position, turnPoint.position);
-            prev = turnPoint;
-        }
-
-        // TurnPointより後の廊下ウェイポイント — 緑（登録順、ドア確認ルートのみ）
-        Gizmos.color = Color.green;
-        List<Transform> afterTurnGizmo = BuildHallwayPath(hallwayPointsAfterTurn);
-        foreach (Transform wp in afterTurnGizmo)
+        List<Transform> hallwayGizmo = BuildHallwayPath(hallwayPointsAfterTurn);
+        foreach (Transform wp in hallwayGizmo)
         {
             Gizmos.DrawSphere(wp.position, 0.06f);
             if (prev != null) Gizmos.DrawLine(prev.position, wp.position);
@@ -4670,24 +4880,13 @@ public class MotherApproachController : MonoBehaviour
             prev = doorPoint;
         }
 
-        // フェイントの帰還ルート（TurnPoint → 前の点を逆順 → startPoint）— マゼンタ
-        Gizmos.color = Color.magenta;
-        for (int i = beforeTurnGizmo.Count - 1; i >= 0; i--)
-        {
-            Transform from = (i == beforeTurnGizmo.Count - 1 && turnPoint != null) ? turnPoint : beforeTurnGizmo[i + 1];
-            Gizmos.DrawLine(from.position, beforeTurnGizmo[i].position);
-        }
-
-        if (beforeTurnGizmo.Count > 0 && startPoint != null)
-            Gizmos.DrawLine(beforeTurnGizmo[0].position, startPoint.position);
-
-        // フェイントA（HallwayPassBy）— シアン（TurnPoint → 後の点 → doorPoint通過 → hallwayPassByPoint）
+        // フェイントA（HallwayPassBy）— シアン（通過点 → doorPoint通過 → hallwayPassByPoint）
         Gizmos.color = Color.cyan;
         if (hallwayPassByPoint != null)
         {
             Gizmos.DrawSphere(hallwayPassByPoint.position, 0.09f);
-            Transform passPrev = (turnPoint != null) ? turnPoint : startPoint;
-            foreach (Transform wp in afterTurnGizmo)
+            Transform passPrev = startPoint;
+            foreach (Transform wp in hallwayGizmo)
             {
                 if (passPrev != null) Gizmos.DrawLine(passPrev.position, wp.position);
                 passPrev = wp;
@@ -4700,20 +4899,6 @@ public class MotherApproachController : MonoBehaviour
             }
 
             if (passPrev != null) Gizmos.DrawLine(passPrev.position, hallwayPassByPoint.position);
-        }
-
-        // roomEntryPoints — 橙（doorPointからの入室ルート）
-        if (roomEntryPoints != null && doorPoint != null)
-        {
-            Gizmos.color = new Color(1f, 0.5f, 0f);
-            Transform prevRoom = doorPoint;
-            foreach (Transform wp in roomEntryPoints)
-            {
-                if (wp == null) continue;
-                Gizmos.DrawSphere(wp.position, 0.07f);
-                Gizmos.DrawLine(prevRoom.position, wp.position);
-                prevRoom = wp;
-            }
         }
     }
 #endif

@@ -38,7 +38,6 @@ public static class MotherHeightOffsetVerifier
         // 検証用の小さなシーンを作る（既存シーンには触れない。実行後に必ず破棄する）。
         var controllerGo = new GameObject("検証用 MotherRouteRoot");
         var startGo      = new GameObject("検証用 startPoint");
-        var turnGo       = new GameObject("検証用 turnPoint");
         var doorGo       = new GameObject("検証用 doorPoint");
         var peekGo       = new GameObject("検証用 gardenPeekPoint");
 
@@ -46,7 +45,6 @@ public static class MotherHeightOffsetVerifier
         {
             // 各waypointのYを互いに違う値にして、「地点ごとに生座標から再計算していること」を検証できるようにする。
             startGo.transform.position = new Vector3(0f, 0f, 0f);
-            turnGo.transform.position  = new Vector3(2f, 1f, 2f);
             doorGo.transform.position  = new Vector3(4f, 2f, 4f);
             peekGo.transform.position  = new Vector3(6f, 3f, 6f);
 
@@ -64,7 +62,6 @@ public static class MotherHeightOffsetVerifier
             }
 
             controller.startPoint       = startGo.transform;
-            controller.turnPoint        = turnGo.transform;
             controller.doorPoint       = doorGo.transform;
             controller.gardenPeekPoint  = peekGo.transform;
 
@@ -161,7 +158,6 @@ public static class MotherHeightOffsetVerifier
         {
             Object.DestroyImmediate(controllerGo);
             Object.DestroyImmediate(startGo);
-            Object.DestroyImmediate(turnGo);
             Object.DestroyImmediate(doorGo);
             Object.DestroyImmediate(peekGo);
         }

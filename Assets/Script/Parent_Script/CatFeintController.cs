@@ -259,7 +259,7 @@ public class CatFeintController : MonoBehaviour
     }
 
     /// <summary>
-    /// 猫をStartPointに出現させ、母親のDoorRoutineと同じwaypoint順でDoorPointまで移動させる。
+    /// 猫をドア側共通配置地点（短縮接近）に非表示でテレポートさせ、表示後にDoorPointまで短い区間だけ移動させる。
     /// shouldContinueがfalseを返すと中断する（後始末は呼び出し側で行う）。
     /// </summary>
     public IEnumerator MoveAlongDoorRoute(Func<bool> shouldContinue)
@@ -273,37 +273,31 @@ public class CatFeintController : MonoBehaviour
             yield break;
         }
 
-        // StartPointに出現（母親と同じくStartPointの位置・向きで初期化。高さはcatHeightOffsetを1回だけ加算）。
-        Transform startPoint = routeController.startPoint;
-        if (startPoint != null)
-            catObject.transform.SetPositionAndRotation(CatGoalPosition(startPoint.position), startPoint.rotation);
+        // 短縮接近配置地点を取得（未設定時はstartPointへフォールバック）
+        Transform placementPoint = routeController.DoorPeekShortApproachPlacementPoint;
+        if (placementPoint == null)
+        {
+            placementPoint = routeController.startPoint;
+            Debug.LogWarning("[CatFeint] DoorPeekShortApproachPlacementPointが未設定のため、startPointを使用します。", this);
+        }
+
+        // 1. 非表示の状態でドア側共通配置地点へテレポートし、位置・向き・catHeightOffsetを確定する。
+        if (catObject.activeSelf)
+            catObject.SetActive(false);
+
+        if (placementPoint != null)
+        {
+            catObject.transform.SetPositionAndRotation(
+                CatGoalPosition(placementPoint.position),
+                placementPoint.rotation);
+        }
+
+        // 2. 位置・向き確定後に猫を表示し、足音を開始する。
         catObject.SetActive(true);
         StartCatFootsteps();
 
-        // 母親と同じ廊下ルートを辿る：TurnPointより前 → TurnPoint（旋回）→ TurnPointより後 → DoorPoint（旋回）。
-        // 経路は母親側のInspector設定（List）から取得するため、点を増減してもコード変更は不要。
-        List<Transform> beforeTurn = routeController.GetHallwayPointsBeforeTurn();
-        for (int i = 0; i < beforeTurn.Count; i++)
-        {
-            yield return MoveCatTo(beforeTurn[i], shouldContinue);
-            if (_walkAborted) yield break;
-        }
-
-        if (routeController.turnPoint != null)
-        {
-            yield return MoveCatTo(routeController.turnPoint, shouldContinue);
-            if (_walkAborted) yield break;
-            yield return RotateCatToYaw(routeController.turnPoint.rotation.eulerAngles.y, shouldContinue);
-            if (_walkAborted) yield break;
-        }
-
-        List<Transform> afterTurn = routeController.GetHallwayPointsAfterTurn();
-        for (int i = 0; i < afterTurn.Count; i++)
-        {
-            yield return MoveCatTo(afterTurn[i], shouldContinue);
-            if (_walkAborted) yield break;
-        }
-
+        // 3. 短縮接近：DoorPointへ直接移動し、DoorPointの向きへ旋回する。
+        //    旧往路や通過ポイント（hallwayPointsAfterTurn）は巡回しない。
         if (routeController.doorPoint != null)
         {
             yield return MoveCatTo(routeController.doorPoint, shouldContinue);
@@ -461,7 +455,8 @@ public class CatFeintController : MonoBehaviour
             return;
 
         catFootstepAudioSource.loop = true;
-        catFootstepAudioSource.volume = footstepVolume;
+        // 演出用の音量に SE 設定倍率を掛けた最終音量を適用する（現在値に掛けて累積しない）。
+        catFootstepAudioSource.volume = ParentAudioSettings.ApplySe(footstepVolume);
         if (!catFootstepAudioSource.isPlaying)
             catFootstepAudioSource.Play();
     }

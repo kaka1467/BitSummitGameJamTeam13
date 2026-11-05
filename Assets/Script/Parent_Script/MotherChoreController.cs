@@ -297,6 +297,17 @@ public class MotherChoreController : MonoBehaviour
         if (!choreEnabled || IsChoreActive) return;
         // ゲームオーバー演出中は片付けを開始しない（演出への通常要求を止める）。
         if (approachController != null && approachController.IsGameOverSequenceActive) return;
+        // 本プレイ終了（時間切れ・通常結果確定を含む）後は新規の片付けを開始しない。
+        //  ・すでに動いている片付けは中断しない（ここは新規要求の入口のみ）。
+        //  ・warningSystem の有無で判定を飛ばさない（共通窓口へ委譲）。
+        var autoStart = ParentGameTimeManager.EvaluateAutoStart();
+        if (autoStart == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+            autoStart == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+        {
+            if (autoStart == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+                ParentGameTimeManager.LogUnavailableRejectOnce();
+            return;
+        }
         if (_choreStartRequested || _choreStartCount >= choreCountPerPlay) return;
         // 「残り120秒未満」＝ progressRate > 0.5 のみ許可する（ちょうど0.5＝残り120秒ちょうどは不可）。
         if (progressRate <= choreAllowedProgressRate) return;
@@ -569,9 +580,37 @@ public class MotherChoreController : MonoBehaviour
             yield break;
         }
 
+        // 待機中に本プレイが終了していたら片付けを開始しない（新規開始のみを止める）。
+        //  ・warningSystem の有無で判定を飛ばさない（共通窓口へ委譲）。
+        if (!isManual)
+        {
+            var autoStart = ParentGameTimeManager.EvaluateAutoStart();
+            if (autoStart == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+                autoStart == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+            {
+                Debug.Log("[MotherChore] 本プレイ終了／開始不可のため片付けを開始しません");
+                _choreStartRequested = false;
+                yield break;
+            }
+        }
+
         // 待機中に通常の親イベントが始まったら、終了を待つ（重複させない）。
         if (warningSystem != null && warningSystem.isWarningActive)
         {
+            // 予告待ちに入る前に、自動の場合は開始可否を確認する（待機中も毎フレーム確認する）。
+            if (!isManual)
+            {
+                var beforeWaitDecision = ParentGameTimeManager.EvaluateAutoStart();
+                if (beforeWaitDecision == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+                    beforeWaitDecision == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+                {
+                    Debug.Log($"[MotherChore] 予告待ち開始前に開始不可（{beforeWaitDecision}）— " +
+                              "予約を取り消し、片付けへ進みません（ロックは未取得）");
+                    _choreStartRequested = false;
+                    yield break;
+                }
+            }
+
             if (!waitForActiveWarning && !isManual)
             {
                 if (showDebugLogs)
@@ -584,8 +623,45 @@ public class MotherChoreController : MonoBehaviour
             // waitForActiveWarning が false でも待つ。
             Debug.Log("[MotherChore] 通常イベントの終了を待ってから片付けを開始します" +
                       (isManual ? "（6キーの手動要求）" : ""));
+
+            // ── 通常予告待ち中の終了・開始不可（自動のみ） ──
+            //  ・待機中はロック未取得（ApplyChoreLocks は ChoreRoutine 開始時）。
+            //    したがって解放すべきは自分の予約（_choreStartRequested）だけ。
+            //  ・RejectPlayFinished：予約を取り消して片付けへ進まない（終了ラッチ対象）。
+            //  ・RejectUnavailable：同じく予約を取り消す（保留すると _choreStartRequested が
+            //    残り、次回の NotifyGameProgress が再要求を受け付けなくなるため）。
+            //    再評価は次回の進行率通知（NotifyGameProgress）で行われる。
             while (warningSystem != null && warningSystem.isWarningActive)
+            {
+                if (!isManual)
+                {
+                    var waitDecision = ParentGameTimeManager.EvaluateAutoStart();
+                    if (waitDecision == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+                        waitDecision == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+                    {
+                        Debug.Log($"[MotherChore] 通常予告待ち中に開始不可（{waitDecision}）— " +
+                                  "予約を取り消し、片付けへ進みません（ロックは未取得）");
+                        _choreStartRequested = false;
+                        yield break;
+                    }
+                }
+
                 yield return null;
+            }
+
+            // 待機解除直後：片付けの最初の副作用（ChoreRoutine のロック取得）より前に再確認する。
+            if (!isManual)
+            {
+                var afterWaitDecision = ParentGameTimeManager.EvaluateAutoStart();
+                if (afterWaitDecision == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+                    afterWaitDecision == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+                {
+                    Debug.Log($"[MotherChore] 予告待ち解除直後に開始不可（{afterWaitDecision}）— " +
+                              "予約を取り消し、片付けへ進みません（ロックは未取得）");
+                    _choreStartRequested = false;
+                    yield break;
+                }
+            }
         }
 
         // ゲームオーバー確定後は片付けを開始しない。
@@ -673,6 +749,22 @@ public class MotherChoreController : MonoBehaviour
         while (warningSystem.isWarningActive)
             yield return null;
 
+        // ── 片付け短縮接近の設定不備は、灯り・音より前に拒否する（旧往路へは戻さない）──
+        //  ・配置地点（ドア側共通）と必須参照を、予兆の照明を点ける前に検証する。
+        //  ・すでに動いている片付けは中断しない（ここは新規開始の入口のみ）。
+        if (approachController != null &&
+            !approachController.IsShortApproachRouteReady(
+                MotherApproachController.ShortApproachRouteKind.Chore, out string choreRejectReason))
+        {
+            Debug.LogWarning("[MotherChore] 片付け：開始拒否 — " + choreRejectReason +
+                             "（灯り・音は開始しません。利用不可）");
+            _choreStartRequested = false;
+            _manualStartRequested = false;
+            _manualStartPending = false;
+            FinishChoreCycle();
+            yield break;
+        }
+
         // ── 片付け開始の照明の予兆（通常の hallway イベントと同じ照明・順番・待ち時間）──
         //    MotherApproachWarning の既存予兆処理を再利用する（片付け専用の秒数・照明設定は増やさない）。
         //    6キーの手動開始（isManual）でも照明の予兆は省略しない。
@@ -690,10 +782,17 @@ public class MotherChoreController : MonoBehaviour
         //    roomEntryPoints（通常の入室ルート）は使わない。専用経路だけを歩く。
         if (!approachController.StartChoreRoute())
         {
-            Debug.LogWarning("[MotherChore] 片付け専用ルートを開始できませんでした（設定不足）— 片付けを中止します");
+            // 本体開始の失敗を成功として扱わない。
+            //  ・自分が点けた予兆の灯り・足音だけを閉じる（他イベント・捕獲演出は触らない）。
+            //  ・予約（_choreStartRequested 等）とロックは FinishChoreCycle で閉じる。
+            Debug.LogWarning("[MotherChore] 片付け：開始結果=失敗 — 専用ルートを開始できませんでした" +
+                             "（予兆の灯り・足音を取消し、片付けを中止します）");
+            warningSystem?.CloseChoreForeshadowLights("片付け本体の開始失敗");
             FinishChoreCycle();
             yield break;
         }
+
+        Debug.Log("[MotherChore] 片付け：開始結果=成功 — 専用ルート（行き）を実行します");
 
         // ── 行きの怪しさ加算は「DoorPoint の Door_Open 完了後」から開始する ──
         //    StartChoreRoute 直後（開始待ち・廊下移動・Door_Open 中）では加算しない。

@@ -21,6 +21,7 @@ public class TitleBgmFader : MonoBehaviour
     private AudioSource audioSource;
     private Coroutine fadeRoutine;
     private float baseVolume = 1f;
+    private float _stagingVolume = 1f;   // 設定倍率を掛ける前のフェード音量（演出用）
     private bool isFadingOut;
     private bool resumeLocked;
 
@@ -36,7 +37,37 @@ public class TitleBgmFader : MonoBehaviour
     private void Awake()
     {
         audioSource = GetComponent<AudioSource>();
-        baseVolume = audioSource.volume;
+        baseVolume = audioSource.volume;   // Inspector の基準音量（ユーザー設定倍率は掛けない）
+        _stagingVolume = baseVolume;
+    }
+
+    private void OnEnable()
+    {
+        // ユーザー音量設定の変化に追従する（書き合いしない：下の ApplyVolume が唯一の書き込み）。
+        ParentAudioSettings.Changed += OnAudioSettingsChanged;
+    }
+
+    private void OnDisable()
+    {
+        ParentAudioSettings.Changed -= OnAudioSettingsChanged;
+    }
+
+    /// <summary>
+    /// 演出用のフェード音量（設定倍率を掛ける前）へ、最新のBGM設定倍率を一度だけ掛けて AudioSource へ適用する。
+    ///  ・フェード中に倍率が変わっても、次回の ApplyVolume から出力へ即反映される（フェードはやり直さない）。
+    ///  ・倍率0なら出力も0（フェード完了を待たずに無音）。倍率を戻せば、その時点の演出音量へ戻る。
+    ///  ・現在値へ倍率を掛け直さない（必ず「演出音量 × 倍率」を算出する）。
+    /// </summary>
+    private void ApplyVolume()
+    {
+        if (audioSource == null) return;
+        audioSource.volume = Mathf.Clamp01(_stagingVolume * ParentAudioSettings.BgmVolume);
+    }
+
+    /// <summary>設定倍率の変更に追従する（演出用のフェード音量はそのまま、最新倍率だけを掛け直す）。</summary>
+    private void OnAudioSettingsChanged()
+    {
+        ApplyVolume();
     }
 
     /// <summary>
@@ -62,6 +93,7 @@ public class TitleBgmFader : MonoBehaviour
 
         if (!audioSource.isPlaying)
         {
+            _stagingVolume = 0f;
             audioSource.volume = 0f;
             audioSource.Play();
         }
@@ -70,15 +102,16 @@ public class TitleBgmFader : MonoBehaviour
         StartFade(baseVolume, fadeInSeconds, stopAtEnd: false);
     }
 
-    private void StartFade(float target, float seconds, bool stopAtEnd)
+    private void StartFade(float stagingTarget, float seconds, bool stopAtEnd)
     {
         if (fadeRoutine != null) StopCoroutine(fadeRoutine);
-        fadeRoutine = StartCoroutine(FadeRoutine(target, seconds, stopAtEnd));
+        fadeRoutine = StartCoroutine(FadeRoutine(stagingTarget, seconds, stopAtEnd));
     }
 
-    private IEnumerator FadeRoutine(float target, float seconds, bool stopAtEnd)
+    private IEnumerator FadeRoutine(float stagingTarget, float seconds, bool stopAtEnd)
     {
-        float from = audioSource.volume;
+        // 演出用のフェード音量（設定倍率を掛ける前）を進める。最終適用時に最新倍率を一度だけ掛ける。
+        float from = _stagingVolume;
 
         if (seconds > 0f)
         {
@@ -86,20 +119,19 @@ public class TitleBgmFader : MonoBehaviour
             while (elapsed < seconds)
             {
                 elapsed += Time.unscaledDeltaTime;
-                audioSource.volume = Mathf.Lerp(from, target, Mathf.Clamp01(elapsed / seconds));
+                _stagingVolume = Mathf.Lerp(from, stagingTarget, Mathf.Clamp01(elapsed / seconds));
+                ApplyVolume();   // 毎フレーム最新倍率を掛けて適用（倍率0なら即0）
                 yield return null;
             }
         }
 
+        _stagingVolume = stagingTarget;
+
         if (stopAtEnd)
         {
             audioSource.Stop();
-            audioSource.volume = baseVolume; // 次に再生されても無音にならないよう戻す
         }
-        else
-        {
-            audioSource.volume = target;
-        }
+        ApplyVolume();
 
         isFadingOut = false;
         fadeRoutine = null;

@@ -263,7 +263,8 @@ public class GameOverPresentationController : MonoBehaviour
             return;
         }
 
-        gameOverAudioSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+        // 演出用の音量に、親機SE設定倍率を一度だけ掛けて再生する（累積しない）。
+        gameOverAudioSource.PlayOneShot(clip, Mathf.Clamp01(volume) * ParentAudioSettings.SeVolume);
         Debug.Log($"[GameOverPresentation] {label} を再生: clip='{clip.name}' / 音量={Mathf.Clamp01(volume):F2}", this);
     }
 
