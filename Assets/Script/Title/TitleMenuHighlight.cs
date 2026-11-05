@@ -71,6 +71,26 @@ public class TitleMenuHighlight : MonoBehaviour
 
     private Graphic glowGraphic;
     private Coroutine flashRoutine;
+    private bool _indicatorSuppressed;   // 設定パネル表示中など、矢印・グローを隠す
+
+    /// <summary>
+    /// 矢印・選択グローを一時的に隠す／戻す（設定パネル表示中など）。
+    ///  ・隠している間は追従更新も止める（勝手に再表示しない）。
+    ///  ・ナビゲーション自体（EventSystem）には触れない。
+    /// </summary>
+    /// <summary>追従している矢印（設定パネル用の矢印を同じ見た目で作るために参照する。読み取り専用）。</summary>
+    public RectTransform ArrowIndicator => arrowIndicator;
+
+    public void SetIndicatorVisible(bool visible)
+    {
+        _indicatorSuppressed = !visible;
+
+        if (!visible)
+        {
+            if (arrowIndicator != null) arrowIndicator.gameObject.SetActive(false);
+            if (selectionGlow != null) selectionGlow.gameObject.SetActive(false);
+        }
+    }
 
     private void Awake()
     {
@@ -122,6 +142,8 @@ public class TitleMenuHighlight : MonoBehaviour
 
     private void UpdateFollowPosition(bool useSnap)
     {
+        if (_indicatorSuppressed) return;   // 設定パネル表示中は追従・再表示しない
+
         GameObject selected = EventSystem.current != null
             ? EventSystem.current.currentSelectedGameObject
             : null;
@@ -131,7 +153,9 @@ public class TitleMenuHighlight : MonoBehaviour
         RectTransform target = selected.transform as RectTransform;
         if (target == null) return;
 
-        Vector2 basePos = target.anchoredPosition;
+        // 選択項目と矢印の親が違う場合（実行時生成の設定ボタンなど）は、
+        // 生の anchoredPosition をそのまま使うと矢印が中央へ飛ぶ。ワールド位置を矢印の親のローカルへ変換する。
+        Vector2 basePos = GetAnchoredInArrowParent(target);
 
         if (arrowIndicator != null)
         {
@@ -144,6 +168,22 @@ public class TitleMenuHighlight : MonoBehaviour
             if (!selectionGlow.gameObject.activeSelf) selectionGlow.gameObject.SetActive(true);
             MoveTowards(selectionGlow, basePos + glowOffset, useSnap);
         }
+    }
+
+    /// <summary>
+    /// 選択項目の位置を、矢印（arrowIndicator）の親のローカル座標へ変換して返す。
+    ///  ・同じ親なら従来どおり anchoredPosition をそのまま使う（既存挙動を変えない）。
+    ///  ・別の親なら、ワールド位置を変換して使う（中央へ飛ぶのを防ぐ）。
+    /// </summary>
+    private Vector2 GetAnchoredInArrowParent(RectTransform target)
+    {
+        RectTransform arrowParent = arrowIndicator != null ? arrowIndicator.parent as RectTransform : null;
+        if (arrowParent == null || target.parent == arrowParent)
+            return target.anchoredPosition;
+
+        Vector3 world = target.TransformPoint(target.rect.center);
+        Vector3 local = arrowParent.InverseTransformPoint(world);
+        return new Vector2(local.x, local.y);
     }
 
     private void MoveTowards(RectTransform rt, Vector2 targetPos, bool snap)

@@ -43,6 +43,38 @@ public class TitleScreenVideoPlayer : MonoBehaviour
 
     private float idleTimer = 0f;
     private bool isVideoPlaying = false;
+    private bool _idleSuppressed;   // 設定パネル表示中など、放置動画の開始・準備を抑止する
+
+    /// <summary>
+    /// 放置動画の開始・準備を抑止する（設定パネル表示中など）。
+    ///  ・抑止中は idleTimer を進めない（Update 冒頭で return）。
+    ///  ・再生中なら停止する（設定中に動画音声だけ残る状態を避ける）。
+    ///  ・解除時はタイマーをリセットし、閉じた直後に始まらないようにする。
+    ///  ・接続・ゲーム開始・Scene遷移・BGMフェードには触れない。
+    /// </summary>
+    public void SetIdleSuppressed(bool suppressed)
+    {
+        if (_idleSuppressed == suppressed) return;
+        _idleSuppressed = suppressed;
+
+        if (suppressed)
+        {
+            if (isVideoPlaying && !isStopping)
+            {
+                StartCoroutine(StopVideoWithFade());
+            }
+            else if (isPrepared && videoPlayer != null)
+            {
+                videoPlayer.Stop();
+                videoPlayer.gameObject.SetActive(false);
+                isPrepared = false;
+            }
+        }
+        else
+        {
+            idleTimer = 0f;   // 閉じた直後に動画が始まらないようにリセットする
+        }
+    }
     private Vector2 lastMousePosition;
     private bool hasStartedOnce = false;
     private bool isPrepared = false;
@@ -91,6 +123,13 @@ public class TitleScreenVideoPlayer : MonoBehaviour
 
     void Update()
     {
+        // 設定パネル表示中などは放置動画の準備・開始を抑止する（タイマーも進めない）。
+        if (_idleSuppressed)
+        {
+            idleTimer = 0f;
+            return;
+        }
+
         if (isVideoPlaying)
         {
             // 動画再生中に何か入力があったら動画をスキップ

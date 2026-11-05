@@ -136,7 +136,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &17559853
 RectTransform:
   m_ObjectHideFlags: 0
@@ -642,7 +642,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &509490377
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1926,7 +1926,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1416796626
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2426,10 +2426,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ResultScoreUI
   resultType: 0
   resultScoreText: {fileID: 984610025}
-  rankTexts:
-  - {fileID: 1416796627}
-  - {fileID: 509490378}
-  - {fileID: 1786718962}
+  rankTexts: []
   rank1Text: {fileID: 0}
   rank2Text: {fileID: 0}
   rank3Text: {fileID: 0}
@@ -2681,7 +2678,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1786718961
 RectTransform:
   m_ObjectHideFlags: 0
