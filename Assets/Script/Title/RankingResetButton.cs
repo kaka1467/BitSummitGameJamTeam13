@@ -1,12 +1,19 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>
+/// 子機タイトルの「スコアリセット」。確認パネルで「はい」を選んだときだけ、スコア・ランキングの保存値を消す。
+/// 消す対象は下の12キー（ゲームオーバー／クリアの最新得点とTOP5）だけ。
+/// 言語・音量などの設定や、接続・同期の保存値には触れない（PlayerPrefs.DeleteAll は使わない）。
+/// </summary>
 public class RankingResetButton : MonoBehaviour
 {
     [SerializeField] private GameObject confirmationPanel; // 確認UIのパネル
 
     private const string KeyGameOverRank = "GameOverRank_";
     private const string KeyTimeUpRank   = "TimeUpRank_";
+    private const string KeyLastGameOverScore = "LastGameOverScore";
+    private const string KeyLastTimeUpScore   = "LastTimeUpScore";
     private const int    RankingSize     = 5;
 
     private void Start()
@@ -35,16 +42,19 @@ public class RankingResetButton : MonoBehaviour
     /// </summary>
     public void OnClickConfirm()
     {
+        // 確認パネルが開いていないときの誤発火では消さない（キー操作の取りこぼし対策）。
+        if (confirmationPanel != null && !confirmationPanel.activeInHierarchy) return;
+
         for (int i = 0; i < RankingSize; i++)
         {
             PlayerPrefs.SetInt(KeyGameOverRank + i, 0);
             PlayerPrefs.SetInt(KeyTimeUpRank   + i, 0);
         }
-        PlayerPrefs.SetInt("LastGameOverScore", 0);
-        PlayerPrefs.SetInt("LastTimeUpScore",   0);
+        PlayerPrefs.SetInt(KeyLastGameOverScore, 0);
+        PlayerPrefs.SetInt(KeyLastTimeUpScore,   0);
         PlayerPrefs.Save();
 
-        Debug.Log("[RankingResetButton] ランキングをリセットしました。");
+        Debug.Log("[RankingResetButton] スコア・ランキングをリセットしました（言語・音量などの設定は変更していません）。");
 
         // 子機が唯一の基準: リセット後の状態（全0・最新結果なし）を親機へ同期する
         ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running != null

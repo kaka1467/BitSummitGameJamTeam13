@@ -458,7 +458,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &118481410
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1487,7 +1487,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &305085952
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1836,7 +1836,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &441751686
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2641,7 +2641,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &861082790
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3057,7 +3057,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &933271944
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3243,6 +3243,143 @@ CanvasRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 990690993}
+  m_CullTransparentMesh: 1
+--- !u!1 &1010866012
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1010866013}
+  - component: {fileID: 1010866015}
+  - component: {fileID: 1010866014}
+  m_Layer: 5
+  m_Name: QTEPoints
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &1010866013
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1010866012}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1.5, y: 1.5, z: 1.5}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 1533523147}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 85, y: 130}
+  m_SizeDelta: {x: 200, y: 50}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1010866014
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1010866012}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_text: 
+  m_isRightToLeft: 0
+  m_fontAsset: {fileID: 11400000, guid: 2ab0b31a20f0244a081da6e022e2ce90, type: 2}
+  m_sharedMaterial: {fileID: -4867459677708758340, guid: 2ab0b31a20f0244a081da6e022e2ce90, type: 2}
+  m_fontSharedMaterials: []
+  m_fontMaterial: {fileID: 0}
+  m_fontMaterials: []
+  m_fontColor32:
+    serializedVersion: 2
+    rgba: 4294967295
+  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+  m_enableVertexGradient: 0
+  m_colorMode: 3
+  m_fontColorGradient:
+    topLeft: {r: 1, g: 1, b: 1, a: 1}
+    topRight: {r: 1, g: 1, b: 1, a: 1}
+    bottomLeft: {r: 1, g: 1, b: 1, a: 1}
+    bottomRight: {r: 1, g: 1, b: 1, a: 1}
+  m_fontColorGradientPreset: {fileID: 0}
+  m_spriteAsset: {fileID: 0}
+  m_tintAllSprites: 0
+  m_StyleSheet: {fileID: 0}
+  m_TextStyleHashCode: -1183493901
+  m_overrideHtmlColors: 0
+  m_faceColor:
+    serializedVersion: 2
+    rgba: 4294967295
+  m_fontSize: 36
+  m_fontSizeBase: 36
+  m_fontWeight: 400
+  m_enableAutoSizing: 0
+  m_fontSizeMin: 18
+  m_fontSizeMax: 72
+  m_fontStyle: 0
+  m_HorizontalAlignment: 2
+  m_VerticalAlignment: 512
+  m_textAlignment: 65535
+  m_characterSpacing: 0
+  m_characterHorizontalScale: 1
+  m_wordSpacing: 0
+  m_lineSpacing: 0
+  m_lineSpacingMax: 0
+  m_paragraphSpacing: 0
+  m_charWidthMaxAdj: 0
+  m_TextWrappingMode: 1
+  m_wordWrappingRatios: 0.4
+  m_overflowMode: 0
+  m_linkedTextComponent: {fileID: 0}
+  parentLinkedComponent: {fileID: 0}
+  m_enableKerning: 0
+  m_ActiveFontFeatures: 6e72656b
+  m_enableExtraPadding: 0
+  checkPaddingRequired: 0
+  m_isRichText: 1
+  m_EmojiFallbackSupport: 1
+  m_parseCtrlCharacters: 1
+  m_isOrthographic: 1
+  m_isCullingEnabled: 0
+  m_horizontalMapping: 0
+  m_verticalMapping: 0
+  m_uvLineOffset: 0
+  m_geometrySortingOrder: 0
+  m_IsTextObjectScaleStatic: 0
+  m_VertexBufferAutoSizeReduction: 0
+  m_useMaxVisibleDescender: 1
+  m_pageToDisplay: 1
+  m_margin: {x: -229.56296, y: 0, z: -149.7801, w: 0}
+  m_isUsingLegacyAnimationComponent: 0
+  m_isVolumetricText: 0
+  m_hasFontAssetChanged: 0
+  m_baseMaterial: {fileID: 0}
+  m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!222 &1010866015
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1010866012}
   m_CullTransparentMesh: 1
 --- !u!1 &1034612419
 GameObject:
@@ -3535,7 +3672,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1329302782
 RectTransform:
   m_ObjectHideFlags: 0
@@ -3611,7 +3748,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1344561279
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4494,6 +4631,7 @@ RectTransform:
   - {fileID: 1329302782}
   - {fileID: 2050891640}
   - {fileID: 861082790}
+  - {fileID: 1010866013}
   - {fileID: 1915573610}
   - {fileID: 192992547}
   - {fileID: 1404703326}
@@ -4736,7 +4874,7 @@ MonoBehaviour:
   laneSpawnIntervalMaxSeconds: 0.85
   hugeObstacleSpawnCount: 1
   hugeObstacleSpawnY: 0.00000001929803
-  bgmNormalSpawnRemainingSeconds: 120
+  bgmNormalSpawnElapsedSeconds: 120
   enableDebugSpawnKeys: 1
   showDebugSpawnKeyLogs: 1
   minSpawnDistanceX: 1.2
@@ -4754,6 +4892,329 @@ MonoBehaviour:
   hugeInitialDelay: 30
   hugeCooldownAfterQte: 30
   hugeFeverDeferralSeconds: 5
+  itemSpeedMultiplier: 1
+  spawnAmountMultiplier: 1
+  badItemWeightMultiplier: 1
+  patternsEnabled: 1
+  firstPatternDelaySeconds: 8
+  patternIntervalMinSeconds: 6
+  patternIntervalMaxSeconds: 14
+  patternClearanceSeconds: 0.8
+  spawnFeverPatternOnFeverStart: 1
+  patterns:
+  - name: "\u9023\u7D9A\u53CE\u96C6\u30FB\u4E2D\u6BB5"
+    enabled: 1
+    weight: 1
+    use: 0
+    minElapsedSeconds: 0
+    columnSpacing: 0.5
+    allowVerticalFlip: 0
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 1
+      column: 0
+    - kind: 0
+      lane: 1
+      column: 1
+    - kind: 0
+      lane: 1
+      column: 2
+    - kind: 0
+      lane: 1
+      column: 3
+    - kind: 0
+      lane: 1
+      column: 4
+    - kind: 0
+      lane: 1
+      column: 5
+  - name: "\u9023\u7D9A\u53CE\u96C6\u30FB\u7AEF\u30EC\u30FC\u30F3"
+    enabled: 1
+    weight: 1
+    use: 0
+    minElapsedSeconds: 0
+    columnSpacing: 0.5
+    allowVerticalFlip: 1
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 0
+      column: 0
+    - kind: 0
+      lane: 0
+      column: 1
+    - kind: 0
+      lane: 0
+      column: 2
+    - kind: 0
+      lane: 0
+      column: 3
+    - kind: 0
+      lane: 0
+      column: 4
+    - kind: 0
+      lane: 0
+      column: 5
+  - name: "\u4E0A\u4E0B\u79FB\u52D5\u30FB\u968E\u6BB5"
+    enabled: 1
+    weight: 1
+    use: 0
+    minElapsedSeconds: 0
+    columnSpacing: 0.6
+    allowVerticalFlip: 1
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 0
+      column: 0
+    - kind: 0
+      lane: 1
+      column: 1
+    - kind: 0
+      lane: 2
+      column: 2
+    - kind: 0
+      lane: 1
+      column: 3
+    - kind: 0
+      lane: 0
+      column: 4
+    - kind: 0
+      lane: 1
+      column: 5
+    - kind: 0
+      lane: 2
+      column: 6
+  - name: "\u4E0A\u4E0B\u79FB\u52D5\u30FB\u5F80\u5FA9"
+    enabled: 1
+    weight: 0.8
+    use: 0
+    minElapsedSeconds: 15
+    columnSpacing: 0.7
+    allowVerticalFlip: 1
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 0
+      column: 0
+    - kind: 0
+      lane: 2
+      column: 1
+    - kind: 0
+      lane: 0
+      column: 2
+    - kind: 0
+      lane: 2
+      column: 3
+    - kind: 0
+      lane: 0
+      column: 4
+  - name: "\u9078\u629E\u30FB\u7AEF\u306E\u9AD8\u5F97\u70B9"
+    enabled: 1
+    weight: 1
+    use: 0
+    minElapsedSeconds: 20
+    columnSpacing: 0.5
+    allowVerticalFlip: 1
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 2
+      column: 0
+    - kind: 0
+      lane: 2
+      column: 1
+    - kind: 0
+      lane: 2
+      column: 2
+    - kind: 0
+      lane: 2
+      column: 3
+    - kind: 0
+      lane: 2
+      column: 4
+    - kind: 2
+      lane: 0
+      column: 0
+    - kind: 1
+      lane: 0
+      column: 1
+    - kind: 1
+      lane: 0
+      column: 2
+    - kind: 1
+      lane: 0
+      column: 3
+  - name: "\u9078\u629E\u30FB\u4E2D\u6BB5\u306E\u9AD8\u5F97\u70B9"
+    enabled: 1
+    weight: 0.8
+    use: 0
+    minElapsedSeconds: 30
+    columnSpacing: 0.5
+    allowVerticalFlip: 0
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 0
+      column: 0
+    - kind: 0
+      lane: 0
+      column: 1
+    - kind: 0
+      lane: 0
+      column: 2
+    - kind: 0
+      lane: 0
+      column: 3
+    - kind: 0
+      lane: 0
+      column: 4
+    - kind: 0
+      lane: 2
+      column: 0
+    - kind: 0
+      lane: 2
+      column: 1
+    - kind: 0
+      lane: 2
+      column: 2
+    - kind: 0
+      lane: 2
+      column: 3
+    - kind: 0
+      lane: 2
+      column: 4
+    - kind: 2
+      lane: 1
+      column: 0
+    - kind: 1
+      lane: 1
+      column: 1
+    - kind: 1
+      lane: 1
+      column: 2
+    - kind: 1
+      lane: 1
+      column: 3
+  - name: "\u4F11\u61A9\u30FB\u77ED\u3081"
+    enabled: 1
+    weight: 0.8
+    use: 0
+    minElapsedSeconds: 0
+    columnSpacing: 0.5
+    allowVerticalFlip: 0
+    restSeconds: 4
+    restDensity: 0.25
+    slots: []
+  - name: "\u4F11\u61A9\u30FB\u9577\u3081"
+    enabled: 1
+    weight: 0.5
+    use: 0
+    minElapsedSeconds: 60
+    columnSpacing: 0.5
+    allowVerticalFlip: 0
+    restSeconds: 7
+    restDensity: 0.1
+    slots: []
+  - name: "\u30D5\u30A3\u30FC\u30D0\u30FC\u30FB\u5F97\u70B9\u306E\u58C1"
+    enabled: 1
+    weight: 1
+    use: 1
+    minElapsedSeconds: 0
+    columnSpacing: 0.45
+    allowVerticalFlip: 0
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 0
+      lane: 0
+      column: 0
+    - kind: 0
+      lane: 0
+      column: 1
+    - kind: 0
+      lane: 0
+      column: 2
+    - kind: 0
+      lane: 0
+      column: 3
+    - kind: 0
+      lane: 0
+      column: 4
+    - kind: 0
+      lane: 1
+      column: 0
+    - kind: 0
+      lane: 1
+      column: 1
+    - kind: 0
+      lane: 1
+      column: 2
+    - kind: 0
+      lane: 1
+      column: 3
+    - kind: 0
+      lane: 1
+      column: 4
+    - kind: 0
+      lane: 2
+      column: 0
+    - kind: 0
+      lane: 2
+      column: 1
+    - kind: 0
+      lane: 2
+      column: 2
+    - kind: 0
+      lane: 2
+      column: 3
+    - kind: 0
+      lane: 2
+      column: 4
+  - name: "\u30D5\u30A3\u30FC\u30D0\u30FC\u30FB\u9AD8\u5F97\u70B9\u306E\u6CE2"
+    enabled: 1
+    weight: 1
+    use: 1
+    minElapsedSeconds: 0
+    columnSpacing: 0.4
+    allowVerticalFlip: 0
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 1
+      lane: 1
+      column: 0
+    - kind: 1
+      lane: 0
+      column: 1
+    - kind: 1
+      lane: 1
+      column: 2
+    - kind: 1
+      lane: 2
+      column: 3
+    - kind: 1
+      lane: 1
+      column: 4
+    - kind: 1
+      lane: 0
+      column: 5
+    - kind: 1
+      lane: 1
+      column: 6
+    - kind: 1
+      lane: 2
+      column: 7
+    - kind: 1
+      lane: 1
+      column: 8
 --- !u!4 &1639938499
 Transform:
   m_ObjectHideFlags: 0
@@ -4960,8 +5421,16 @@ MonoBehaviour:
   timeLimitSeconds: 5
   enteredColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
   remainingColor: {r: 0, g: 0, b: 0, a: 1}
-  successBaseScore: 1000
-  successMissPenalty: 100
+  successBaseScore: 5000
+  successMissPenalty: 1000
+  successMinScore: 1000
+  rewardText: {fileID: 1010866014}
+  rewardTextOffset: {x: 0, y: 90}
+  rewardLabel: 'BONUS '
+  rewardColor: {r: 1, g: 0.85, b: 0.2, a: 1}
+  rewardDecreaseColor: {r: 1, g: 0.25, b: 0.25, a: 1}
+  rewardFlashSeconds: 0.5
+  rewardDecreaseSeconds: 0.9
 --- !u!4 &1671829137
 Transform:
   m_ObjectHideFlags: 0
@@ -5249,7 +5718,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1810984695
 RectTransform:
   m_ObjectHideFlags: 0
@@ -5554,7 +6023,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1892498836
 RectTransform:
   m_ObjectHideFlags: 0
@@ -5647,7 +6116,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 182, y: 56.3}
+  m_AnchoredPosition: {x: 182, y: 18}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1915573611
@@ -5760,6 +6229,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1949956397}
   - component: {fileID: 1949956396}
+  - component: {fileID: 1949956398}
+  - component: {fileID: 1949956399}
   m_Layer: 0
   m_Name: GameManger
   m_TagString: Untagged
@@ -5785,8 +6256,6 @@ MonoBehaviour:
   fadeCanvasGroup: {fileID: 721788015}
   fadeSeconds: 3
   score: 0
-  time: 240
-  maxTime: 240
   scoreSpeedSteps:
   - score: 0
     multiplier: 1
@@ -5870,13 +6339,8 @@ MonoBehaviour:
   - {fileID: 1149731200}
   - {fileID: 355733664}
   - {fileID: 407332927}
-  timeText: {fileID: 1365839925}
   feverText: {fileID: 0}
   udpReceiver: {fileID: 243933950}
-  timeChangeText: {fileID: 852103714}
-  timeChangeDisplaySeconds: 1.5
-  gameProgressSendInterval: 1
-  sendGameProgress: 1
   sequenceWaitTimeoutSeconds: 45
 --- !u!4 &1949956397
 Transform:
@@ -5893,6 +6357,53 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1949956398
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1949956395}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 19b14b34bfcd44024ae25330075820c5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerScorePopup
+  offset: {x: -80, y: -80}
+  riseDistance: 90
+  fontSize: 56
+  gainColor: {r: 0.23113209, g: 0.42051432, b: 1, a: 1}
+  doubledColor: {r: 1, g: 0.85, b: 0.2, a: 1}
+  lossColor: {r: 1, g: 0.3, b: 0.3, a: 1}
+  seconds: 0.9
+  popScale: 1.35
+  showGain: 1
+  showLoss: 1
+--- !u!114 &1949956399
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1949956395}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bc488ddaea511460d8fba3a115bcb818, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ScoreMultiplierDisplay
+  badgeText: {fileID: 0}
+  badgeLabel: SCORE x2
+  badgeOffset: {x: 0, y: 110}
+  badgeSizeRatio: 0.6
+  pulseSpeed: 6
+  pulseAmount: 0.12
+  feverColor: {r: 1, g: 0.85, b: 0.2, a: 1}
+  tintDigits: 1
+  showGainPopup: 0
+  popupOffset: {x: 0, y: 60}
+  popupRiseDistance: 90
+  popupSeconds: 0.9
+  popupSizeRatio: 0.5
 --- !u!1 &1997454265
 GameObject:
   m_ObjectHideFlags: 0
@@ -6056,6 +6567,7 @@ MonoBehaviour:
   holdToSkipSeconds: 1
   skipHintText: {fileID: 2138202686}
   skipHintMessage: Hold A to Skip
+  skipHintMessageJa: "A\u30DC\u30BF\u30F3\u9577\u62BC\u3057\u3067\u30B9\u30AD\u30C3\u30D7"
   interactiveCollect: 1
   playerCollectTimeout: 8
   collectMaxRetries: 2
@@ -6063,21 +6575,30 @@ MonoBehaviour:
   retryDelaySeconds: 1.5
   interactiveHintText: {fileID: 810953832}
   collectHintMessage: "\u2190\u2192\u2191\u2193  Get Item!"
+  collectHintMessageJa: "\u2190\u2192\u2191\u2193  \u30A2\u30A4\u30C6\u30E0\u3092\u3068\u308D\u3046\uFF01"
   collectRetryMessage: "Ow\u2026 One more time!"
+  collectRetryMessageJa: "\u3044\u3066\u3066\u2026 \u3082\u3046\u3044\u3061\u3069\uFF01"
   collectSuccessMessage: Nice!
+  collectSuccessMessageJa: "\u30CA\u30A4\u30B9\uFF01"
   collectMissMargin: 1
   interactiveAvoid: 1
   playerAvoidTimeout: 8
   avoidMaxRetries: 2
   avoidResultPauseSeconds: 0.4
   avoidHintMessage: Look out!
+  avoidHintMessageJa: "\u3042\u3076\u306A\u3044\uFF01"
   avoidRetryMessage: "Ow\u2026 One more time!"
+  avoidRetryMessageJa: "\u3044\u3066\u3066\u2026 \u3082\u3046\u3044\u3061\u3069\uFF01"
   avoidSuccessMessage: nice!
+  avoidSuccessMessageJa: "\u3088\u3051\u305F\uFF01"
   explainQte: 0
   qteResultPauseSeconds: 0.5
   qteApproachMessage: Hit!
+  qteApproachMessageJa: "\u3076\u3064\u304B\u308B\uFF01"
   qteActiveMessage: Push Button!
+  qteActiveMessageJa: "\u30DC\u30BF\u30F3\u3092\u304A\u305B\uFF01"
   qteSuccessMessage: nice!
+  qteSuccessMessageJa: "\u30CA\u30A4\u30B9\uFF01"
 --- !u!1 &2017352040
 GameObject:
   m_ObjectHideFlags: 0
@@ -6232,7 +6753,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &2050891640
 RectTransform:
   m_ObjectHideFlags: 0
