@@ -2079,6 +2079,7 @@ MonoBehaviour:
   returnSafetyTimeout: 20
   choreEnabled: 1
   showDebugLogs: 0
+  suppressStayLooks: 1
 --- !u!1 &447059884
 GameObject:
   m_ObjectHideFlags: 0
@@ -9991,6 +9992,9 @@ MonoBehaviour:
   - {fileID: 684571569}
   choreReturnPoint_1: {fileID: 1714533700}
   choreReturnPoint_2: {fileID: 1152572594}
+  choreReturnLookBackChance: 0.5
+  choreReturnLookBackStopSeconds: 1.5
+
   choreController: {fileID: 445778319}
   choreTurnRotationSpeed: 200
   stopDistance: 0.05

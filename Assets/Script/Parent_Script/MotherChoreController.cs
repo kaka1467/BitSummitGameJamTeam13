@@ -137,6 +137,11 @@ public class MotherChoreController : MonoBehaviour
     [Tooltip("進行率・時間・視線抽選のデバッグログを出す。")] [SerializeField]
     private bool showDebugLogs = true;
 
+    [Tooltip("E05/P17：滞在中の回数保証付き Chore_Peek を止め、退室前の振り向き（MotherApproachController 側）へ置き換える。\n" +
+             "ONなら滞在中は視線を出さず、滞在時間ぶん待機してから既存の終了条件（Chore_End）へ進む。\n" +
+             "OFFにすると従来どおり回数保証付きの視線を行う。")]
+    [SerializeField] private bool suppressStayLooks = true;
+
     // ── 公開状態 ──────────────────────────────────────────────────────────────
     /// <summary>片付けサイクル進行中か（通常の親イベントを抑止する期間）。</summary>
     public bool IsChoreActive { get; private set; }
@@ -873,6 +878,29 @@ public class MotherChoreController : MonoBehaviour
 
         float stayDuration = Mathf.Max(0f, ResolveChoreStayDuration());
 
+        // ── E05/P17：滞在中の回数保証付き Chore_Peek を止める（退室前の振り向きへ置き換え）──
+        //  ・視線（Chore_Peek）の実行経路を丸ごと止める：目標回数を0にして両フェーズのループをスキップする。
+        //    これにより「回数を消化するための区間待機」も発生しない。
+        //  ・滞在時間の設定値は変えない。同じ長さだけ待ってから、既存の終了条件（Chore_End）へ進む。
+        //  ・中断（IsChoreActive=false）は既存どおり優先する。
+        if (suppressStayLooks)
+        {
+            _targetLookCount = 0;
+            _completedLookCount = 0;
+
+            float stayElapsed = 0f;
+            while (IsChoreActive && stayElapsed < stayDuration)
+            {
+                stayElapsed += Time.deltaTime;   // scaled（timeScale=0 で止まる既存方針を維持）
+                yield return null;
+            }
+
+            if (showDebugLogs)
+            {
+                Debug.Log($"[MotherChore] 滞在中の視線を停止（E05/P17）| 滞在={stayDuration:F1}s 待機のみ | IsChoreActive={IsChoreActive}");
+            }
+        }
+
         // 目標回数は「片付けイベント開始時」に固定済み（ChoreRoutine で段階別 Min/Max から抽選）。
         //   ここでは取り直さない（演技中に怪しさ段階が変わっても目標は変えない）。
         _completedLookCount = 0;
@@ -1104,6 +1132,9 @@ public class MotherChoreController : MonoBehaviour
     ///  ・発見判定は見た目とは別に、開始遅延・継続時間で管理する（従来どおり）。
     ///  ・未開始・失敗・中断は lookOk=false（呼び出し側は回数に数えない）。
     /// </summary>
+    /// <summary>アニメーション窓口（退室前の振り向きから流用する）。未設定なら自動検索した個体を返す。</summary>
+    public MotherAnimationPlayer AnimationPlayer => ResolveAnimationPlayer();
+
     private IEnumerator ChoreLookOnce(System.Action<bool> onResult)
     {
         _gazeInProgress = true;
