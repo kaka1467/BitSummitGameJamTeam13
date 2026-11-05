@@ -203,10 +203,138 @@ public class MotherApproachController : MonoBehaviour
              "ドアを閉めるのはこの地点だけ。必須参照（未設定なら片付けを開始しない）。")]
     public Transform choreReturnPoint_2;
 
+    [Header("退室前の振り向き（E05/P17）")]
+    [Tooltip("片付けを正常終了して退室へ移る際、choreReturnPoint_1 到着後に一度だけ抽選する確率（0〜1）。\n" +
+             "0.5なら50%で振り向く。落選時は追加の停止も振り向きも行わず、既存の退室処理へ進む。")]
+    [SerializeField, Range(0f, 1f)] private float choreReturnLookBackChance = 0.5f;
+
+    [Tooltip("choreReturnPoint_1 到着後、振り向く前にその地点で止まる秒数（起点は到着時）。\n" +
+             "この停止中は Door_Open／ドア開放処理を先行させない（既存のドア開けはこの後に続く）。")]
+    [SerializeField, Min(0f)] private float choreReturnLookBackStopSeconds = 1.5f;
+
     [Tooltip("片付けのドア開閉を担当する MotherChoreController。" +
              "Door_Open の再生とドア本体の回転を連携させるために使う。未設定なら自動検索する。")]
     [SerializeField]
     private MotherChoreController choreController;
+
+    // ── 退室前の振り向き（E05/P17）────────────────────────────────────────────
+    /// <summary>
+    /// 退室前の振り向き。choreReturnPoint_1 到着後に一度だけ抽選する（帰路の直線コルーチンから1回だけ呼ぶ）。
+    ///  ・当選：到着を起点にその場で停止 → ベッド側を振り向いて確認 → 既存の退室処理へ戻る。
+    ///  ・落選：追加の停止も振り向きもせず、そのまま既存の退室処理へ進む。
+    ///  ・片付け動作（Chore_Peek の回数保証）へは戻らない。視線・捕獲判定は既存の片付け用のものを流用する。
+    ///  ・割り込み・中断・Scene遷移は既存の _choreRouteAborted／_routeExecutionFailed 判定で抜ける。
+    ///  ・待ち時間は scaled（Time.deltaTime）で進め、timeScale=0 で止まる既存方針を維持する。
+    /// </summary>
+    private IEnumerator ChoreReturnLookBackRoutine()
+    {
+        if (UnityEngine.Random.value >= Mathf.Clamp01(choreReturnLookBackChance))
+        {
+            Debug.Log($"[MotherApproachController] 退室前の振り向き：抽選 外れ（chance={choreReturnLookBackChance:F2}）— 追加の停止も振り向きも行いません。");
+            yield break;
+        }
+
+        Debug.Log($"[MotherApproachController] 退室前の振り向き：抽選 当たり — choreReturnPoint_1 で {choreReturnLookBackStopSeconds:F2} 秒停止します。");
+
+        // 1) 到着時を起点に、その場で停止する（この間はドア開放処理を先行させない）。
+        float elapsed = 0f;
+        while (elapsed < choreReturnLookBackStopSeconds)
+        {
+            if (_choreRouteAborted || _routeExecutionFailed)
+            {
+                FinishChoreRouteAborted();
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // 2) ベッド側を振り向いて確認する（既存の片付け用の視線アニメと捕獲判定を流用）。
+        MotherAnimationPlayer player = ResolveLookBackAnimationPlayer();
+        if (player == null)
+        {
+            Debug.LogWarning("[MotherApproachController] 退室前の振り向き：MotherAnimationPlayer が見つからないため振り向きを行いません。");
+            yield break;
+        }
+
+        // 判定は「振り向いてから」有効にする（予兆停止中に先に始めない）。
+        SetLookBackDetection(true);
+
+        bool lookOk = false;
+        player.RequestChorePeek();
+        yield return player.WaitForChorePeek(ok => lookOk = ok);
+
+        SetLookBackDetection(false);
+
+        if (!lookOk)
+        {
+            Debug.LogWarning("[MotherApproachController] 退室前の振り向き：Chore_Peek の完了を確認できませんでした（既存の退室処理へ進みます）。");
+        }
+
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
+        Debug.Log("[MotherApproachController] 退室前の振り向き：完了 — 既存の退室処理へ戻ります。");
+    }
+
+    /// <summary>
+    /// 振り向き確認用の捕獲判定（既存の片付け用判定を流用）を切り替える。
+    ///  ・MotherSuspicionSystem.SetChoreLooking は「片付け抑止中（_choreOverride）」のときだけ
+    ///    isMotherLookingNow へ反映される。帰路では抑止が解除済みの可能性があるため、
+    ///    この間だけ抑止を立てて判定が実際に効くようにし、終了時に元へ戻す。
+    ///  ・戻すのは「自分が立てたときだけ」（元から立っていた場合は触らない）。
+    /// </summary>
+    private void SetLookBackDetection(bool on)
+    {
+        if (on) AcquireLookBackState();
+        else ReleaseLookBackState();
+    }
+
+    /// <summary>振り向き確認に必要な状態を取得する（二重取得しない）。</summary>
+    private void AcquireLookBackState()
+    {
+        if (_lookBackDetectionOn || parentDetection == null) return;
+
+        _lookBackDetectionOn = true;
+
+        // 元の抑止状態を覚えてから立てる（SetChoreLooking は抑止中だけ isMotherLookingNow へ反映される）。
+        _lookBackOverrideWasActive = parentDetection.IsChoreOverrideActive;
+        if (!_lookBackOverrideWasActive) parentDetection.SetChoreOverride(true);
+
+        parentDetection.SetChoreLooking(true);
+    }
+
+    /// <summary>
+    /// 退室前の振り向きが取得した状態だけを解放する。何度呼んでも安全（後始末の共通入口）。
+    ///  ・自分がONにした捕獲判定だけを解除する（他制御が立てた状態は触らない）。
+    ///  ・自分が立てた片付け抑止だけを戻す（元から立っていた場合は触らない）。
+    ///  ・isMotherLookingNow を無条件に初期化しない（捕獲側の判定を壊さない）。
+    /// </summary>
+    private void ReleaseLookBackState()
+    {
+        if (!_lookBackDetectionOn) return;      // 自分が取得していなければ何もしない
+        _lookBackDetectionOn = false;
+
+        if (parentDetection == null) return;
+
+        parentDetection.SetChoreLooking(false);
+
+        if (!_lookBackOverrideWasActive) parentDetection.SetChoreOverride(false);
+        _lookBackOverrideWasActive = false;
+    }
+
+    private bool _lookBackOverrideWasActive;
+    private bool _lookBackDetectionOn;
+
+    private MotherAnimationPlayer ResolveLookBackAnimationPlayer()
+    {
+        if (choreController != null && choreController.AnimationPlayer != null) return choreController.AnimationPlayer;
+        return FindFirstObjectByType<MotherAnimationPlayer>();
+    }
 
     [Header("片付け固有")] [Tooltip("片付けルートで中間地点を通過するときの旋回速度（度／秒）。")] [SerializeField, Min(1f)]
     private float choreTurnRotationSpeed = 200f;
@@ -585,6 +713,9 @@ public class MotherApproachController : MonoBehaviour
         // 非表示時はマテリアルを破棄せず保持する（再表示で同じインスタンスを使い回す）。
         // 破棄はコンポーネント破棄時の OnDestroy に1回だけ集約する。
         ReleaseEyeMaterials();
+
+        // 無効化・破棄でも、退室前の振り向きが取得した状態を残さない（何度呼んでも安全）。
+        ReleaseLookBackState();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -959,6 +1090,9 @@ public class MotherApproachController : MonoBehaviour
         _choreRouteAborted = true;
         IsChoreRouteActive = false;
 
+        // 退室前の振り向きが取得した状態を解放する（明示的な停止・ゲームオーバー・無効化の共通後始末）。
+        ReleaseLookBackState();
+
         StopRotateCoroutine();
         MovementStateChanged?.Invoke(false);
         SetPeekLighting(false);
@@ -1009,6 +1143,10 @@ public class MotherApproachController : MonoBehaviour
         _choreRouteAborted = true;      // 片付けルートの各判定が真でも移動しないように
         _routeExecutionFailed = false;  // 演出の移動が失敗扱いで止まらないように
         ReturnHomePhase = ReturnHomeState.Idle;
+
+        // 捕獲・ゲームオーバーへの制御移管でも、振り向きが取得した状態を解放する
+        // （捕獲側が読む isMotherLookingNow は、捕獲判定が済んだ後のこの時点で解放して問題ない）。
+        ReleaseLookBackState();
         // 帰路中断フラグは、演出の旋回（RotateToYaw）が中断しないよう明示的に下ろす。
         // （進行中のコルーチンは上で停止済みなので、ここで下ろしても再開する処理はない）
         _returnHomeAbortFlag = false;
@@ -1321,6 +1459,17 @@ public class MotherApproachController : MonoBehaviour
 
         MovementStateChanged?.Invoke(false); // ドア開けのため停止する
 
+        // 2.5) 退室前の振り向き（E05/P17）：この地点で一度だけ抽選し、当選時のみ
+        //      「到着から choreReturnLookBackStopSeconds 秒の停止 → ベッド側を振り向いて確認」を行う。
+        //      停止中は Door_Open／ドア開放処理を先行させない（既存のドア開けはこの後に続く）。
+        //      ※ この行は帰路の直線的なコルーチン内で1回だけ通るため、再抽選は起きない。
+        yield return ChoreReturnLookBackRoutine();
+        if (_choreRouteAborted || _routeExecutionFailed)
+        {
+            FinishChoreRouteAborted();
+            yield break;
+        }
+
         Debug.Log("[MotherApproachController] 片付けルート：choreReturnPoint_1到着 — Door_Open でドアを開けます");
 
         // 3) Door_Open 再生 + ドアを fullopen（DoorState.Full = openAngle）まで開く。
@@ -1379,6 +1528,9 @@ public class MotherApproachController : MonoBehaviour
         Debug.Log("[MotherApproachController] 片付けルート：中断のため終了します");
         IsChoreRouteActive = false;
         _choreCoroutine = null;
+
+        // 退室前の振り向きが取得した状態を解放する（中断・失敗の共通後始末。何度呼んでも安全）。
+        ReleaseLookBackState();
     }
 
     /// <summary>
