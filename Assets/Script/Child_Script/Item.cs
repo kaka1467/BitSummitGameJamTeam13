@@ -22,9 +22,16 @@ public class Item : MonoBehaviour
 
     private void OnEnable()
     {
-        // サイレンには、フィーバー中に効果が無効なことを示す「×」を付ける（表示の切り替えは FeverDisabledMark が行う）。
-        if (itemType == ItemType.BGM && GetComponent<FeverDisabledMark>() == null)
+        // デバフのアイテム（サイレン・時計）には、フィーバー中に効果が無効なことを示す「×」を付ける
+        // （表示の切り替えは FeverDisabledMark が行う）。
+        if (IsDebuffItem(itemType) && GetComponent<FeverDisabledMark>() == null)
             gameObject.AddComponent<FeverDisabledMark>();
+    }
+
+    /// <summary>デバフ（フィーバー中は効果を無効にする）のアイテムか。サイレン（BGM）と時計（減点）。</summary>
+    public static bool IsDebuffItem(ItemType type)
+    {
+        return type == ItemType.BGM || type == ItemType.Clock;
     }
 
     // アイテムの効果を適用するメソッド。ItemEffect はトリガー専任となり、このメソッドに処理を委譲する。
@@ -35,12 +42,13 @@ public class Item : MonoBehaviour
         var gm = GameManager.instance;
         PlayerBoost boost = other.GetComponent<PlayerBoost>() ?? other.GetComponentInParent<PlayerBoost>();
 
-        // フィーバー中はサイレン（BGM／Loud Item）の効果を無効にする。
+        // フィーバー中はデバフのアイテム（サイレン＝BGM／Loud Item、時計＝減点）の効果を無効にする。
         //  ・減点・ダメージ・親機への通知・SE/BGM をすべて行わない（取得したアイテムはそのまま消える）。
         //  ・フィーバー終了後の取得は通常どおり有効。終了直後の保護時間は設けない。
-        if (itemType == ItemType.BGM && gm != null && gm.IsFeverActive)
+        //  ・レーン制限（ポイント減少の帯）も、フィーバー中は出さず、始まったら中止する（LaneRestriction 側）。
+        if (IsDebuffItem(itemType) && gm != null && gm.IsFeverActive)
         {
-            Debug.Log("[Item] フィーバー中のためサイレンの効果を無効にしました。");
+            Debug.Log($"[Item] フィーバー中のため {itemType} の効果を無効にしました。");
             return;
         }
 

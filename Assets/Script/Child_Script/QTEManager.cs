@@ -39,6 +39,8 @@ public class QTEManager : MonoBehaviour
 
     [Header("QTE UI（シーン上に配置したものを割り当てる）")]
     [SerializeField] private GameObject qteBack;               // 背景画像（QTEBack）
+    [Tooltip("QTE中だけ表示する、スコア（獲得ボーナス）の背景。QTEが始まると表示し、終わる・中断すると隠す。")]
+    [SerializeField] private GameObject qteScoreBack;
     [SerializeField] private TextMeshProUGUI titleText;        // 「PUSH BUTTON!」
     [SerializeField] private TextMeshProUGUI timerText;        // 残り秒数
     [SerializeField] private QteSlot[] slots = new QteSlot[7]; // 画像＋テキストのセット（要素数＝QTEの文字数）
@@ -79,7 +81,17 @@ public class QTEManager : MonoBehaviour
     [Tooltip("「-1000」が下へ流れて消えるまでの秒数。")]
     [SerializeField, Min(0.1f)] private float rewardDecreaseSeconds = 0.9f;
 
-    private TextMeshProUGUI rewardDecreaseText;
+    [Tooltip("「-1000」を出すテキスト。未割り当てなら、残り秒数(timerText)と同じフォントで実行時に作り、" +
+             "位置は『報酬テキストからのずれ』（下の Reward Decrease Offset）で決める。" +
+             "シーン上に自分で置いたテキストを割り当てた場合は、そのテキストを置いた位置から出る。")]
+    [SerializeField] private TextMeshProUGUI rewardDecreaseText;
+    [Tooltip("自動で作る場合の、「-1000」の開始位置。報酬テキストの位置からのずれ（Canvas座標。上が正）。")]
+    [SerializeField] private Vector2 rewardDecreaseOffset = new Vector2(0f, -50f);
+    [Tooltip("「-1000」が、表示されている間に動く量（Canvas座標）。既定は下へ40。0にすると動かない。")]
+    [SerializeField] private Vector2 rewardDecreaseMove = new Vector2(0f, -40f);
+
+    private bool rewardDecreaseAssignedInScene;     // 「-1000」のテキストをシーン上で割り当てたか（その場合は置いた位置を使う）
+    private Vector2 rewardDecreaseScenePosition;    // 割り当てたテキストの、シーン上の位置
     private float rewardDecreaseAge = -1f;     // 負なら非表示
     private float rewardFlashLeft;
     private Vector2 rewardDecreaseStart;
@@ -460,6 +472,13 @@ public class QTEManager : MonoBehaviour
         if (rewardText == null && timerText != null)
             rewardText = CreateRewardText("QteRewardText", rewardTextOffset, 0.8f);
 
+        if (rewardDecreaseText != null && !rewardDecreaseAssignedInScene && rewardDecreaseText.transform.parent != null
+            && rewardDecreaseText.gameObject.name != "QteRewardDecreaseText")
+        {
+            rewardDecreaseAssignedInScene = true;
+            rewardDecreaseScenePosition = rewardDecreaseText.rectTransform.anchoredPosition;
+        }
+
         if (rewardDecreaseText == null && timerText != null)
         {
             rewardDecreaseText = CreateRewardText("QteRewardDecreaseText", rewardTextOffset, 0.7f);
@@ -504,7 +523,9 @@ public class QTEManager : MonoBehaviour
 
         rewardFlashLeft = rewardFlashSeconds;
         rewardDecreaseAge = 0f;
-        rewardDecreaseStart = rewardText.rectTransform.anchoredPosition + new Vector2(0f, -50f);
+        rewardDecreaseStart = rewardDecreaseAssignedInScene
+            ? rewardDecreaseScenePosition
+            : rewardText.rectTransform.anchoredPosition + rewardDecreaseOffset;
         rewardDecreaseText.text = $"-{amount}";
         rewardDecreaseText.color = rewardDecreaseColor;
         rewardDecreaseText.rectTransform.anchoredPosition = rewardDecreaseStart;
@@ -533,7 +554,7 @@ public class QTEManager : MonoBehaviour
             rewardDecreaseAge += Time.unscaledDeltaTime;
             float t = Mathf.Clamp01(rewardDecreaseAge / rewardDecreaseSeconds);
 
-            rewardDecreaseText.rectTransform.anchoredPosition = rewardDecreaseStart + new Vector2(0f, -40f * t);
+            rewardDecreaseText.rectTransform.anchoredPosition = rewardDecreaseStart + rewardDecreaseMove * t;
             Color c = rewardDecreaseColor;
             c.a = 1f - t * t;
             rewardDecreaseText.color = c;
@@ -591,6 +612,7 @@ public class QTEManager : MonoBehaviour
     {
         // QTE関連のオブジェクトはまとめる親が無いので、1つずつ表示/非表示を切り替える
         if (qteBack != null) qteBack.SetActive(visible);
+        if (qteScoreBack != null) qteScoreBack.SetActive(visible);
         if (titleText != null) titleText.gameObject.SetActive(visible);
         if (timerText != null) timerText.gameObject.SetActive(visible);
 
