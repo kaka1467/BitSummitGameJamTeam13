@@ -138,6 +138,13 @@ public class GameManager : MonoBehaviour
     bool isFeverActive = false;
     public bool IsFeverActive => isFeverActive;
 
+    /// <summary>
+    /// フィーバーの残り割合（開始直後=1 → 終了=0。フィーバー中でなければ 0）。
+    /// 表示専用（フィーバーゲージを徐々に減らすために使う）。ゲーム内時間（Time.time）で数えるので、停止中は減らない。
+    /// </summary>
+    public float FeverRemainingRatio =>
+        isFeverActive ? Mathf.Clamp01((feverEndTime - Time.time) / Mathf.Max(0.01f, feverBoostDuration)) : 0f;
+
     private Coroutine feverRoutine;
     private float feverEndTime = -1f;
 

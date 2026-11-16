@@ -1612,7 +1612,7 @@ GameObject:
   - component: {fileID: 678442520}
   - component: {fileID: 678442519}
   m_Layer: 5
-  m_Name: Moe Tennma
+  m_Name: Yoo Gunwoo
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1657,9 +1657,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Moe
-
-    Tennma'
+  m_text: Yoo Gunwoo
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
   m_sharedMaterial: {fileID: 3271106341989512478, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
@@ -3865,7 +3863,7 @@ GameObject:
   - component: {fileID: 1053594280}
   - component: {fileID: 1053594279}
   m_Layer: 5
-  m_Name: Kazuki Shimada
+  m_Name: Ituki Murakami
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3910,7 +3908,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Ryuto Hachimine
+  m_text: Ituki Murakami
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
   m_sharedMaterial: {fileID: 3271106341989512478, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
@@ -4862,7 +4860,7 @@ GameObject:
   - component: {fileID: 1321455413}
   - component: {fileID: 1321455412}
   m_Layer: 5
-  m_Name: Syouma Yoshida
+  m_Name: Ryuto Hachimine
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
