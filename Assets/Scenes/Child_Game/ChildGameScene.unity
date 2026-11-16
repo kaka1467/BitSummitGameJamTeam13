@@ -5313,6 +5313,44 @@ MonoBehaviour:
     - kind: 1
       lane: 1
       column: 8
+  - name: "\u9AD8\u5F97\u70B9"
+    enabled: 1
+    weight: 1
+    use: 0
+    minElapsedSeconds: 0
+    columnSpacing: 0.4
+    allowVerticalFlip: 0
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 2
+      lane: 0
+      column: 0
+    - kind: 1
+      lane: 0
+      column: 1.5
+    - kind: 2
+      lane: 0
+      column: 3
+  - name: "\u9AD8\u5F97\u70B9"
+    enabled: 1
+    weight: 1
+    use: 0
+    minElapsedSeconds: 0
+    columnSpacing: 0.4
+    allowVerticalFlip: 0
+    restSeconds: 0
+    restDensity: 0.25
+    slots:
+    - kind: 2
+      lane: 2
+      column: 0
+    - kind: 1
+      lane: 2
+      column: 1.5
+    - kind: 2
+      lane: 2
+      column: 3
 --- !u!4 &1639938499
 Transform:
   m_ObjectHideFlags: 0
@@ -5495,6 +5533,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::QTEManager
   qteBack: {fileID: 305085951}
+  clearSe: {fileID: 8300000, guid: 5b9459b2e87e4ac997fc63c3c1a0594b, type: 3}
+  clearSeVolume: 1
   qteScoreBack: {fileID: 1500571479}
   titleText: {fileID: 861082791}
   timerText: {fileID: 1915573611}
@@ -6334,6 +6374,7 @@ GameObject:
   - component: {fileID: 1949956398}
   - component: {fileID: 1949956399}
   - component: {fileID: 1949956400}
+  - component: {fileID: 1949956401}
   m_Layer: 0
   m_Name: GameManger
   m_TagString: Untagged
@@ -6544,6 +6585,25 @@ MonoBehaviour:
   depthStep: 0.01
   enableDebugKey: 1
   showDebugLogs: 0
+--- !u!114 &1949956401
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1949956395}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fed3a4716e304e60aed465b63f9ca319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FeverBgmPlayer
+  feverClip: {fileID: 8300000, guid: 23170b4275284e72b97fa5a8fb041df5, type: 3}
+  feverVolume: 1
+  mainFadeOutSeconds: 0.25
+  feverFadeInSeconds: 0.25
+  feverFadeOutSeconds: 0.4
+  mainFadeInSeconds: 0.4
+  mainBgm: {fileID: 912670074}
 --- !u!1 &1997454265
 GameObject:
   m_ObjectHideFlags: 0

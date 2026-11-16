@@ -67,6 +67,11 @@ public class QTEManager : MonoBehaviour
     [Tooltip("報酬の下限（点）。ミスが重なってもクリアすればこの点は必ず得られる。")]
     [SerializeField] private int successMinScore = 1000;
 
+    [Header("クリア時のSE")]
+    [Tooltip("QTEを入力でクリアしたときに鳴らすSE。未設定なら鳴らさない。")]
+    [SerializeField] private AudioClip clearSe;
+    [SerializeField, Range(0f, 1f)] private float clearSeVolume = 1f;
+
     [Header("報酬表示（獲得予定の報酬と、ミスによる減少）")]
     [Tooltip("今クリアしたら得られる報酬を出すテキスト。未割り当てなら、残り秒数(timerText)と同じフォントで実行時に作る。")]
     [SerializeField] private TextMeshProUGUI rewardText;
@@ -345,6 +350,9 @@ public class QTEManager : MonoBehaviour
         // 報酬可能状態はここで消費する（二重終了ガードと合わせて、QTE1回につき1回だけ付与する）。
         int rewardScore = ConsumeSuccessReward(outcome, fromPlayerInput);
 
+        // 入力でクリアしたときだけSEを鳴らす（強制成功・ブースト回避・中断では鳴らさない）。
+        if (outcome == QteOutcome.Success && fromPlayerInput) PlayClearSe();
+
         SetPlayerAnimatorUnscaled(false);
 
         // QTE終了時にダメージポーズのロックを解除する
@@ -458,6 +466,17 @@ public class QTEManager : MonoBehaviour
             playerAnimatorComponent.updateMode = storedPlayerUpdateMode;
             hasStoredPlayerUpdateMode = false;
         }
+    }
+
+    private void PlayClearSe()
+    {
+        if (clearSe == null) return;
+
+        if (AudioManager.Instance == null)
+            new GameObject("AudioManager").AddComponent<AudioManager>();
+
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlaySE(clearSe, clearSeVolume);
     }
 
     /// <summary>今クリアした場合の報酬（点）。一発成功で最大、ミス1回ごとに減り、下限を下回らない。</summary>
