@@ -359,6 +359,11 @@ public partial class ItemSpawner : MonoBehaviour
                 if (showDebugLogs)
                     Debug.Log($"[ItemSpawner] フィーバー中のため通常のHugeObstacle出現を {deferral:F1}s 先へ延期します（予定は保持）。");
             }
+            else if (LaneRestriction.IsRunning)
+            {
+                // レーン制限の最中は、巨大障害物（QTE）も出さずに先送りする（予定は保持する）。
+                nextHugeSpawnTime = Time.unscaledTime + 0.5f;
+            }
             else
             {
                 SpawnHugeObstacle();
@@ -668,6 +673,9 @@ public partial class ItemSpawner : MonoBehaviour
     {
         if (ItemPool.Instance == null) return false;
         if (lanesY == null || laneIndex < 0 || laneIndex >= lanesY.Length) return false;
+
+        // レーン制限が出ているレーンには、アイテムを出さない（帯の上にアイテムが湧かないようにする）
+        if (LaneRestriction.IsLaneBlocked(laneIndex)) return false;
 
         if (_statLaneAttempts != null && laneIndex < _statLaneAttempts.Length) _statLaneAttempts[laneIndex]++;
 
@@ -1679,6 +1687,12 @@ public partial class ItemSpawner : MonoBehaviour
     private float GetSpawnXWorld()
     {
         return GetScreenRightEdgeX() + spawnOffsetFromRight;
+    }
+
+    private float GetScreenWidthWorld()
+    {
+        Camera cam = Camera.main;
+        return cam != null ? cam.orthographicSize * cam.aspect * 2f : 22.5f;
     }
 
     private float GetScreenRightEdgeX()

@@ -138,6 +138,13 @@ public class GameManager : MonoBehaviour
     bool isFeverActive = false;
     public bool IsFeverActive => isFeverActive;
 
+    /// <summary>
+    /// フィーバーの残り割合（開始直後=1 → 終了=0。フィーバー中でなければ 0）。
+    /// 表示専用（フィーバーゲージを徐々に減らすために使う）。ゲーム内時間（Time.time）で数えるので、停止中は減らない。
+    /// </summary>
+    public float FeverRemainingRatio =>
+        isFeverActive ? Mathf.Clamp01((feverEndTime - Time.time) / Mathf.Max(0.01f, feverBoostDuration)) : 0f;
+
     private Coroutine feverRoutine;
     private float feverEndTime = -1f;
 
@@ -247,6 +254,10 @@ public class GameManager : MonoBehaviour
         // 得点が増減したとき、プレイヤーの右上に数字を出す（シーンに無ければ追加する）。
         if (FindFirstObjectByType<PlayerScorePopup>() == null)
             gameObject.AddComponent<PlayerScorePopup>();
+
+        // レーン制限（ランダムな1レーンをポイントが減る帯でふさぐ。シーンに無ければ追加する）。
+        if (FindFirstObjectByType<LaneRestriction>() == null)
+            gameObject.AddComponent<LaneRestriction>();
 
         // 初期化完了を記録してから CAUGHT の購読を開始する。
         _started = true;
@@ -538,6 +549,20 @@ public class GameManager : MonoBehaviour
 
     public void AddScore(int amount)
     {
+        ApplyScoreChange(amount, notify: true);
+    }
+
+    /// <summary>
+    /// じわじわ減るような、細かい増減用。得点の処理は AddScore と同じで、画面に出す「+/-」の通知（ScoreAdded）だけ出さない。
+    /// （Inspector の UnityEvent から AddScore(int) を呼んでいる設定を壊さないため、AddScore には引数を足さず別の入口にしている）
+    /// </summary>
+    public void DrainScore(int amount)
+    {
+        ApplyScoreChange(amount, notify: false);
+    }
+
+    private void ApplyScoreChange(int amount, bool notify)
+    {
         // 捕獲通知後は、結果画面まで一切ポイントを増やさない（毎フレーム加算・アイテム・コンボ・
         // ボーナス・遅延処理などの全加算入口はここを通る）。
         if (_scoreFrozen)
@@ -568,7 +593,7 @@ public class GameManager : MonoBehaviour
         int before = score;
         score = Mathf.Max(0, score + amount);
 
-        if (score != before)
+        if (notify && score != before)
             ScoreAdded?.Invoke(score - before, doubled);
 
         // 最高到達スコアが更新されたときだけ速度段階を選び直す（毎フレームの再計算はしない）。

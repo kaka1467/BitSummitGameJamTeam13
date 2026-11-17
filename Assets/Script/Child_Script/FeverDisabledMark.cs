@@ -1,9 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// フィーバー中、サイレン（ItemType.BGM）の上に「×」を重ねて、効果が無効なことを伝える（C24）。
-///  ・Item が、サイレンのときだけ実行時に追加する（Prefabの編集は不要）。
-///  ・フィーバー中だけ表示し、終わったら隠す。画面にあるサイレンにも、フィーバー中に出たサイレンにも付く。
+/// フィーバー中、デバフのアイテム（サイレン＝ItemType.BGM、時計＝ItemType.Clock）の上に「×」を重ねて、効果が無効なことを伝える（C24）。
+///  ・Item が、デバフのアイテムのときだけ実行時に追加する（Prefabの編集は不要）。
+///  ・フィーバー中だけ表示し、終わったら隠す。画面にあるアイテムにも、フィーバー中に出たアイテムにも付く。
 ///  ・画像は Resources/FeverDisabledMark（ドット絵なので Point フィルタ）。無ければ何もしない。
 ///  ・サイレンの絵の中心に、絵の幅の markSizeRatio 倍の大きさで重ねる。
 /// </summary>
@@ -85,7 +85,7 @@ public class FeverDisabledMark : MonoBehaviour
         return true;
     }
 
-    /// <summary>サイレン本体の絵（×自身は除く）。</summary>
+    /// <summary>アイテム本体の絵（×自身は除く）。</summary>
     private SpriteRenderer FindItemRenderer()
     {
         SpriteRenderer[] all = GetComponentsInChildren<SpriteRenderer>(true);

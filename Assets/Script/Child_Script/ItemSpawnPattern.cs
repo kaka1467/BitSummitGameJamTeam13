@@ -83,11 +83,15 @@ public static class ItemSpawnPatternDefaults
             Row(PatternItemKind.LowScore, 0, 0, 6)));
 
         // ── 上下移動 ──────────────────────────────────────────
+        // 低得点を上下に動かす並びに、「直前までいたレーン」へ悪いアイテムを置いて、止まっていると当たるようにする
+        //（プレイヤーが動き続けるよう促す）。
         list.Add(Pattern("上下移動・階段", 1f, PatternUse.NormalOnly, 0f, 0.6f, true, 0f,
-            Seq(PatternItemKind.LowScore, 0, 1, 2, 1, 0, 1, 2)));
+            Seq(PatternItemKind.LowScore, 0, 1, 2, 1, 0, 1, 2),
+            LeftBehindBad(0, 1, 2, 1, 0, 1, 2)));
 
         list.Add(Pattern("上下移動・往復", 0.8f, PatternUse.NormalOnly, 15f, 0.7f, true, 0f,
-            Seq(PatternItemKind.LowScore, 0, 2, 0, 2, 0)));
+            Seq(PatternItemKind.LowScore, 0, 2, 0, 2, 0),
+            LeftBehindBad(0, 2, 0, 2, 0)));
 
         // ── 安全な低得点 / 危険な高得点 ───────────────────────────
         // 下段：安全な低得点が5個。上段：先頭に悪いアイテム、その後ろに高得点が3個。
@@ -152,6 +156,18 @@ public static class ItemSpawnPatternDefaults
         var row = new List<PatternSlot>(count);
         for (int i = 0; i < count; i++)
             row.Add(new PatternSlot { kind = kind, lane = lane, column = startColumn + i });
+        return row;
+    }
+
+    /// <summary>
+    /// 上下移動の並び（列iのレーン＝lanes[i]）に対して、列i（i≥1）の「直前の列のレーン」に悪いアイテムを置く。
+    /// 得点を取って次の列へ移らずにいると、そのレーンの悪いアイテムに当たる。
+    /// </summary>
+    private static List<PatternSlot> LeftBehindBad(params int[] lanes)
+    {
+        var row = new List<PatternSlot>(Mathf.Max(0, lanes.Length - 1));
+        for (int i = 1; i < lanes.Length; i++)
+            row.Add(new PatternSlot { kind = PatternItemKind.Bad, lane = lanes[i - 1], column = i });
         return row;
     }
 

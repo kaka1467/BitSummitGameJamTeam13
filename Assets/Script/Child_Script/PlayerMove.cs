@@ -9,6 +9,12 @@ public class PlayerMove : MonoBehaviour
     [Tooltip("各レーンのY座標 [上レーン, 中レーン, 下レーン]")]
     private float[] laneY = { 0.41f, -0.08f, -0.56f };
 
+    /// <summary>プレイヤーが今いる（向かっている）レーン番号（0=上, 1=中, 2=下）。</summary>
+    public int CurrentLane => lane;
+
+    /// <summary>プレイヤーのレーンごとのY座標（読み取り専用。レーン制限など、プレイヤーのレーンに合わせる演出が使う）。</summary>
+    public System.Collections.Generic.IReadOnlyList<float> LaneYs => laneY;
+
     public float moveSpeed = 5f;
     [Tooltip("X方向の移動速度")]
     public float horizontalMoveSpeed = 5f;

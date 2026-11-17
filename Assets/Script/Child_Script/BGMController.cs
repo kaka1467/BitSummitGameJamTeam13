@@ -3,11 +3,24 @@ using UnityEngine;
 public class BGMController : MonoBehaviour
 {
     private AudioSource audioSource;
+    private float inspectorVolume = 1f;   // 設定パネルで音量が決まっていないときに使う、元の音量
+    private float volumeScale = 1f;
+
+    /// <summary>
+    /// 音量の倍率（0〜1。既定1）。フィーバーBGMへの切り替えなど、一時的なフェードに使う。
+    /// 設定パネルの音量（または元のInspector音量）に掛かる。
+    /// </summary>
+    public float VolumeScale
+    {
+        get => volumeScale;
+        set => volumeScale = Mathf.Clamp01(value);
+    }
 
     void Start()
     {
         // 自身についているAudioSourceを取得
         audioSource = GetComponent<AudioSource>();
+        if (audioSource != null) inspectorVolume = audioSource.volume;
         ApplyVolume();
     }
 
@@ -37,7 +50,9 @@ public class BGMController : MonoBehaviour
 
         // 設定パネルで音量がまだ決まっていない間は、このBGMのInspector設定値をそのまま使う。
         // （AudioManagerが後から生成されても、初期値1で上書きしない）
-        if (!AudioManager.Instance.TryGetBgmVolume(out float volume)) return;
+        if (!AudioManager.Instance.TryGetBgmVolume(out float volume)) volume = inspectorVolume;
+
+        volume *= volumeScale;
 
         if (Mathf.Approximately(audioSource.volume, volume)) return;
 
@@ -46,6 +61,25 @@ public class BGMController : MonoBehaviour
 
         if (AudioManager.Instance.LogBgmVolumeChanges)
             Debug.Log($"[BGMController] '{name}' の音量を {before:F3} → {volume:F3} へ変更（設定パネルの値）。", this);
+    }
+
+    /// <summary>
+    /// 親機へ通知せずに、ローカルだけ一時停止する（位置は保つ）。再生中でなければ何もせず false。
+    /// フィーバーBGMへの切り替えなど、子機の中だけの切り替えに使う。
+    /// </summary>
+    public bool PauseLocal()
+    {
+        if (audioSource == null || !audioSource.isPlaying) return false;
+
+        audioSource.Pause();
+        return true;
+    }
+
+    /// <summary>PauseLocal で止めたBGMを、止めた位置から再開する。</summary>
+    public void ResumeLocal()
+    {
+        if (audioSource == null) return;
+        audioSource.UnPause();
     }
 
     // BGMを止めるメソッド

@@ -49,6 +49,7 @@ public partial class ItemSpawner
 
     private const int PatternKindCount = 5;
 
+    private float _patternVisibleUntil;    // 出したパターンが画面から出きるまでの時刻（レーン制限など、他の演出がパターン中を避けるために使う）
     private float _nextPatternTime;        // 次にパターンを試す時刻（Time.unscaledTime）
     private float _patternBlockUntil;      // この時刻までランダム出現を止める（パターンの配置が抜けきるまで）
     private float _restFrom;               // 休憩区間の開始
@@ -59,12 +60,22 @@ public partial class ItemSpawner
     private int _debugPatternIndex = -1;
     private readonly GameObject[] _patternPrefabs = new GameObject[PatternKindCount];
 
+    /// <summary>出したパターンのアイテムが、まだ画面上に残っている可能性がある間は true。</summary>
+    public bool IsPatternVisible => Time.unscaledTime < _patternVisibleUntil;
+
+    /// <summary>通常出現・パターンのアイテムに掛けている速度倍率（レーン制限の流れる速さをそろえるために見る）。</summary>
+    public float ItemSpeedMultiplier => Mathf.Max(0.1f, itemSpeedMultiplier);
+
+    /// <summary>アイテムを置く奥行き（Z）。同じ面に置く演出（レーン制限など）が使う。</summary>
+    public float ItemPlaneZ => SpawnZ;
+
     /// <summary>パターンの管理状態を初期化する（ResetLaneSpawnTimers から呼ぶ＝本プレイ開始・停止明け）。</summary>
     private void ResetPatternDirector()
     {
         float now = Time.unscaledTime;
         _nextPatternTime = now + Mathf.Max(0f, firstPatternDelaySeconds);
         _patternBlockUntil = 0f;
+        _patternVisibleUntil = 0f;
         _restFrom = 0f;
         _restUntil = 0f;
         _restDensity = 1f;
@@ -132,6 +143,13 @@ public partial class ItemSpawner
                 _restUntil = 0f;
                 _nextPatternTime = now;
             }
+        }
+
+        // レーン制限の演出中は、パターンを始めない（フィーバー用パターンは優先する。その場合はレーン制限が自分で中止する）。
+        if (!fever && LaneRestriction.IsRunning)
+        {
+            _nextPatternTime = Mathf.Max(_nextPatternTime, now + 0.5f);
+            return;
         }
 
         if (now < _nextPatternTime) return;
@@ -251,7 +269,8 @@ public partial class ItemSpawner
         if (slotCount > 0)
         {
             if (ItemPool.Instance == null || lanesY == null || lanesY.Length == 0) return false;
-            if (!TryPlacePatternSlots(p, now, out float extentSeconds)) return false;
+            if (!TryPlacePatternSlots(p, now, out float extentSeconds, out float lifetimeSeconds)) return false;
+            _patternVisibleUntil = Mathf.Max(_patternVisibleUntil, now + lifetimeSeconds);
 
             blockUntil = now + extentSeconds + Mathf.Max(0f, patternClearanceSeconds);
             _patternBlockUntil = Mathf.Max(_patternBlockUntil, blockUntil);
@@ -284,9 +303,10 @@ public partial class ItemSpawner
     }
 
     /// <summary>全スロットを確保 → 重なり確認 → 配置。失敗時は確保したアイテムをすべてプールへ戻す。</summary>
-    private bool TryPlacePatternSlots(SpawnPattern p, float now, out float extentSeconds)
+    private bool TryPlacePatternSlots(SpawnPattern p, float now, out float extentSeconds, out float lifetimeSeconds)
     {
         extentSeconds = 0f;
+        lifetimeSeconds = 0f;
 
         int laneCount = lanesY.Length;
         bool flip = p.allowVerticalFlip && laneCount >= 2 && Random.value < 0.5f;
@@ -350,6 +370,10 @@ public partial class ItemSpawner
         float speed = (move != null) ? move.EffectiveSpeed : 0f;
         if (speed < 0.05f) speed = 0.8f;
         extentSeconds = (maxColumn * spacing + maxWidth) / speed;
+
+        // 最後のアイテムが出現位置から画面の左端を抜けるまで（パターンが画面上に残る時間の見積もり）
+        float leftEdgeX = GetScreenRightEdgeX() - GetScreenWidthWorld() - 1f;
+        lifetimeSeconds = extentSeconds + Mathf.Max(0f, baseX - leftEdgeX) / speed;
 
         return true;
     }
@@ -435,6 +459,7 @@ public partial class ItemSpawner
 
         if (_nextPatternTime > 0f) _nextPatternTime += pausedSeconds;
         if (_patternBlockUntil > 0f) _patternBlockUntil += pausedSeconds;
+        if (_patternVisibleUntil > 0f) _patternVisibleUntil += pausedSeconds;
         if (_restFrom > 0f) _restFrom += pausedSeconds;
         if (_restUntil > 0f) _restUntil += pausedSeconds;
 
