@@ -31,12 +31,12 @@ public class MotherSuspicionSystem : MonoBehaviour
     public SleepingController sleepingController;
 
     // ── 親機の速度・足音・Animator ────────────────────────────────────────────
-    [Header("親機の速度")] public float approachMoveSpeedMin = 1.5f;
-    public float approachMoveSpeedMax = 1.5f;
-    public float approachSpeedSuspicionBonus;
-    public int highSuspicionSpeedGaugeThreshold = 10;
-    public float highSuspicionApproachMoveSpeedMin = 1.5f;
-    public float highSuspicionApproachMoveSpeedMax = 1.5f;
+    [Header("親機の速度")] public float approachMoveSpeedMin = 15f;
+    public float approachMoveSpeedMax = 20f;
+    public float approachSpeedSuspicionBonus = 5f;
+    public int highSuspicionSpeedGaugeThreshold = 6;
+    public float highSuspicionApproachMoveSpeedMin = 22f;
+    public float highSuspicionApproachMoveSpeedMax = 26f;
     public float loudItemRushInMoveSpeed = 140f;
     public bool useFixedDebugApproachSpeed;
     public float fixedDebugApproachSpeed = 30f;
@@ -64,11 +64,11 @@ public class MotherSuspicionSystem : MonoBehaviour
     private Coroutine _catFeintCoroutine;
 
     // ── 覗き見／部屋チェックのタイミング ─────────────────────────────────────
-    [Header("部屋チェックのタイミング")] [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。実際の時間=peekDurationBase + currentGauge。")] [SerializeField]
-    private float peekDurationBase = 3f;
+    [Header("部屋チェックのタイミング")] [Tooltip("ダミー（覗き見のみ）イベントの基本時間（秒）。")] [SerializeField]
+    private float peekDurationBase = 6f;
 
     [Tooltip("RushIn（大きな音／0キー）で、ドア覗き演出の開始から覗き続ける秒数（既定6秒）。" +
-             "この時間の経過でドア閉鎖・帰路へ進む。通常の本チェック時間（peekDurationBase + gauge）とは別管理。")] [SerializeField]
+             "この時間の経過でドア閉鎖・帰路へ進む。通常の本チェック時間とは別管理。")] [SerializeField]
     private float rushInPeekDurationSeconds = 6f;
 
     [Tooltip("本チェック（全開）イベントで、プレイヤーが枕で眠るまで親機が部屋に留まる時間。 " +
@@ -82,10 +82,23 @@ public class MotherSuspicionSystem : MonoBehaviour
     private float returnHomeSafetyTimeout = 15f;
 
     [Tooltip("プレイヤーが眠ってから親機がドアを閉めて退出するまでの秒数（疑惑0の場合）。")] [SerializeField]
-    private float leaveAfterSleepDelay = 2f;
+    private float leaveAfterSleepDelay = 2.5f;
 
     [Tooltip("最大疑惑時に、プレイヤーが眠ってから親機が退出するまでの秒数。疑惑0のleaveAfterSleepDelayから最大疑惑時のこの値まで補間する。")] [SerializeField]
-    private float leaveAfterSleepDelayMax = 6f;
+    private float leaveAfterSleepDelayMax = 3.5f;
+
+    [Header("やり過ごし成功時のゲージ回復（波型ハイブリッド調整）")]
+    [Tooltip("本覗き（DoorPeek / GardenPeek / Chore）を捕まらずに乗り切ったとき、怪しさゲージを自動減少させる。")]
+    [SerializeField] private bool enablePeekSurvivalRelief = true;
+
+    [Tooltip("通常・中段階（青・紫）で本覗きをやり過ごしたときのゲージ減少量。")]
+    [SerializeField, Min(0)] private int peekSurvivalReliefNormal = 1;
+
+    [Tooltip("高段階（赤：highSuspicionReliefThreshold 以上）で本覗きをやり過ごしたときのゲージ減少量。")]
+    [SerializeField, Min(0)] private int peekSurvivalReliefHighSuspicion = 2;
+
+    [Tooltip("高段階ボーナス（peekSurvivalReliefHighSuspicion）を適用するゲージ閾値（既定7＝赤段階）。")]
+    [SerializeField, Min(1)] private int highSuspicionReliefThreshold = 7;
 
 
     // ── 部屋侵入時の疑惑 ──────────────────────────────────────────────────────
@@ -844,8 +857,9 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         int gauge = (motherGauge != null) ? motherGauge.currentGauge : 0;
-        _activePeekDuration = peekDurationBase + gauge;
-        Debug.Log($"[PD] activePeekDuration={_activePeekDuration:F1}s (base={peekDurationBase:F1} + gauge={gauge})");
+        // 【PA03 波型ハイブリッド調整】ゲージによる覗き時間の水増し（+ gauge）を廃止し、基準時間で固定する。
+        _activePeekDuration = Mathf.Max(0f, peekDurationBase);
+        Debug.Log($"[PD] activePeekDuration={_activePeekDuration:F1}s (base={peekDurationBase:F1}, gauge={gauge})");
 
         bool primary;
         var route = (warningSystem != null) ? warningSystem.ActiveRoute : MotherApproachWarning.RouteState.None;
@@ -892,6 +906,14 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         if (isCaught || _hasPermanentGameOver) return;
+
+        // 【PA03 波型ハイブリッド調整】庭覗き（GardenPeek）が中断されずに正常完了した場合、やり過ごし成功ボーナスを適用する。
+        if (warningSystem != null &&
+            warningSystem.ActiveRoute == MotherApproachWarning.RouteState.GardenPeek &&
+            (approachController == null || !approachController.RouteExecutionFailed))
+        {
+            ApplyPeekSurvivalRelief("GardenPeek");
+        }
 
         ResetCycle();
 
@@ -1363,6 +1385,12 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 他の終了シーケンス（_dummyReset / _continuousRoom / _gardenPeekSuspicion / _rushInPeek）は
         // 従来どおり ResetCycle() が停止する（外部から呼ぶ場合の機能は維持される）。
         _primaryResetCoroutine = null;
+
+        // 【PA03 波型ハイブリッド調整】ドア覗き（DoorPeek / RushIn）を捕まらずに乗り切った場合、やり過ごし成功ボーナスを適用する。
+        if (!exitedByInvinciblePeekTime && !_captureSuppressedDuringPeek)
+        {
+            ApplyPeekSurvivalRelief(isRushInCycle ? "RushInDoorPeek" : "DoorPeek");
+        }
 
         ResetCycle();
 
@@ -2193,10 +2221,43 @@ public class MotherSuspicionSystem : MonoBehaviour
         return IsInvincible && amount > 0;
     }
 
-    /// <summary>無敵中に捕獲・ゲームオーバーを抑止すべきか。捕獲の共通入口から参照する。</summary>
+    /// <summary>無敵中またはTIME_UP（クリア確定）後に捕獲・ゲームオーバーを抑止すべきか。捕獲の共通入口から参照する。</summary>
     public bool ShouldBlockCapture()
     {
+        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUp)
+            return true;
+
         return IsInvincible;
+    }
+
+    /// <summary>
+    /// 【PA07】02:00（TIME_UP）到達時に進行中の親イベント・音・疑惑加算をすべて安全に停止する。
+    /// クリア閉眼演出中に親イベントや捕獲が割り込まないようにする。
+    /// </summary>
+    public void NotifyTimeUp()
+    {
+        Debug.Log("[PD] NotifyTimeUp — 02:00到達のため親イベント・疑惑加算・効果音を停止します");
+
+        warningSystem?.NotifyPlayFinished();
+        warningSystem?.CancelPassByDoorSound();
+        warningSystem?.StopWarningSequence();
+        warningSystem?.StopAllMotherSounds();
+
+        StopCatFeintForLoudItemInterrupt();
+        DisableChoreSuspicion();
+        ResetCycle();
+
+        if (motherChoreController != null && motherChoreController.IsChoreActive)
+            motherChoreController.AbortChore("TIME_UP");
+
+        if (approachController != null)
+        {
+            approachController.HideMotherModelImmediate();
+            approachController.ResetApproach();
+        }
+
+        if (motherGauge != null)
+            motherGauge.enableAutoDecrease = false;
     }
 
     /// <summary>
@@ -2352,6 +2413,27 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+    }
+
+    /// <summary>
+    /// 【PA03 波型ハイブリッド調整】本覗き（DoorPeek / GardenPeek / Chore）を捕まらずにやり過ごしたとき、
+    /// 怪しさゲージを自動で減少させて「危機を乗り切った達成感とリカバリーの波」を作る。
+    /// </summary>
+    public void ApplyPeekSurvivalRelief(string eventLabel)
+    {
+        if (!enablePeekSurvivalRelief || motherGauge == null) return;
+        if (isCaught || _hasPermanentGameOver) return;
+        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsPlayFinished) return;
+        if (motherGauge.currentGauge <= 0) return;
+
+        int before = motherGauge.currentGauge;
+        int relief = before >= highSuspicionReliefThreshold
+            ? Mathf.Max(0, peekSurvivalReliefHighSuspicion)
+            : Mathf.Max(0, peekSurvivalReliefNormal);
+        if (relief <= 0) return;
+
+        motherGauge.AddGauge(-relief);
+        Debug.Log($"[PD] やり過ごし成功ボーナス（{eventLabel}）: ゲージ -{relief} （{before} → {motherGauge.currentGauge}）");
     }
 
     // ──────────────────────────────────────────────────────────────────────────

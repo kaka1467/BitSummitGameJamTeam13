@@ -55,6 +55,17 @@ public class ParentGameTimeManager : MonoBehaviour
              "0 以下なら Start 直後に即時開始する。")]
     [SerializeField, Min(0f)] private float startDelaySeconds = 0f;
 
+    // ── クリア演出（PA07：閉眼・暗転） ────────────────────────────────────────
+    [Header("クリア演出（PA07：閉眼・暗転）")]
+    [Tooltip("02:00（TIME_UP）到達時に、眠るようにまぶたが閉じて暗転してから結果画面へ遷移する演出を有効にする。")]
+    [SerializeField] private bool enableClearSleepSequence = true;
+
+    [Tooltip("クリア時にまぶたがゆっくり閉じる時間（秒）。")]
+    [SerializeField, Min(0.1f)] private float clearEyelidCloseSeconds = 1.5f;
+
+    [Tooltip("まぶたが閉じ切って完全暗転したあと、結果画面へ遷移するまでの保持時間（秒）。")]
+    [SerializeField, Min(0f)] private float clearBlackoutHoldSeconds = 0.8f;
+
     [Header("デバッグ")]
     [SerializeField] private bool showDebugLogs;
 
@@ -73,6 +84,9 @@ public class ParentGameTimeManager : MonoBehaviour
 
     /// <summary>MotherSuspicionSystem の参照キャッシュ（毎フレームの Find を避ける）。</summary>
     private MotherSuspicionSystem _suspicionSystem;
+
+    /// <summary>クリア閉眼演出のコルーチン。</summary>
+    private Coroutine _clearSequenceCoroutine;
 
     // ── 公開（読み取り専用） ──────────────────────────────────────────────────
     /// <summary>親機の時間管理をほかの機能から参照するためのインスタンス。</summary>
@@ -390,21 +404,99 @@ public class ParentGameTimeManager : MonoBehaviour
 
         if (_elapsed >= LimitSeconds)
         {
-            // 1回だけ実行する（毎フレームの多重遷移を防ぐ）。
-            _timeUpFired = true;
-            _elapsed = LimitSeconds;
-
-            Debug.Log($"[ParentGameTimeManager] TIME UP — 制限時間 {LimitSeconds:F1}s 到達（表示={GetClockText()}）", this);
-
             if (IsCaptureConfirmed())
             {
-                // 捕獲（ゲームオーバー）が確定している場合は TIME_UP で遷移しない（捕獲優先）。
+                // 時間切れより前に捕獲（ゲームオーバー）が確定している場合は TIME_UP で遷移しない（捕獲優先）。
+                _timeUpFired = true;
+                _elapsed = LimitSeconds;
+                StopTimer();
                 Debug.Log("[ParentGameTimeManager] 捕獲が確定しているため、TIME_UP では遷移しません（捕獲優先）。", this);
                 return;
             }
 
-            TransitionToTimeUp();
+            // 1回だけ実行する（毎フレームの多重遷移を防ぐ）。
+            _timeUpFired = true;
+            _elapsed = LimitSeconds;
+            StopTimer();
+
+            Debug.Log($"[ParentGameTimeManager] TIME UP — 制限時間 {LimitSeconds:F1}s 到達（表示={GetClockText()}）", this);
+
+            if (enableClearSleepSequence)
+            {
+                if (_clearSequenceCoroutine != null)
+                    StopCoroutine(_clearSequenceCoroutine);
+                _clearSequenceCoroutine = StartCoroutine(TimeUpClearSequenceCoroutine());
+            }
+            else
+            {
+                StopAllEventsForTimeUp();
+                TransitionToTimeUp();
+            }
         }
+    }
+
+    /// <summary>
+    /// 【PA07】02:00到達時に親イベント・心拍・入力を停止し、
+    /// 「眠るように画面が閉じる」閉眼・暗転演出を行ってから ParentGameClear へ遷移する。
+    /// </summary>
+    private IEnumerator TimeUpClearSequenceCoroutine()
+    {
+        StopAllEventsForTimeUp();
+
+        SleepVisionEffectController sleepVision = Object.FindFirstObjectByType<SleepVisionEffectController>();
+        if (sleepVision != null && sleepVision.isActiveAndEnabled)
+        {
+            Debug.Log($"[ParentGameTimeManager] PA07 クリア閉眼・暗転演出を開始（閉眼={clearEyelidCloseSeconds:F2}s / 暗転保持={clearBlackoutHoldSeconds:F2}s）", this);
+            yield return sleepVision.PlayClearSleepSequence(clearEyelidCloseSeconds, clearBlackoutHoldSeconds);
+        }
+        else
+        {
+            Debug.LogWarning("[ParentGameTimeManager] SleepVisionEffectController が見つからないため、待機後にクリア画面へ遷移します。", this);
+            float fallbackWait = Mathf.Max(0f, clearEyelidCloseSeconds + clearBlackoutHoldSeconds);
+            if (fallbackWait > 0f)
+                yield return new WaitForSeconds(fallbackWait);
+        }
+
+        _clearSequenceCoroutine = null;
+        TransitionToTimeUp();
+    }
+
+    /// <summary>
+    /// 【PA07】クリア演出開始後に通常イベント・捕獲・心拍音・寝たふり通信が割り込まないよう停止する。
+    /// </summary>
+    private void StopAllEventsForTimeUp()
+    {
+        if (_suspicionSystem == null)
+            _suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
+
+        if (_suspicionSystem != null)
+        {
+            _suspicionSystem.NotifyTimeUp();
+        }
+        else
+        {
+            MotherApproachWarning warning = Object.FindFirstObjectByType<MotherApproachWarning>();
+            if (warning != null)
+            {
+                warning.NotifyPlayFinished();
+                warning.StopWarningSequence();
+                warning.StopAllMotherSounds();
+            }
+
+            MotherChoreController chore = Object.FindFirstObjectByType<MotherChoreController>();
+            if (chore != null && chore.IsChoreActive)
+                chore.AbortChore("TIME_UP");
+        }
+
+        // 心拍音を停止する
+        SuspicionHeartbeat heartbeat = Object.FindFirstObjectByType<SuspicionHeartbeat>();
+        if (heartbeat != null)
+            heartbeat.enabled = false;
+
+        // クリア演出中に寝たふり解除やUDP送信が走らないよう SleepingController を無効化する
+        SleepingController sleeping = Object.FindFirstObjectByType<SleepingController>();
+        if (sleeping != null)
+            sleeping.enabled = false;
     }
 
     // ── 内部処理 ──────────────────────────────────────────────────────────────

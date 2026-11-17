@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// SleepVisionEffectController：
@@ -76,6 +77,18 @@ public class SleepVisionEffectController : MonoBehaviour
     //   あらゆる外部移動を判別できる仕組みではない。
     private const float TremorWritePositionToleranceSqr = 1e-8f;
 
+    // ── クリア時の閉眼・暗転演出（PA07）──────────────────────────────────────
+    //  ・02:00（TIME_UP）到達時に ParentGameTimeManager から開始される。
+    //  ・開始後は通常の SleepingController.IsSleeping による開閉を上書きし、
+    //    プレイヤーがキー／枕を離しても目が再び開かないように固定する。
+    //  ・既に寝たふり中でまぶたが閉じている（または閉じかけている）場合は、
+    //    現在位置から開かずにそのまま閉じ切る。
+    private bool _isClearSleepSequenceActive;
+    private Image _clearBlackoutOverlay;
+
+    /// <summary>クリア時の閉眼・暗転演出が進行中か。</summary>
+    public bool IsClearSleepSequenceActive => _isClearSleepSequenceActive;
+
     // ──────────────────────────────────────────────────────────────────────────
     //  Unityライフサイクル
     // ──────────────────────────────────────────────────────────────────────────
@@ -91,6 +104,8 @@ public class SleepVisionEffectController : MonoBehaviour
         if (lowerEyelid != null)
             lowerEyelid.anchoredPosition = lowerOpenAnchoredPos;
 
+        _isClearSleepSequenceActive = false;
+
         // 震え用の参照は起動時に1回だけ解決する（毎フレーム Find/GetComponent を呼ばない）。
         if (tremorCamera == null)
             tremorCamera = Camera.main;
@@ -101,6 +116,10 @@ public class SleepVisionEffectController : MonoBehaviour
 
     private void Update()
     {
+        // クリア演出（PA07）進行中はコルーチン側でまぶたと暗転を制御する（通常開閉で上書きしない）。
+        if (_isClearSleepSequenceActive)
+            return;
+
         bool sleeping = sleepingController != null && sleepingController.IsSleeping;
 
         Vector2 upperTarget = sleeping ? upperClosedAnchoredPos : upperOpenAnchoredPos;
@@ -115,6 +134,113 @@ public class SleepVisionEffectController : MonoBehaviour
             lowerEyelid.anchoredPosition = Vector2.MoveTowards(lowerEyelid.anchoredPosition, lowerTarget, step);
     }
 
+    /// <summary>
+    /// 【PA07】02:00到達時の「眠るように画面が閉じる」閉眼・暗転演出を実行する。
+    ///  ・通常の寝たふり入力（IsSleeping）を無視して強制的に閉眼方向へのみ進める。
+    ///  ・既にまぶたが閉じている場合は一度開いたりせず、そのまま暗転保持へ進む。
+    ///  ・まぶたの隙間や別UI（怪しさメーター・ビネット）が透けないよう、
+    ///    SleepingUI を最前面へ移動しつつ完全黒オーバーレイを合わせてフェードインさせる。
+    /// </summary>
+    public System.Collections.IEnumerator PlayClearSleepSequence(float closeDurationSeconds, float blackoutHoldSeconds)
+    {
+        _isClearSleepSequenceActive = true;
+        ClearTremorOffset();
+
+        // 他のUI（DangerVignette / Suspicion UI）より手前にまぶた・暗転が出るよう最前面へ移動する。
+        transform.SetAsLastSibling();
+
+        Image blackout = EnsureClearBlackoutOverlay();
+
+        float fullUpperDist = Vector2.Distance(upperOpenAnchoredPos, upperClosedAnchoredPos);
+        float fullLowerDist = Vector2.Distance(lowerOpenAnchoredPos, lowerClosedAnchoredPos);
+
+        Vector2 startUpper = upperEyelid != null ? upperEyelid.anchoredPosition : upperClosedAnchoredPos;
+        Vector2 startLower = lowerEyelid != null ? lowerEyelid.anchoredPosition : lowerClosedAnchoredPos;
+
+        float remainUpper = Vector2.Distance(startUpper, upperClosedAnchoredPos);
+        float remainLower = Vector2.Distance(startLower, lowerClosedAnchoredPos);
+
+        float upperRatio = fullUpperDist > 0.001f ? Mathf.Clamp01(remainUpper / fullUpperDist) : 0f;
+        float lowerRatio = fullLowerDist > 0.001f ? Mathf.Clamp01(remainLower / fullLowerDist) : 0f;
+        float remainRatio = Mathf.Max(upperRatio, lowerRatio);
+
+        // 既に閉じかけ／閉じている場合は残り距離に応じて時間を短縮し、一度開く動きを出さない。
+        float baseCloseDuration = Mathf.Max(0.1f, closeDurationSeconds);
+        float effectiveCloseDuration = baseCloseDuration * remainRatio;
+
+        if (effectiveCloseDuration > 0.01f)
+        {
+            float elapsed = 0f;
+            while (elapsed < effectiveCloseDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / effectiveCloseDuration);
+                // 眠りに落ちるような柔らかいイージング（SmoothStep）
+                float eased = Mathf.SmoothStep(0f, 1f, t);
+
+                if (upperEyelid != null)
+                    upperEyelid.anchoredPosition = Vector2.Lerp(startUpper, upperClosedAnchoredPos, eased);
+
+                if (lowerEyelid != null)
+                    lowerEyelid.anchoredPosition = Vector2.Lerp(startLower, lowerClosedAnchoredPos, eased);
+
+                if (blackout != null)
+                {
+                    // まぶたが閉じ切る後半にかけて完全暗転へ馴染ませる
+                    float overallProgress = Mathf.Lerp(1f - remainRatio, 1f, eased);
+                    float alpha = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.35f, 1f, overallProgress));
+                    blackout.color = new Color(0f, 0f, 0f, alpha);
+                }
+
+                yield return null;
+            }
+        }
+
+        if (upperEyelid != null)
+            upperEyelid.anchoredPosition = upperClosedAnchoredPos;
+
+        if (lowerEyelid != null)
+            lowerEyelid.anchoredPosition = lowerClosedAnchoredPos;
+
+        if (blackout != null)
+            blackout.color = Color.black;
+
+        float hold = Mathf.Max(0f, blackoutHoldSeconds);
+        // 既に寝たふり中で閉眼時間が0秒だった場合も、クリアの余韻として最低限の暗転間を確保する。
+        if (effectiveCloseDuration <= 0.05f)
+            hold = Mathf.Max(hold, 0.8f);
+
+        if (hold > 0f)
+            yield return new WaitForSeconds(hold);
+    }
+
+    /// <summary>完全暗転を保証するための全画面黒オーバーレイを準備する。</summary>
+    private Image EnsureClearBlackoutOverlay()
+    {
+        if (_clearBlackoutOverlay != null)
+        {
+            _clearBlackoutOverlay.gameObject.SetActive(true);
+            _clearBlackoutOverlay.transform.SetAsLastSibling();
+            return _clearBlackoutOverlay;
+        }
+
+        GameObject go = new GameObject("ClearBlackoutOverlay", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        go.transform.SetParent(transform, false);
+        go.transform.SetAsLastSibling();
+
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        rt.localScale = Vector3.one;
+
+        _clearBlackoutOverlay = go.GetComponent<Image>();
+        _clearBlackoutOverlay.color = new Color(0f, 0f, 0f, 0f);
+        _clearBlackoutOverlay.raycastTarget = false;
+        return _clearBlackoutOverlay;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     //  寝たふり中のカメラの震え
     // ──────────────────────────────────────────────────────────────────────────
@@ -127,6 +253,13 @@ public class SleepVisionEffectController : MonoBehaviour
     /// </summary>
     private void LateUpdate()
     {
+        // クリア閉眼演出（PA07）が動いている間は、寝たふりの震えを止める
+        if (_isClearSleepSequenceActive)
+        {
+            ClearTremorOffset();
+            return;
+        }
+
         // 震えの有効／強さ／速さは SleepingController 側の設定を毎フレーム参照する
         // （プレイ中にInspectorで変更した内容がそのまま反映される）
         bool tremorEnabled = sleepingController != null && sleepingController.SleepCameraTremorEnabled;
