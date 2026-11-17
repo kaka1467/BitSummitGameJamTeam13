@@ -11,9 +11,41 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="22fa6ecd-499e-4052-a234-1aacc24ab50d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/BGM/よふかしあそびフィーバー.wav" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/BGM/よふかしあそびフィーバー.wav.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/Image/QTE/ScoreBonus.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/Image/QTE/ScoreBonus.png.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/SE/Child_SE/QTEClear.mp3" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/SE/Child_SE/QTEClear.mp3.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/BarLeft.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/BarLeft.png.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/BarRight.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/BarRight.png.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/BarTile.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/BarTile.png.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/WarningIcon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Resources/LaneRestriction/WarningIcon.png.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/FeverBgmPlayer.cs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/FeverBgmPlayer.cs.meta" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/LaneRestriction.cs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/LaneRestriction.cs.meta" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BitSummit/.idea/indexLayout.xml" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.BitSummit/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.BitSummit/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scenes/MotherGame/GameScene.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scenes/MotherGame/GameScene.unity" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Assets/Other Assets/Font/Press_Start_2P/PressStart2P-Regular SDF.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/Font/Press_Start_2P/PressStart2P-Regular SDF.asset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Assets/Other Assets/Font/Thickpixelalcharacters-Regular SDF.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Assets/Other Assets/Font/Thickpixelalcharacters-Regular SDF.asset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scenes/Child_Game/ChildGameScene.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scenes/Child_Game/ChildGameScene.unity" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scenes/Child_Game/ChildTitle.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scenes/Child_Game/ChildTitle.unity" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/BGMController.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/BGMController.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/FeverDisabledMark.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/FeverDisabledMark.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/FeverGaugeUI.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/FeverGaugeUI.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/GameManager.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/GameManager.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/Item.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/Item.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/ItemSpawnPattern.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/ItemSpawnPattern.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/ItemSpawner.Patterns.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/ItemSpawner.Patterns.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/ItemSpawner.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/ItemSpawner.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/PlayerMove.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/PlayerMove.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Script/Child_Script/QTEManager.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Script/Child_Script/QTEManager.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -22,7 +54,6 @@
   </component>
   <component name="EmbeddingIndexingInfo">
     <option name="cachedIndexableFilesCount" value="15" />
-    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -40,7 +71,8 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
-    <setting file="file://$PROJECT_DIR$/Assets/Scenes/MotherGame/MotherLoad.unity" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Assets/Assets/Other Assets/Font/Thickpixelalcharacters-Regular SDF.asset" root0="FORCE_HIGHLIGHTING" />
+    <setting file="mock:///Users/ryutohachimine/BitSummitGameJamTeam13/Assets/Assets/Other Assets/Font/Thickpixelalcharacters-Regular SDF.asset" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="McpProjectServerCommands">
     <commands />
@@ -72,7 +104,7 @@
     "cidr.known.project.marker": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
     "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "スクリプト修正",
+    "git-widget-placeholder": "#238 on Merging 京まふ修正2",
     "junie.onboarding.icon.badge.shown": "true",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -128,6 +160,8 @@
       <workItem from="1787716072635" duration="859000" />
       <workItem from="1790985712525" duration="1614000" />
       <workItem from="1791176716305" duration="18000" />
+      <workItem from="1794931219151" duration="42000" />
+      <workItem from="1794931386354" duration="36000" />
     </task>
     <servers />
   </component>
