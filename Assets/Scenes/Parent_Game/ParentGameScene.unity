@@ -2005,7 +2005,7 @@ MonoBehaviour:
   choreStayDuration: 10
   choreNaturalLookIntervalMin: 4
   choreNaturalLookIntervalMax: 8
-  gardenPeekDurationBase: 8
+  gardenPeekDurationBase: 6
   _footstepCurrentVolume: 0
   _footstepTargetVolume: 0
   _isGrassFootstepRoute: 0
@@ -2166,7 +2166,7 @@ MonoBehaviour:
   autoTrigger: 1
   graceSeconds: 15
   postEventRestSeconds: 3
-  postStrongEventRestSeconds: 5
+  postStrongEventRestSeconds: 8
   lowSuspicionExtraWaitMaxSeconds: 7
   midSuspicionExtraWaitMaxSeconds: 5
   highSuspicionExtraWaitMaxSeconds: 3
@@ -6103,7 +6103,7 @@ MonoBehaviour:
   frameOnSprite: {fileID: 21300000, guid: ceafdcd94d61d1e48a6112f58b43c077, type: 3}
   gaugeStep: 1
   enableAutoDecrease: 1
-  decreaseIntervalSeconds: 30
+  decreaseIntervalSeconds: 20
   gaugeStepAudioSource: {fileID: 875155242}
   raisePitchPerStep: 1
   semitonesPerStep: 1
@@ -9416,9 +9416,9 @@ MonoBehaviour:
   approachMoveSpeedMin: 15
   approachMoveSpeedMax: 20
   approachSpeedSuspicionBonus: 5
-  highSuspicionSpeedGaugeThreshold: 30
-  highSuspicionApproachMoveSpeedMin: 40
-  highSuspicionApproachMoveSpeedMax: 50
+  highSuspicionSpeedGaugeThreshold: 6
+  highSuspicionApproachMoveSpeedMin: 22
+  highSuspicionApproachMoveSpeedMax: 26
   loudItemRushInMoveSpeed: 140
   useFixedDebugApproachSpeed: 0
   fixedDebugApproachSpeed: 30
@@ -9427,12 +9427,16 @@ MonoBehaviour:
   targetDoorController: {fileID: 1919619509}
   dummyProbability: 0.3
   catFeintController: {fileID: 1393430533}
-  peekDurationBase: 7
+  peekDurationBase: 6
   rushInPeekDurationSeconds: 6
   roomCheckSafetyTimeout: 30
   returnHomeSafetyTimeout: 15
-  leaveAfterSleepDelay: 6.5
-  leaveAfterSleepDelayMax: 8
+  leaveAfterSleepDelay: 2.5
+  leaveAfterSleepDelayMax: 3.5
+  enablePeekSurvivalRelief: 1
+  peekSurvivalReliefNormal: 1
+  peekSurvivalReliefHighSuspicion: 2
+  highSuspicionReliefThreshold: 7
   roomEntryBurstTickInterval: 0.2
   enableLoudItemFeature: 1
   forceLoudItemDuringWarning: 0
@@ -9994,23 +9998,22 @@ MonoBehaviour:
   choreReturnPoint_2: {fileID: 1152572594}
   choreReturnLookBackChance: 0.5
   choreReturnLookBackStopSeconds: 1.5
-
   choreController: {fileID: 445778319}
   choreTurnRotationSpeed: 200
   stopDistance: 0.05
   motherHeightOffset: 0
-  turnRotation: 200
-  doorTurnRotationSpeed: 250
+  turnRotation: 90
+  doorTurnRotationSpeed: 120
   motherModelRoot: {fileID: 614312311394012806}
   motherModelRenderers: []
-  glowingEyesObject: {fileID: 6637856680576438811}
+  glowingEyesObject: {fileID: 1461056740464987174}
   windowPeekFaceLight: {fileID: 109284107}
   windowPeekFaceLightEnabledNote: 1
   eyeRendererL: {fileID: 581576903366541384}
   eyeRendererR: {fileID: 8793611403288302771}
   normalGlowColor: {r: 1, g: 0.8, b: 0.2, a: 1}
   dangerGlowColor: {r: 1, g: 0, b: 0, a: 1}
-  purpleGlowColor: {r: 0.6144581, g: 0, b: 1, a: 1}
+  purpleGlowColor: {r: 0.75, g: 0.35, b: 1, a: 1}
   eyeEmissionIntensity: 2
   eyeGlowPulseSpeed: 0
   faceLightFollowsHead: 0
@@ -10021,12 +10024,12 @@ MonoBehaviour:
   enableDoorPeekSlide: 1
   doorPeekSlideDistance: -4
   doorPeekSlideStartDelay: 2.1
-  doorPeekSlideReturnDelay: 1.9
-  doorPeekSlideOutDuration: 0.7
-  doorPeekSlideBackDuration: 0.7
+  doorPeekSlideReturnDelay: 2
+  doorPeekSlideOutDuration: 1
+  doorPeekSlideBackDuration: 1
   doorPeekSlideStateWaitTimeoutSeconds: 3
   doorPeekSlideVerboseLog: 0
-  pauseAtDoorSeconds: 0.2
+  pauseAtDoorSeconds: 2
   rushInPauseAtDoorSeconds: 0.2
   onApproachStarted:
     m_PersistentCalls:
@@ -18481,8 +18484,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9182000000000000001}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.7071067}
-  m_LocalPosition: {x: -14.370001, y: 12.5414, z: 13.334666}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -14.370001, y: 12.31, z: 13.25}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -18503,9 +18506,9 @@ MonoBehaviour:
   timeManager: {fileID: 1800000003}
   displayAnchor: {fileID: 9182000000000000002}
   fontAsset: {fileID: 11400000, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
-  fontSize: 100000
-  textColor: {r: 1, g: 0, b: 0, a: 1}
-  emissionColor: {r: 1, g: 0, b: 0, a: 1}
+  fontSize: 8
+  textColor: {r: 0.7924528, g: 0.45229617, b: 0.7924528, a: 1}
+  emissionColor: {r: 1, g: 0, b: 1, a: 1}
   surfaceOffset: 0.01
   surfaceForward: {x: 0, y: 0, z: -1}
   flipToFront: 0
@@ -18524,7 +18527,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000003
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18538,7 +18540,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000004
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18552,7 +18553,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000005
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18566,7 +18566,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000006
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18580,7 +18579,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000007
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18594,7 +18592,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000008
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18608,7 +18605,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000009
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18622,7 +18618,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000011
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18636,7 +18631,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000012
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18650,7 +18644,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000013
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18664,7 +18657,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000014
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18678,7 +18670,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000016
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18692,7 +18683,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentAudioVolumeTarget
   kind: 1
-
 --- !u!114 &9184000000000000017
 MonoBehaviour:
   m_ObjectHideFlags: 0

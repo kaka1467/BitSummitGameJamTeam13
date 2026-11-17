@@ -2964,15 +2964,16 @@ public class MotherApproachController : MonoBehaviour
         TriggerPeekAnimation(PeekWindowsParameter);
 
         // 覗き時間の基本値は MotherApproachWarning の「庭覗き時間」を参照する（重複保持しない）。
-        // 覗き時間は「GardenPeekPoint到着時のゲージ値」を一度だけ取得して決定する（覗き中のゲージ変化では延長しない）。
+        // 【PA03 波型ハイブリッド調整】ゲージ量による覗き時間の水増し（+ gaugeAtPeekStart）は行わず、
+        // 基準時間（gardenPeekDurationBase）でテンポよく切り上げる。
         if (motherGauge == null)
             motherGauge = UnityEngine.Object.FindFirstObjectByType<MotherGauge>();
         int gaugeAtPeekStart = (motherGauge != null) ? motherGauge.currentGauge : 0;
 
         float peekBaseSeconds = ResolveGardenPeekDurationBase();
-        _gardenPeekDuration = Mathf.Max(0f, peekBaseSeconds) + gaugeAtPeekStart;
+        _gardenPeekDuration = Mathf.Max(0f, peekBaseSeconds);
         Debug.Log(
-            $"[MotherApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={peekBaseSeconds:F1} + gauge={gaugeAtPeekStart})");
+            $"[MotherApproachController]   GardenPeekPointで覗き | {_gardenPeekDuration:F1}s (base={peekBaseSeconds:F1}, gauge={gaugeAtPeekStart})");
         DiagPhase("Window Peek開始", $"duration={_gardenPeekDuration:F1}s base={peekBaseSeconds:F1} gaugeAtPeekStart={gaugeAtPeekStart}");
 
         // ── 覗き・発見可能の切り替え直前：最低反応時間の最終保証と終了確認 ──

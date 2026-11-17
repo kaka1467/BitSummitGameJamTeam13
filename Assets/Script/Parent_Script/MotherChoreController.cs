@@ -1304,6 +1304,8 @@ public class MotherChoreController : MonoBehaviour
         _choreCompleted = true;
         if (showDebugLogs)
             Debug.Log("[MotherChore] 戻り先へ到着（onChoreCompleted）");
+        if (parentDetection != null && !_choreRouteFailed)
+            parentDetection.ApplyPeekSurvivalRelief("Chore");
         FinishChoreCycle();
     }
 

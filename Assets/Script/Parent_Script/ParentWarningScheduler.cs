@@ -32,8 +32,8 @@ public class ParentWarningScheduler : MonoBehaviour
     [Tooltip("通常の親イベント（覗き・通過など）が終了した後、次の予告を開始するまでに必ず確保する最低休憩時間（秒）。")]
     [SerializeField] public float postEventRestSeconds = 3f;
 
-    [Tooltip("強い親イベント（突入・ドア覗き・片付けなど）が終了した後、次の予告を開始するまでに必ず確保する最低休憩時間（秒）。")]
-    [SerializeField] public float postStrongEventRestSeconds = 5f;
+    [Tooltip("強い親イベント（突入・ドア覗き・庭覗き・片付けなど）が終了した後、次の予告を開始するまでに必ず確保する最低休憩時間（秒）。")]
+    [SerializeField] public float postStrongEventRestSeconds = 8f;
 
     [Header("イベント後のランダム追加待機（怪しさ段階別の上限）")]
     [Tooltip("怪しさが低（青：ゲージ0〜3）のときの追加待機の上限（秒）。0〜この値から1回だけ抽選する。")]
@@ -150,15 +150,17 @@ public class ParentWarningScheduler : MonoBehaviour
 
     /// <summary>
     /// 現在進行中の親イベントが「強いイベント」かを判定する。
-    ///  ・突入（MotherApproachController.IsRushIn）
+    ///  ・突入（MotherApproachController.IsRushIn / CycleStartedAsRushIn）
     ///  ・ドア覗き（本チェック。MotherApproachWarning.ActiveRoute == DoorPeek）
-    /// 参照が無い場合は false（通常イベント扱い）。
+    ///  ・庭覗き（本チェック。MotherApproachWarning.ActiveRoute == GardenPeek）
+    /// 参照が無い場合は false（フェイント等の通常イベント扱い）。
     /// </summary>
     private bool IsStrongEventActive()
     {
-        if (_approachController != null && _approachController.IsRushIn) return true;
+        if (_approachController != null && (_approachController.IsRushIn || _approachController.CycleStartedAsRushIn)) return true;
         if (warningSystem != null &&
-            warningSystem.ActiveRoute == MotherApproachWarning.RouteState.DoorPeek) return true;
+            (warningSystem.ActiveRoute == MotherApproachWarning.RouteState.DoorPeek ||
+             warningSystem.ActiveRoute == MotherApproachWarning.RouteState.GardenPeek)) return true;
 
         return false;
     }
