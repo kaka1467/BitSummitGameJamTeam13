@@ -113,9 +113,26 @@ public class ResultScoreUI : MonoBehaviour
 
     private void RefreshResultData()
     {
-
         // 選択中の難易度のランキングをミラーキーへ同期する（D-Q03）
         GameDifficulty.SyncActiveDifficultyRankingToMirrorKeys(false);
+
+        // チュートリアルモード完了時は、子機・親機ともスコアおよび全ランキング表示を 000000 に統一する
+        if (GameDifficulty.IncludeTutorial)
+        {
+            if (resultScoreText != null)
+                resultScoreText.text = "000000";
+
+            int[] zeroRanking = new int[RankingSize];
+            TextMeshProUGUI[] tutorialPrimaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
+            TextMeshProUGUI[] tutorialOtherTexts = ResolveTexts(crossRankTexts, crossRank1Text, crossRank2Text, crossRank3Text);
+            ApplyRankingTexts(tutorialPrimaryTexts, zeroRanking);
+            ApplyRankingTexts(tutorialOtherTexts, zeroRanking);
+
+            if (syncStateText != null)
+                syncStateText.text = "TUTORIAL";
+
+            return;
+        }
 
         ParentUdpRuntimeHost host = ResolveParentHost();
         if (host != null)

@@ -300,11 +300,25 @@ public static class GameDifficulty
 
     /// <summary>
     /// 現在の難易度で結果を保存し、クリア時（かつチュートリアルモード以外）のみその難易度のTOP5ランキングへ登録する（M-R06, D-Q03）。
-    /// 保存後、親機とのRANK_SYNC互換のため現在難易度のランキングを共通ミラーキーへコピーする。
+    /// チュートリアルモード（IncludeTutorial == true）では EASY / NORMAL / HARD の保存データを汚さず、結果画面はすべて 000000 とする。
     /// </summary>
     public static void RecordResultScore(bool isGameOver, int score)
     {
         EnsureLoaded();
+        if (_includeTutorial)
+        {
+            // チュートリアルモードでは各難易度の最新スコア・ランキングには記録せず、共通ミラーキーのみ0にする
+            PlayerPrefs.SetInt(LegacyKeyGameOverScore, 0);
+            PlayerPrefs.SetInt(LegacyKeyTimeUpScore, 0);
+            for (int i = 0; i < RankingSize; i++)
+            {
+                PlayerPrefs.SetInt(LegacyKeyGameOverRank + i, 0);
+                PlayerPrefs.SetInt(LegacyKeyTimeUpRank + i, 0);
+            }
+            PlayerPrefs.Save();
+            return;
+        }
+
         Level level = _current;
 
         if (isGameOver)
@@ -316,7 +330,7 @@ public static class GameDifficulty
         {
             PlayerPrefs.SetInt(GetLastTimeUpScoreKey(level), score);
             PlayerPrefs.SetInt(LegacyKeyTimeUpScore, score);
-            if (!_includeTutorial && score > 0)
+            if (score > 0)
             {
                 RankingUtil.InsertScoreToPlayerPrefs(GetTimeUpRankPrefix(level), score, RankingSize);
             }
@@ -328,11 +342,24 @@ public static class GameDifficulty
 
     /// <summary>
     /// 現在選択されている難易度のランキング・最新得点を共通ミラーキー（TimeUpRank_0..4 等）へコピーする。
-    /// これにより既存の RANK_SYNC パケットで親機の ResultScoreUI にも現在難易度のランキングがそのまま同期される。
+    /// チュートリアルモード中はミラーキーをすべて 0 にし、保存済みの各難易度データは保護する。
     /// </summary>
     public static void SyncActiveDifficultyRankingToMirrorKeys(bool notifyPeerRanking = false)
     {
         EnsureLoaded();
+        if (_includeTutorial)
+        {
+            PlayerPrefs.SetInt(LegacyKeyGameOverScore, 0);
+            PlayerPrefs.SetInt(LegacyKeyTimeUpScore, 0);
+            for (int i = 0; i < RankingSize; i++)
+            {
+                PlayerPrefs.SetInt(LegacyKeyGameOverRank + i, 0);
+                PlayerPrefs.SetInt(LegacyKeyTimeUpRank + i, 0);
+            }
+            PlayerPrefs.Save();
+            return;
+        }
+
         Level level = _current;
 
         int lastGo = PlayerPrefs.GetInt(GetLastGameOverScoreKey(level), 0);
@@ -523,7 +550,6 @@ public static class GameDifficulty
         Debug.Log($"[GameDifficulty] Parent received remote TITLE_CMD: '{cmd}'");
 
         ParentVolumeSettingsPanel parentSettings = UnityEngine.Object.FindFirstObjectByType<ParentVolumeSettingsPanel>();
-        DifficultyTitleUI diffUi = UnityEngine.Object.FindFirstObjectByType<DifficultyTitleUI>();
 
         switch (cmd)
         {
@@ -534,10 +560,8 @@ public static class GameDifficulty
                 if (parentSettings != null) parentSettings.Close();
                 break;
             case "OPEN_DIFFICULTY":
-                if (diffUi != null) diffUi.OpenPanel(fromRemote: true);
-                break;
             case "CLOSE_DIFFICULTY":
-                if (diffUi != null) diffUi.ClosePanel(fromRemote: true);
+                // 親機側では難易度選択UIを一切表示しない仕様のため無視する
                 break;
             case "CONNECT":
                 ParentUdpRuntimeHost.Running?.OnConnectButtonClicked();
@@ -551,7 +575,8 @@ public static class GameDifficulty
 
 /// <summary>
 /// DifficultyTitleUI：
-/// タイトル画面（ChildTitle / ParentTitle）にモード選択UI（EASY / NORMAL / HARD / TUTORIAL）を表示する。
+/// 子機タイトル画面（ChildTitle）にモード選択UI（EASY / NORMAL / HARD / TUTORIAL）を表示する。
+/// ・親機タイトル画面（ParentTitle）では難易度選択UIを一切生成・表示しない。
 /// ・EASY / NORMAL / HARD を選んだ場合はチュートリアルなし（IncludeTutorial = false）で本編を開始する。
 /// ・TUTORIAL を選んだ場合はチュートリアルモード（IncludeTutorial = true）として子機・親機チュートリアルを実行する。
 /// </summary>
@@ -640,6 +665,9 @@ public class DifficultyTitleUI : MonoBehaviour
 
     public static DifficultyTitleUI EnsureAttached()
     {
+        string sceneName = SceneManager.GetActiveScene().name;
+        if (sceneName != "ChildTitle") return null;
+
         DifficultyTitleUI existing = FindFirstObjectByType<DifficultyTitleUI>(FindObjectsInactive.Include);
         if (existing != null)
         {
@@ -647,13 +675,19 @@ public class DifficultyTitleUI : MonoBehaviour
             return existing;
         }
 
-        TryAttachToActiveScene(SceneManager.GetActiveScene().name);
+        TryAttachToActiveScene(sceneName);
         return FindFirstObjectByType<DifficultyTitleUI>(FindObjectsInactive.Include);
     }
 
     private static void TryAttachToActiveScene(string sceneName)
     {
-        if (sceneName != "ChildTitle" && sceneName != "ParentTitle") return;
+        if (sceneName != "ChildTitle")
+        {
+            // ParentTitle 等では難易度選択UIを一切表示しない。もしシーン内に配置されている場合はすべて非表示にする。
+            HideAllDifficultyUiInCurrentScene();
+            return;
+        }
+
         DifficultyTitleUI existing = FindFirstObjectByType<DifficultyTitleUI>(FindObjectsInactive.Include);
         if (existing != null)
         {
@@ -683,6 +717,27 @@ public class DifficultyTitleUI : MonoBehaviour
         hostRt.offsetMin = Vector2.zero;
         hostRt.offsetMax = Vector2.zero;
         hostGo.AddComponent<DifficultyTitleUI>();
+    }
+
+    private static void HideAllDifficultyUiInCurrentScene()
+    {
+        string[] targetNames = { "DifficultyTitleUI", "DifficultyBadgeButton", "DifficultyModalPanel", "DifficultyDetailPopup" };
+        for (int n = 0; n < targetNames.Length; n++)
+        {
+            List<Transform> found = FindAllTransformsInSceneByName(targetNames[n]);
+            for (int i = 0; i < found.Count; i++)
+            {
+                if (found[i] != null && found[i].gameObject.activeSelf)
+                    found[i].gameObject.SetActive(false);
+            }
+        }
+
+        DifficultyTitleUI[] uis = FindObjectsByType<DifficultyTitleUI>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < uis.Length; i++)
+        {
+            if (uis[i] != null && uis[i].gameObject.activeSelf)
+                uis[i].gameObject.SetActive(false);
+        }
     }
 
     private static Transform FindTransformInSceneByName(string targetName)
@@ -788,6 +843,16 @@ public class DifficultyTitleUI : MonoBehaviour
 
     private void Awake()
     {
+        // ParentTitle 等、ChildTitle 以外のシーンに配置されている場合は完全に非表示・無効化する
+        if (SceneManager.GetActiveScene().name != "ChildTitle")
+        {
+            ForceHideAllModalsInScene();
+            if (_badgeRoot != null) _badgeRoot.SetActive(false);
+            HideAllDifficultyUiInCurrentScene();
+            gameObject.SetActive(false);
+            return;
+        }
+
         // シーン内に重複した DifficultyTitleUI が存在する場合は1つに統合し、余分な方を無効化する
         DifficultyTitleUI[] allInstances = FindObjectsByType<DifficultyTitleUI>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         if (Instance != null && Instance != this)

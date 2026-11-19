@@ -51,8 +51,14 @@ public class ParentTitleConnectionUI : MonoBehaviour
     // 診断用：直前にラベルへ書き込んだ文字列（変化時のみログを出す）
     private string _lastAppliedConnectLabel;
 
+    private void Awake()
+    {
+        ConfigureStatusOnlyDisplayAndNavigation();
+    }
+
     private void OnEnable()
     {
+        ConfigureStatusOnlyDisplayAndNavigation();
         // 有効化し直したときも再接続・再購読・再登録できるようにする。
         TryBindHost();
         RegisterTitleListeners();
@@ -61,6 +67,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
 
     private void Start()
     {
+        ConfigureStatusOnlyDisplayAndNavigation();
         // Awake/OnEnable の時点では ParentUdpSender.Instance が未設定のことがある
         // （同一シーン内の Awake 実行順は不定）。Start でも必ず試す。
         TryBindHost();
@@ -163,6 +170,8 @@ public class ParentTitleConnectionUI : MonoBehaviour
 
     private void ApplyConnectionState(ParentConnectionLink.LinkState state)
     {
+        ConfigureStatusOnlyDisplayAndNavigation();
+
         if (_lastAppliedState.HasValue && _lastAppliedState.Value == state) return; // 同値では再適用しない
         _lastAppliedState = state;
 
@@ -172,16 +181,14 @@ public class ParentTitleConnectionUI : MonoBehaviour
             switch (state)
             {
                 case ParentConnectionLink.LinkState.Disconnected:
-                    newLabel = "Connect";
-                    break;
                 case ParentConnectionLink.LinkState.Connecting:
-                    newLabel = "Connecting...";
+                    newLabel = "Waiting for Child...";
                     break;
                 case ParentConnectionLink.LinkState.Connected:
-                    newLabel = "STARTING...";
+                    newLabel = "Connected!";
                     break;
                 default:
-                    newLabel = connectButtonLabel.text;
+                    newLabel = "Waiting for Child...";
                     break;
             }
 
@@ -201,25 +208,87 @@ public class ParentTitleConnectionUI : MonoBehaviour
         }
 
         if (connectButton != null) connectButton.gameObject.SetActive(true);
+        if (cancelButton != null) cancelButton.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// 親機タイトルの Connect / Cancel ボタンを廃止し、接続待ちステータス表示のみにする。
+    /// 選択可能なボタンは SOLO PLAY（SoloStartButton）と SETTING（ParentVolumeSettingsPanel）の2つのみに制限する。
+    /// </summary>
+    private void ConfigureStatusOnlyDisplayAndNavigation()
+    {
         if (cancelButton != null)
-            cancelButton.gameObject.SetActive(state == ParentConnectionLink.LinkState.Connecting);
+        {
+            cancelButton.onClick = new Button.ButtonClickedEvent();
+            cancelButton.interactable = false;
+            cancelButton.navigation = new Navigation { mode = Navigation.Mode.None };
+            cancelButton.gameObject.SetActive(false);
+        }
+
+        if (connectButton != null)
+        {
+            connectButton.onClick = new Button.ButtonClickedEvent();
+            connectButton.interactable = false;
+            connectButton.navigation = new Navigation { mode = Navigation.Mode.None };
+
+            ColorBlock cb = connectButton.colors;
+            cb.disabledColor = Color.white;
+            connectButton.colors = cb;
+
+            Image bgImage = connectButton.GetComponent<Image>();
+            if (bgImage != null) bgImage.enabled = false;
+
+            Graphic[] graphics = connectButton.GetComponentsInChildren<Graphic>(true);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                if (graphics[i] != null) graphics[i].raycastTarget = false;
+            }
+
+            connectButton.gameObject.SetActive(true);
+        }
+
+        if (connectButtonLabel != null && string.IsNullOrEmpty(_lastAppliedConnectLabel))
+        {
+            connectButtonLabel.text = "Waiting for Child...";
+        }
+
+        Button soloButton = soloStartButtonObject != null ? soloStartButtonObject.GetComponent<Button>() : null;
+        ParentVolumeSettingsPanel settingsPanel = FindFirstObjectByType<ParentVolumeSettingsPanel>();
+        Button settingsButton = settingsPanel != null ? settingsPanel.GetComponent<Button>() : null;
+
+        if (soloButton != null && settingsButton != null)
+        {
+            soloButton.navigation = new Navigation
+            {
+                mode = Navigation.Mode.Explicit,
+                selectOnUp = settingsButton,
+                selectOnDown = settingsButton,
+                selectOnLeft = settingsButton,
+                selectOnRight = settingsButton
+            };
+
+            settingsButton.navigation = new Navigation
+            {
+                mode = Navigation.Mode.Explicit,
+                selectOnUp = soloButton,
+                selectOnDown = soloButton,
+                selectOnLeft = soloButton,
+                selectOnRight = soloButton
+            };
+        }
     }
 
 
     // ── ボタン操作（接続・開始はUDP側の既存APIを1回だけ呼ぶ）─────────────────
 
-    /// <summary>Connect Button。接続状態の遷移は UDP 側（OnConnectButtonClicked）が持つ。</summary>
+    /// <summary>Connect Button（親機タイトルではステータス表示専用のため何もしない）。</summary>
     public void OnConnectClicked()
     {
-        if (!EnsureHost()) return;
-        _host.OnConnectButtonClicked();
     }
 
-    /// <summary>cancel button。接続状態を戻す処理は UDP 側が持つ。</summary>
+    /// <summary>cancel button（親機タイトルでは廃止のため何もしない）。</summary>
     public void OnCancelClicked()
     {
-        if (!EnsureHost()) return;
-        _host.OnCancelButtonClicked();
     }
 
     /// <summary>
@@ -236,16 +305,10 @@ public class ParentTitleConnectionUI : MonoBehaviour
 
     /// <summary>
     /// タイトルのボタンに動的リスナーを登録する。
-    ///  ・シーンの永続リスナーが本コンポーネントを指している間は登録しない
-    ///    （Inspector登録＋動的登録の二重実行を防ぐ）。
-    ///  ・タイトル復帰後は新シーンのボタンが新UIを指すため、その場合も登録は不要
-    ///    （永続リスナーが新しいUIインスタンスを解決して呼ぶ）。
+    ///  ・Connect / Cancel は廃止したため SoloStartButton のみ登録する。
     /// </summary>
     private void RegisterTitleListeners()
     {
-        BindButton(connectButton, OnConnectClicked, nameof(OnConnectClicked));
-        BindButton(cancelButton, OnCancelClicked, nameof(OnCancelClicked));
-
         if (soloStartButtonObject == null) return;
         Button soloButton = soloStartButtonObject.GetComponent<Button>();
         BindButton(soloButton, OnSoloStartClicked, nameof(OnSoloStartClicked));

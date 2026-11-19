@@ -1317,6 +1317,12 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (leaveDelay > 0f)
             yield return new WaitForSeconds(leaveDelay);
 
+        // ドア覗きアニメーション（Peek_Door）および横スライド演出が途中でぶつ切りにならないよう、完了まで待機してから閉扉・帰路へ進む。
+        if (approachController != null)
+        {
+            yield return approachController.WaitForDoorPeekAnimationAndSlideFinished();
+        }
+
         if (_hasPermanentGameOver || isCaught)
         {
             _primaryResetCoroutine = null;
@@ -1433,6 +1439,11 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         Debug.Log($"[PD] HandleDummySequence: activePeekDuration={_activePeekDuration:F1}s");
         yield return new WaitForSeconds(_activePeekDuration);
+
+        if (approachController != null)
+        {
+            yield return approachController.WaitForDoorPeekAnimationAndSlideFinished();
+        }
 
         warningSystem?.PlayMainDoorClose();
 

@@ -382,6 +382,15 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
                     GameDifficulty.HandleRemoteTitleCommandOnParent(payload);
                     return;
                 }
+                if (payload == "TUTORIAL_NEXT" || payload == "TUTORIAL_OK")
+                {
+                    _link.NoteReceive(Time.time);
+                    if (ParentGameTimeManager.Instance != null)
+                    {
+                        ParentGameTimeManager.Instance.NotifyRemoteTutorialNext();
+                    }
+                    return;
+                }
             }
 
             const string ackToken = "SEQUENCE_DONE_ACK:";

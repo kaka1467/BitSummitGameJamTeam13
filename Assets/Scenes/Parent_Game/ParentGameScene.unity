@@ -9088,14 +9088,15 @@ MonoBehaviour:
   showDebugLogs: 0
   parentTutorialDimBackground: {fileID: 1775867273}
   parentTutorialSlideImage: {fileID: 167143064}
+  parentTutorialOkButton: {fileID: 0}
   parentTutorialPromptText: {fileID: 687054703}
   tutorialCanvasSortingOrder: 250
   tutorialSlideAnchorMin: {x: 0.02, y: 0.08}
   tutorialSlideAnchorMax: {x: 0.98, y: 0.96}
   tutorialSlideAnchoredPosition: {x: 0, y: 0}
   tutorialSlideSizeDelta: {x: 0, y: 0}
-  tutorialPromptAnchorMin: {x: 0.05, y: -0.08}
-  tutorialPromptAnchorMax: {x: 0.95, y: -0.01}
+  tutorialOkButtonAnchoredPosition: {x: 0, y: -445}
+  tutorialOkButtonSize: {x: 280, y: 84}
   tutorialPromptFontSize: 32
 --- !u!1 &1807321482
 GameObject:
