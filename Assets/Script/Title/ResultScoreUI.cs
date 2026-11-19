@@ -38,15 +38,12 @@ public class ResultScoreUI : MonoBehaviour
     // 親機で子機データ未同期のときに表示する文字（「最新の子機データ」と誤解させない）
     private const string NoDataText = "------";
 
-    private Image _difficultyBadgeImage;
-    private TextMeshProUGUI _difficultyBadgeLabel;
-
     private void OnEnable()
     {
         GameManager.ResultDataCommitted += RefreshResultData;
         GameDifficulty.OnSettingsChanged += RefreshResultData;
         SubscribeParentHost();
-        EnsureDifficultyBadgeUI();
+        HideLegacyDifficultyBadgeIfPresent();
         RefreshResultData();
     }
 
@@ -89,7 +86,7 @@ public class ResultScoreUI : MonoBehaviour
     private void Start()
     {
         SubscribeParentHost();
-        EnsureDifficultyBadgeUI();
+        HideLegacyDifficultyBadgeIfPresent();
         RefreshResultData();
         StartCoroutine(RefreshResultDataNextFrame());
     }
@@ -101,97 +98,21 @@ public class ResultScoreUI : MonoBehaviour
         RefreshResultData();
     }
 
-    /// <summary>
-    /// リザルト・ランキング画面に現在の難易度バッジ（EASY / NORMAL / HARD）を表示し、
-    /// タップで別難易度のランキングも切り替え確認できるようにする（D-Q03）。
-    /// </summary>
-    private void EnsureDifficultyBadgeUI()
+    private void HideLegacyDifficultyBadgeIfPresent()
     {
-        if (_difficultyBadgeImage != null || _difficultyBadgeLabel != null)
-        {
-            UpdateDifficultyBadgeVisual();
-            return;
-        }
-
         Canvas canvas = GetComponentInParent<Canvas>();
         if (canvas == null) canvas = FindFirstObjectByType<Canvas>();
         if (canvas == null) return;
 
         Transform existing = canvas.transform.Find("DifficultyRankingBadge");
-        if (existing != null)
+        if (existing != null && existing.gameObject.activeSelf)
         {
-            _difficultyBadgeImage = existing.GetComponent<Image>();
-            _difficultyBadgeLabel = existing.GetComponentInChildren<TextMeshProUGUI>(true);
-            UpdateDifficultyBadgeVisual();
-            return;
-        }
-
-        GameObject badgeObj = new GameObject("DifficultyRankingBadge", typeof(RectTransform), typeof(Image), typeof(Button));
-        badgeObj.transform.SetParent(canvas.transform, false);
-        RectTransform rect = badgeObj.GetComponent<RectTransform>();
-        rect.anchorMin = new Vector2(0.02f, 0.90f);
-        rect.anchorMax = new Vector2(0.22f, 0.98f);
-        rect.offsetMin = Vector2.zero;
-        rect.offsetMax = Vector2.zero;
-
-        _difficultyBadgeImage = badgeObj.GetComponent<Image>();
-        _difficultyBadgeImage.preserveAspect = true;
-
-        Button btn = badgeObj.GetComponent<Button>();
-        btn.onClick.AddListener(CycleDifficultyRankingView);
-
-        GameObject labelObj = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
-        labelObj.transform.SetParent(badgeObj.transform, false);
-        RectTransform labelRect = labelObj.GetComponent<RectTransform>();
-        labelRect.anchorMin = Vector2.zero;
-        labelRect.anchorMax = Vector2.one;
-        labelRect.offsetMin = Vector2.zero;
-        labelRect.offsetMax = Vector2.zero;
-
-        _difficultyBadgeLabel = labelObj.GetComponent<TextMeshProUGUI>();
-        _difficultyBadgeLabel.alignment = TextAlignmentOptions.Center;
-        _difficultyBadgeLabel.fontSize = 24f;
-        _difficultyBadgeLabel.color = Color.white;
-
-        UpdateDifficultyBadgeVisual();
-    }
-
-    private void CycleDifficultyRankingView()
-    {
-        int next = ((int)GameDifficulty.Current + 1) % 3;
-        GameDifficulty.SetDifficulty((GameDifficulty.Level)next, true);
-        RefreshResultData();
-    }
-
-    private void UpdateDifficultyBadgeVisual()
-    {
-        string spritePath = GameDifficulty.Current switch
-        {
-            GameDifficulty.Level.Easy => "Difficulty/Easy_UI",
-            GameDifficulty.Level.Hard => "Difficulty/Hard_UI",
-            _ => "Difficulty/Normal_UI"
-        };
-        Sprite sp = Resources.Load<Sprite>(spritePath);
-        if (_difficultyBadgeImage != null)
-        {
-            if (sp != null)
-            {
-                _difficultyBadgeImage.sprite = sp;
-                _difficultyBadgeImage.color = Color.white;
-                if (_difficultyBadgeLabel != null) _difficultyBadgeLabel.text = "";
-            }
-            else
-            {
-                _difficultyBadgeImage.color = new Color(0.15f, 0.15f, 0.22f, 0.9f);
-                if (_difficultyBadgeLabel != null)
-                    _difficultyBadgeLabel.text = $"RANKING: {GameDifficulty.DisplayName}";
-            }
+            existing.gameObject.SetActive(false);
         }
     }
 
     private void RefreshResultData()
     {
-        UpdateDifficultyBadgeVisual();
 
         // 選択中の難易度のランキングをミラーキーへ同期する（D-Q03）
         GameDifficulty.SyncActiveDifficultyRankingToMirrorKeys(false);

@@ -76,8 +76,8 @@ public class TutorialFlow : MonoBehaviour
 
     [Header("Skip UI")]
     [SerializeField] private TextMeshProUGUI skipHintText;
-    [SerializeField] private string skipHintMessage = "Kキー長押しでスキップ";
-    [SerializeField] private string skipHintMessageJa = "Aボタン長押しでスキップ";
+    [SerializeField] private string skipHintMessage = "Hold A or K to Skip";
+    [SerializeField] private string skipHintMessageJa = "Hold A or K to Skip";
 
     [Header("Interactive Collect (prototype)")]
     [Tooltip("アイテム取得ステップをプレイヤー操作にする。false で従来どおりの自動演示。")]
@@ -93,12 +93,12 @@ public class TutorialFlow : MonoBehaviour
     [Tooltip("操作ガイドの表示先。未割り当てなら文字は出ない（機能自体は動く）。")]
     [SerializeField] private TextMeshProUGUI interactiveHintText;
     [Tooltip("矢印記号は多くのフォントに無いため、文字で書くのを推奨。")]
-    [SerializeField] private string collectHintMessage = "キーで動かしてアイテムを取ろう！";
-    [SerializeField] private string collectHintMessageJa = "←→↑↓  アイテムをとろう！";
-    [SerializeField] private string collectRetryMessage = "とりのがした… もういちど！";
-    [SerializeField] private string collectRetryMessageJa = "いてて… もういちど！";
-    [SerializeField] private string collectSuccessMessage = "nice!";
-    [SerializeField] private string collectSuccessMessageJa = "ナイス！";
+    [SerializeField] private string collectHintMessage = "Move to collect the item!";
+    [SerializeField] private string collectHintMessageJa = "Move to collect the item!";
+    [SerializeField] private string collectRetryMessage = "Missed! Try again!";
+    [SerializeField] private string collectRetryMessageJa = "Missed! Try again!";
+    [SerializeField] private string collectSuccessMessage = "NICE!";
+    [SerializeField] private string collectSuccessMessageJa = "NICE!";
     [Tooltip("アイテム／障害物がプレイヤーのX座標からこの距離だけ左へ流れたら『通過した』とみなす。")]
     [SerializeField, Min(0.05f)] private float collectMissMargin = 0.5f;
 
@@ -111,42 +111,52 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField, Min(0)] private int avoidMaxRetries = 2;
     [Tooltip("回避の成否メッセージ／リトライ前に見せる秒数。")]
     [SerializeField, Min(0f)] private float avoidResultPauseSeconds = 0.4f;
-    [SerializeField] private string avoidHintMessage = "しょうがいぶつが くる！レーンをかえて よけよう";
-    [SerializeField] private string avoidHintMessageJa = "あぶない！";
-    [SerializeField] private string avoidRetryMessage = "ぶつかった… もういちど！";
-    [SerializeField] private string avoidRetryMessageJa = "いてて… もういちど！";
-    [SerializeField] private string avoidSuccessMessage = "よけた！";
-    [SerializeField] private string avoidSuccessMessageJa = "よけた！";
+    [SerializeField] private string avoidHintMessage = "Change lanes to dodge obstacles!";
+    [SerializeField] private string avoidHintMessageJa = "Change lanes to dodge obstacles!";
+    [SerializeField] private string avoidRetryMessage = "Ouch! Try again!";
+    [SerializeField] private string avoidRetryMessageJa = "Ouch! Try again!";
+    [SerializeField] private string avoidSuccessMessage = "DODGED!";
+    [SerializeField] private string avoidSuccessMessageJa = "DODGED!";
 
     [Header("Interactive QTE (prototype)")]
     [Tooltip("QTE ステップにガイド文を出す。QTE の入力自体は元から実操作。false でガイドなし。")]
     [SerializeField] private bool explainQte = true;
     [Tooltip("QTE 突破メッセージを見せる秒数。")]
     [SerializeField, Min(0f)] private float qteResultPauseSeconds = 0.5f;
-    [SerializeField] private string qteApproachMessage = "おおきな しょうがいぶつ！ ぶつかると ボタンれんだ";
-    [SerializeField] private string qteApproachMessageJa = "ぶつかる！";
+    [SerializeField] private string qteApproachMessage = "Boss incoming! Get ready for QTE!";
+    [SerializeField] private string qteApproachMessageJa = "Boss incoming! Get ready for QTE!";
     [Tooltip("QTE 中に出すガイド。空にすると QTE 側の表示だけになる。")]
-    [SerializeField] private string qteActiveMessage = "ボタンを ひょうじの じゅんに おそう！ まちがえても OK";
-    [SerializeField] private string qteActiveMessageJa = "ボタンをおせ！";
-    [SerializeField] private string qteSuccessMessage = "とっぱ！";
-    [SerializeField] private string qteSuccessMessageJa = "ナイス！";
+    [SerializeField] private string qteActiveMessage = "Press buttons in order!";
+    [SerializeField] private string qteActiveMessageJa = "Press buttons in order!";
+    [SerializeField] private string qteSuccessMessage = "GREAT!";
+    [SerializeField] private string qteSuccessMessageJa = "GREAT!";
 
     [Header("Tutorial Slide Overlay (Resources/Tutorial/Child)")]
     [SerializeField] private float slideMinDisplaySeconds = 0.25f;
+    [SerializeField] private int tutorialSlideCanvasSortingOrder = 250;
+    [Tooltip("スライド背面の全画面暗転オーバーレイ（未割り当て時は自動生成）。")]
+    [SerializeField] private Image tutorialSlideDimBackground;
     [Tooltip("シーン上で位置・サイズを調整したImageがあればここに割り当てます（未割り当て時は自動生成）。")]
     [SerializeField] private Image tutorialSlideOverlay;
-    [Tooltip("スライド下部の次へ案内テキスト（未割り当て時は自動生成）。")]
+    [Tooltip("スライド下部の『OK!』ボタン（未割り当て時は自動生成）。")]
+    [SerializeField] private Button tutorialSlideOkButton;
+    [Tooltip("スライド下部の次へ案内テキスト（旧参照互換／OK!ボタンラベル）。")]
     [SerializeField] private TextMeshProUGUI tutorialSlidePromptText;
-    [SerializeField] private Vector2 slideAnchorMin = new Vector2(0.06f, 0.12f);
-    [SerializeField] private Vector2 slideAnchorMax = new Vector2(0.94f, 0.90f);
+    [Tooltip("子機チュートリアル完了〜親機チュートリアル中の中断オーバーレイ（未割り当て時は自動生成）。")]
+    [SerializeField] private GameObject tutorialPauseOverlayRoot;
+    [SerializeField] private TextMeshProUGUI tutorialPauseOverlayText;
+    [SerializeField] private Vector2 slideAnchorMin = new Vector2(0.03f, 0.12f);
+    [SerializeField] private Vector2 slideAnchorMax = new Vector2(0.97f, 0.96f);
     [SerializeField] private Vector2 slideAnchoredPosition = Vector2.zero;
     [SerializeField] private Vector2 slideSizeDelta = Vector2.zero;
-    [SerializeField] private Vector2 promptAnchorMin = new Vector2(0.1f, -0.11f);
-    [SerializeField] private Vector2 promptAnchorMax = new Vector2(0.9f, -0.01f);
-    [SerializeField] private float promptFontSize = 28f;
+    [SerializeField] private Vector2 okButtonAnchoredPosition = new Vector2(0f, -445f);
+    [SerializeField] private Vector2 okButtonSize = new Vector2(280f, 84f);
+    [SerializeField] private float promptFontSize = 38f;
 
     private bool tutorialRunning;
     private bool skipRequested;
+    private bool _slidePausedTimeScale;
+    private bool _slideOkClicked;
     private PlayerAnimator playerAnimator;
     private Tween startTween;
     private Coroutine autoTargetRoutine;
@@ -161,11 +171,46 @@ public class TutorialFlow : MonoBehaviour
         Qte
     }
 
+    private void Awake()
+    {
+        // エディタ上でプレビュー表示ONのまま保存されていても、実行開始時は必ず非表示・timeScale=1に初期化する
+        RestoreTimeScaleIfPaused();
+        HideTutorialSlide();
+        HideTutorialPauseOverlay();
+    }
+
     private void Start()
     {
+        HideTutorialSlide();
+        HideTutorialPauseOverlay();
         if (runOnStart)
         {
             StartTutorial();
+        }
+    }
+
+    private void OnDisable()
+    {
+        RestoreTimeScaleIfPaused();
+    }
+
+    private void OnDestroy()
+    {
+        RestoreTimeScaleIfPaused();
+    }
+
+    private void PauseTimeScaleForSlide()
+    {
+        _slidePausedTimeScale = true;
+        Time.timeScale = 0f;
+    }
+
+    private void RestoreTimeScaleIfPaused()
+    {
+        if (_slidePausedTimeScale || Time.timeScale == 0f)
+        {
+            _slidePausedTimeScale = false;
+            Time.timeScale = 1f;
         }
     }
 
@@ -209,7 +254,11 @@ public class TutorialFlow : MonoBehaviour
         if (_host != null)
         {
             _host.KeepTutorialInterruptScreen = false;
+            _host.Notifications?.SetSleepLocked(false);
         }
+
+        HideTutorialSlide();
+        HideTutorialPauseOverlay();
 
         if (playerAnimator == null && playerMove != null)
         {
@@ -262,6 +311,7 @@ public class TutorialFlow : MonoBehaviour
             skipRequested = true;
             HideSkipHint();
             HideTutorialSlide();
+            HideTutorialPauseOverlay();
 
             yield return RunCountdown();
 
@@ -295,28 +345,31 @@ public class TutorialFlow : MonoBehaviour
         if (skipHintText != null)
         {
             skipHintText.text = Msg(skipHintMessage, skipHintMessageJa);
-            skipHintText.gameObject.SetActive(enableHoldToSkip);
+            skipHintText.gameObject.SetActive(false);
         }
 
         Coroutine skipWatch = enableHoldToSkip ? StartCoroutine(WatchForSkipRoutine()) : null;
 
-        // 1) 良いアイテム説明スライド（ボタン入力で次へ）→ 良いアイテム回収
+        // 1) 良いアイテム説明スライド（OK!ボタン入力で次へ）→ 良いアイテム回収
         yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_gooditems");
         HideTutorialSlide();
+        ShowSkipHintIfEnabled();
         yield return RunAutoCollect();
         ClearActiveItems();
 
-        // 2) 悪いアイテム＆障害物アイテム説明スライド（2枚連続・それぞれボタン入力で次へ）→ 悪い・障害物アイテム回避
+        // 2) 悪いアイテム＆障害物アイテム説明スライド（2枚連続・それぞれOK!ボタン入力で次へ）→ 悪い・障害物アイテム回避
         yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_baditems");
         yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_obstacle_lane");
         HideTutorialSlide();
+        ShowSkipHintIfEnabled();
         yield return RunAutoAvoid();
         ClearActiveItems();
 
-        // 3) 鷹（ボス・QTE）説明スライド（2枚連続・それぞれボタン入力で次へ）→ 鷹が出てきて倒す
+        // 3) 鷹（ボス・QTE）説明スライド（2枚連続・それぞれOK!ボタン入力で次へ）→ 鷹が出てきて倒す
         yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_QTE1");
         yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_QTE2");
         HideTutorialSlide();
+        ShowSkipHintIfEnabled();
         yield return RunQteStep();
 
         if (!skipRequested && afterQteDelay > 0f)
@@ -334,7 +387,7 @@ public class TutorialFlow : MonoBehaviour
             HandleSkipCleanup();
         }
 
-        // 4) 鷹撃破後：スコアを0にリセットし、子機を中断画面にして親機チュートリアルへ移行する
+        // 4) 鷹撃破後：スコアを0にリセットし、寝たふりロック画面ではなく「PAUSED! LOOK UP AT THE MONITOR!」の中断画面を出して親機チュートリアルへ移行する
         HideSkipHint();
         HideTutorialSlide();
         HideInteractiveHint();
@@ -355,29 +408,25 @@ public class TutorialFlow : MonoBehaviour
         if (host != null)
         {
             host.KeepTutorialInterruptScreen = true;
-            if (host.Notifications != null)
-            {
-                host.Notifications.SetSleepLocked(true);
-            }
+            // 寝たふりロック画面（ChildSleepLockApplier）は表示しない
+            host.Notifications?.SetSleepLocked(false);
         }
+
+        bool isSolo = host == null || host.IsSoloPlayActive || host.Link == null || !host.Link.IsConnected;
+        ShowTutorialPauseOverlay(isSolo);
 
         // 親機へ LOADING_COMPLETE を送信し、親機を ParentLoading → ParentGameScene（親機チュートリアル）へ遷移させる
         NotifyParentStartShown();
 
-        bool isSolo = host == null || host.IsSoloPlayActive || host.Link == null || !host.Link.IsConnected;
         if (isSolo)
         {
             // 子機ソロスタート時は親機が接続されていないため、中断画面を確認後にボタン押下でスコア0のゲームクリア画面へ遷移する
-            ShowInteractiveHint(Msg(
-                "Child Tutorial Complete! Press A / Space / Enter to finish Tutorial (Score 0)",
-                "子機チュートリアル完了！（中断画面） ボタンを押すとゲームクリア画面へ進みます"));
             yield return WaitForSlideAdvanceInput();
-            HideInteractiveHint();
+            HideTutorialPauseOverlay();
 
             if (host != null)
             {
                 host.KeepTutorialInterruptScreen = false;
-                host.Notifications?.SetSleepLocked(false);
             }
 
             if (gameManager != null)
@@ -394,70 +443,364 @@ public class TutorialFlow : MonoBehaviour
     [ContextMenu("子機チュートリアルUIをシーン上に生成（Unity内で配置・サイズ調整用）")]
     public Image EnsureTutorialSlideOverlay()
     {
+        // 専用の最前面オーバーレイCanvas（ChildTutorialOverlayCanvas）に
+        // 1) 一番後ろ: ChildTutorialDimBackground (黒 0.85f)
+        // 2) その手前: ChildTutorialSlideOverlay (Color.white, Alpha 1.0f)
+        // 3) 一番手前: ChildTutorialOkButton ("OK!" ボタン)
+        // の順で配置することで、スライド画像が絶対に暗くならず、他のUIとも混ざらないようにする。
+        GameObject canvasObj = null;
         if (tutorialSlideOverlay != null)
         {
+            Canvas parentC = tutorialSlideOverlay.GetComponentInParent<Canvas>();
+            if (parentC != null && parentC.gameObject.name == "ChildTutorialOverlayCanvas")
+                canvasObj = parentC.gameObject;
+        }
+        if (canvasObj == null)
+        {
+            canvasObj = GameObject.Find("ChildTutorialOverlayCanvas");
+        }
+
+        if (canvasObj == null)
+        {
+            canvasObj = new GameObject("ChildTutorialOverlayCanvas",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(CanvasScaler),
+                typeof(GraphicRaycaster));
+
+            Canvas c = canvasObj.GetComponent<Canvas>();
+            c.renderMode = RenderMode.ScreenSpaceOverlay;
+            c.sortingOrder = tutorialSlideCanvasSortingOrder;
+
+            CanvasScaler scaler = canvasObj.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+
+        // 1) 一番後ろ：暗転背景
+        if (tutorialSlideDimBackground == null)
+        {
+            Transform existingDim = canvasObj.transform.Find("ChildTutorialDimBackground");
+            if (existingDim != null)
+                tutorialSlideDimBackground = existingDim.GetComponent<Image>();
+        }
+
+        if (tutorialSlideDimBackground != null && tutorialSlideDimBackground.transform.parent != canvasObj.transform)
+        {
+            tutorialSlideDimBackground.transform.SetParent(canvasObj.transform, false);
+        }
+
+        if (tutorialSlideDimBackground == null)
+        {
+            GameObject dimObj = new GameObject("ChildTutorialDimBackground", typeof(RectTransform), typeof(Image));
+            dimObj.transform.SetParent(canvasObj.transform, false);
+            RectTransform dimRt = dimObj.GetComponent<RectTransform>();
+            dimRt.anchorMin = Vector2.zero;
+            dimRt.anchorMax = Vector2.one;
+            dimRt.offsetMin = Vector2.zero;
+            dimRt.offsetMax = Vector2.zero;
+
+            tutorialSlideDimBackground = dimObj.GetComponent<Image>();
+            tutorialSlideDimBackground.color = new Color(0f, 0f, 0f, 0.85f);
+            tutorialSlideDimBackground.raycastTarget = true;
+            dimObj.SetActive(false);
+        }
+        else
+        {
+            tutorialSlideDimBackground.color = new Color(0f, 0f, 0f, 0.85f);
+        }
+
+        // 2) その手前：チュートリアルスライド画像（Color.white、絶対に暗くしない）
+        if (tutorialSlideOverlay == null)
+        {
+            Transform existingSlide = canvasObj.transform.Find("ChildTutorialSlideOverlay");
+            if (existingSlide == null)
+            {
+                Canvas[] allCanvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                for (int i = 0; i < allCanvases.Length; i++)
+                {
+                    Transform found = allCanvases[i].transform.Find("ChildTutorialSlideOverlay");
+                    if (found != null) { existingSlide = found; break; }
+                }
+            }
+            if (existingSlide != null)
+                tutorialSlideOverlay = existingSlide.GetComponent<Image>();
+        }
+
+        if (tutorialSlideOverlay != null && tutorialSlideOverlay.transform.parent != canvasObj.transform)
+        {
+            tutorialSlideOverlay.transform.SetParent(canvasObj.transform, false);
+        }
+
+        if (tutorialSlideOverlay == null)
+        {
+            GameObject slideObj = new GameObject("ChildTutorialSlideOverlay", typeof(RectTransform), typeof(Image));
+            slideObj.transform.SetParent(canvasObj.transform, false);
+
+            RectTransform rt = slideObj.GetComponent<RectTransform>();
+            rt.anchorMin = slideAnchorMin;
+            rt.anchorMax = slideAnchorMax;
+            rt.anchoredPosition = slideAnchoredPosition;
+            rt.sizeDelta = slideSizeDelta;
+
+            tutorialSlideOverlay = slideObj.GetComponent<Image>();
+            tutorialSlideOverlay.color = Color.white;
+            tutorialSlideOverlay.preserveAspect = true;
+            tutorialSlideOverlay.raycastTarget = true;
+            slideObj.SetActive(false);
+        }
+        else
+        {
+            tutorialSlideOverlay.color = Color.white;
+            // 旧バージョンの長い案内テキスト（SlidePromptText）が子にあれば非表示にする
+            Transform oldPrompt = tutorialSlideOverlay.transform.Find("SlidePromptText");
+            if (oldPrompt != null) oldPrompt.gameObject.SetActive(false);
+        }
+
+        // 3) 一番手前：独立した「OK!」ボタン
+        if (tutorialSlideOkButton == null)
+        {
+            Transform existingOk = canvasObj.transform.Find("ChildTutorialOkButton");
+            if (existingOk != null)
+                tutorialSlideOkButton = existingOk.GetComponent<Button>();
+        }
+
+        if (tutorialSlideOkButton != null && tutorialSlideOkButton.transform.parent != canvasObj.transform)
+        {
+            tutorialSlideOkButton.transform.SetParent(canvasObj.transform, false);
+        }
+
+        if (tutorialSlideOkButton == null)
+        {
+            GameObject okObj = new GameObject("ChildTutorialOkButton", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            okObj.transform.SetParent(canvasObj.transform, false);
+            RectTransform okRt = okObj.GetComponent<RectTransform>();
+            okRt.anchorMin = new Vector2(0.5f, 0.5f);
+            okRt.anchorMax = new Vector2(0.5f, 0.5f);
+            okRt.pivot = new Vector2(0.5f, 0.5f);
+            okRt.anchoredPosition = okButtonAnchoredPosition;
+            okRt.sizeDelta = okButtonSize;
+
+            Image okBg = okObj.GetComponent<Image>();
+            okBg.color = new Color(1f, 0.84f, 0.18f, 1f);
+            okBg.raycastTarget = true;
+
+            GameObject outlineObj = new GameObject("ButtonInner", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            outlineObj.transform.SetParent(okObj.transform, false);
+            RectTransform innerRt = outlineObj.GetComponent<RectTransform>();
+            innerRt.anchorMin = Vector2.zero;
+            innerRt.anchorMax = Vector2.one;
+            innerRt.offsetMin = new Vector2(5f, 5f);
+            innerRt.offsetMax = new Vector2(-5f, -5f);
+            Image innerImg = outlineObj.GetComponent<Image>();
+            innerImg.color = new Color(0.12f, 0.06f, 0.28f, 1f);
+            innerImg.raycastTarget = false;
+
+            GameObject labelObj = new GameObject("OkLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            labelObj.transform.SetParent(okObj.transform, false);
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+
+            tutorialSlidePromptText = labelObj.GetComponent<TextMeshProUGUI>();
+            TMP_FontAsset sharedFont = ResolveSharedFont();
+            if (sharedFont != null) tutorialSlidePromptText.font = sharedFont;
+            tutorialSlidePromptText.text = "OK!";
+            tutorialSlidePromptText.fontSize = promptFontSize;
+            tutorialSlidePromptText.alignment = TextAlignmentOptions.Center;
+            tutorialSlidePromptText.color = new Color(1f, 0.95f, 0.35f, 1f);
+            tutorialSlidePromptText.enableWordWrapping = false;
+            tutorialSlidePromptText.raycastTarget = false;
+
+            tutorialSlideOkButton = okObj.GetComponent<Button>();
+            tutorialSlideOkButton.targetGraphic = okBg;
+            okObj.SetActive(false);
+        }
+        else
+        {
             if (tutorialSlidePromptText == null)
-                tutorialSlidePromptText = tutorialSlideOverlay.GetComponentInChildren<TextMeshProUGUI>(true);
-            return tutorialSlideOverlay;
+                tutorialSlidePromptText = tutorialSlideOkButton.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (tutorialSlidePromptText != null)
+                tutorialSlidePromptText.text = "OK!";
+        }
+
+        tutorialSlideOkButton.onClick.RemoveAllListeners();
+        tutorialSlideOkButton.onClick.AddListener(OnTutorialSlideOkButtonClicked);
+
+        // 描画順を強制固定：1.暗転背景 → 2.スライド画像 → 3.OK!ボタン
+        EnsureSlideHierarchyOrder(canvasObj.transform);
+
+        if (!Application.isPlaying)
+        {
+            ApplyEditorPreviewToChildSlide();
+        }
+
+        return tutorialSlideOverlay;
+    }
+
+    private void OnTutorialSlideOkButtonClicked()
+    {
+        _slideOkClicked = true;
+    }
+
+    private void ApplyEditorPreviewToChildSlide()
+    {
+        if (tutorialSlideOverlay == null) return;
+        if (tutorialSlideOverlay.sprite == null)
+        {
+            tutorialSlideOverlay.sprite = Resources.Load<Sprite>("Tutorial/Child/tutorial_gooditems");
+        }
+        tutorialSlideOverlay.color = Color.white;
+        if (tutorialSlidePromptText != null)
+        {
+            tutorialSlidePromptText.text = "OK!";
+        }
+        if (tutorialSlideDimBackground != null)
+        {
+            tutorialSlideDimBackground.gameObject.SetActive(true);
+        }
+        tutorialSlideOverlay.gameObject.SetActive(true);
+        if (tutorialSlideOkButton != null)
+        {
+            tutorialSlideOkButton.gameObject.SetActive(true);
+        }
+    }
+
+    private void EnsureSlideHierarchyOrder(Transform canvasTransform)
+    {
+        if (canvasTransform == null) return;
+
+        if (tutorialSlideDimBackground != null && tutorialSlideDimBackground.transform.parent == canvasTransform)
+        {
+            tutorialSlideDimBackground.transform.SetSiblingIndex(0);
+        }
+        if (tutorialSlideOverlay != null && tutorialSlideOverlay.transform.parent == canvasTransform)
+        {
+            tutorialSlideOverlay.transform.SetSiblingIndex(1);
+        }
+        if (tutorialSlideOkButton != null && tutorialSlideOkButton.transform.parent == canvasTransform)
+        {
+            tutorialSlideOkButton.transform.SetAsLastSibling();
+        }
+    }
+
+    private TMP_FontAsset ResolveSharedFont()
+    {
+        if (interactiveHintText != null && interactiveHintText.font != null) return interactiveHintText.font;
+        if (countdownText != null && countdownText.font != null) return countdownText.font;
+        if (skipHintText != null && skipHintText.font != null) return skipHintText.font;
+        TextMeshProUGUI anyTmp = FindFirstObjectByType<TextMeshProUGUI>();
+        return anyTmp != null ? anyTmp.font : null;
+    }
+
+    private GameObject EnsureTutorialPauseOverlay()
+    {
+        if (tutorialPauseOverlayRoot != null)
+        {
+            if (tutorialPauseOverlayText == null)
+                tutorialPauseOverlayText = tutorialPauseOverlayRoot.GetComponentInChildren<TextMeshProUGUI>(true);
+            return tutorialPauseOverlayRoot;
         }
 
         Canvas canvas = null;
-        if (countdownText != null) canvas = countdownText.GetComponentInParent<Canvas>();
+        if (tutorialSlideOverlay != null) canvas = tutorialSlideOverlay.GetComponentInParent<Canvas>();
+        if (canvas == null && countdownText != null) canvas = countdownText.GetComponentInParent<Canvas>();
         if (canvas == null && interactiveHintText != null) canvas = interactiveHintText.GetComponentInParent<Canvas>();
         if (canvas == null) canvas = FindFirstObjectByType<Canvas>();
         if (canvas == null) return null;
 
-        Transform existing = canvas.transform.Find("ChildTutorialSlideOverlay");
+        Transform existing = canvas.transform.Find("ChildTutorialPauseOverlay");
         if (existing != null)
         {
-            tutorialSlideOverlay = existing.GetComponent<Image>();
-            Transform promptTr = existing.Find("SlidePromptText");
-            if (promptTr != null) tutorialSlidePromptText = promptTr.GetComponent<TextMeshProUGUI>();
-            return tutorialSlideOverlay;
+            tutorialPauseOverlayRoot = existing.gameObject;
+            tutorialPauseOverlayText = existing.GetComponentInChildren<TextMeshProUGUI>(true);
+            return tutorialPauseOverlayRoot;
         }
 
-        GameObject slideObj = new GameObject("ChildTutorialSlideOverlay", typeof(RectTransform), typeof(Image));
-        slideObj.transform.SetParent(canvas.transform, false);
-        if (skipHintText != null && skipHintText.transform.parent == canvas.transform)
+        tutorialPauseOverlayRoot = new GameObject("ChildTutorialPauseOverlay", typeof(RectTransform), typeof(Image));
+        tutorialPauseOverlayRoot.transform.SetParent(canvas.transform, false);
+        tutorialPauseOverlayRoot.transform.SetAsLastSibling();
+
+        RectTransform rootRt = tutorialPauseOverlayRoot.GetComponent<RectTransform>();
+        rootRt.anchorMin = Vector2.zero;
+        rootRt.anchorMax = Vector2.one;
+        rootRt.offsetMin = Vector2.zero;
+        rootRt.offsetMax = Vector2.zero;
+
+        Image bg = tutorialPauseOverlayRoot.GetComponent<Image>();
+        bg.color = new Color(0f, 0f, 0f, 0.88f);
+        bg.raycastTarget = true;
+
+        GameObject textObj = new GameObject("PauseMessageText", typeof(RectTransform), typeof(TextMeshProUGUI));
+        textObj.transform.SetParent(tutorialPauseOverlayRoot.transform, false);
+        RectTransform textRt = textObj.GetComponent<RectTransform>();
+        textRt.anchorMin = new Vector2(0.05f, 0.15f);
+        textRt.anchorMax = new Vector2(0.95f, 0.85f);
+        textRt.offsetMin = Vector2.zero;
+        textRt.offsetMax = Vector2.zero;
+
+        tutorialPauseOverlayText = textObj.GetComponent<TextMeshProUGUI>();
+        TMP_FontAsset sharedFont = ResolveSharedFont();
+        if (sharedFont != null) tutorialPauseOverlayText.font = sharedFont;
+        tutorialPauseOverlayText.fontSize = 64f;
+        tutorialPauseOverlayText.alignment = TextAlignmentOptions.Center;
+        tutorialPauseOverlayText.color = new Color(1f, 0.95f, 0.35f, 1f);
+        tutorialPauseOverlayText.enableWordWrapping = true;
+        tutorialPauseOverlayText.raycastTarget = false;
+
+        tutorialPauseOverlayRoot.SetActive(false);
+        return tutorialPauseOverlayRoot;
+    }
+
+    private void ShowTutorialPauseOverlay(bool isSolo)
+    {
+        GameObject root = EnsureTutorialPauseOverlay();
+        if (root == null) return;
+
+        root.transform.SetAsLastSibling();
+        if (tutorialPauseOverlayText != null)
         {
-            slideObj.transform.SetSiblingIndex(Mathf.Max(0, skipHintText.transform.GetSiblingIndex()));
+            tutorialPauseOverlayText.text = isSolo
+                ? "PAUSED!\n^ LOOK UP AT THE MONITOR! ^\n\n<size=36><color=#FFFFFF>(Solo Mode: Press A / Enter / Space to Finish)</color></size>"
+                : "PAUSED!\n^ LOOK UP AT THE MONITOR! ^";
         }
+        root.SetActive(true);
+    }
 
-        RectTransform rt = slideObj.GetComponent<RectTransform>();
-        rt.anchorMin = slideAnchorMin;
-        rt.anchorMax = slideAnchorMax;
-        rt.anchoredPosition = slideAnchoredPosition;
-        rt.sizeDelta = slideSizeDelta;
-
-        tutorialSlideOverlay = slideObj.GetComponent<Image>();
-        tutorialSlideOverlay.preserveAspect = true;
-        tutorialSlideOverlay.raycastTarget = true;
-
-        GameObject promptObj = new GameObject("SlidePromptText", typeof(RectTransform), typeof(TextMeshProUGUI));
-        promptObj.transform.SetParent(slideObj.transform, false);
-        RectTransform promptRt = promptObj.GetComponent<RectTransform>();
-        promptRt.anchorMin = promptAnchorMin;
-        promptRt.anchorMax = promptAnchorMax;
-        promptRt.offsetMin = Vector2.zero;
-        promptRt.offsetMax = Vector2.zero;
-
-        tutorialSlidePromptText = promptObj.GetComponent<TextMeshProUGUI>();
-        if (interactiveHintText != null && interactiveHintText.font != null)
+    public void HideTutorialPauseOverlay()
+    {
+        if (tutorialPauseOverlayRoot == null)
         {
-            tutorialSlidePromptText.font = interactiveHintText.font;
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                if (canvases[i] == null) continue;
+                Transform existing = canvases[i].transform.Find("ChildTutorialPauseOverlay");
+                if (existing != null)
+                {
+                    tutorialPauseOverlayRoot = existing.gameObject;
+                    tutorialPauseOverlayText = existing.GetComponentInChildren<TextMeshProUGUI>(true);
+                    existing.gameObject.SetActive(false);
+                }
+            }
         }
-        else if (countdownText != null && countdownText.font != null)
-        {
-            tutorialSlidePromptText.font = countdownText.font;
-        }
-        tutorialSlidePromptText.fontSize = promptFontSize;
-        tutorialSlidePromptText.alignment = TextAlignmentOptions.Center;
-        tutorialSlidePromptText.color = new Color(1f, 0.96f, 0.72f, 1f);
-        tutorialSlidePromptText.enableWordWrapping = false;
-        tutorialSlidePromptText.raycastTarget = false;
 
-        slideObj.SetActive(false);
-        return tutorialSlideOverlay;
+        if (tutorialPauseOverlayRoot != null && tutorialPauseOverlayRoot.activeSelf)
+        {
+            tutorialPauseOverlayRoot.SetActive(false);
+        }
+    }
+
+    private void ShowSkipHintIfEnabled()
+    {
+        if (skipHintText != null && enableHoldToSkip && !skipRequested)
+        {
+            skipHintText.text = Msg(skipHintMessage, skipHintMessageJa);
+            skipHintText.gameObject.SetActive(true);
+        }
     }
 
     private IEnumerator ShowTutorialSlideStep(string resourcePath)
@@ -470,35 +813,57 @@ public class TutorialFlow : MonoBehaviour
         Image overlay = EnsureTutorialSlideOverlay();
         if (overlay == null) yield break;
 
+        // スライド表示中は背後の skipHintText が混ざらないよう必ず非表示にする
+        HideSkipHint();
+        HideInteractiveHint();
+
         overlay.sprite = sp;
+        overlay.color = Color.white;
         if (tutorialSlidePromptText != null)
         {
-            tutorialSlidePromptText.text = Msg(
-                "Press A / Enter / Space / Click to continue",
-                "Aボタン / Enter / Space / クリック で次へ");
+            tutorialSlidePromptText.text = "OK!";
+        }
+        if (tutorialSlideDimBackground != null)
+        {
+            tutorialSlideDimBackground.gameObject.SetActive(true);
         }
         overlay.gameObject.SetActive(true);
+        if (tutorialSlideOkButton != null)
+        {
+            tutorialSlideOkButton.gameObject.SetActive(true);
+        }
+        EnsureSlideHierarchyOrder(overlay.transform.parent);
 
-        yield return WaitForSlideAdvanceInput();
+        _slideOkClicked = false;
+        PauseTimeScaleForSlide();
+        try
+        {
+            yield return WaitForSlideAdvanceInput();
+        }
+        finally
+        {
+            RestoreTimeScaleIfPaused();
+        }
     }
 
     private IEnumerator WaitForSlideAdvanceInput()
     {
+        _slideOkClicked = false;
         float minWait = Mathf.Max(0.15f, slideMinDisplaySeconds);
         float elapsed = 0f;
-        while (!skipRequested && elapsed < minWait)
+        while (!skipRequested && !_slideOkClicked && elapsed < minWait)
         {
             elapsed += Time.unscaledDeltaTime;
             yield return null;
         }
 
         // 前フレームからの押しっぱなしが解除されるのを一度待つ
-        while (!skipRequested && IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: true))
+        while (!skipRequested && !_slideOkClicked && IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: true))
         {
             yield return null;
         }
 
-        while (!skipRequested)
+        while (!skipRequested && !_slideOkClicked)
         {
             if (IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: false))
             {
@@ -541,27 +906,62 @@ public class TutorialFlow : MonoBehaviour
             }
         }
 
-        Mouse mouse = Mouse.current;
-        if (mouse != null)
-        {
-            if (checkHeldOnly)
-            {
-                if (mouse.leftButton.isPressed) return true;
-            }
-            else
-            {
-                if (mouse.leftButton.wasPressedThisFrame) return true;
-            }
-        }
-
         return false;
     }
 
-    private void HideTutorialSlide()
+    public void HideTutorialSlide()
     {
+        RestoreTimeScaleIfPaused();
+        _slideOkClicked = false;
+
+        if (tutorialSlideDimBackground == null || tutorialSlideOverlay == null || tutorialSlideOkButton == null)
+        {
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                if (canvases[i] == null) continue;
+                Transform dimTr = canvases[i].transform.Find("ChildTutorialDimBackground");
+                if (dimTr != null)
+                {
+                    if (tutorialSlideDimBackground == null)
+                        tutorialSlideDimBackground = dimTr.GetComponent<Image>();
+                    if (dimTr.gameObject.activeSelf)
+                        dimTr.gameObject.SetActive(false);
+                }
+
+                Transform slideTr = canvases[i].transform.Find("ChildTutorialSlideOverlay");
+                if (slideTr != null)
+                {
+                    if (tutorialSlideOverlay == null)
+                        tutorialSlideOverlay = slideTr.GetComponent<Image>();
+                    if (slideTr.gameObject.activeSelf)
+                        slideTr.gameObject.SetActive(false);
+                }
+
+                Transform okTr = canvases[i].transform.Find("ChildTutorialOkButton");
+                if (okTr != null)
+                {
+                    if (tutorialSlideOkButton == null)
+                        tutorialSlideOkButton = okTr.GetComponent<Button>();
+                    if (tutorialSlidePromptText == null)
+                        tutorialSlidePromptText = okTr.GetComponentInChildren<TextMeshProUGUI>(true);
+                    if (okTr.gameObject.activeSelf)
+                        okTr.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        if (tutorialSlideDimBackground != null && tutorialSlideDimBackground.gameObject.activeSelf)
+        {
+            tutorialSlideDimBackground.gameObject.SetActive(false);
+        }
         if (tutorialSlideOverlay != null && tutorialSlideOverlay.gameObject.activeSelf)
         {
             tutorialSlideOverlay.gameObject.SetActive(false);
+        }
+        if (tutorialSlideOkButton != null && tutorialSlideOkButton.gameObject.activeSelf)
+        {
+            tutorialSlideOkButton.gameObject.SetActive(false);
         }
     }
 
@@ -609,6 +1009,7 @@ public class TutorialFlow : MonoBehaviour
 
     private void HandleSkipCleanup()
     {
+        RestoreTimeScaleIfPaused();
         if (autoTargetRoutine != null)
         {
             StopCoroutine(autoTargetRoutine);
@@ -732,10 +1133,41 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// シーン上のピクセルフォント（TMP_FontAsset）に日本語グリフが含まれていないため、
+    /// Inspector に旧日本語値がシリアライズされている場合でも常に ASCII 英語テキストを返す。
+    /// </summary>
     private static string Msg(string english, string japanese)
     {
-        if (string.IsNullOrEmpty(english)) return english;
-        return GameLanguage.Pick(japanese, english);
+        if (!string.IsNullOrEmpty(english) && IsAsciiOnly(english))
+            return english;
+        if (!string.IsNullOrEmpty(japanese) && IsAsciiOnly(japanese))
+            return japanese;
+        return ConvertLegacyJapaneseHintToEnglish(english, japanese);
+    }
+
+    private static bool IsAsciiOnly(string text)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] > 127) return false;
+        }
+        return true;
+    }
+
+    private static string ConvertLegacyJapaneseHintToEnglish(string a, string b)
+    {
+        string src = !string.IsNullOrEmpty(a) ? a : (b ?? "");
+        if (src.Contains("スキップ")) return "Hold A or K to Skip";
+        if (src.Contains("アイテム")) return "Move to collect the item!";
+        if (src.Contains("とりのがした")) return "Missed! Try again!";
+        if (src.Contains("よけよう") || src.Contains("あぶない")) return "Change lanes to dodge obstacles!";
+        if (src.Contains("ぶつかった") || src.Contains("いてて")) return "Ouch! Try again!";
+        if (src.Contains("よけた")) return "DODGED!";
+        if (src.Contains("おおきな") || src.Contains("ぶつかる")) return "Boss incoming! Get ready for QTE!";
+        if (src.Contains("ボタン")) return "Press buttons in order!";
+        if (src.Contains("とっぱ") || src.Contains("ナイス")) return "GREAT!";
+        return "NICE!";
     }
 
     private void ShowInteractiveHint(string message)

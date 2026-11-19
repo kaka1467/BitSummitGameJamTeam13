@@ -226,11 +226,19 @@ public class ParentGameTimeManager : MonoBehaviour
         }
 
         Instance = this;
+        RestoreParentSlideTimeScaleIfPaused();
+        HideParentTutorialSlide();
         ApplyDifficultyTimeSettings();
+    }
+
+    private void OnDisable()
+    {
+        RestoreParentSlideTimeScaleIfPaused();
     }
 
     private void OnDestroy()
     {
+        RestoreParentSlideTimeScaleIfPaused();
         if (Instance == this)
             Instance = null;
     }
@@ -245,6 +253,7 @@ public class ParentGameTimeManager : MonoBehaviour
     private void Start()
     {
         ApplyDifficultyTimeSettings();
+        HideParentTutorialSlide();
 
         _elapsed = 0f;
         _timeUpFired = false;
@@ -279,91 +288,279 @@ public class ParentGameTimeManager : MonoBehaviour
     }
 
     [Header("Parent Tutorial Slide Overlay (Resources/Tutorial/Parent)")]
+    [Tooltip("スライド背面の全画面暗転オーバーレイ（未割り当て時は自動生成）。")]
+    [SerializeField] private UnityEngine.UI.Image parentTutorialDimBackground;
     [Tooltip("シーン上で位置・サイズを調整したImageがあればここに割り当てます（未割り当て時は自動生成）。")]
     [SerializeField] private UnityEngine.UI.Image parentTutorialSlideImage;
-    [Tooltip("スライド下部の案内テキスト（未割り当て時は自動生成）。")]
+    [Tooltip("スライド下部の『OK!』ボタン（未割り当て時は自動生成）。")]
+    [SerializeField] private UnityEngine.UI.Button parentTutorialOkButton;
+    [Tooltip("スライド下部の案内テキスト（旧参照互換／OK!ボタンラベル）。")]
     [SerializeField] private TMPro.TextMeshProUGUI parentTutorialPromptText;
     [SerializeField] private int tutorialCanvasSortingOrder = 250;
-    [SerializeField] private Vector2 tutorialSlideAnchorMin = Vector2.zero;
-    [SerializeField] private Vector2 tutorialSlideAnchorMax = Vector2.one;
+    [SerializeField] private Vector2 tutorialSlideAnchorMin = new Vector2(0.03f, 0.12f);
+    [SerializeField] private Vector2 tutorialSlideAnchorMax = new Vector2(0.97f, 0.96f);
     [SerializeField] private Vector2 tutorialSlideAnchoredPosition = Vector2.zero;
     [SerializeField] private Vector2 tutorialSlideSizeDelta = Vector2.zero;
-    [SerializeField] private Vector2 tutorialPromptAnchorMin = new Vector2(0.1f, 0.03f);
-    [SerializeField] private Vector2 tutorialPromptAnchorMax = new Vector2(0.9f, 0.10f);
-    [SerializeField] private float tutorialPromptFontSize = 32f;
+    [SerializeField] private Vector2 tutorialOkButtonAnchoredPosition = new Vector2(0f, -445f);
+    [SerializeField] private Vector2 tutorialOkButtonSize = new Vector2(280f, 84f);
+    [SerializeField] private float tutorialPromptFontSize = 38f;
+
+    private bool _parentSlidePausedTimeScale;
+    private bool _parentSlideOkClicked;
+
+    private void PauseParentSlideTimeScale()
+    {
+        _parentSlidePausedTimeScale = true;
+        Time.timeScale = 0f;
+    }
+
+    private void RestoreParentSlideTimeScaleIfPaused()
+    {
+        if (_parentSlidePausedTimeScale || Time.timeScale == 0f)
+        {
+            _parentSlidePausedTimeScale = false;
+            Time.timeScale = 1f;
+        }
+    }
 
     [ContextMenu("親機チュートリアルUIをシーン上に生成（Unity内で配置・サイズ調整用）")]
     public UnityEngine.UI.Image EnsureParentTutorialOverlay()
     {
+        GameObject canvasObj = null;
         if (parentTutorialSlideImage != null)
         {
-            if (parentTutorialPromptText == null)
-                parentTutorialPromptText = parentTutorialSlideImage.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
-            return parentTutorialSlideImage;
+            Canvas c = parentTutorialSlideImage.GetComponentInParent<Canvas>();
+            if (c != null && c.gameObject.name == "ParentTutorialOverlayCanvas")
+                canvasObj = c.gameObject;
+        }
+        if (canvasObj == null)
+        {
+            canvasObj = GameObject.Find("ParentTutorialOverlayCanvas");
         }
 
-        GameObject existingCanvas = GameObject.Find("ParentTutorialOverlayCanvas");
-        if (existingCanvas != null)
+        if (canvasObj == null)
         {
-            Transform slideTr = existingCanvas.transform.Find("TutorialSlideImage");
-            if (slideTr != null)
+            canvasObj = new GameObject("ParentTutorialOverlayCanvas",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(UnityEngine.UI.CanvasScaler),
+                typeof(UnityEngine.UI.GraphicRaycaster));
+
+            Canvas canvas = canvasObj.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = tutorialCanvasSortingOrder;
+
+            UnityEngine.UI.CanvasScaler scaler = canvasObj.GetComponent<UnityEngine.UI.CanvasScaler>();
+            scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+
+        // 1) 一番後ろ：暗転背景
+        if (parentTutorialDimBackground == null)
+        {
+            Transform dimTr = canvasObj.transform.Find("TutorialDimBackground");
+            if (dimTr != null)
             {
-                parentTutorialSlideImage = slideTr.GetComponent<UnityEngine.UI.Image>();
-                parentTutorialPromptText = slideTr.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
-                return parentTutorialSlideImage;
+                parentTutorialDimBackground = dimTr.GetComponent<UnityEngine.UI.Image>();
             }
         }
 
-        GameObject canvasObj = new GameObject("ParentTutorialOverlayCanvas",
-            typeof(RectTransform),
-            typeof(Canvas),
-            typeof(UnityEngine.UI.CanvasScaler),
-            typeof(UnityEngine.UI.GraphicRaycaster));
+        if (parentTutorialDimBackground != null && parentTutorialDimBackground.transform.parent != canvasObj.transform)
+        {
+            parentTutorialDimBackground.transform.SetParent(canvasObj.transform, false);
+        }
 
-        Canvas canvas = canvasObj.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = tutorialCanvasSortingOrder;
+        if (parentTutorialDimBackground == null)
+        {
+            GameObject dimObj = new GameObject("TutorialDimBackground", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+            dimObj.transform.SetParent(canvasObj.transform, false);
+            RectTransform dimRt = dimObj.GetComponent<RectTransform>();
+            dimRt.anchorMin = Vector2.zero;
+            dimRt.anchorMax = Vector2.one;
+            dimRt.offsetMin = Vector2.zero;
+            dimRt.offsetMax = Vector2.zero;
 
-        UnityEngine.UI.CanvasScaler scaler = canvasObj.GetComponent<UnityEngine.UI.CanvasScaler>();
-        scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 0.5f;
+            parentTutorialDimBackground = dimObj.GetComponent<UnityEngine.UI.Image>();
+            parentTutorialDimBackground.color = new Color(0f, 0f, 0f, 0.85f);
+            parentTutorialDimBackground.raycastTarget = true;
+            dimObj.SetActive(false);
+        }
+        else
+        {
+            parentTutorialDimBackground.color = new Color(0f, 0f, 0f, 0.85f);
+        }
 
-        GameObject imgObj = new GameObject("TutorialSlideImage", typeof(RectTransform), typeof(UnityEngine.UI.Image));
-        imgObj.transform.SetParent(canvasObj.transform, false);
-        RectTransform imgRt = imgObj.GetComponent<RectTransform>();
-        imgRt.anchorMin = tutorialSlideAnchorMin;
-        imgRt.anchorMax = tutorialSlideAnchorMax;
-        imgRt.anchoredPosition = tutorialSlideAnchoredPosition;
-        imgRt.sizeDelta = tutorialSlideSizeDelta;
+        // 2) その手前：チュートリアルスライド画像（Color.white, Alpha 1.0f、絶対に暗くしない）
+        if (parentTutorialSlideImage == null)
+        {
+            Transform slideTr = canvasObj.transform.Find("TutorialSlideImage");
+            if (slideTr != null)
+            {
+                parentTutorialSlideImage = slideTr.GetComponent<UnityEngine.UI.Image>();
+            }
+        }
 
-        parentTutorialSlideImage = imgObj.GetComponent<UnityEngine.UI.Image>();
-        parentTutorialSlideImage.preserveAspect = true;
-        parentTutorialSlideImage.raycastTarget = true;
+        if (parentTutorialSlideImage != null && parentTutorialSlideImage.transform.parent != canvasObj.transform)
+        {
+            parentTutorialSlideImage.transform.SetParent(canvasObj.transform, false);
+        }
 
-        GameObject promptObj = new GameObject("TutorialPromptText", typeof(RectTransform), typeof(TMPro.TextMeshProUGUI));
-        promptObj.transform.SetParent(imgObj.transform, false);
-        RectTransform promptRt = promptObj.GetComponent<RectTransform>();
-        promptRt.anchorMin = tutorialPromptAnchorMin;
-        promptRt.anchorMax = tutorialPromptAnchorMax;
-        promptRt.offsetMin = Vector2.zero;
-        promptRt.offsetMax = Vector2.zero;
+        if (parentTutorialSlideImage == null)
+        {
+            GameObject imgObj = new GameObject("TutorialSlideImage", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+            imgObj.transform.SetParent(canvasObj.transform, false);
+            RectTransform imgRt = imgObj.GetComponent<RectTransform>();
+            imgRt.anchorMin = tutorialSlideAnchorMin;
+            imgRt.anchorMax = tutorialSlideAnchorMax;
+            imgRt.anchoredPosition = tutorialSlideAnchoredPosition;
+            imgRt.sizeDelta = tutorialSlideSizeDelta;
 
-        parentTutorialPromptText = promptObj.GetComponent<TMPro.TextMeshProUGUI>();
-        TMPro.TMP_Text anyTmp = Object.FindFirstObjectByType<TMPro.TMP_Text>();
-        if (anyTmp != null && anyTmp.font != null)
-            parentTutorialPromptText.font = anyTmp.font;
-        parentTutorialPromptText.fontSize = tutorialPromptFontSize;
-        parentTutorialPromptText.alignment = TMPro.TextAlignmentOptions.Center;
-        parentTutorialPromptText.color = new Color(1f, 0.96f, 0.72f, 1f);
-        parentTutorialPromptText.enableWordWrapping = false;
-        parentTutorialPromptText.raycastTarget = false;
+            parentTutorialSlideImage = imgObj.GetComponent<UnityEngine.UI.Image>();
+            parentTutorialSlideImage.color = Color.white;
+            parentTutorialSlideImage.preserveAspect = true;
+            parentTutorialSlideImage.raycastTarget = true;
+            imgObj.SetActive(false);
+        }
+        else
+        {
+            parentTutorialSlideImage.color = Color.white;
+            // 旧バージョンの長い案内テキスト（TutorialPromptText）が子にあれば非表示にする
+            Transform oldPrompt = parentTutorialSlideImage.transform.Find("TutorialPromptText");
+            if (oldPrompt != null) oldPrompt.gameObject.SetActive(false);
+        }
 
-        imgObj.SetActive(false);
+        // 3) 一番手前：独立した「OK!」ボタン
+        if (parentTutorialOkButton == null)
+        {
+            Transform existingOk = canvasObj.transform.Find("TutorialOkButton");
+            if (existingOk != null)
+                parentTutorialOkButton = existingOk.GetComponent<UnityEngine.UI.Button>();
+        }
+
+        if (parentTutorialOkButton != null && parentTutorialOkButton.transform.parent != canvasObj.transform)
+        {
+            parentTutorialOkButton.transform.SetParent(canvasObj.transform, false);
+        }
+
+        if (parentTutorialOkButton == null)
+        {
+            GameObject okObj = new GameObject("TutorialOkButton", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image), typeof(UnityEngine.UI.Button));
+            okObj.transform.SetParent(canvasObj.transform, false);
+            RectTransform okRt = okObj.GetComponent<RectTransform>();
+            okRt.anchorMin = new Vector2(0.5f, 0.5f);
+            okRt.anchorMax = new Vector2(0.5f, 0.5f);
+            okRt.pivot = new Vector2(0.5f, 0.5f);
+            okRt.anchoredPosition = tutorialOkButtonAnchoredPosition;
+            okRt.sizeDelta = tutorialOkButtonSize;
+
+            UnityEngine.UI.Image okBg = okObj.GetComponent<UnityEngine.UI.Image>();
+            okBg.color = new Color(1f, 0.84f, 0.18f, 1f);
+            okBg.raycastTarget = true;
+
+            GameObject outlineObj = new GameObject("ButtonInner", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image));
+            outlineObj.transform.SetParent(okObj.transform, false);
+            RectTransform innerRt = outlineObj.GetComponent<RectTransform>();
+            innerRt.anchorMin = Vector2.zero;
+            innerRt.anchorMax = Vector2.one;
+            innerRt.offsetMin = new Vector2(5f, 5f);
+            innerRt.offsetMax = new Vector2(-5f, -5f);
+            UnityEngine.UI.Image innerImg = outlineObj.GetComponent<UnityEngine.UI.Image>();
+            innerImg.color = new Color(0.12f, 0.06f, 0.28f, 1f);
+            innerImg.raycastTarget = false;
+
+            GameObject labelObj = new GameObject("OkLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TMPro.TextMeshProUGUI));
+            labelObj.transform.SetParent(okObj.transform, false);
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+
+            parentTutorialPromptText = labelObj.GetComponent<TMPro.TextMeshProUGUI>();
+            TMPro.TMP_Text anyTmp = Object.FindFirstObjectByType<TMPro.TMP_Text>();
+            if (anyTmp != null && anyTmp.font != null)
+                parentTutorialPromptText.font = anyTmp.font;
+            parentTutorialPromptText.text = "OK!";
+            parentTutorialPromptText.fontSize = tutorialPromptFontSize;
+            parentTutorialPromptText.alignment = TMPro.TextAlignmentOptions.Center;
+            parentTutorialPromptText.color = new Color(1f, 0.95f, 0.35f, 1f);
+            parentTutorialPromptText.enableWordWrapping = false;
+            parentTutorialPromptText.raycastTarget = false;
+
+            parentTutorialOkButton = okObj.GetComponent<UnityEngine.UI.Button>();
+            parentTutorialOkButton.targetGraphic = okBg;
+            okObj.SetActive(false);
+        }
+        else
+        {
+            if (parentTutorialPromptText == null)
+                parentTutorialPromptText = parentTutorialOkButton.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+            if (parentTutorialPromptText != null)
+                parentTutorialPromptText.text = "OK!";
+        }
+
+        parentTutorialOkButton.onClick.RemoveAllListeners();
+        parentTutorialOkButton.onClick.AddListener(OnParentTutorialOkButtonClicked);
+
+        // 描画順を強制固定：1.暗転背景 → 2.スライド画像 → 3.OK!ボタン
+        EnsureParentSlideHierarchyOrder(canvasObj.transform);
+
+        if (!Application.isPlaying)
+        {
+            ApplyEditorPreviewToParentSlide();
+        }
+
         return parentTutorialSlideImage;
     }
 
-    private void ShowParentTutorialSlide(string resourcePath, string promptJa, string promptEn)
+    private void OnParentTutorialOkButtonClicked()
+    {
+        _parentSlideOkClicked = true;
+    }
+
+    private void EnsureParentSlideHierarchyOrder(Transform canvasTransform)
+    {
+        if (canvasTransform == null) return;
+
+        if (parentTutorialDimBackground != null && parentTutorialDimBackground.transform.parent == canvasTransform)
+        {
+            parentTutorialDimBackground.transform.SetSiblingIndex(0);
+        }
+        if (parentTutorialSlideImage != null && parentTutorialSlideImage.transform.parent == canvasTransform)
+        {
+            parentTutorialSlideImage.transform.SetSiblingIndex(1);
+        }
+        if (parentTutorialOkButton != null && parentTutorialOkButton.transform.parent == canvasTransform)
+        {
+            parentTutorialOkButton.transform.SetAsLastSibling();
+        }
+    }
+
+    private void ApplyEditorPreviewToParentSlide()
+    {
+        if (parentTutorialSlideImage == null) return;
+        if (parentTutorialSlideImage.sprite == null)
+        {
+            parentTutorialSlideImage.sprite = Resources.Load<Sprite>("Tutorial/Parent/Tutorial01");
+        }
+        parentTutorialSlideImage.color = Color.white;
+        if (parentTutorialPromptText != null)
+        {
+            parentTutorialPromptText.text = "OK!";
+        }
+        if (parentTutorialDimBackground != null)
+        {
+            parentTutorialDimBackground.gameObject.SetActive(true);
+        }
+        parentTutorialSlideImage.gameObject.SetActive(true);
+        if (parentTutorialOkButton != null)
+        {
+            parentTutorialOkButton.gameObject.SetActive(true);
+        }
+    }
+
+    private void ShowParentTutorialSlide(string resourcePath, bool showOkButton)
     {
         Sprite sp = Resources.Load<Sprite>(resourcePath);
         if (sp == null)
@@ -376,29 +573,96 @@ public class ParentGameTimeManager : MonoBehaviour
         if (img == null) return;
 
         img.sprite = sp;
+        img.color = Color.white;
         if (parentTutorialPromptText != null)
         {
-            parentTutorialPromptText.text = GameLanguage.Pick(promptJa, promptEn);
+            parentTutorialPromptText.text = "OK!";
+        }
+        if (parentTutorialDimBackground != null)
+        {
+            parentTutorialDimBackground.gameObject.SetActive(true);
         }
         img.gameObject.SetActive(true);
+        if (parentTutorialOkButton != null)
+        {
+            parentTutorialOkButton.gameObject.SetActive(showOkButton);
+        }
+        EnsureParentSlideHierarchyOrder(img.transform.parent);
+
+        _parentSlideOkClicked = false;
+        PauseParentSlideTimeScale();
     }
 
-    private void HideParentTutorialSlide()
+    public void HideParentTutorialSlide()
     {
+        RestoreParentSlideTimeScaleIfPaused();
+        _parentSlideOkClicked = false;
+
+        if (parentTutorialDimBackground == null || parentTutorialSlideImage == null || parentTutorialOkButton == null)
+        {
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                if (canvases[i] == null) continue;
+                Transform dimTr = canvases[i].transform.Find("TutorialDimBackground");
+                if (dimTr != null)
+                {
+                    if (parentTutorialDimBackground == null)
+                        parentTutorialDimBackground = dimTr.GetComponent<UnityEngine.UI.Image>();
+                    if (dimTr.gameObject.activeSelf)
+                        dimTr.gameObject.SetActive(false);
+                }
+
+                Transform slideTr = canvases[i].transform.Find("TutorialSlideImage");
+                if (slideTr != null)
+                {
+                    if (parentTutorialSlideImage == null)
+                        parentTutorialSlideImage = slideTr.GetComponent<UnityEngine.UI.Image>();
+                    if (slideTr.gameObject.activeSelf)
+                        slideTr.gameObject.SetActive(false);
+                }
+
+                Transform okTr = canvases[i].transform.Find("TutorialOkButton");
+                if (okTr != null)
+                {
+                    if (parentTutorialOkButton == null)
+                        parentTutorialOkButton = okTr.GetComponent<UnityEngine.UI.Button>();
+                    if (parentTutorialPromptText == null)
+                        parentTutorialPromptText = okTr.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+                    if (okTr.gameObject.activeSelf)
+                        okTr.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        if (parentTutorialDimBackground != null && parentTutorialDimBackground.gameObject.activeSelf)
+        {
+            parentTutorialDimBackground.gameObject.SetActive(false);
+        }
         if (parentTutorialSlideImage != null && parentTutorialSlideImage.gameObject.activeSelf)
         {
             parentTutorialSlideImage.gameObject.SetActive(false);
         }
+        if (parentTutorialOkButton != null && parentTutorialOkButton.gameObject.activeSelf)
+        {
+            parentTutorialOkButton.gameObject.SetActive(false);
+        }
     }
 
-    private static IEnumerator WaitForParentTutorialButtonPress()
+    private IEnumerator WaitForParentTutorialButtonPress()
     {
-        yield return new WaitForSecondsRealtime(0.25f);
+        _parentSlideOkClicked = false;
+        float elapsed = 0f;
+        while (!_parentSlideOkClicked && elapsed < 0.2f)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
 
-        while (IsParentTutorialButtonDown(heldOnly: true))
+        while (!_parentSlideOkClicked && IsParentTutorialButtonDown(heldOnly: true))
             yield return null;
 
-        while (!IsParentTutorialButtonDown(heldOnly: false))
+        while (!_parentSlideOkClicked && !IsParentTutorialButtonDown(heldOnly: false))
             yield return null;
     }
 
@@ -435,19 +699,6 @@ public class ParentGameTimeManager : MonoBehaviour
             }
         }
 
-        var mouse = UnityEngine.InputSystem.Mouse.current;
-        if (mouse != null)
-        {
-            if (heldOnly)
-            {
-                if (mouse.leftButton.isPressed) return true;
-            }
-            else
-            {
-                if (mouse.leftButton.wasPressedThisFrame) return true;
-            }
-        }
-
         return false;
     }
 
@@ -478,18 +729,12 @@ public class ParentGameTimeManager : MonoBehaviour
         if (_suspicionSystem == null)
             _suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
 
-        // 1) 怪しさメーターの説明スライド（ボタン入力で次へ）
-        ShowParentTutorialSlide(
-            "Tutorial/Parent/Tutorial01",
-            "Aボタン / Enter / Space / クリック で次へ",
-            "Press A / Enter / Space / Click to continue");
+        // 1) 怪しさメーターの説明スライド（OK!ボタン入力で次へ）
+        ShowParentTutorialSlide("Tutorial/Parent/Tutorial01", showOkButton: true);
         yield return WaitForParentTutorialButtonPress();
 
-        // 2) お母さんがどこから覗いてくるか（ドア・窓）の説明スライド（ボタン入力で次へ）
-        ShowParentTutorialSlide(
-            "Tutorial/Parent/Tutorial02",
-            "Aボタン / Enter / Space / クリック で次へ",
-            "Press A / Enter / Space / Click to continue");
+        // 2) お母さんがどこから覗いてくるか（ドア・窓）の説明スライド（OK!ボタン入力で次へ）
+        ShowParentTutorialSlide("Tutorial/Parent/Tutorial02", showOkButton: true);
         yield return WaitForParentTutorialButtonPress();
         HideParentTutorialSlide();
 
@@ -512,13 +757,10 @@ public class ParentGameTimeManager : MonoBehaviour
                 yield return null;
             }
 
-            // ドア前に到達したら枕センサー説明スライド（Tutorial03）を表示し、枕センサーが押されるまで待機
-            ShowParentTutorialSlide(
-                "Tutorial/Parent/Tutorial03",
-                "枕センサー（または Space / Aボタン）を長押しして寝たふりをしよう！",
-                "Hold the Pillow Sensor (or Space / A Button) to pretend to sleep!");
+            // ドア前に到達したら枕センサー説明スライド（Tutorial03）を表示し、枕センサー（またはSpace/A/OK!ボタン）が押されるまで待機
+            ShowParentTutorialSlide("Tutorial/Parent/Tutorial03", showOkButton: true);
 
-            while (!IsPillowSensorPressed(sleepingController))
+            while (!_parentSlideOkClicked && !IsPillowSensorPressed(sleepingController))
             {
                 yield return null;
             }
@@ -554,12 +796,9 @@ public class ParentGameTimeManager : MonoBehaviour
                 yield return null;
             }
 
-            ShowParentTutorialSlide(
-                "Tutorial/Parent/Tutorial03",
-                "窓からお母さんが来た！枕センサー（または Space / Aボタン）を長押しして寝たふりをしよう！",
-                "Mom is at the window! Hold the Pillow Sensor (or Space / A Button) to pretend to sleep!");
+            ShowParentTutorialSlide("Tutorial/Parent/Tutorial03", showOkButton: true);
 
-            while (!IsPillowSensorPressed(sleepingController))
+            while (!_parentSlideOkClicked && !IsPillowSensorPressed(sleepingController))
             {
                 yield return null;
             }
