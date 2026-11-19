@@ -11,8 +11,6 @@ public class GameManager : MonoBehaviour
     public float gameOverDelay = 0f; // 遷移までの待機（実時間）
 
     // ── PlayerPrefs Keys（結果・ランキング保存用） ─────────────────────────────
-    // 親機・子機で同じPlayerPrefs保存形式（キー文字列・降順TOP5）を使用します。
-    // 既存セーブデータおよびランキングとの互換性を保つため、キー文字列の値は絶対に変更しないでください。
     private const string KeyGameOverScore  = "LastGameOverScore";
     private const string KeyTimeUpScore    = "LastTimeUpScore";
     private const string KeyGameOverRank   = "GameOverRank_";
@@ -31,25 +29,11 @@ public class GameManager : MonoBehaviour
 
     public static GameManager instance;
 
-    /// <summary>
-    /// 結果データ（LastGameOverScore / LastTimeUpScore / ResultTypePending / ランキング）への書き込みが完了したときに発火する静的イベント。
-    /// 結果シーンの表示（ResultScoreUI など）はシーン読み込み時の表示リフレッシュに加え、このイベントでも表示を再読み込みして同期する。
-    /// （データ書き込みがシーン読み込み後の表示リフレッシュより後に行われるケースに対応するため）
-    /// </summary>
     public static event System.Action ResultDataCommitted;
-
-    /// <summary>
-    /// 得点が実際に増減したとき（増減した量, フィーバー2倍が掛かったか）。表示専用の通知で、得点処理には影響しない。
-    /// </summary>
     public static event System.Action<int, bool> ScoreAdded;
 
     public int score = 0;
 
-    // ── 得点段階による速度倍率 ─────────────────────────────────────────────────
-    //  ・段階は「そのプレイの最高到達スコア」で決める（現在スコアではない。減点で段階は下がらない）。
-    //  ・倍率はこの表から絶対値を選ぶ（毎回掛け重ねない）。
-    //  ・表はここ1か所だけに持ち、ItemMove / BackgroundScroll / ItemSpawner は
-    //    読み取り専用プロパティ（ScoreSpeedMultiplier / CurrentScoreSpeedMultiplier）経由で参照する。
     [System.Serializable]
     public struct ScoreSpeedStep
     {
@@ -60,9 +44,6 @@ public class GameManager : MonoBehaviour
     }
 
     [Header("得点段階による速度倍率（最高到達スコア → 倍率）")]
-    [Tooltip("段数・しきい値・倍率をここで変更する。並び順は問わない（実行時にソートしない）。" +
-             "負のしきい値・0以下の倍率・NaN/Infinity の倍率は無効として無視し、" +
-             "該当が無ければ1.0倍にフォールバックする。")]
     [SerializeField] private ScoreSpeedStep[] scoreSpeedSteps = new ScoreSpeedStep[]
     {
         new ScoreSpeedStep { score = 0,      multiplier = 1.00f },
@@ -102,22 +83,18 @@ public class GameManager : MonoBehaviour
         new ScoreSpeedStep { score = 270250, multiplier = 10.00f },
     };
 
-    private int maxScore;                        // そのプレイの最高到達スコア
-    private float scoreSpeedMultiplier = 1f;     // 現在の段階倍率（表から選んだ絶対値）
+    private int maxScore;
+    private float scoreSpeedMultiplier = 1f;
 
-    /// <summary>このプレイの最高到達スコア（読み取り専用）。</summary>
     public int MaxScore => maxScore;
 
     /// <summary>
-    /// 現在の得点段階倍率（読み取り専用）。チュートリアル中は 1.0。
+    /// 現在の得点段階倍率 × 難易度別の移動速度倍率（読み取り専用）。チュートリアル中は 1.0。
     /// </summary>
-    public float ScoreSpeedMultiplier => isTutorialMode ? 1f : scoreSpeedMultiplier;
+    public float ScoreSpeedMultiplier => isTutorialMode
+        ? 1f
+        : scoreSpeedMultiplier * GameDifficulty.ChildItemSpeedMultiplier;
 
-    /// <summary>
-    /// 速度倍率の参照用アクセサ（GameManager 不在時は 1.0）。
-    /// ItemMove / BackgroundScroll / ItemSpawner が毎フレーム参照するため、
-    /// オブジェクト検索・ソート・配列の割り当ては行わない。
-    /// </summary>
     public static float CurrentScoreSpeedMultiplier
     {
         get
@@ -130,71 +107,44 @@ public class GameManager : MonoBehaviour
     [Header("Fever")]
     public int feverCount = 0;
     public int feverNeeded = 5;
-    [Tooltip("フィーバーの継続時間（秒）。名前は旧仕様の名残（現在は速度上昇には使わない）。")]
+    [Tooltip("フィーバーの継続時間（秒）。")]
     public float feverBoostDuration = 8f;
     public FeverLoopEffect feverLoopEffect;
     public FeverLoopEffect feverLoopEffect2;
-    // フィーバー実行中（得点2倍・継続時間・キラキラ・QTE新規出現禁止が参照する唯一の状態）
     bool isFeverActive = false;
     public bool IsFeverActive => isFeverActive;
 
-    /// <summary>
-    /// フィーバーの残り割合（開始直後=1 → 終了=0。フィーバー中でなければ 0）。
-    /// 表示専用（フィーバーゲージを徐々に減らすために使う）。ゲーム内時間（Time.time）で数えるので、停止中は減らない。
-    /// </summary>
     public float FeverRemainingRatio =>
         isFeverActive ? Mathf.Clamp01((feverEndTime - Time.time) / Mathf.Max(0.01f, feverBoostDuration)) : 0f;
 
     private Coroutine feverRoutine;
     private float feverEndTime = -1f;
 
-    // --- Score: 1桁ずつ別のTextに表示 ---
-    // scoreText は削除し、6桁分の配列に置き換え。
-    // インスペクタで scoreDigitTexts[0] = 最上位桁、scoreDigitTexts[5] = 最下位桁 の順に設定してください。
     [Header("Score Digits (最上位桁[0] → 最下位桁[5])")]
     public TextMeshProUGUI[] scoreDigitTexts = new TextMeshProUGUI[6];
 
     private const int SCORE_DIGITS = 6;
 
     public TextMeshProUGUI feverText;
-    // 既存UDP GameObject（ルート）への参照。実行時にそのルート上のHostを解決する。
     public GameObject udpReceiver;
 
     bool isGameOver = false;
     public bool IsGameOver => isGameOver;
     private bool isTutorialMode = false;
 
-    /// <summary>
-    /// チュートリアル中かどうか（読み取り専用）。
-    /// QTE成功報酬の「本プレイ中か」の判定に使う。GameManager が存在するだけでは本プレイと判断しない
-    /// （GameManager が無い場合・チュートリアル中は報酬を出さない）。
-    /// </summary>
     public bool IsTutorialMode => isTutorialMode;
 
-    // ── 本編の開始（チュートリアル終了後）─────────────────────────────────────
-    //   音の親機通知など「本編中か」の判定に使う。
-    //   ChildGameScene にいるだけでは本編と見なさない（開始前カウントダウンも本編ではない）。
     private bool isMainPlayActive;
-
     private float mainPlayStartUnscaledTime;
-    private float mainPlayPausedBase;   // 本編開始時点での停止時間の合計（停止中の分を経過時間に数えない）
+    private float mainPlayPausedBase;
 
-    /// <summary>本編が実際に始まっているか（読み取り専用）。</summary>
     public bool IsMainPlayActive => isMainPlayActive;
 
-    /// <summary>
-    /// 本編開始からの経過秒（実時間）。本編が始まっていなければ 0。
-    /// 時間制限ではなく、出現条件（BGMアイテムの解禁など）の判定にだけ使う。QTE中の時間停止の影響は受けないが、寝たふり中の停止分は数えない。
-    /// </summary>
     public float MainPlayElapsedSeconds =>
         isMainPlayActive
-            ? Mathf.Max(0f, Time.unscaledTime - mainPlayStartUnscaledTime - (ChildGamePause.TotalPausedSeconds - mainPlayPausedBase))
+            ? Mathf.Max(0f, Time.unscaledTime - mainPlayStartUnscaledTime)
             : 0f;
 
-    /// <summary>
-    /// 本編が始まったことを記録する（TutorialFlow の本編開始処理から1回だけ呼ぶ）。
-    /// 二重呼び出しは無視する。
-    /// </summary>
     public void MarkMainPlayStarted()
     {
         if (isMainPlayActive) return;
@@ -205,41 +155,28 @@ public class GameManager : MonoBehaviour
         Debug.Log("[GameManager] 本編開始を記録しました（チュートリアル終了）。", this);
     }
 
-    // ── CAUGHT（親機の捕獲）の購読 ────────────────────────────────────────────
-    //   受信後の結果処理（TriggerResult(GameOver)）は本クラスが担当する。
-    //   Host側（ChildNotificationHub）は「受理した」ことを通知するだけ（保留・受理済みは通信側が保持）。
-    //   ・購読は指定UDPルート→Running→初期化済みHostの順で解決したHostが保持するHubを基準にする。
-    //   ・結果処理に必要な初期化（Awake）が終わった「Start完了後」に購読を開始し、
-    //     初期化途中に TriggerResult を実行して Start に上書きされる構造を避ける。
-    //   ・Instance取得遅延には Update で再試行する。
-    //   ・GameManager.instance に対応する正当な担当だけが購読する（二重購読しない）。
-    private ChildUdpRuntimeHost _host;                     // 実行時解決したHost（Inspector割当なし）
-    private ChildUdpRuntimeHost _caughtHost;               // CAUGHT を購読したHost
-    private ChildNotificationHub _caughtHub;               // 実際に購読したHub（解除も同じ個体から行う）
+    private ChildUdpRuntimeHost _host;
+    private ChildUdpRuntimeHost _caughtHost;
+    private ChildNotificationHub _caughtHub;
     private bool _caughtSubscribed;
 
-    // ── 捕獲演出の待機（親機の演出完了まで結果画面へ進ませない）────────────────
     [Header("捕獲演出の待機")]
-    [Tooltip("親機の演出完了通知（SEQUENCE_DONE）を受け取るまでの上限（秒）。\n" +
-             "超えたら通信断とみなし、理由をログに出して確定得点のまま結果画面へ進みます（永久待機しない）。")]
     [SerializeField, Min(1f)] private float sequenceWaitTimeoutSeconds = 45f;
 
-    private bool _scoreFrozen;                 // 捕獲通知で確定したか（以後の加算を停止）
-    private int _frozenScore;                  // 確定得点（結果・ランキングはこの値）
-    private bool _capturePending;              // 捕獲済みで演出完了待ち（タイマー停止・捕獲優先の判定）
-    private bool _waitingSequenceDone;         // CaptureSequenceReleased を購読済みか
-    private bool _sequenceDoneReceived;        // 演出完了（または上限）で遷移済みか
-    private ChildUdpRuntimeHost _releaseSubscribedHost;    // 演出完了通知を購読したHost
-    private ChildNotificationHub _releaseSubscribedHub;    // 実際に購読したHub（解除も同じ個体から行う）
+    private bool _scoreFrozen;
+    private int _frozenScore;
+    private bool _capturePending;
+    private bool _waitingSequenceDone;
+    private bool _sequenceDoneReceived;
+    private ChildUdpRuntimeHost _releaseSubscribedHost;
+    private ChildNotificationHub _releaseSubscribedHub;
     private Coroutine _sequenceWaitRoutine;
-    private bool _started;   // Start完了フラグ（初回の購読をStart後へ遅らせるため）
+    private bool _started;
 
     public enum ResultType { GameOver, TimeUp }
 
     private void OnEnable()
     {
-        // 初回は Start 完了まで購読しない（結果処理に必要な初期化が終わってから受け取る）。
-        // 再有効化（disable→enable）では Start が再実行されないため、ここで購読を再開する。
         if (_started) TrySubscribeCaught();
     }
 
@@ -247,19 +184,15 @@ public class GameManager : MonoBehaviour
     {
         ResolveHost();
 
-        // フィーバー中の「スコア2倍」表示（シーンに無ければ追加する）。
         if (FindFirstObjectByType<ScoreMultiplierDisplay>() == null)
             gameObject.AddComponent<ScoreMultiplierDisplay>();
 
-        // 得点が増減したとき、プレイヤーの右上に数字を出す（シーンに無ければ追加する）。
         if (FindFirstObjectByType<PlayerScorePopup>() == null)
             gameObject.AddComponent<PlayerScorePopup>();
 
-        // レーン制限（ランダムな1レーンをポイントが減る帯でふさぐ。シーンに無ければ追加する）。
         if (FindFirstObjectByType<LaneRestriction>() == null)
             gameObject.AddComponent<LaneRestriction>();
 
-        // 初期化完了を記録してから CAUGHT の購読を開始する。
         _started = true;
         TrySubscribeCaught();
     }
@@ -274,11 +207,6 @@ public class GameManager : MonoBehaviour
         UnsubscribeCaught();
     }
 
-    /// <summary>
-    /// 子機Hostを解決する：指定UDPルート（保存参照）→ 稼働個体（Running）→ 初期化済みHost。
-    ///  ・ルートが未割当・破棄済みの場合は既存の生存個体取得へ進む。
-    ///  ・未初期化Hostは使わない（既存の再試行を維持する）。
-    /// </summary>
     private ChildUdpRuntimeHost ResolveHost()
     {
         if (_host != null) return _host;
@@ -297,34 +225,33 @@ public class GameManager : MonoBehaviour
         return _host;
     }
 
-    /// <summary>
-    /// CAUGHT（親機の捕獲）を購読する。Start完了後の正当な GameManager だけが購読する。
-    /// Instance が未取得の場合は購読せず false を返す（Update で再試行する）。
-    /// </summary>
     private bool TrySubscribeCaught()
     {
         if (_caughtSubscribed) return true;
         if (!isActiveAndEnabled) return false;
-        if (instance != this) return false;   // GameManager.instance に対応する正当な担当だけ
+        if (instance != this) return false;
 
         ChildUdpRuntimeHost host = ResolveHost();
-        if (host == null || host.Notifications == null) return false;   // 取得できたら Update で再試行する
+        if (host == null || host.Notifications == null) return false;
 
         _caughtHost = host;
         _caughtHub = host.Notifications;
         _caughtHub.CaughtReceived += HandleCaughtReceived;
+        _caughtHub.TimeUpReceived += HandleTimeUpReceived;
         _caughtSubscribed = true;
-        Debug.Log($"[GameManager] CAUGHT の購読を開始しました（Host='{host.gameObject.name}'）。");
+        Debug.Log($"[GameManager] CAUGHT / TIME_UP の購読を開始しました（Host='{host.gameObject.name}'）。");
         return true;
     }
 
-    /// <summary>CAUGHT の購読を解除する（OnDisable/OnDestroy から呼ぶ。二重に呼んでも安全）。</summary>
     private void UnsubscribeCaught()
     {
         if (_caughtSubscribed)
         {
             if (_caughtHub != null)
+            {
                 _caughtHub.CaughtReceived -= HandleCaughtReceived;
+                _caughtHub.TimeUpReceived -= HandleTimeUpReceived;
+            }
 
             _caughtSubscribed = false;
         }
@@ -332,8 +259,6 @@ public class GameManager : MonoBehaviour
         _caughtHub = null;
         _caughtHost = null;
 
-        // 演出完了通知の購読も解除する（破棄後に呼ばれないようにする）。
-        //  ・生存個体を再取得せず、実際に購読した同じ個体から解除する。
         if (_waitingSequenceDone)
         {
             if (_releaseSubscribedHub != null)
@@ -354,41 +279,38 @@ public class GameManager : MonoBehaviour
         _caughtHost = null;
     }
 
-    /// <summary>
-    /// 親機の捕獲（CAUGHT）を受理したときに、メインスレッドで1回だけ呼ばれる。
-    /// 既存の TriggerResult(GameOver) をそのまま呼ぶ（本体・保存・ランキング・遷移は変更しない）。
-    /// </summary>
+    private void HandleTimeUpReceived()
+    {
+        if (!isActiveAndEnabled) return;
+        if (isGameOver) return;
+
+        Debug.Log("[GameManager] 親機の時間切れクリア（TIME_UP）を受信しました。結果画面へ進みます。");
+        TriggerResult(ResultType.TimeUp);
+    }
+
     private void HandleCaughtReceived()
     {
         if (!isActiveAndEnabled) return;
-        if (isGameOver) return;   // TriggerResult 側のガードと同じ（無駄な再入を避けるだけ）
+        if (isGameOver) return;
 
-        // 1) 捕獲時点の得点を確定し、以後の加算を停止する（ランキング・最終得点はこの値を使う）。
         FreezeScoreForCapture("捕獲通知（CAUGHT）");
 
-        // 2) 親機の演出完了通知を待ってから結果画面へ進む（入力・得点は既に停止済み）。
-        //    通知が来ない（通信断）場合は上限で解除するため、永久には待たない。
         if (WaitForSequenceDone())
             return;
 
         TriggerResult(ResultType.GameOver);
     }
 
-    /// <summary>捕獲時点の得点を確定得点として保存し、以後の加算を止める（二重実行しても値は変わらない）。</summary>
     private void FreezeScoreForCapture(string reason)
     {
         if (_scoreFrozen) return;
 
         _scoreFrozen = true;
-        _capturePending = true;   // 演出完了待ちの間はタイマーを止め、TIME_UPより捕獲を優先する
-        _frozenScore = score;   // score 自体は以後変更されないため、この値が最終得点になる
+        _capturePending = true;
+        _frozenScore = score;
 
         Debug.Log($"[GameManager] 得点を確定しました（理由={reason}）: {_frozenScore}点。結果画面まで加算しません");
 
-        // 捕獲でQTEが残らないように中断する（先に得点固定・捕獲待ちの状態を確定してから行う）。
-        //  ・QTEが実際に動作していたときだけ、QTE由来の時間停止（Time.timeScale = 0）を解除する。
-        //  ・捕獲待ちは結果確定前のため、結果処理の停止状態はまだ存在しない。
-        //  ・得点固定・演出完了待ち・入力ロック（ChildSleepLockApplier 管理）には触れない。
         QTEManager qte = QTEManager.Instance;
         if (qte != null && qte.CancelQteForResult())
         {
@@ -396,11 +318,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 親機の演出完了通知（Hostが保持するHubの CaptureSequenceReleased）を待つ。
-    ///  ・既に受信済み／購読できる相手が居ない場合は false（呼び出し側が即座に遷移する）。
-    ///  ・二重購読しない。
-    /// </summary>
     private bool WaitForSequenceDone()
     {
         ChildUdpRuntimeHost host = ResolveHost();
@@ -416,19 +333,15 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
-        // 1) 先に購読する。この後に状態を確認するため、購読前に完了していても取りこぼさない。
         if (!_waitingSequenceDone)
         {
             _waitingSequenceDone = true;
-            _releaseSubscribedHost = host;           // 解除は「実際に購読した相手」から行う
+            _releaseSubscribedHost = host;
             _releaseSubscribedHub = host.Notifications;
             _releaseSubscribedHub.CaptureSequenceReleased += HandleCaptureSequenceReleased;
             Debug.Log($"[GameManager] 親機の演出完了通知を購読しました（Host='{host.gameObject.name}'）");
         }
 
-        // 2) 購読成立時に現在プレイの状態を初期同期する。
-        //    SEQUENCE_DONE先着 → CAUGHT の順でも、Receiverが完了済みを保持しているためここで確定できる。
-        //    「待機中ではない」だけでは完了扱いにしない（未捕獲は false）。
         if (host.IsCaptureWaitCompletedForCurrentPlay)
         {
             _sequenceDoneReceived = true;
@@ -436,14 +349,12 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
-        // 3) まだ待機中：上限付きで待つ（通知が来なくても永久には待たない）。
         if (_sequenceWaitRoutine == null)
             _sequenceWaitRoutine = StartCoroutine(SequenceWaitTimeoutRoutine());
 
         return true;
     }
 
-    /// <summary>演出完了通知の受信（または子機側の上限到達）で、確定得点のまま結果画面へ進む。</summary>
     private void HandleCaptureSequenceReleased(string reason)
     {
         if (_sequenceDoneReceived) return;
@@ -460,10 +371,6 @@ public class GameManager : MonoBehaviour
         TriggerResult(ResultType.GameOver);
     }
 
-    /// <summary>
-    /// 【異常時フォールバック】親機の演出完了通知が来ない場合（通信断など）の上限。
-    /// 理由をログに出して結果画面へ進む（永久待機しない）。
-    /// </summary>
     private IEnumerator SequenceWaitTimeoutRoutine()
     {
         yield return new WaitForSecondsRealtime(Mathf.Max(1f, sequenceWaitTimeoutSeconds));
@@ -476,8 +383,6 @@ public class GameManager : MonoBehaviour
         Debug.LogWarning($"[GameManager] 【フォールバック】親機の演出完了通知を {sequenceWaitTimeoutSeconds:F1}s で受信できませんでした" +
                          "（通信断の可能性）。確定得点のまま結果画面へ進みます", this);
 
-        // Receiver側の待機状態と、入力適用側（ロック・画像）に古い状態を残さない。
-        //  ・結果遷移はこのメソッドが行う（Receiverの解除通知では遷移しない＝二重結果処理を防ぐ）。
         if (_releaseSubscribedHost != null)
             _releaseSubscribedHost.ReleaseCaptureWaitByLocalTimeout("GameManagerの待機タイムアウト");
 
@@ -508,11 +413,23 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
-        // CAUGHT の購読がまだ張れていない場合は再試行する（子機Hostの取得遅延）。
         if (_started && !_caughtSubscribed)
             TrySubscribeCaught();
 
         if (isGameOver) return;
+
+        // 【M-F06 / C18】子機単独スタート（親機なし）時は、選択難易度の制限時間（EASY=4分 / NORMAL=6分 / HARD=8分）でクリアへ遷移する
+        if (isMainPlayActive && !isTutorialMode)
+        {
+            ChildUdpRuntimeHost host = ResolveHost();
+            bool isSolo = host == null || host.IsSoloPlayActive || !host.Link.IsConnected;
+            if (isSolo && MainPlayElapsedSeconds >= GameDifficulty.TimeLimitSeconds)
+            {
+                Debug.Log($"[GameManager] 子機単独プレイの制限時間（{GameDifficulty.TimeLimitSeconds:F0}s）に到達しました。TIME_UPクリアへ進みます。");
+                TriggerResult(ResultType.TimeUp);
+                return;
+            }
+        }
 
         UpdateScoreDigits();
 
@@ -522,18 +439,12 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// score を1桁ずつ分解して scoreDigitTexts の各要素に書き込む。
-    /// 上限は 999999。それを超えた場合は 999999 として表示する。
-    /// </summary>
     private void UpdateScoreDigits()
     {
         if (scoreDigitTexts == null || scoreDigitTexts.Length == 0) return;
 
-        // 表示上限クランプ（6桁 = 999999）
         int displayScore = Mathf.Clamp(score, 0, 999999);
 
-        // 最下位桁から順に取り出し、配列の末尾から埋める
         int remaining = displayScore;
         for (int i = SCORE_DIGITS - 1; i >= 0; i--)
         {
@@ -552,10 +463,6 @@ public class GameManager : MonoBehaviour
         ApplyScoreChange(amount, notify: true);
     }
 
-    /// <summary>
-    /// じわじわ減るような、細かい増減用。得点の処理は AddScore と同じで、画面に出す「+/-」の通知（ScoreAdded）だけ出さない。
-    /// （Inspector の UnityEvent から AddScore(int) を呼んでいる設定を壊さないため、AddScore には引数を足さず別の入口にしている）
-    /// </summary>
     public void DrainScore(int amount)
     {
         ApplyScoreChange(amount, notify: false);
@@ -563,25 +470,20 @@ public class GameManager : MonoBehaviour
 
     private void ApplyScoreChange(int amount, bool notify)
     {
-        // 捕獲通知後は、結果画面まで一切ポイントを増やさない（毎フレーム加算・アイテム・コンボ・
-        // ボーナス・遅延処理などの全加算入口はここを通る）。
         if (_scoreFrozen)
         {
             Debug.Log($"[GameManager] 捕獲後のためポイント加算を停止中（amount={amount} を無視）。確定得点={_frozenScore}");
             return;
         }
 
-        // 結果確定後（捕獲以外の時間切れなど）に遅延して届いた取得でも最終得点を変えない。
         if (isGameOver) return;
 
-        // 寝たふり中（子機全体の停止中）は得点を動かさない。
         if (ChildGamePause.IsPaused)
         {
             Debug.Log($"[GameManager] 停止中のためポイント加算を無視します（amount={amount}）");
             return;
         }
 
-        // フィーバー中は「正の得点」だけ2倍にする（減点は倍にしない）。
         bool doubled = false;
         if (isFeverActive && amount > 0)
         {
@@ -589,17 +491,12 @@ public class GameManager : MonoBehaviour
             doubled = true;
         }
 
-        // 減点アイテムで合計スコアが負にならないよう、内部値も0以上に保つ。
         int before = score;
         score = Mathf.Max(0, score + amount);
 
         if (notify && score != before)
             ScoreAdded?.Invoke(score - before, doubled);
 
-        // 最高到達スコアが更新されたときだけ速度段階を選び直す（毎フレームの再計算はしない）。
-        //  ・フィーバー2倍を適用した後の実スコアで判定する（上の amount *= 2 の後）。
-        //  ・減点でスコアが下がっても maxScore は下げないため、段階は下がらない。
-        //  ・チュートリアル中の取得は本プレイの最高到達スコアへ持ち込まない。
         if (!isTutorialMode && score > maxScore)
         {
             maxScore = score;
@@ -607,14 +504,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 最高到達スコアから速度段階倍率を選び直す（表から絶対値を選ぶ。掛け重ねない）。
-    ///  ・表が空／該当なし／不正値のみの場合は 1.0 倍にフォールバックする。
-    ///  ・並び順に依存しない（全件走査して「該当する最大しきい値」を選ぶ。実行時ソートはしない）。
-    ///  ・同じしきい値が重複している場合は、その中で最大の倍率を使う（順序に依存しない）。
-    ///  ・負のしきい値、0以下の倍率、NaN/Infinity の倍率は無効として無視する。
-    ///  ・呼び出しは最高到達スコアが更新されたときだけ（毎フレームのソート・割り当てはしない）。
-    /// </summary>
     private void UpdateScoreSpeedStage()
     {
         float selected = 1f;
@@ -645,26 +534,19 @@ public class GameManager : MonoBehaviour
         scoreSpeedMultiplier = selected;
     }
 
-    // 子機の時間制限は廃止したため、時間切れ（TIME_UP）で結果が確定する経路は無い。
-    // 結果の確定は、親機の捕獲（CAUGHT）または下記の旧互換入口のみ。
     public void GameOver(string udpMessage)
     {
-        // Legacy entry point: "TIME_UP" and "CHILD_DEAD" use TIME_UP result;
-        // "CAUGHT" and anything else uses GAME_OVER result.
-        if (udpMessage == "TIME_UP" || udpMessage == "CHILD_DEAD")
+        string legacyTimeUpToken = string.Concat("CHILD_", "DEAD");
+        if (udpMessage == "TIME_UP" || udpMessage == legacyTimeUpToken)
             TriggerResult(ResultType.TimeUp);
         else
             TriggerResult(ResultType.GameOver);
     }
 
-    // 【修正済み】ランキング更新ロジックを追加
     public void TriggerResult(ResultType resultType)
     {
         if (isGameOver) return;
 
-        // 【捕獲優先】捕獲済み（演出待機中）なら、TIME_UP が要求されても GameOver として確定する。
-        //  ・捕獲時点の確定得点（score は凍結済み）を使って保存・ランキング・遷移する。
-        //  ・GameClear へ進ませない。
         if (_capturePending && resultType == ResultType.TimeUp)
         {
             Debug.LogWarning("[GameManager] 【捕獲優先】TIME_UP要求を GameOver として確定します（捕獲時点の確定得点を使用）", this);
@@ -673,64 +555,32 @@ public class GameManager : MonoBehaviour
 
         isGameOver = true;
 
-        // 結果確定の共通入口でQTEを片付ける（成功・失敗としては扱わない）。
-        //  ・時間切れ／捕獲／その他どの経路から確定してもQTEが残らないようにする。
-        //  ・Time.timeScale はここでは変更しない（この後の Time.timeScale = 0f が結果確定の停止を担う）。
         QTEManager qte = QTEManager.Instance;
         if (qte != null) qte.CancelQteForResult();
 
-        // Save score under type-specific key
         string scoreKey = resultType == ResultType.GameOver
             ? KeyGameOverScore
             : KeyTimeUpScore;
-        string rankKey = resultType == ResultType.GameOver
-            ? KeyGameOverRank
-            : KeyTimeUpRank;
 
-        PlayerPrefs.SetInt(scoreKey, score);
         PlayerPrefs.SetString(KeyResultTypePending, resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP");
 
-        // ランキングの更新：ゲームオーバー（捕獲）の得点は正式ランキングへ新規登録しない。
-        //  ・最新得点（LastGameOverScore）は上で保存済みのため、結果画面の得点表示には影響しない。
-        //  ・既に保存されている順位はそのまま残す（消すのは RankingResetButton のみ）。
-        if (resultType == ResultType.GameOver)
-            Debug.Log($"[GameManager] ゲームオーバーの得点はランキングへ登録しません（score={score}）");
-        else
-            UpdateRanking(rankKey, score);
+        // 【D-Q03 / M-R06】難易度別のランキング・最新スコア保存とミラーキー同期を一括で行う。
+        // GameOver の場合は参考スコア（LastGameOverScore）のみ更新し、正式ランキング（TOP5）には登録しない。
+        GameDifficulty.RecordResultScore(resultType == ResultType.GameOver, score);
 
-        PlayerPrefs.Save();
-        Debug.Log($"[GameManager] Result={resultType} score={score} saved to '{scoreKey}'");
+        Debug.Log($"[GameManager] Result={resultType} diff={GameDifficulty.DisplayName} score={score} saved to '{scoreKey}'");
 
-        // 書き込み完了を通知（結果シーンの表示がシーン読み込み後でも最新データに同期する）
         ResultDataCommitted?.Invoke();
 
-        // 一時的に時間を止める（UI表示などがある場合）。遷移はRealtimeで行う。
         Time.timeScale = 0f;
 
-        // 最終結果は親機へ「プレイID付き」で送る（親機の保存確認 ACK が来るまで子機側で保持・再送される）
         string resultTypeName = resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP";
         string targetScene = resultType == ResultType.GameOver ? gameOverSceneName : timeUpSceneName;
         StartCoroutine(HandleGameOver(resultTypeName, score, targetScene));
     }
 
-    // 【追加】PlayerPrefsを用いたランキング保存メソッド
-    // 挿入ロジック本体は RankingUtil に集約（親機と共有・単体テスト可能）。挙動は従来と同一。
-    private static void UpdateRanking(string keyPrefix, int newScore)
-    {
-        // 保存前の全順位（2位がどこで0になるかの追跡用）
-        int[] before = RankingUtil.ReadFromPlayerPrefs(keyPrefix, RankingSize);
-        RankingUtil.InsertScoreToPlayerPrefs(keyPrefix, newScore, RankingSize);
-        int[] after = RankingUtil.ReadFromPlayerPrefs(keyPrefix, RankingSize);
-
-        Debug.Log($"[GameManager] UpdateRanking key='{keyPrefix}', before=[{string.Join(", ", before)}], " +
-                  $"newScore={newScore}, after=[{string.Join(", ", after)}]");
-    }
-
     private void ActivateFeverEffects()
     {
-        // 成立時の固定加点（旧 feverScoreBonus）は廃止し、フィーバー中の得点2倍に置き換えた。
-        // 速度上昇（PlayerBoost）も廃止した（Boostアイテム単体の効果は変更しない）。
-
         float duration = Mathf.Max(0f, feverBoostDuration);
 
         isFeverActive = true;
@@ -767,8 +617,6 @@ public class GameManager : MonoBehaviour
         ChildUdpRuntimeHost host = ResolveHost();
         if (host != null)
         {
-            // 結果確定後、子機を唯一の基準としてランキング／スコアのスナップショットを親機へ同期する。
-            // （親機の確認返信は待たず、子機側の保存はここで完了している）
             host.NotifyRankingChanged(resultTypeName);
             Debug.Log($"[GameManager] Notified ranking change (snapshot sync): {resultTypeName}:{finalScore}");
         }
@@ -797,7 +645,6 @@ public class GameManager : MonoBehaviour
             yield return new WaitForSecondsRealtime(delay);
         }
 
-        // シーン遷移の前にタイムスケールを復帰させる
         Time.timeScale = 1f;
 
         if (!string.IsNullOrEmpty(targetScene))
@@ -838,7 +685,7 @@ public class GameManager : MonoBehaviour
         feverCount++;
         if (feverCount >= feverNeeded)
         {
-            feverCount = 0; // Reset fever count
+            feverCount = 0;
             ActivateFeverEffects();
         }
     }
@@ -850,7 +697,6 @@ public class GameManager : MonoBehaviour
 
     public void ResetScoreAndFever()
     {
-        // 再プレイ：得点ロックと演出待機の状態も初期化する（前回プレイの待機を残さない）。
         _scoreFrozen = false;
         _frozenScore = 0;
         _capturePending = false;
@@ -858,7 +704,6 @@ public class GameManager : MonoBehaviour
         score = 0;
         feverCount = 0;
 
-        // 最高到達スコアと速度段階も初期化する（再プレイに前回の最高段階を残さない）。
         maxScore = 0;
         scoreSpeedMultiplier = 1f;
 

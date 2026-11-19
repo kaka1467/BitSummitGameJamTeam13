@@ -5,6 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.UI;
 using Unity.Profiling;
 
 public class TutorialFlow : MonoBehaviour
@@ -130,6 +131,20 @@ public class TutorialFlow : MonoBehaviour
     [SerializeField] private string qteSuccessMessage = "とっぱ！";
     [SerializeField] private string qteSuccessMessageJa = "ナイス！";
 
+    [Header("Tutorial Slide Overlay (Resources/Tutorial/Child)")]
+    [SerializeField] private float slideMinDisplaySeconds = 0.25f;
+    [Tooltip("シーン上で位置・サイズを調整したImageがあればここに割り当てます（未割り当て時は自動生成）。")]
+    [SerializeField] private Image tutorialSlideOverlay;
+    [Tooltip("スライド下部の次へ案内テキスト（未割り当て時は自動生成）。")]
+    [SerializeField] private TextMeshProUGUI tutorialSlidePromptText;
+    [SerializeField] private Vector2 slideAnchorMin = new Vector2(0.06f, 0.12f);
+    [SerializeField] private Vector2 slideAnchorMax = new Vector2(0.94f, 0.90f);
+    [SerializeField] private Vector2 slideAnchoredPosition = Vector2.zero;
+    [SerializeField] private Vector2 slideSizeDelta = Vector2.zero;
+    [SerializeField] private Vector2 promptAnchorMin = new Vector2(0.1f, -0.11f);
+    [SerializeField] private Vector2 promptAnchorMax = new Vector2(0.9f, -0.01f);
+    [SerializeField] private float promptFontSize = 28f;
+
     private bool tutorialRunning;
     private bool skipRequested;
     private PlayerAnimator playerAnimator;
@@ -158,9 +173,6 @@ public class TutorialFlow : MonoBehaviour
     {
         if (tutorialRunning) return;
 
-        // StartCoroutine は「最初の yield までの区間」を同期実行するため、
-        // このスコープはチュートリアル開始時の同期的な準備部分だけを計測する
-        // （Coroutine全体や yield をまたいだ区間は計測しない）。
         using (s_tutorialStartupMarker.Auto())
         {
             StartCoroutine(TutorialRoutine());
@@ -194,6 +206,10 @@ public class TutorialFlow : MonoBehaviour
 
         // 子機Hostを解決する（指定UDPルート → Running → 初期化済みHost）。
         ResolveHost();
+        if (_host != null)
+        {
+            _host.KeepTutorialInterruptScreen = false;
+        }
 
         if (playerAnimator == null && playerMove != null)
         {
@@ -239,10 +255,43 @@ public class TutorialFlow : MonoBehaviour
             yield return new WaitForSecondsRealtime(initialDelay);
         }
 
-        // 演示フェーズ（skipKey ホールドでスキップ可能。監視はこの区間のみ）
+        // 【独立チュートリアルモード仕様】
+        // EASY / NORMAL / HARD のときはチュートリアルを行わず、カウントダウンから即本編を開始する。
+        if (!GameDifficulty.IncludeTutorial)
+        {
+            skipRequested = true;
+            HideSkipHint();
+            HideTutorialSlide();
+
+            yield return RunCountdown();
+
+            using (s_mainPlayStartPrepMarker.Auto())
+            {
+                ClearActiveItems();
+
+                playerMove.SetInputEnabled(true);
+                playerMove.SetAutoDrive(false);
+                playerMove.SetAutoTargetX(null);
+
+                itemSpawner.SpawnEnabled = true;
+                itemSpawner.RestartSchedule();
+
+                if (gameManager != null)
+                {
+                    gameManager.SetTutorialMode(false);
+                    gameManager.ResetScoreAndFever();
+                    gameManager.MarkMainPlayStarted();
+                }
+            }
+
+            HideInteractiveHint();
+            tutorialRunning = false;
+            yield break;
+        }
+
+        // ── TUTORIAL モード専用フロー ──
         skipRequested = false;
 
-        // スキップ案内を表示
         if (skipHintText != null)
         {
             skipHintText.text = Msg(skipHintMessage, skipHintMessageJa);
@@ -251,9 +300,23 @@ public class TutorialFlow : MonoBehaviour
 
         Coroutine skipWatch = enableHoldToSkip ? StartCoroutine(WatchForSkipRoutine()) : null;
 
+        // 1) 良いアイテム説明スライド（ボタン入力で次へ）→ 良いアイテム回収
+        yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_gooditems");
+        HideTutorialSlide();
         yield return RunAutoCollect();
+        ClearActiveItems();
+
+        // 2) 悪いアイテム＆障害物アイテム説明スライド（2枚連続・それぞれボタン入力で次へ）→ 悪い・障害物アイテム回避
+        yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_baditems");
+        yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_obstacle_lane");
+        HideTutorialSlide();
         yield return RunAutoAvoid();
         ClearActiveItems();
+
+        // 3) 鷹（ボス・QTE）説明スライド（2枚連続・それぞれボタン入力で次へ）→ 鷹が出てきて倒す
+        yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_QTE1");
+        yield return ShowTutorialSlideStep("Tutorial/Child/tutorial_QTE2");
+        HideTutorialSlide();
         yield return RunQteStep();
 
         if (!skipRequested && afterQteDelay > 0f)
@@ -271,35 +334,235 @@ public class TutorialFlow : MonoBehaviour
             HandleSkipCleanup();
         }
 
-        // カウントダウン開始時にスキップ案内を非表示
+        // 4) 鷹撃破後：スコアを0にリセットし、子機を中断画面にして親機チュートリアルへ移行する
         HideSkipHint();
+        HideTutorialSlide();
+        HideInteractiveHint();
+        ClearActiveItems();
 
-        // スキップ時もカウントダウンは実行する。
-        // 親機への LOADING_COMPLETE 送信（NotifyParentStartShown）とゲームBGM開始が
-        // RunCountdown 内にあり、飛ばすと親機が遷移できなくなるため。
-        yield return RunCountdown();
+        playerMove.SetInputEnabled(false);
+        playerMove.SetAutoDrive(false);
+        playerMove.SetAutoTargetX(null);
+        itemSpawner.SpawnEnabled = false;
 
-        using (s_mainPlayStartPrepMarker.Auto())
+        if (gameManager != null)
         {
-            playerMove.SetInputEnabled(true);
-            playerMove.SetAutoDrive(false);
-            playerMove.SetAutoTargetX(null);
-
-            itemSpawner.SpawnEnabled = true;
-            itemSpawner.RestartSchedule();
-
-            if (disableGameManagerDuringTutorial && gameManager != null)
-            {
-                gameManager.SetTutorialMode(false);
-                gameManager.ResetScoreAndFever();
-            }
-
-            // 本編開始を記録する（子機の本編音を親機へ通知する側の判定条件）。
-            if (gameManager != null) gameManager.MarkMainPlayStarted();
+            gameManager.ResetScoreAndFever();
+            gameManager.score = 0;
         }
 
-        HideInteractiveHint();
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host != null)
+        {
+            host.KeepTutorialInterruptScreen = true;
+            if (host.Notifications != null)
+            {
+                host.Notifications.SetSleepLocked(true);
+            }
+        }
+
+        // 親機へ LOADING_COMPLETE を送信し、親機を ParentLoading → ParentGameScene（親機チュートリアル）へ遷移させる
+        NotifyParentStartShown();
+
+        bool isSolo = host == null || host.IsSoloPlayActive || host.Link == null || !host.Link.IsConnected;
+        if (isSolo)
+        {
+            // 子機ソロスタート時は親機が接続されていないため、中断画面を確認後にボタン押下でスコア0のゲームクリア画面へ遷移する
+            ShowInteractiveHint(Msg(
+                "Child Tutorial Complete! Press A / Space / Enter to finish Tutorial (Score 0)",
+                "子機チュートリアル完了！（中断画面） ボタンを押すとゲームクリア画面へ進みます"));
+            yield return WaitForSlideAdvanceInput();
+            HideInteractiveHint();
+
+            if (host != null)
+            {
+                host.KeepTutorialInterruptScreen = false;
+                host.Notifications?.SetSleepLocked(false);
+            }
+
+            if (gameManager != null)
+            {
+                gameManager.ResetScoreAndFever();
+                gameManager.score = 0;
+                gameManager.TriggerResult(GameManager.ResultType.TimeUp);
+            }
+        }
+
         tutorialRunning = false;
+    }
+
+    [ContextMenu("子機チュートリアルUIをシーン上に生成（Unity内で配置・サイズ調整用）")]
+    public Image EnsureTutorialSlideOverlay()
+    {
+        if (tutorialSlideOverlay != null)
+        {
+            if (tutorialSlidePromptText == null)
+                tutorialSlidePromptText = tutorialSlideOverlay.GetComponentInChildren<TextMeshProUGUI>(true);
+            return tutorialSlideOverlay;
+        }
+
+        Canvas canvas = null;
+        if (countdownText != null) canvas = countdownText.GetComponentInParent<Canvas>();
+        if (canvas == null && interactiveHintText != null) canvas = interactiveHintText.GetComponentInParent<Canvas>();
+        if (canvas == null) canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null) return null;
+
+        Transform existing = canvas.transform.Find("ChildTutorialSlideOverlay");
+        if (existing != null)
+        {
+            tutorialSlideOverlay = existing.GetComponent<Image>();
+            Transform promptTr = existing.Find("SlidePromptText");
+            if (promptTr != null) tutorialSlidePromptText = promptTr.GetComponent<TextMeshProUGUI>();
+            return tutorialSlideOverlay;
+        }
+
+        GameObject slideObj = new GameObject("ChildTutorialSlideOverlay", typeof(RectTransform), typeof(Image));
+        slideObj.transform.SetParent(canvas.transform, false);
+        if (skipHintText != null && skipHintText.transform.parent == canvas.transform)
+        {
+            slideObj.transform.SetSiblingIndex(Mathf.Max(0, skipHintText.transform.GetSiblingIndex()));
+        }
+
+        RectTransform rt = slideObj.GetComponent<RectTransform>();
+        rt.anchorMin = slideAnchorMin;
+        rt.anchorMax = slideAnchorMax;
+        rt.anchoredPosition = slideAnchoredPosition;
+        rt.sizeDelta = slideSizeDelta;
+
+        tutorialSlideOverlay = slideObj.GetComponent<Image>();
+        tutorialSlideOverlay.preserveAspect = true;
+        tutorialSlideOverlay.raycastTarget = true;
+
+        GameObject promptObj = new GameObject("SlidePromptText", typeof(RectTransform), typeof(TextMeshProUGUI));
+        promptObj.transform.SetParent(slideObj.transform, false);
+        RectTransform promptRt = promptObj.GetComponent<RectTransform>();
+        promptRt.anchorMin = promptAnchorMin;
+        promptRt.anchorMax = promptAnchorMax;
+        promptRt.offsetMin = Vector2.zero;
+        promptRt.offsetMax = Vector2.zero;
+
+        tutorialSlidePromptText = promptObj.GetComponent<TextMeshProUGUI>();
+        if (interactiveHintText != null && interactiveHintText.font != null)
+        {
+            tutorialSlidePromptText.font = interactiveHintText.font;
+        }
+        else if (countdownText != null && countdownText.font != null)
+        {
+            tutorialSlidePromptText.font = countdownText.font;
+        }
+        tutorialSlidePromptText.fontSize = promptFontSize;
+        tutorialSlidePromptText.alignment = TextAlignmentOptions.Center;
+        tutorialSlidePromptText.color = new Color(1f, 0.96f, 0.72f, 1f);
+        tutorialSlidePromptText.enableWordWrapping = false;
+        tutorialSlidePromptText.raycastTarget = false;
+
+        slideObj.SetActive(false);
+        return tutorialSlideOverlay;
+    }
+
+    private IEnumerator ShowTutorialSlideStep(string resourcePath)
+    {
+        if (skipRequested) yield break;
+
+        Sprite sp = Resources.Load<Sprite>(resourcePath);
+        if (sp == null) yield break;
+
+        Image overlay = EnsureTutorialSlideOverlay();
+        if (overlay == null) yield break;
+
+        overlay.sprite = sp;
+        if (tutorialSlidePromptText != null)
+        {
+            tutorialSlidePromptText.text = Msg(
+                "Press A / Enter / Space / Click to continue",
+                "Aボタン / Enter / Space / クリック で次へ");
+        }
+        overlay.gameObject.SetActive(true);
+
+        yield return WaitForSlideAdvanceInput();
+    }
+
+    private IEnumerator WaitForSlideAdvanceInput()
+    {
+        float minWait = Mathf.Max(0.15f, slideMinDisplaySeconds);
+        float elapsed = 0f;
+        while (!skipRequested && elapsed < minWait)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        // 前フレームからの押しっぱなしが解除されるのを一度待つ
+        while (!skipRequested && IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: true))
+        {
+            yield return null;
+        }
+
+        while (!skipRequested)
+        {
+            if (IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: false))
+            {
+                yield break;
+            }
+            yield return null;
+        }
+    }
+
+    private static bool IsSlideAdvancePressedThisFrameOrHeld(bool checkHeldOnly)
+    {
+        Keyboard kb = Keyboard.current;
+        if (kb != null)
+        {
+            if (checkHeldOnly)
+            {
+                if (kb.spaceKey.isPressed || kb.enterKey.isPressed || kb.numpadEnterKey.isPressed || kb.zKey.isPressed)
+                    return true;
+            }
+            else
+            {
+                if (kb.spaceKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame ||
+                    kb.numpadEnterKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame)
+                    return true;
+            }
+        }
+
+        foreach (Gamepad pad in Gamepad.all)
+        {
+            if (pad == null) continue;
+            if (checkHeldOnly)
+            {
+                if (pad.buttonSouth.isPressed || pad.buttonEast.isPressed || pad.startButton.isPressed)
+                    return true;
+            }
+            else
+            {
+                if (pad.buttonSouth.wasPressedThisFrame || pad.buttonEast.wasPressedThisFrame || pad.startButton.wasPressedThisFrame)
+                    return true;
+            }
+        }
+
+        Mouse mouse = Mouse.current;
+        if (mouse != null)
+        {
+            if (checkHeldOnly)
+            {
+                if (mouse.leftButton.isPressed) return true;
+            }
+            else
+            {
+                if (mouse.leftButton.wasPressedThisFrame) return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void HideTutorialSlide()
+    {
+        if (tutorialSlideOverlay != null && tutorialSlideOverlay.gameObject.activeSelf)
+        {
+            tutorialSlideOverlay.gameObject.SetActive(false);
+        }
     }
 
     private IEnumerator WatchForSkipRoutine()
@@ -322,9 +585,6 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
-    // キーボードの skipKey、またはゲームパッドの skipGamepadButton が押されているか。
-    // 実機（子機）はコントローラー操作でキーボードが無いことがあるため、両方を見る。
-    // Gamepad.current（最後に操作した1台）ではなく、接続中の全ゲームパッドを見る。
     private bool IsSkipInputHeld()
     {
         Keyboard keyboard = Keyboard.current;
@@ -347,8 +607,6 @@ public class TutorialFlow : MonoBehaviour
         return false;
     }
 
-    // スキップ確定時の後始末。演示用コルーチンは skipRequested チェックで自然終了するため
-    // ここでは外部で走っているものだけを止める。
     private void HandleSkipCleanup()
     {
         if (autoTargetRoutine != null)
@@ -357,7 +615,6 @@ public class TutorialFlow : MonoBehaviour
             autoTargetRoutine = null;
         }
 
-        // 進行中の Huge QTE を成功扱いで終了（Time.timeScale / QTE UI / ダメージロックを復帰）
         if (QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
         {
             QTEManager.RegisterHugeQteSuccess();
@@ -366,6 +623,7 @@ public class TutorialFlow : MonoBehaviour
         ClearActiveItems();
         HideInteractiveHint();
         HideSkipHint();
+        HideTutorialSlide();
         if (playerMove != null)
         {
             playerMove.SetAutoTargetX(null);
@@ -408,7 +666,6 @@ public class TutorialFlow : MonoBehaviour
             yield return WaitForItemToEnterScreen(item, collectTimeout);
             if (skipRequested) yield break;
 
-            // --- プレイヤーが取る番 ---
             playerMove.SetAutoTargetX(null);
             playerMove.SetAutoDrive(false);
             playerMove.SetInputEnabled(true);
@@ -426,7 +683,6 @@ public class TutorialFlow : MonoBehaviour
 
             collected = !skipRequested && (item == null || !item.activeInHierarchy);
 
-            // 自動運転へ戻す
             playerMove.SetInputEnabled(false);
             playerMove.SetAutoDrive(true);
 
@@ -445,7 +701,6 @@ public class TutorialFlow : MonoBehaviour
                 ClearActiveItems();
                 if (attempt + 1 < attempts)
                 {
-                    // 取り逃しメッセージを出したまま、次が来るまで一拍おく
                     ShowInteractiveHint(Msg(collectRetryMessage, collectRetryMessageJa));
                     if (retryDelaySeconds > 0f)
                     {
@@ -459,7 +714,6 @@ public class TutorialFlow : MonoBehaviour
             }
         }
 
-        // 実操作で取れなかった / interactiveCollect=false → 従来の自動お手本
         if (!collected && !skipRequested)
         {
             GameObject item = null;
@@ -478,10 +732,6 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 現在の言語の文言を返す。元の文言（英語。Inspectorで編集）に対して、日本語は「…Ja」。
-    /// 元の文言が空なら、日本語でも出さない（空＝非表示の指定を言語で変えない）。
-    /// </summary>
     private static string Msg(string english, string japanese)
     {
         if (string.IsNullOrEmpty(english)) return english;
@@ -515,7 +765,6 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
-    // アイテムがプレイヤーの左（＝もう取れない位置）まで流れたか
     private bool IsItemPastPlayer(GameObject item)
     {
         if (item == null || playerMove == null) return false;
@@ -557,13 +806,11 @@ public class TutorialFlow : MonoBehaviour
             yield return WaitForItemToEnterScreen(obstacle, avoidTimeout);
             if (skipRequested) yield break;
 
-            // 直前のダメージ演出が残っていたら終わるまで待つ（誤検知防止）
             while (!skipRequested && playerAnimator != null && playerAnimator.IsDamaging)
             {
                 yield return null;
             }
 
-            // --- プレイヤーがよける番 ---
             playerMove.SetAutoTargetX(null);
             playerMove.SetAutoDrive(false);
             playerMove.SetInputEnabled(true);
@@ -585,7 +832,6 @@ public class TutorialFlow : MonoBehaviour
                            || (playerAnimator != null && playerAnimator.IsDamaging));
             dodged = !skipRequested && !hit && obstacle != null && IsItemPastPlayer(obstacle);
 
-            // 自動運転へ戻す
             playerMove.SetInputEnabled(false);
             playerMove.SetAutoDrive(true);
 
@@ -604,7 +850,6 @@ public class TutorialFlow : MonoBehaviour
                 ClearActiveItems();
                 if (attempt + 1 < attempts)
                 {
-                    // 「ぶつかった」メッセージを出したまま、次が来るまで一拍おく
                     ShowInteractiveHint(Msg(avoidRetryMessage, avoidRetryMessageJa));
                     if (retryDelaySeconds > 0f)
                     {
@@ -618,7 +863,6 @@ public class TutorialFlow : MonoBehaviour
             }
         }
 
-        // 実操作でよけ切れなかった / interactiveAvoid=false → 従来の自動お手本
         if (!dodged && !skipRequested)
         {
             GameObject obstacle = null;
@@ -647,7 +891,6 @@ public class TutorialFlow : MonoBehaviour
         };
         QTEManager.HugeQteFinished += handler;
 
-        // skipRequested で自然にループを抜けるので、-= handler は必ず実行され購読は残らない。
         while (!qteDone && !skipRequested)
         {
             ClearActiveItems();
@@ -713,7 +956,6 @@ public class TutorialFlow : MonoBehaviour
         HideInteractiveHint();
     }
 
-    // QTE が始まった瞬間に一度だけガイド文を切り替える（qteActiveMessage が空なら隠す）。戻り値＝切替済みか
     private bool SwapQteHintIfActive(bool alreadySwapped)
     {
         if (alreadySwapped || !explainQte || skipRequested) return alreadySwapped;
@@ -763,19 +1005,16 @@ public class TutorialFlow : MonoBehaviour
                 }
                 startSignalRoutine = StartCoroutine(EnsureStartSignalAfterSeconds(startTweenSeconds));
 
-                // ここでStartの表示時間分待機している間に、親機側はParentLoadingを抜けてシーン遷移を開始します
                 yield return new WaitForSecondsRealtime(goDisplaySeconds);
                 startText.gameObject.SetActive(false);
                 yield break;
             }
 
-            // startTextがNullだった場合の安全策
             NotifyParentStartShown();
             yield return new WaitForSecondsRealtime(goDisplaySeconds);
             yield break;
         }
 
-        // countdownText自体がセットされていない場合の安全策
         NotifyParentStartShown();
         float total = start * Mathf.Max(0f, countdownStepSeconds) + Mathf.Max(0f, goDisplaySeconds);
         if (total > 0f)
@@ -784,11 +1023,6 @@ public class TutorialFlow : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 子機Hostを解決する：指定UDPルート（保存参照）→ 稼働個体（Running）→ 初期化済みHost。
-    ///  ・ルートが未割当・破棄済みの場合は既存の生存個体取得へ進む。
-    ///  ・未初期化Hostは使わない（既存の再試行条件を維持する）。
-    /// </summary>
     private ChildUdpRuntimeHost ResolveHost()
     {
         if (_host != null) return _host;
@@ -807,6 +1041,12 @@ public class TutorialFlow : MonoBehaviour
         return _host;
     }
 
+    private static string BuildLoadingCompleteMessage(ChildUdpRuntimeHost host)
+    {
+        string playId = host != null && host.Session != null ? host.Session.PlaySessionId : "";
+        return string.IsNullOrEmpty(playId) ? "LOADING_COMPLETE" : $"LOADING_COMPLETE:{playId}";
+    }
+
     private void NotifyParentStartShown()
     {
         if (startSignalSent) return;
@@ -816,9 +1056,10 @@ public class TutorialFlow : MonoBehaviour
 
         if (host != null)
         {
-            Debug.Log($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown — LOADING_COMPLETE 送信 (startSignalSent={startSignalSent}, hostId={host.GetInstanceID()}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
-            host.SendState("LOADING_COMPLETE");
-            Debug.Log("[TutorialFlow] Start shown — sent LOADING_COMPLETE to parent.");
+            string message = BuildLoadingCompleteMessage(host);
+            Debug.Log($"[StartTrace][子機] TutorialFlow.NotifyParentStartShown — {message} 送信 (startSignalSent={startSignalSent}, hostId={host.GetInstanceID()}, scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}')", this);
+            host.SendState(message);
+            Debug.Log($"[TutorialFlow] Start shown — sent {message} to parent.");
             if (loadingCompleteRoutine != null)
             {
                 StopCoroutine(loadingCompleteRoutine);
@@ -843,7 +1084,7 @@ public class TutorialFlow : MonoBehaviour
             ChildUdpRuntimeHost host = ResolveHost();
             if (host != null)
             {
-                host.SendState("LOADING_COMPLETE");
+                host.SendState(BuildLoadingCompleteMessage(host));
             }
         }
     }

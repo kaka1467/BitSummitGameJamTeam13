@@ -234,6 +234,7 @@ public class MotherChoreController : MonoBehaviour
     private bool _choreEndRequested;             // Chore_End への遷移要求を発行済みか（二重要求防止）
     private bool _choreRouteFailed;              // 片付けの再生失敗（呼び出し元へ伝えて経路を中断させる）
     private bool _choreStartIsManual;            // このサイクルが6キーの手動開始か（照明予兆の高疑惑判定に使う）
+    private bool _forcedLookRequested;           // サイレン（LOUD_ITEM）による強制振り向き要求（M-F02 / M-Q03）
 
     // ──────────────────────────────────────────────────────────────────────────
     //  Unity ライフサイクル
@@ -443,6 +444,21 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
+    /// サイレン（LOUD_ITEM）取得時に、片付け演出中の強制振り向き（Chore_Peek）を要求する（M-F02 / M-Q03）。
+    /// </summary>
+    public void RequestForcedLookFromLoudItem()
+    {
+        if (!IsChoreActive) return;
+
+        _forcedLookRequested = true;
+        if (approachController != null)
+            approachController.ForceChoreReturnLookBack();
+
+        if (showDebugLogs)
+            Debug.Log($"[MotherChore] LOUD_ITEM による強制振り向きを要求しました (phase={CurrentPhase})");
+    }
+
+    /// <summary>
     /// 片付けを強制中断する（ゲームオーバー・シーン遷移・リセット用）。
     /// 既存のゲームオーバー処理には何も介入しない（片付けの状態だけを戻す）。
     /// </summary>
@@ -475,6 +491,7 @@ public class MotherChoreController : MonoBehaviour
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
         _choreEndRequested = false;
+        _forcedLookRequested = false;
         // 未消費の終了要求・Trigger を Animator に残さない（再プレイ・中断で持ち越さない）。
         ResolveAnimationPlayer()?.ResetChoreParameters();
         _choreRouteFailed = false;
@@ -534,6 +551,7 @@ public class MotherChoreController : MonoBehaviour
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
         _choreEndRequested = false;
+        _forcedLookRequested = false;
         // 未消費の終了要求・Trigger を Animator に残さない（再プレイ・中断で持ち越さない）。
         ResolveAnimationPlayer()?.ResetChoreParameters();
         _choreRouteFailed = false;
@@ -728,6 +746,7 @@ public class MotherChoreController : MonoBehaviour
         WasActiveOnLastAbort = false;
         _gazeInProgress = false;
         _completedLookCount = 0;
+        _forcedLookRequested = false;
         SetDetection(false);
         ApplyChoreLocks();
 
@@ -891,6 +910,30 @@ public class MotherChoreController : MonoBehaviour
             float stayElapsed = 0f;
             while (IsChoreActive && stayElapsed < stayDuration)
             {
+                if (_forcedLookRequested && !_gazeInProgress)
+                {
+                    _forcedLookRequested = false;
+                    if (showDebugLogs)
+                        Debug.Log("[MotherChore] LOUD_ITEM による強制振り向き（Chore_Peek）を即時実行します");
+
+                    bool forcedLookOk = false;
+                    yield return ChoreLookOnce(ok => forcedLookOk = ok);
+                    if (!IsChoreActive) break;
+
+                    bool resumedAfterForced = false;
+                    yield return WaitForChoreLoopResume(choreLoopResumeTimeoutSeconds, ok => resumedAfterForced = ok);
+                    if (!IsChoreActive) break;
+
+                    float postForcedWait = 0f;
+                    while (IsChoreActive && postForcedWait < minChoreSegmentSeconds)
+                    {
+                        postForcedWait += Time.deltaTime;
+                        stayElapsed += Time.deltaTime;
+                        yield return null;
+                    }
+                    continue;
+                }
+
                 stayElapsed += Time.deltaTime;   // scaled（timeScale=0 で止まる既存方針を維持）
                 yield return null;
             }
@@ -921,15 +964,17 @@ public class MotherChoreController : MonoBehaviour
         float phaseStart = Time.time;
 
         // ── フェーズ1：滞在時間内に分散して視線を再生する ──────────────────
-        while (IsChoreActive && _completedLookCount < _targetLookCount)
+        while (IsChoreActive && (_completedLookCount < _targetLookCount || _forcedLookRequested))
         {
-            // 短い片付け区間（Chore へ戻って待つ）。滞在時間の満了で打ち切る。
+            // 短い片付け区間（Chore へ戻って待つ）。滞在時間の満了または強制振り向き要求で打ち切る。
             float segmentEnd = Time.time + segment;
-            while (IsChoreActive && Time.time < segmentEnd && (Time.time - phaseStart) < stayDuration)
+            while (IsChoreActive && !_forcedLookRequested && Time.time < segmentEnd && (Time.time - phaseStart) < stayDuration)
                 yield return null;
 
+            bool isForcedLook = _forcedLookRequested;
+            _forcedLookRequested = false;
             if (!IsChoreActive) break;                              // 中断は回数保証より優先
-            if ((Time.time - phaseStart) >= stayDuration) break;    // 時間満了 → フェーズ2へ
+            if (!isForcedLook && (Time.time - phaseStart) >= stayDuration) break;    // 時間満了 → フェーズ2へ
 
             bool lookOk = false;
             yield return ChoreLookOnce(ok => lookOk = ok);
@@ -1209,6 +1254,7 @@ public class MotherChoreController : MonoBehaviour
         _choreArrived = false;
         _choreApproachSuspicionStarted = false;
         _choreEndRequested = false;
+        _forcedLookRequested = false;
         // 未消費の終了要求・Trigger を Animator に残さない（再プレイ・中断で持ち越さない）。
         ResolveAnimationPlayer()?.ResetChoreParameters();
         _choreRouteFailed = false;

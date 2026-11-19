@@ -134,7 +134,7 @@ public class QTEManager : MonoBehaviour
     {
         if (!isQteActive) return;
 
-        // 寝たふり中は子機全体が止まっている。QTEの制限時間（実時間）も進めない。
+        // 寝たふり中は子機全体が止まっている。QTEの制限時間（実時間）も進めない（M-Q02）。
         if (ChildGamePause.IsPaused) return;
 
         UpdateRewardAnimation();
@@ -165,11 +165,8 @@ public class QTEManager : MonoBehaviour
             return false;
         }
 
-        // ミス回数は「新しいQTEを正常に開始できたときだけ」0に戻す（開始を拒否した場合は実行中QTEの値を変えない）。
-        // 再出題（RegenerateSequence）では戻さない＝同じQTE内のミスを数え続ける。
         missCount = 0;
 
-        // 報酬の可否は開始時に確定する。GameManager が無い場合は本プレイと判断せず、チュートリアル中も対象外。
         GameManager gameManager = GameManager.instance;
         successRewardPending = gameManager != null && !gameManager.IsTutorialMode;
 
@@ -177,7 +174,6 @@ public class QTEManager : MonoBehaviour
         onFinished = finishedCallback;
         isQteActive = true;
 
-        // QTE中でもダメージ後はRunへ戻す
         ResolvePlayerAnimator();
         if (playerAnimator != null) playerAnimator.SetDamageLock(false);
 
@@ -192,7 +188,7 @@ public class QTEManager : MonoBehaviour
 
     private void HandleQteInput()
     {
-        if (PlayerInputLock.IsLocked)
+        if (PlayerInputLock.IsLocked || ChildGamePause.IsPaused)
         {
             return;
         }
@@ -207,7 +203,6 @@ public class QTEManager : MonoBehaviour
             currentIndex++;
             if (currentIndex >= currentSequence.Length)
             {
-                // 本プレイの入力完了（強制成功・ブースト回避・チュートリアル・中断とは区別する）
                 FinishQte(QteOutcome.Success, true);
             }
             return;
@@ -219,12 +214,9 @@ public class QTEManager : MonoBehaviour
 
     private void HandleQteMiss()
     {
-        // 誤入力とタイムアウトの共通処理。ミス回数はここだけで数える（同じミスを二重に数えない）。
-        // ミス時にスコアは直接減らさない（ダメージ演出のみ。減額は成功報酬の計算でのみ行う）。
         int rewardBefore = GetCurrentReward();
         missCount++;
 
-        // 報酬が減った分を画面に出す（既に下限なら減らないので出さない）。
         int rewardAfter = GetCurrentReward();
         if (successRewardPending && rewardAfter < rewardBefore)
             ShowRewardDecrease(rewardBefore - rewardAfter);
@@ -239,10 +231,13 @@ public class QTEManager : MonoBehaviour
 
     private void RegenerateSequence()
     {
-        // 文字数は配置したスロットの数に合わせる
-        currentSequence = GenerateSequence(slots.Length);
+        // 【D-F03 / D-R05】難易度に応じたスロット数（EASY=4, NORMAL=6, HARD=7）と制限時間（EASY=6.0s, NORMAL=5.0s, HARD=4.2s）を適用
+        int targetCount = Mathf.Clamp(GameDifficulty.ChildQteSlotCount, 1, slots.Length);
+        currentSequence = GenerateSequence(targetCount);
         currentIndex = 0;
-        remainingTime = timeLimitSeconds;
+        remainingTime = GameDifficulty.ChildQteTimeLimitSeconds > 0f
+            ? GameDifficulty.ChildQteTimeLimitSeconds
+            : timeLimitSeconds;
         UpdateQteText();
     }
 
@@ -284,7 +279,6 @@ public class QTEManager : MonoBehaviour
         var kb = Keyboard.current;
         var gp = Gamepad.current;
 
-        // キーボード入力
         if (kb != null)
         {
             if (kb.aKey.wasPressedThisFrame) return 'A';
@@ -293,10 +287,8 @@ public class QTEManager : MonoBehaviour
             if (kb.yKey.wasPressedThisFrame) return 'Y';
         }
 
-        // ゲームパッド入力
         if (gp != null)
         {
-            // buttonSouth=A, buttonEast=B, buttonWest=X, buttonNorth=Y (一般的な配置)
             if (gp.buttonSouth.wasPressedThisFrame) return 'A';
             if (gp.buttonEast.wasPressedThisFrame) return 'B';
             if (gp.buttonWest.wasPressedThisFrame) return 'X';
@@ -319,12 +311,10 @@ public class QTEManager : MonoBehaviour
         return builder.ToString();
     }
 
-    // 外部（アイテムなど）から「Huge QTE を成功扱いで終了した」と登録するためのAPI
     public static void RegisterHugeQteSuccess()
     {
         if (Instance != null && Instance.isQteActive)
         {
-            // 強制成功（ブースト回避・チュートリアルのスキップ）は入力完了ではないため報酬対象にしない。
             Instance.FinishQte(QteOutcome.Success, false);
         }
         else
@@ -333,11 +323,6 @@ public class QTEManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// QTEを終了する（成功／失敗）。中断は CancelQteForResult を使う（ここからは呼ばない）。
-    /// 何度呼んでも1回だけ実行される（2回目以降は何もしない）。
-    /// 報酬は「本プレイの入力完了」による成功時だけ、GameManager.AddScore 経由で1回だけ付与する。
-    /// </summary>
     private void FinishQte(QteOutcome outcome, bool fromPlayerInput)
     {
         if (!isQteActive) return;
@@ -346,50 +331,33 @@ public class QTEManager : MonoBehaviour
         Time.timeScale = 1f;
         SetQteVisible(false);
 
-        // 報酬の可否と値は、終了コールバック（Item側のプール返却・ロック解除）が状態を書き換える前に確定する。
-        // 報酬可能状態はここで消費する（二重終了ガードと合わせて、QTE1回につき1回だけ付与する）。
         int rewardScore = ConsumeSuccessReward(outcome, fromPlayerInput);
 
-        // 入力でクリアしたときだけSEを鳴らす（強制成功・ブースト回避・中断では鳴らさない）。
         if (outcome == QteOutcome.Success && fromPlayerInput) PlayClearSe();
 
         SetPlayerAnimatorUnscaled(false);
 
-        // QTE終了時にダメージポーズのロックを解除する
         if (playerAnimator != null) playerAnimator.SetDamageLock(false);
 
-        // コールバック参照を先に取り出してから消す（再入・二重終了で重複実行しない）。
         Action<QteOutcome> callback = onFinished;
         onFinished = null;
 
-        // 報酬は GameManager.AddScore の共通処理（フィーバー中の2倍・捕獲後の得点固定・結果確定後のガード）を
-        // 通して付与する。QTEManager 側ではフィーバー倍率を掛けない。
         GrantSuccessReward(rewardScore);
 
         callback?.Invoke(outcome);
         HugeQteFinished?.Invoke(outcome == QteOutcome.Success);
     }
 
-    /// <summary>
-    /// 成功報酬の点を確定し、「報酬可能」状態を消費する（1回だけ）。
-    ///  ・本プレイの入力完了（fromPlayerInput）以外は0（強制成功・ブースト回避・チュートリアル・Cancelled・Failure）。
-    ///  ・一発成功で successBaseScore 点。ミス1回（誤入力またはタイムアウト）ごとに successMissPenalty 点を減らし、
-    ///    successMinScore 点を下回らない（5,000 → 4,000 → … → 1,000 が下限）。
-    /// </summary>
     private int ConsumeSuccessReward(QteOutcome outcome, bool fromPlayerInput)
     {
         bool eligible = successRewardPending;
-        successRewardPending = false;   // 付与より先に消費する（再入・二重付与を防ぐ）
+        successRewardPending = false;
 
         if (!eligible || !fromPlayerInput || outcome != QteOutcome.Success) return 0;
 
         return GetCurrentReward();
     }
 
-    /// <summary>
-    /// 報酬を加点する（付与はこの1か所だけ）。0以下なら何もしない（得点変化なし）。
-    /// フィーバー中の2倍・捕獲後の得点固定・結果確定後のガードは GameManager.AddScore の共通処理に任せる。
-    /// </summary>
     private static void GrantSuccessReward(int amount)
     {
         if (amount <= 0) return;
@@ -400,44 +368,27 @@ public class QTEManager : MonoBehaviour
         gameManager.AddScore(amount);
     }
 
-    /// <summary>
-    /// 結果確定（捕獲など）のためにQTEを中断する。成功・失敗としては扱わない。
-    ///  ・追加ダメージは与えない（Item 側が QteOutcome.Cancelled で抑止する）。
-    ///  ・HugeQteFinished は発火しない（次回巨大障害物の予約・チュートリアルの完了判定を起こさない）。
-    ///  ・コールバックは「アイテムのプール返却と IsQteLocked 解除」のためだけに1回呼ぶ。
-    ///  ・Time.timeScale はここでは変更しない（時間停止の所有権は呼び出し側の結果処理・捕獲待ちにある）。
-    ///  ・何度呼んでも安全（1回目だけ true を返し、2回目以降は何もしない）。
-    /// </summary>
     public bool CancelQteForResult()
     {
         if (!isQteActive) return false;
 
         isQteActive = false;
-
-        // 中断（捕獲など）では報酬を出さない。報酬可能状態もここで消費する。
         successRewardPending = false;
 
-        // コールバック参照を先に取り出し、元の参照を消す（再入・二重呼び出しで重複実行しない）。
         Action<QteOutcome> callback = onFinished;
         onFinished = null;
 
         SetQteVisible(false);
         SetPlayerAnimatorUnscaled(false);
 
-        // QTE由来のダメージポーズのロックを解除する。
         if (playerAnimator != null) playerAnimator.SetDamageLock(false);
 
-        // 中断を通知する（Item 側は Cancelled で効果を適用せず、プール返却と
-        // ItemEffect.IsQteLocked の解除だけを行う）。
         callback?.Invoke(QteOutcome.Cancelled);
         return true;
     }
 
     private void OnDestroy()
     {
-        // 破棄時にQTEが残っていれば、QTE由来の時間停止だけを解除する。
-        //  ・結果確定による停止中は isQteActive が false のため触れない（結果処理の停止状態を上書きしない）。
-        //  ・破棄時はアイテム／プールも同時に破棄されるため、コールバック（プール返却）は呼ばない。
         if (isQteActive)
         {
             isQteActive = false;
@@ -479,13 +430,11 @@ public class QTEManager : MonoBehaviour
             AudioManager.Instance.PlaySE(clearSe, clearSeVolume);
     }
 
-    /// <summary>今クリアした場合の報酬（点）。一発成功で最大、ミス1回ごとに減り、下限を下回らない。</summary>
     private int GetCurrentReward()
     {
         return Mathf.Max(successMinScore, successBaseScore - (missCount * successMissPenalty));
     }
 
-    /// <summary>報酬表示用のTMPを（初回だけ）用意する。割り当て済みならそれを使い、無ければ timerText と同じ見た目で作る。</summary>
     private void EnsureRewardUi()
     {
         if (rewardText == null && timerText != null)
@@ -534,7 +483,6 @@ public class QTEManager : MonoBehaviour
         return text;
     }
 
-    /// <summary>ミスで報酬が減ったことを示す（報酬テキストを減少色で光らせ、「-1000」を下へ流す）。</summary>
     private void ShowRewardDecrease(int amount)
     {
         EnsureRewardUi();
@@ -551,7 +499,6 @@ public class QTEManager : MonoBehaviour
         rewardDecreaseText.gameObject.SetActive(true);
     }
 
-    /// <summary>減少表示の動き（実時間。QTE中は timeScale=0 なので unscaled で進める）。</summary>
     private void UpdateRewardAnimation()
     {
         if (rewardText != null)
@@ -591,7 +538,6 @@ public class QTEManager : MonoBehaviour
         if (!isQteActive) return;
         if (string.IsNullOrEmpty(currentSequence)) return;
 
-        // 獲得予定の報酬（本プレイのQTEだけ。チュートリアルなど報酬の無いQTEでは出さない）
         if (rewardText != null)
         {
             rewardText.gameObject.SetActive(successRewardPending);
@@ -605,10 +551,17 @@ public class QTEManager : MonoBehaviour
             if (showTimer) timerText.text = $"{Mathf.Max(0f, remainingTime):0.00}s";
         }
 
-        for (int i = 0; i < slots.Length && i < currentSequence.Length; i++)
+        for (int i = 0; i < slots.Length; i++)
         {
             QteSlot slot = slots[i];
             if (slot == null) continue;
+
+            bool withinSequence = i < currentSequence.Length;
+            if (slot.image != null)
+            {
+                slot.image.gameObject.SetActive(withinSequence);
+            }
+            if (!withinSequence) continue;
 
             bool pressed = i < currentIndex;
 
@@ -618,7 +571,6 @@ public class QTEManager : MonoBehaviour
                 slot.label.color = pressed ? enteredColor : remainingColor;
             }
 
-            // 押す前/押した後で画像を切り替える（未設定なら差し替えない）
             Sprite sprite = pressed ? slotPressedSprite : slotNormalSprite;
             if (slot.image != null && sprite != null)
             {
@@ -629,7 +581,6 @@ public class QTEManager : MonoBehaviour
 
     private void SetQteVisible(bool visible)
     {
-        // QTE関連のオブジェクトはまとめる親が無いので、1つずつ表示/非表示を切り替える
         if (qteBack != null) qteBack.SetActive(visible);
         if (qteScoreBack != null) qteScoreBack.SetActive(visible);
         if (titleText != null) titleText.gameObject.SetActive(visible);
@@ -651,15 +602,16 @@ public class QTEManager : MonoBehaviour
             if (rewardText != null) rewardText.gameObject.SetActive(false);
         }
 
-        // 減少表示は、QTEの開始・終了のどちらでも消す（前回の表示を持ち越さない）。
         if (rewardDecreaseText != null) rewardDecreaseText.gameObject.SetActive(false);
 
         if (slots == null) return;
-        foreach (QteSlot slot in slots)
+        for (int i = 0; i < slots.Length; i++)
         {
+            QteSlot slot = slots[i];
             if (slot != null && slot.image != null)
             {
-                slot.image.gameObject.SetActive(visible);
+                bool showSlot = visible && (string.IsNullOrEmpty(currentSequence) || i < currentSequence.Length);
+                slot.image.gameObject.SetActive(showSlot);
             }
         }
     }

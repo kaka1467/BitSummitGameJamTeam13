@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// ゲージの管理：
 ///   疑惑値（0～maxGauge）は警告サイクルをまたいで保持される。
 ///   増加：MotherSuspicionSystemからのAddGauge()呼び出し（大きな音、チェックイベント）。
-///   減少：HandleAutoDecrease() — decreaseIntervalSecondsごとに1段階（本番動作）。
+///   減少：HandleAutoDecrease() — decreaseIntervalSecondsごとに1段階（本番動作、難易度補正込み）。
 ///   I／Oキー入力はエディターデバッグ専用。
 /// </summary>
 public class MotherGauge : MonoBehaviour
@@ -24,8 +24,6 @@ public class MotherGauge : MonoBehaviour
 
     [Header("接近ゲージフレーム（表示）")]
     [Tooltip("接近／疑惑の進行を表示するフレームImageを左から順に設定します。")]
-    // 既存のシーン／プレハブとの互換性のため、シリアライズ済みフィールド名を維持する。
-    // 'suspiciousFrames'は以前は疑惑メーターを意味していたが、現在は接近進行フレームを表す。
     public Image[] suspiciousFrames;
 
     [Header("フレームスプライト")]
@@ -59,30 +57,15 @@ public class MotherGauge : MonoBehaviour
     private float _decreaseTimer;
     private float _baseSePitch = 1f;
 
-    /// <summary>怪しさ管理元（MotherSuspicionSystem）の参照キャッシュ。無敵判定に使う。</summary>
     private MotherSuspicionSystem _suspicionSystem;
 
-    /// <summary>
-    /// 怪しさメーターの色段階。SuspicionVisualFeedbackのUI色（青／紫／赤）と同じ区分。
-    /// </summary>
     public enum SuspicionColorState
     {
-        /// <summary>青：currentGauge 0〜3</summary>
         Blue = 0,
-        /// <summary>紫：currentGauge 4〜6</summary>
         Purple = 1,
-        /// <summary>赤：currentGauge 7〜maxGauge</summary>
         Red = 2,
     }
 
-    /// <summary>
-    /// 現在の怪しさメーター色段階（青／紫／赤）。
-    ///
-    /// SuspicionVisualFeedback.GetColorIndex と同じ境界をここに一元化し、
-    /// 「UIの色を毎フレーム読む」のではなくゲージ値ひとつから判定できるようにする。
-    /// SuspicionVisualFeedback側もこの結果を使っており、UIと目が必ず一致する。
-    /// 境界を変える場合は SuspicionVisualFeedback.GetColorIndex と合わせること。
-    /// </summary>
     public SuspicionColorState CurrentColorState
     {
         get
@@ -93,22 +76,16 @@ public class MotherGauge : MonoBehaviour
         }
     }
 
-    /// <summary>怪しさメーターが紫の状態か。</summary>
     public bool IsPurple => CurrentColorState == SuspicionColorState.Purple;
 
     private void Awake()
     {
-        // インスペクターで設定された元のピッチを基準にする
         if (gaugeStepAudioSource != null)
         {
             _baseSePitch = gaugeStepAudioSource.pitch;
         }
     }
 
-    /// <summary>
-    /// 怪しさ管理元（MotherSuspicionSystem）を解決する。無敵判定に使う。
-    /// 未設定ならシーンから自動検索して結果をキャッシュする。
-    /// </summary>
     private MotherSuspicionSystem ResolveSuspicionSystem()
     {
         if (_suspicionSystem == null)
@@ -129,7 +106,6 @@ public class MotherGauge : MonoBehaviour
 
     private void OnValidate()
     {
-        // インスペクターの変更を即座に反映する
         currentGauge = Mathf.Clamp(currentGauge, 0, maxGauge);
         UpdateGaugeUI();
     }
@@ -147,12 +123,13 @@ public class MotherGauge : MonoBehaviour
             return;
         }
 
-        _decreaseTimer += Time.deltaTime;
+        // 【D-R05】難易度に応じた自然減衰速度倍率（EASY=1.25x, NORMAL=1.0x, HARD=0.5x）を適用
+        _decreaseTimer += Time.deltaTime * Mathf.Max(0.1f, GameDifficulty.ParentSuspicionDecayMultiplier);
 
         if (_decreaseTimer >= decreaseIntervalSeconds)
         {
             _decreaseTimer = 0f;
-            Debug.Log($"[MotherGauge-AutoDecrease] 間隔到達 | ゲージを1減少 | currentGauge BEFORE={currentGauge}");
+            Debug.Log($"[MotherGauge-AutoDecrease] 間隔到達 | ゲージを1減少 | currentGauge BEFORE={currentGauge} (diff={GameDifficulty.DisplayName})");
             AddGauge(-1);
         }
     }
@@ -171,10 +148,6 @@ public class MotherGauge : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// currentGaugeを変更せず、UIフレームを現在値に合わせて更新する。
-    /// 表示だけを同期したい場合はAddGauge(0)ではなくこちらを使う。
-    /// </summary>
     public void RefreshUIOnly()
     {
         currentGauge = Mathf.Clamp(currentGauge, 0, maxGauge);
@@ -182,10 +155,6 @@ public class MotherGauge : MonoBehaviour
         Debug.Log($"[MotherGauge-RefreshUIOnly] UIを更新 | currentGauge={currentGauge}/{maxGauge} | この呼び出しでは値を変更していません");
     }
 
-    /// <summary>
-    /// 疑惑ゲージを指定値に直接設定する。
-    /// 変更が常に記録されるよう、currentGaugeへの直接代入ではなくこちらを使う。
-    /// </summary>
     public void SetGaugeDirect(int newValue)
     {
         int previous = currentGauge;
@@ -194,20 +163,8 @@ public class MotherGauge : MonoBehaviour
         Debug.Log($"[F:{Time.frameCount}][MotherGauge-SetGaugeDirect] 直接設定 | newValue={newValue} | currentGauge BEFORE={previous} | currentGauge AFTER={currentGauge}/{maxGauge}");
     }
 
-    /// <summary>
-    /// 疑惑ゲージを指定した段階数だけ変更する（正数で疑惑が増加）。
-    /// 値は[0, maxGauge]に収められ、表示フレームも直ちに更新される。
-    ///
-    /// 【無敵モード】テスト用無敵（Lキー）がONの間は、正の加算（増加）だけを抑止する。
-    ///   ・加算経路（通常の覗き／片付けの行き／片付けの視線／アイテム・通信由来）は
-    ///     すべてこのメソッドを通るため、ここで一括してガードする。
-    ///   ・負の加算（自動減少）は抑止しない（既存の自然減少を維持）。
-    ///   ・現在値を0へ戻したり、ON前の値へ戻したりはしない。
-    /// </summary>
     public void AddGauge(int amount)
     {
-        // 無敵中は正の加算のみ止める（減少は通す）。
-        //   怪しさ管理元（MotherSuspicionSystem）を参照する。未設定なら自動検索する。
         MotherSuspicionSystem suspicion = ResolveSuspicionSystem();
         if (suspicion != null && suspicion.ShouldBlockPositiveGaugeChange(amount))
         {
@@ -228,7 +185,6 @@ public class MotherGauge : MonoBehaviour
             {
                 if (raisePitchPerStep)
                 {
-                    // 1段階目＝元のピッチ。以降、段階ごとに semitonesPerStep 半音ずつ上げる
                     float semitones = Mathf.Max(0, currentGauge - 1) * semitonesPerStep;
                     gaugeStepAudioSource.pitch = Mathf.Clamp(_baseSePitch * Mathf.Pow(2f, semitones / 12f), 0.1f, 3f);
                 }
@@ -258,7 +214,6 @@ public class MotherGauge : MonoBehaviour
             return;
         }
 
-        // currentGauge（0～maxGauge）をフレーム数に変換する
         float ratio = Mathf.Clamp01((float)currentGauge / maxGauge);
         int filledCount = Mathf.RoundToInt(ratio * suspiciousFrames.Length);
         SetFrames(filledCount);

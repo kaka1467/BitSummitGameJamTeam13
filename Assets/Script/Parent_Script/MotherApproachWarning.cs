@@ -539,7 +539,7 @@ public class MotherApproachWarning : MonoBehaviour
     /// <summary>予兆の段階に対する基準音量（庭は係数を一度だけ適用する）。</summary>
     private float PreviewStageVolume(FootstepStage stage)
     {
-        float baseVolume = VolumeForStage(stage);
+        float baseVolume = VolumeForStage(stage) * GameDifficulty.ParentFootstepVolumeMultiplier;
         return _previewFootstepIsGarden ? baseVolume * gardenFootstepVolumeScale : baseVolume;
     }
 
@@ -2227,6 +2227,11 @@ public class MotherApproachWarning : MonoBehaviour
     // 予告 第1段階：新部屋の Lights_Hallway / Lights_Hallway 2 を点灯する。
     private void TurnOnFirstStageLights()
     {
+        if (GameDifficulty.SuppressCorridorForeshadowLights)
+        {
+            Debug.Log("[MotherApproachWarning] 難易度HARDのため第1段階の廊下照明点灯を省略します（スイッチ音・足音のみ）");
+            return;
+        }
         SetLightActive(hallwayLight1, true);
         SetLightActive(hallwayLight2, true);
     }
@@ -2311,6 +2316,11 @@ public class MotherApproachWarning : MonoBehaviour
     // 第1段階の灯りは消さない（積み上げ演出）。旧部屋の2階灯りがNoneの場合は何もしない。
     private void TurnOnSecondStageLights()
     {
+        if (GameDifficulty.SuppressCorridorForeshadowLights)
+        {
+            Debug.Log("[MotherApproachWarning] 難易度HARDのため第2段階の廊下照明点灯を省略します（スイッチ音・足音のみ）");
+            return;
+        }
         SetLightActive(hallwayLight3, true);
         SetLightActive(frontLight, true);
     }
@@ -2459,7 +2469,7 @@ public class MotherApproachWarning : MonoBehaviour
         // 目標音量（切替条件のみ変更。値・フェード速度は従来どおり）。
         //  ・庭ルート（草）だけ、聞き取りやすさのため係数を掛ける
         //    （音源位置・Spatial Blend・段階差は変更しない。廊下は係数1で従来どおり）。
-        float routeVolumeScale = _isGrassFootstepRoute ? gardenFootstepVolumeScale : 1f;
+        float routeVolumeScale = (_isGrassFootstepRoute ? gardenFootstepVolumeScale : 1f) * GameDifficulty.ParentFootstepVolumeMultiplier;
 
         if (approachController != null)
         {
