@@ -229,27 +229,52 @@ public class ChildTitleConnectionUI : MonoBehaviour
             }
         }
 
+        bool isConnectingOrConnected = state == ChildConnectionLink.LinkState.Connecting ||
+                                       state == ChildConnectionLink.LinkState.Connected;
+
+        // 子機が Connecting または Connected 状態のときは、開いているクレジット／設定パネルも閉じて
+        // START!（接続中は待機表示）と Cancel ボタンの2つだけを表示する。
+        if (isConnectingOrConnected)
+        {
+            if (creditsPanel != null && creditsPanel.activeSelf)
+            {
+                creditsPanel.SetActive(false);
+                GameDifficulty.SendTitleCommandToParent("CLOSE_CREDITS");
+            }
+            if (settingsPanel != null && settingsPanel.activeSelf)
+            {
+                settingsPanel.SetActive(false);
+                GameDifficulty.SendTitleCommandToParent("CLOSE_SETTINGS");
+            }
+        }
+
         if (cancelUiObject != null)
-            cancelUiObject.SetActive(state == ChildConnectionLink.LinkState.Connecting);
+            cancelUiObject.SetActive(isConnectingOrConnected);
         else if (cancelButton != null)
-            cancelButton.gameObject.SetActive(state == ChildConnectionLink.LinkState.Connecting);
+            cancelButton.gameObject.SetActive(isConnectingOrConnected);
 
-        // 【M-F04】接続完了後も子機から設定・クレジットを開閉して親機へ同期できるよう、Connecting中以外は有効にする
-        SetActiveForButton(creditsButton, state != ChildConnectionLink.LinkState.Connecting);
-        SetActiveForButton(settingsButton, state != ChildConnectionLink.LinkState.Connecting);
+        if (cancelButton != null)
+            cancelButton.interactable = isConnectingOrConnected && !_isWaitingForGameStart;
 
-        UpdateSoloStartVisibility();
+        // Connecting / Connected のときは SOLO START, CREDIT, SETTING をすべて非表示にし、
+        // Disconnected に戻ったときだけ元のメニューボタン（CONNECT, SOLO START, CREDIT, SETTING）を再表示する。
+        SetActiveForButton(creditsButton, !isConnectingOrConnected);
+        SetActiveForButton(settingsButton, !isConnectingOrConnected);
+
+        UpdateAnimatedSpritesVisibility();
     }
 
     private void UpdateSoloStartVisibility()
     {
         if (soloStartButton == null) return;
 
-        bool connecting = _lastAppliedState.HasValue && _lastAppliedState.Value == ChildConnectionLink.LinkState.Connecting;
+        bool isConnectingOrConnected = _lastAppliedState.HasValue &&
+                                       (_lastAppliedState.Value == ChildConnectionLink.LinkState.Connecting ||
+                                        _lastAppliedState.Value == ChildConnectionLink.LinkState.Connected);
         bool panelOpen = (creditsPanel != null && creditsPanel.activeSelf) ||
                          (settingsPanel != null && settingsPanel.activeSelf);
 
-        ResolveToggleTarget(soloStartButton).SetActive(!connecting && !panelOpen);
+        ResolveToggleTarget(soloStartButton).SetActive(!isConnectingOrConnected && !panelOpen);
     }
 
     private void ApplyInitialPanelState()
@@ -347,8 +372,10 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     public void OnCancelClicked()
     {
+        _isWaitingForGameStart = false;
         if (!EnsureHost()) return;
         _host.CancelConnect();
+        ApplyConnectionState(_host.ConnectionState, force: true);
     }
 
     public void OnSoloStartClicked()

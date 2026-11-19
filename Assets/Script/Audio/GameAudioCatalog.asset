@@ -17,6 +17,10 @@ MonoBehaviour:
     isBgm: 1
     volumeScale: 1
     clip: {fileID: 8300000, guid: dbc959bb1fce1794aabdbb9da0f0a3aa, type: 3}
+  - id: 2
+    isBgm: 1
+    volumeScale: 1
+    clip: {fileID: 8300000, guid: 23170b4275284e72b97fa5a8fb041df5, type: 3}
   - id: 10
     isBgm: 0
     volumeScale: 1
@@ -45,3 +49,7 @@ MonoBehaviour:
     isBgm: 0
     volumeScale: 1
     clip: {fileID: 8300000, guid: 4f25ea93e168eda4e8ae16fcadebd4ea, type: 3}
+  - id: 17
+    isBgm: 0
+    volumeScale: 1
+    clip: {fileID: 8300000, guid: 5b9459b2e87e4ac997fc63c3c1a0594b, type: 3}

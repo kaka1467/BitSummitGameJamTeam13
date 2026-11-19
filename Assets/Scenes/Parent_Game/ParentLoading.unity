@@ -903,6 +903,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1953161686}
   - component: {fileID: 1953161685}
+  - component: {fileID: 1953161687}
   m_Layer: 0
   m_Name: LoadingController
   m_TagString: Untagged
@@ -939,6 +940,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1953161687
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1953161684}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0a2a2a155c4441e395355be1970b967, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ParentGameAudioPlayer
+  catalog: {fileID: 11400000, guid: 09bef2523f8be4b5b804272470fa2c66, type: 2}
+  audioOrigin: {fileID: 0}
+  cameraLocalPosition: {x: 0, y: -0.35, z: 0.45}
+  spatialBlend: 0.087
+  minDistance: 0.2
+  maxDistance: 10
+  rolloffMode: 0
+  masterVolume: 0.509
+  bgmVolume: 0.254
+  seVolume: 0.341
+  consoleCloseClip: {fileID: 8300000, guid: 1e173bd06ce6c40168bf10f43bb86b13, type: 3}
+  consoleCloseVolume: 0.168
+  consoleOpenClip: {fileID: 8300000, guid: 2caa242775fab474a91b0b166672a78e, type: 3}
+  consoleOpenVolume: 0.168
+  sleepingController: {fileID: 0}
+  receiveWatchdogSeconds: 3
+  showDebugLog: 0
+  warnHandleMs: 8
+  debugLastHandleMs: 0
 --- !u!1 &2071770364
 GameObject:
   m_ObjectHideFlags: 0

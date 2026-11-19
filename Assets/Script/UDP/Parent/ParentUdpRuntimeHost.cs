@@ -992,10 +992,14 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
 
     private void HandleGameAudioPrepared(ParentGameAudioEvent evt)
     {
-        if (!ParentSceneBoundaryPolicy.IsGameplayScene(SceneManager.GetActiveScene().name, _settings.GameplaySceneName))
+        string sceneName = SceneManager.GetActiveScene().name;
+        bool canPlay = ParentSceneBoundaryPolicy.IsGameplayScene(sceneName, _settings.GameplaySceneName) ||
+                       ParentSceneBoundaryPolicy.IsLoadingScene(sceneName, _settings.GameSceneName);
+
+        if (!canPlay)
         {
             if (ShowDebug)
-                Debug.Log("[ParentUdpRuntimeHost] GAME_AUDIO discarded — ゲームシーンではないため再生しません。");
+                Debug.Log("[ParentUdpRuntimeHost] GAME_AUDIO discarded — ゲーム／ロードシーンではないため再生しません。");
             return;
         }
 

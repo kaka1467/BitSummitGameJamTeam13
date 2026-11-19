@@ -16,6 +16,9 @@ public enum GameAudioId
     /// <summary>本編BGM（BGMController の音源・ループ）。親機では「状態」として同期する。</summary>
     BgmMain = 1,
 
+    /// <summary>フィーバー中BGM（FeverBgmPlayer の音源・ループ）。親機では「状態」として同期する。</summary>
+    BgmFever = 2,
+
     /// <summary>アイテム取得（Score／Boost の Open_Energy_Drink）。</summary>
     SeItemEnergyDrink = 10,
 
@@ -36,6 +39,9 @@ public enum GameAudioId
 
     /// <summary>被弾（PlayerAnimator の Damage BGM）。</summary>
     SePlayerDamage = 16,
+
+    /// <summary>QTEクリア（QTEManager の QTEClear）。</summary>
+    SeQteClear = 17,
 }
 
 /// <summary>

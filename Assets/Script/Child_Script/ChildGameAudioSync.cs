@@ -34,6 +34,10 @@ public class ChildGameAudioSync : MonoBehaviour
     [SerializeField]
     private BGMController bgmController;
 
+    [Tooltip("フィーバーBGMの音源（未設定なら起動時に1回だけ探す）。")]
+    [SerializeField]
+    private FeverBgmPlayer feverBgmPlayer;
+
     /// <summary>対応表に無い音を1回だけ警告するための上限（履歴を無限に増やさない）。</summary>
     private const int MaxWarnedClips = 32;
 
@@ -56,6 +60,7 @@ public class ChildGameAudioSync : MonoBehaviour
     private bool subscribed;
     private readonly HashSet<AudioClip> warnedClips = new HashSet<AudioClip>();
     private bool bgmControllerSearched;
+    private bool feverBgmSearched;
 
     private void OnEnable()
     {
@@ -76,6 +81,7 @@ public class ChildGameAudioSync : MonoBehaviour
 
     private void Update()
     {
+        EnsureSessionReady();
         bool active = IsMainPlayActiveNow();
 
         if (active)
@@ -89,7 +95,21 @@ public class ChildGameAudioSync : MonoBehaviour
 
         wasMainPlayActive = active;
 
-        if (!active || !hasBgmState) return;
+        if (!active) return;
+
+        // まだBGM状態がキャプチャされていない場合でも、コントローラが再生を開始していれば取り込む
+        if (!hasBgmState)
+        {
+            SyncCurrentBgmFromController();
+            if (hasBgmState && bgmPlaying)
+            {
+                SendBgmState();
+                heartbeatTimer = 0f;
+                return;
+            }
+        }
+
+        if (!hasBgmState) return;
         if (bgmStateHeartbeatSeconds <= 0f) return;
 
         // 時間停止中でも送れるように実時間で数える（帯域に影響しない程度に低い頻度）。
@@ -101,6 +121,16 @@ public class ChildGameAudioSync : MonoBehaviour
     }
 
     // ── 本編の開始／終了 ────────────────────────────────────────────────────────
+
+    private void EnsureSessionReady()
+    {
+        if (!IsMainPlayActiveNow()) return;
+        if (!wasMainPlayActive || string.IsNullOrEmpty(playId))
+        {
+            wasMainPlayActive = true;
+            BeginPlay();
+        }
+    }
 
     private void BeginPlay()
     {
@@ -118,11 +148,15 @@ public class ChildGameAudioSync : MonoBehaviour
         if (string.IsNullOrEmpty(playId))
             playId = "local" + (++fallbackPlayKeySeq);
 
-        // 本編開始の直前（カウントダウン末尾）から鳴っているBGMも取りこぼさない。
+        // 本編開始の直前（チュートリアル・カウントダウン等）から鳴っているBGMも取りこぼさない。
         SyncCurrentBgmFromController();
+        if (hasBgmState && bgmPlaying)
+        {
+            SendBgmState();
+        }
 
         if (showDebugLog)
-            Debug.Log($"[ChildGameAudioSync] 本編開始を検出しました（playId='{playId}'）。");
+            Debug.Log($"[ChildGameAudioSync] 音声同期を開始しました（playId='{playId}'）。");
     }
 
     private void EndPlay()
@@ -137,19 +171,19 @@ public class ChildGameAudioSync : MonoBehaviour
         heartbeatTimer = 0f;
 
         if (showDebugLog)
-            Debug.Log("[ChildGameAudioSync] 本編終了を検出しました（親機の複製再生を停止）。");
+            Debug.Log("[ChildGameAudioSync] 音声同期の終了を検出しました（親機の複製再生を停止）。");
     }
 
     /// <summary>
-    /// 本編中か（タイトル・チュートリアル・開始前カウントダウン・終了演出・捕獲演出は本編ではない）。
+    /// 親機への音声転送が有効な期間か（接続プレイ中のローディング・チュートリアル・カウントダウン・本編すべてを含む）。
+    /// 終了演出（GameOver確定後・捕獲演出待機中）やタイトル・リザルト画面では false。
     /// </summary>
     private static bool IsMainPlayActiveNow()
     {
+        if (!AudioManager.ShouldRedirectAudioToParent()) return false;
+
         GameManager gm = GameManager.instance;
-        if (gm == null) return false;              // ゲームシーンではない
-        if (gm.IsTutorialMode) return false;       // チュートリアル／開始前カウントダウン
-        if (gm.IsGameOver) return false;           // 結果確定後の終了演出
-        if (!gm.IsMainPlayActive) return false;    // 本編開始がまだ通知されていない
+        if (gm != null && gm.IsGameOver) return false;           // 結果確定後の終了演出
 
         // 捕獲演出（終了演出）に入ったら複製再生を終わらせる。
         ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
@@ -165,6 +199,8 @@ public class ChildGameAudioSync : MonoBehaviour
     {
         if (!syncEnabled || catalog == null || clip == null) return;
         if (!IsMainPlayActiveNow()) return;
+
+        EnsureSessionReady();
 
         GameAudioCatalog.Entry entry = catalog.Find(clip);
         if (entry == null || entry.clip == null)
@@ -183,6 +219,8 @@ public class ChildGameAudioSync : MonoBehaviour
     {
         if (!syncEnabled || catalog == null) return;
         if (!IsMainPlayActiveNow()) return;
+
+        EnsureSessionReady();
 
         GameAudioId id = GameAudioId.None;
         if (clip != null)
@@ -275,13 +313,31 @@ public class ChildGameAudioSync : MonoBehaviour
     }
 
     /// <summary>
-    /// 本編BGMの音源から現在状態を取り込む（本編開始時点の取りこぼしと、状態の古いまま固まるのを防ぐ）。
+    /// 本編BGMまたはフィーバーBGMの音源から現在状態を取り込む（開始時点の取りこぼしと、状態の古いまま固まるのを防ぐ）。
     /// 対応表で「BGM」とされた素材のときだけ反映する。
     /// </summary>
     private void SyncCurrentBgmFromController()
     {
+        if (catalog == null) return;
+
+        // フィーバーBGM再生中はフィーバーBGMを優先して同期する
+        FeverBgmPlayer fever = ResolveFeverBgmPlayer();
+        if (fever != null && fever.IsFeverPlaying && fever.CurrentFeverClip != null)
+        {
+            GameAudioCatalog.Entry feverEntry = catalog.Find(fever.CurrentFeverClip);
+            if (feverEntry != null && feverEntry.clip != null && feverEntry.isBgm)
+            {
+                bgmId = feverEntry.id;
+                bgmPlaying = true;
+                bgmLoop = true;
+                bgmVolume = fever.CurrentFeverVolume;
+                hasBgmState = true;
+                return;
+            }
+        }
+
         BGMController controller = ResolveBgmController();
-        if (controller == null || catalog == null) return;
+        if (controller == null) return;
 
         AudioClip clip = controller.CurrentClip;
         if (clip == null) return;
@@ -306,6 +362,17 @@ public class ChildGameAudioSync : MonoBehaviour
         bgmControllerSearched = true;
         bgmController = FindFirstObjectByType<BGMController>();
         return bgmController;
+    }
+
+    /// <summary>フィーバーBGMの音源を解決する（毎回は探さない。起動時の1回だけ）。</summary>
+    private FeverBgmPlayer ResolveFeverBgmPlayer()
+    {
+        if (feverBgmPlayer != null) return feverBgmPlayer;
+        if (feverBgmSearched) return null;
+
+        feverBgmSearched = true;
+        feverBgmPlayer = FindFirstObjectByType<FeverBgmPlayer>();
+        return feverBgmPlayer;
     }
 
     private void WarnUnmapped(AudioClip clip)

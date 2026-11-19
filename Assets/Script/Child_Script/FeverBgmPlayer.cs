@@ -37,13 +37,17 @@ public class FeverBgmPlayer : MonoBehaviour
     private float _mainScale = 1f;   // 本編BGMのフェード（0〜1）
     private float _mainTarget = 1f;
 
+    public bool IsFeverPlaying => _wasFever && _source != null && _source.isPlaying && _source.clip != null;
+    public AudioClip CurrentFeverClip => _source != null ? _source.clip : feverClip;
+    public float CurrentFeverVolume => GetBaseVolume(feverVolume);
+
     private void Awake()
     {
         _source = gameObject.AddComponent<AudioSource>();
         _source.playOnAwake = false;
         _source.loop = true;
         _source.spatialBlend = 0f;
-        _source.mute = false;
+        _source.mute = AudioManager.ShouldRedirectAudioToParent();
         _source.dopplerLevel = 0f;
         _source.priority = 128;
         _source.volume = 0f;
@@ -58,6 +62,12 @@ public class FeverBgmPlayer : MonoBehaviour
 
     private void Update()
     {
+        if (_source != null)
+        {
+            bool muteLocal = AudioManager.ShouldRedirectAudioToParent();
+            if (_source.mute != muteLocal) _source.mute = muteLocal;
+        }
+
         GameManager gm = GameManager.instance;
         bool fever = gm != null && gm.IsFeverActive && !gm.IsGameOver;
 
@@ -107,10 +117,14 @@ public class FeverBgmPlayer : MonoBehaviour
         _source.clip = feverClip;
         _source.time = 0f;
         _source.volume = 0f;
+        _source.mute = AudioManager.ShouldRedirectAudioToParent();
         _source.Play();
         _feverTarget = 1f;
 
         _mainTarget = 0f;   // 本編BGMはフェードアウト後に一時停止する
+
+        // 親機へもフィーバーBGMへの切り替えを即時通知する
+        AudioManager.NotifyBgmStateChanged(feverClip, true, true, GetBaseVolume(feverVolume));
     }
 
     private void OnFeverEnd()
@@ -120,6 +134,16 @@ public class FeverBgmPlayer : MonoBehaviour
         // 本編BGMを止めた位置から再開して、音量を戻す。
         ResumeMain();
         _mainTarget = 1f;
+
+        // 親機側のBGMも本編BGMへ戻す
+        if (mainBgm != null && mainBgm.CurrentClip != null)
+        {
+            AudioManager.NotifyBgmStateChanged(mainBgm.CurrentClip, true, mainBgm.CurrentLoop, GetBaseVolume(1f));
+        }
+        else if (feverClip != null)
+        {
+            AudioManager.NotifyBgmStateChanged(feverClip, false, true, 0f);
+        }
     }
 
     private void ResolveMain()

@@ -75,34 +75,48 @@ public class MenuNavigationController : MonoBehaviour
     {
         bool upPressed = false;
         bool downPressed = false;
-        float gamepadVertical = 0f;
+        float gamepadAxis = 0f;
+        bool hasActivePanel = GetActiveExclusivePanel() != null;
 
-        // Keyboard input - Up Arrow
-        if (Keyboard.current != null && Keyboard.current[Key.UpArrow].wasPressedThisFrame)
+        // Keyboard input - Up / Down (and Left / Right / WASD on main menu)
+        if (Keyboard.current != null)
         {
-            upPressed = true;
-        }
-
-        // Keyboard input - Down Arrow
-        if (Keyboard.current != null && Keyboard.current[Key.DownArrow].wasPressedThisFrame)
-        {
-            downPressed = true;
-        }
-
-        // Gamepad input - D-Pad
-        if (Gamepad.current != null)
-        {
-            if (Gamepad.current.dpad.up.wasPressedThisFrame)
+            if (Keyboard.current[Key.UpArrow].wasPressedThisFrame || Keyboard.current[Key.W].wasPressedThisFrame)
             {
                 upPressed = true;
             }
-            if (Gamepad.current.dpad.down.wasPressedThisFrame)
+            if (Keyboard.current[Key.DownArrow].wasPressedThisFrame || Keyboard.current[Key.S].wasPressedThisFrame)
+            {
+                downPressed = true;
+            }
+            if (!hasActivePanel)
+            {
+                if (Keyboard.current[Key.LeftArrow].wasPressedThisFrame || Keyboard.current[Key.A].wasPressedThisFrame)
+                {
+                    upPressed = true;
+                }
+                if (Keyboard.current[Key.RightArrow].wasPressedThisFrame || Keyboard.current[Key.D].wasPressedThisFrame)
+                {
+                    downPressed = true;
+                }
+            }
+        }
+
+        // Gamepad input - D-Pad & Left Stick
+        if (Gamepad.current != null)
+        {
+            if (Gamepad.current.dpad.up.wasPressedThisFrame || (!hasActivePanel && Gamepad.current.dpad.left.wasPressedThisFrame))
+            {
+                upPressed = true;
+            }
+            if (Gamepad.current.dpad.down.wasPressedThisFrame || (!hasActivePanel && Gamepad.current.dpad.right.wasPressedThisFrame))
             {
                 downPressed = true;
             }
 
-            // Gamepad Left Stick (vertical axis)
-            gamepadVertical = Gamepad.current.leftStick.y.ReadValue();
+            float vertical = Gamepad.current.leftStick.y.ReadValue();
+            float horizontal = !hasActivePanel ? -Gamepad.current.leftStick.x.ReadValue() : 0f;
+            gamepadAxis = Mathf.Abs(vertical) >= Mathf.Abs(horizontal) ? vertical : horizontal;
         }
 
         // Handle keyboard/gamepad d-pad input
@@ -119,13 +133,13 @@ public class MenuNavigationController : MonoBehaviour
             lastInputTime = Time.time;
         }
         // Handle analog stick input with cooldown
-        else if (Mathf.Abs(gamepadVertical) > 0.5f && Time.time - lastInputTime > inputDelay)
+        else if (Mathf.Abs(gamepadAxis) > 0.5f && Time.time - lastInputTime > inputDelay)
         {
-            if (gamepadVertical > 0.5f)
+            if (gamepadAxis > 0.5f)
             {
                 NavigateUp();
             }
-            else if (gamepadVertical < -0.5f)
+            else if (gamepadAxis < -0.5f)
             {
                 NavigateDown();
             }
