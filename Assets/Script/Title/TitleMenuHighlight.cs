@@ -37,6 +37,10 @@ public class TitleMenuHighlight : MonoBehaviour
     [SerializeField] private RectTransform arrowIndicator;
     [Tooltip("矢印の、選択項目に対する位置オフセット。")]
     [SerializeField] private Vector2 arrowOffset = new Vector2(-60f, 0f);
+    [Tooltip("ONなら、ボタン固定幅ではなくボタン内 TextMeshProUGUI の実際の文字描画左端から textLeftGap だけ左に矢印を揃える。")]
+    [SerializeField] private bool alignArrowToTextLeftEdge = true;
+    [Tooltip("alignArrowToTextLeftEdge が ON のとき、文字の左端から矢印中心までの余白（px）。")]
+    [SerializeField] private float textLeftGap = 36f;
 
     [Header("選択中の背景グロー（矢印・文字の後ろに置く画像）")]
     [Tooltip("矢印・文字の後ろに置く、光らせる用の画像。専用素材が無ければ Unity 標準の円スプライト(Knob等)で代用可。")]
@@ -210,7 +214,8 @@ public class TitleMenuHighlight : MonoBehaviour
         if (arrowIndicator != null)
         {
             if (!arrowIndicator.gameObject.activeSelf) arrowIndicator.gameObject.SetActive(true);
-            MoveTowards(arrowIndicator, basePos + arrowOffset, useSnap);
+            Vector2 arrowTargetPos = CalculateArrowTargetPosition(target, basePos);
+            MoveTowards(arrowIndicator, arrowTargetPos, useSnap);
         }
 
         if (selectionGlow != null)
@@ -218,6 +223,47 @@ public class TitleMenuHighlight : MonoBehaviour
             if (!selectionGlow.gameObject.activeSelf) selectionGlow.gameObject.SetActive(true);
             MoveTowards(selectionGlow, basePos + glowOffset, useSnap);
         }
+    }
+
+    /// <summary>
+    /// 対象ボタン内の TextMeshProUGUI の実際の文字描画左端（textBounds / preferredValues）を基準に、
+    /// 文字から一定間隔（textLeftGap）だけ左の位置へ矢印の座標を算出する。
+    /// </summary>
+    private Vector2 CalculateArrowTargetPosition(RectTransform target, Vector2 basePos)
+    {
+        if (!alignArrowToTextLeftEdge || arrowIndicator == null)
+            return basePos + arrowOffset;
+
+        RectTransform arrowParent = arrowIndicator.parent as RectTransform;
+        TMP_Text tmp = target.GetComponentInChildren<TMP_Text>();
+        if (arrowParent == null || tmp == null)
+            return basePos + arrowOffset;
+
+        RectTransform textRt = tmp.rectTransform;
+        tmp.ForceMeshUpdate();
+
+        Bounds textBounds = tmp.textBounds;
+        float localLeftX;
+        float localCenterY;
+
+        if (textBounds.size.x > 0.01f && tmp.textInfo != null && tmp.textInfo.characterCount > 0)
+        {
+            localLeftX = textBounds.min.x;
+            localCenterY = textBounds.center.y;
+        }
+        else
+        {
+            string rawText = tmp.text != null ? tmp.text.Trim() : string.Empty;
+            Vector2 pref = tmp.GetPreferredValues(rawText);
+            float width = Mathf.Max(0f, pref.x);
+            localLeftX = textRt.rect.center.x - width * 0.5f;
+            localCenterY = textRt.rect.center.y;
+        }
+
+        Vector3 worldLeft = textRt.TransformPoint(new Vector3(localLeftX, localCenterY, 0f));
+        Vector3 parentLocalLeft = arrowParent.InverseTransformPoint(worldLeft);
+
+        return new Vector2(parentLocalLeft.x - textLeftGap, basePos.y + arrowOffset.y);
     }
 
     /// <summary>

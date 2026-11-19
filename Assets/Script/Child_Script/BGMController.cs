@@ -46,6 +46,13 @@ public class BGMController : MonoBehaviour
     private void ApplyVolume()
     {
         if (audioSource == null) return;
+
+        bool muteLocal = AudioManager.ShouldRedirectAudioToParent();
+        if (audioSource.mute != muteLocal)
+        {
+            audioSource.mute = muteLocal;
+        }
+
         if (AudioManager.Instance == null) return;
 
         // 設定パネルで音量がまだ決まっていない間は、このBGMのInspector設定値をそのまま使う。
@@ -101,6 +108,11 @@ public class BGMController : MonoBehaviour
     // BGMを再生するメソッド
     public void PlayBGM()
     {
+        if (audioSource == null)
+        {
+            audioSource = GetComponent<AudioSource>();
+            if (audioSource != null) inspectorVolume = audioSource.volume;
+        }
         if (audioSource == null) return;
 
         ApplyVolume();

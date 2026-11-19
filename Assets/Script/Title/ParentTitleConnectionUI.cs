@@ -214,7 +214,7 @@ public class ParentTitleConnectionUI : MonoBehaviour
     /// <summary>
     /// 親機タイトルの Connect / Cancel ボタンを廃止し、接続待ちステータス表示（"Waiting for the other device..."）のみにする。
     /// 起動直後の初期矢印位置は connectButton に置くが、決定ボタンを押しても何も起きないようにし、
-    /// 上下左右キー／スティック操作で SOLO PLAY と SETTING へ移動できるようにする（以降はその2つのみ選択・決定可能）。
+    /// 左右・上下キー／スティック操作で Waiting for the other device... ↔ Single Device Mode ↔ Setting のすべてを双方向に行き来できるようにする。
     /// </summary>
     private void ConfigureStatusOnlyDisplayAndNavigation()
     {
@@ -245,15 +245,15 @@ public class ParentTitleConnectionUI : MonoBehaviour
                 if (graphics[i] != null) graphics[i].raycastTarget = false;
             }
 
-            Selectable downTarget = soloButton != null ? (Selectable)soloButton : settingsButton;
-            Selectable upTarget = settingsButton != null ? (Selectable)settingsButton : soloButton;
+            Selectable rightOrDownTarget = soloButton != null ? (Selectable)soloButton : settingsButton;
+            Selectable leftOrUpTarget = settingsButton != null ? (Selectable)settingsButton : soloButton;
             connectButton.navigation = new Navigation
             {
                 mode = Navigation.Mode.Explicit,
-                selectOnDown = downTarget,
-                selectOnUp = upTarget,
-                selectOnLeft = downTarget,
-                selectOnRight = downTarget
+                selectOnRight = rightOrDownTarget,
+                selectOnDown = rightOrDownTarget,
+                selectOnLeft = leftOrUpTarget,
+                selectOnUp = leftOrUpTarget
             };
 
             connectButton.gameObject.SetActive(true);
@@ -264,24 +264,31 @@ public class ParentTitleConnectionUI : MonoBehaviour
             connectButtonLabel.text = "Waiting for the other device...";
         }
 
-        if (soloButton != null && settingsButton != null)
+        if (soloButton != null)
         {
+            Selectable leftOrUpTarget = connectButton != null ? (Selectable)connectButton : settingsButton;
+            Selectable rightOrDownTarget = settingsButton != null ? (Selectable)settingsButton : connectButton;
             soloButton.navigation = new Navigation
             {
                 mode = Navigation.Mode.Explicit,
-                selectOnUp = settingsButton,
-                selectOnDown = settingsButton,
-                selectOnLeft = settingsButton,
-                selectOnRight = settingsButton
+                selectOnLeft = leftOrUpTarget,
+                selectOnUp = leftOrUpTarget,
+                selectOnRight = rightOrDownTarget,
+                selectOnDown = rightOrDownTarget
             };
+        }
 
+        if (settingsButton != null)
+        {
+            Selectable leftOrUpTarget = soloButton != null ? (Selectable)soloButton : connectButton;
+            Selectable rightOrDownTarget = connectButton != null ? (Selectable)connectButton : soloButton;
             settingsButton.navigation = new Navigation
             {
                 mode = Navigation.Mode.Explicit,
-                selectOnUp = soloButton,
-                selectOnDown = soloButton,
-                selectOnLeft = soloButton,
-                selectOnRight = soloButton
+                selectOnLeft = leftOrUpTarget,
+                selectOnUp = leftOrUpTarget,
+                selectOnRight = rightOrDownTarget,
+                selectOnDown = rightOrDownTarget
             };
         }
     }

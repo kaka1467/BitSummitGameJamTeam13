@@ -105,6 +105,36 @@ public class AudioManager : MonoBehaviour
         SceneManager.sceneLoaded -= HandleSceneLoaded;
     }
 
+    /// <summary>
+    /// 親機と接続プレイ中（ソロプレイ以外・タイトル画面以外）であり、子機ローカルの音を無音にして親機側で鳴らすべきか。
+    /// </summary>
+    public static bool ShouldRedirectAudioToParent()
+    {
+        ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
+        if (host == null || !host.IsRunning) return false;
+        if (host.IsSoloPlayActive) return false;
+        if (host.ConnectionState != ChildConnectionLink.LinkState.Connected) return false;
+
+        string sceneName = SceneManager.GetActiveScene().name;
+        if (string.IsNullOrEmpty(sceneName)) return false;
+        if (sceneName.IndexOf("Title", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+
+        return true;
+    }
+
+    private void Update()
+    {
+        bool muteLocal = ShouldRedirectAudioToParent();
+        if (bgmSource != null && bgmSource.mute != muteLocal)
+        {
+            bgmSource.mute = muteLocal;
+        }
+        if (seSource != null && seSource.mute != muteLocal)
+        {
+            seSource.mute = muteLocal;
+        }
+    }
+
     private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         StopBGM();
@@ -134,11 +164,13 @@ public class AudioManager : MonoBehaviour
 
         Debug.Log($"AudioManager.PlayBGM: play clip='{clip.name}', loop={loop}, volReq={volume}");
 
+        bool redirectToParent = ShouldRedirectAudioToParent();
+
         bgmSource.clip = clip;
         bgmSource.loop = loop;
         bgmSource.volume = Mathf.Clamp01(volume);
         bgmSource.spatialBlend = 0f;
-        bgmSource.mute = false;
+        bgmSource.mute = redirectToParent;
         bgmSource.outputAudioMixerGroup = null;
 
         try
@@ -151,7 +183,10 @@ public class AudioManager : MonoBehaviour
         catch { }
 
         bgmSource.Stop();
-        bgmSource.Play();
+        if (!redirectToParent)
+        {
+            bgmSource.Play();
+        }
 
         Debug.Log($"AudioManager.PlayBGM: Play() called; isPlaying={bgmSource.isPlaying}, volume={bgmSource.volume}, spatialBlend={bgmSource.spatialBlend}, mute={bgmSource.mute}");
 
@@ -193,7 +228,13 @@ public class AudioManager : MonoBehaviour
             seSource.outputAudioMixerGroup = null;
         }
 
-        seSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+        bool redirectToParent = ShouldRedirectAudioToParent();
+        seSource.mute = redirectToParent;
+
+        if (!redirectToParent)
+        {
+            seSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+        }
 
         // ローカル再生の直後に、同じ処理経路から親機通知用に流す（まとめ送りしない）。
         NotifySePlayed(clip, Mathf.Clamp01(volume));

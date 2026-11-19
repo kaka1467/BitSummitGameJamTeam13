@@ -515,16 +515,18 @@ public class ParentGameAudioPlayer : MonoBehaviour
     private void ApplyVolumes()
     {
         bool sleeping = IsSleepingNow();
+        float settingsBgm = ParentAudioSettings.BgmVolume;
+        float settingsSe = ParentAudioSettings.SeVolume;
 
         if (bgmSource != null)
         {
-            bgmSource.volume = Mathf.Clamp01(masterVolume * bgmVolume * bgmEntryScale * bgmChildVolume);
+            bgmSource.volume = Mathf.Clamp01(masterVolume * bgmVolume * settingsBgm * bgmEntryScale * bgmChildVolume);
             bgmSource.mute = sleeping;
         }
 
         if (seSource != null)
         {
-            seSource.volume = Mathf.Clamp01(masterVolume * seVolume);
+            seSource.volume = Mathf.Clamp01(masterVolume * seVolume * settingsSe);
             seSource.mute = sleeping;
         }
     }
