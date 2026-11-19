@@ -199,17 +199,30 @@ public class TutorialFlow : MonoBehaviour
         RestoreTimeScaleIfPaused();
     }
 
+    /// <summary>チュートリアルスライド表示により Time.timeScale = 0f で一時停止中か。</summary>
+    public static bool IsSlideTimeScalePaused { get; private set; }
+
+    private void LateUpdate()
+    {
+        if (_slidePausedTimeScale && !Mathf.Approximately(Time.timeScale, 0f))
+        {
+            Time.timeScale = 0f;
+        }
+    }
+
     private void PauseTimeScaleForSlide()
     {
         _slidePausedTimeScale = true;
+        IsSlideTimeScalePaused = true;
         Time.timeScale = 0f;
     }
 
     private void RestoreTimeScaleIfPaused()
     {
-        if (_slidePausedTimeScale || Time.timeScale == 0f)
+        if (_slidePausedTimeScale || IsSlideTimeScalePaused || Time.timeScale == 0f)
         {
             _slidePausedTimeScale = false;
+            IsSlideTimeScalePaused = false;
             Time.timeScale = 1f;
         }
     }
@@ -902,14 +915,7 @@ public class TutorialFlow : MonoBehaviour
 
         _slideOkClicked = false;
         PauseTimeScaleForSlide();
-        try
-        {
-            yield return WaitForSlideAdvanceInput();
-        }
-        finally
-        {
-            RestoreTimeScaleIfPaused();
-        }
+        yield return WaitForSlideAdvanceInput();
     }
 
     private IEnumerator WaitForSlideAdvanceInput()
@@ -919,6 +925,7 @@ public class TutorialFlow : MonoBehaviour
         float elapsed = 0f;
         while (!skipRequested && !_slideOkClicked && elapsed < minWait)
         {
+            PauseTimeScaleForSlide();
             elapsed += Time.unscaledDeltaTime;
             yield return null;
         }
@@ -926,11 +933,13 @@ public class TutorialFlow : MonoBehaviour
         // 前フレームからの押しっぱなしが解除されるのを一度待つ
         while (!skipRequested && !_slideOkClicked && IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: true))
         {
+            PauseTimeScaleForSlide();
             yield return null;
         }
 
         while (!skipRequested && !_slideOkClicked)
         {
+            PauseTimeScaleForSlide();
             if (IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly: false))
             {
                 yield break;

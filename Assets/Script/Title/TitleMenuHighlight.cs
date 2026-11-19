@@ -104,11 +104,14 @@ public class TitleMenuHighlight : MonoBehaviour
         SetShapeGlowAlpha(arrowShapeGlow, 0f);
     }
 
+    private Selectable _lastValidSelection;
+
     private void Start()
     {
         Selectable targetSelection = ResolveValidInitialSelection();
         if (targetSelection != null && EventSystem.current != null)
         {
+            _lastValidSelection = targetSelection;
             EventSystem.current.SetSelectedGameObject(targetSelection.gameObject);
         }
 
@@ -121,7 +124,7 @@ public class TitleMenuHighlight : MonoBehaviour
         UpdateFollowPosition(useSnap: false);
     }
 
-    // 選択中のオブジェクトが非表示・破棄・操作不能（interactable=false）になっていたら、有効な初期選択へ選び直す。
+    // 選択中のオブジェクトが非表示・破棄・操作不能（interactable=false）になっていたら、直前の有効選択または初期選択へ選び直す。
     private void EnsureValidSelection()
     {
         if (EventSystem.current == null) return;
@@ -133,13 +136,25 @@ public class TitleMenuHighlight : MonoBehaviour
             && selectedSelectable != null
             && selectedSelectable.IsInteractable();
 
-        if (!selectionIsValid)
+        if (selectionIsValid)
         {
-            Selectable fallback = ResolveValidInitialSelection();
-            if (fallback != null)
-            {
-                EventSystem.current.SetSelectedGameObject(fallback.gameObject);
-            }
+            _lastValidSelection = selectedSelectable;
+            return;
+        }
+
+        if (_lastValidSelection != null
+            && _lastValidSelection.gameObject.activeInHierarchy
+            && _lastValidSelection.IsInteractable())
+        {
+            EventSystem.current.SetSelectedGameObject(_lastValidSelection.gameObject);
+            return;
+        }
+
+        Selectable fallback = ResolveValidInitialSelection();
+        if (fallback != null)
+        {
+            _lastValidSelection = fallback;
+            EventSystem.current.SetSelectedGameObject(fallback.gameObject);
         }
     }
 
@@ -158,7 +173,6 @@ public class TitleMenuHighlight : MonoBehaviour
             Selectable soloSel = soloObj.GetComponent<Selectable>();
             if (soloSel != null && soloSel.IsInteractable())
             {
-                initialSelection = soloSel;
                 return soloSel;
             }
         }
@@ -169,7 +183,6 @@ public class TitleMenuHighlight : MonoBehaviour
             Selectable s = allSelectables[i];
             if (s != null && s.gameObject.activeInHierarchy && s.IsInteractable() && s.navigation.mode != Navigation.Mode.None)
             {
-                initialSelection = s;
                 return s;
             }
         }
