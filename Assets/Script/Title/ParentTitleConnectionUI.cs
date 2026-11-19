@@ -182,13 +182,13 @@ public class ParentTitleConnectionUI : MonoBehaviour
             {
                 case ParentConnectionLink.LinkState.Disconnected:
                 case ParentConnectionLink.LinkState.Connecting:
-                    newLabel = "Waiting for Child...";
+                    newLabel = "Waiting for the other device...";
                     break;
                 case ParentConnectionLink.LinkState.Connected:
                     newLabel = "Connected!";
                     break;
                 default:
-                    newLabel = "Waiting for Child...";
+                    newLabel = "Waiting for the other device...";
                     break;
             }
 
@@ -212,8 +212,9 @@ public class ParentTitleConnectionUI : MonoBehaviour
     }
 
     /// <summary>
-    /// 親機タイトルの Connect / Cancel ボタンを廃止し、接続待ちステータス表示のみにする。
-    /// 選択可能なボタンは SOLO PLAY（SoloStartButton）と SETTING（ParentVolumeSettingsPanel）の2つのみに制限する。
+    /// 親機タイトルの Connect / Cancel ボタンを廃止し、接続待ちステータス表示（"Waiting for the other device..."）のみにする。
+    /// 起動直後の初期矢印位置は connectButton に置くが、決定ボタンを押しても何も起きないようにし、
+    /// 上下左右キー／スティック操作で SOLO PLAY と SETTING へ移動できるようにする（以降はその2つのみ選択・決定可能）。
     /// </summary>
     private void ConfigureStatusOnlyDisplayAndNavigation()
     {
@@ -225,15 +226,15 @@ public class ParentTitleConnectionUI : MonoBehaviour
             cancelButton.gameObject.SetActive(false);
         }
 
+        Button soloButton = soloStartButtonObject != null ? soloStartButtonObject.GetComponent<Button>() : null;
+        ParentVolumeSettingsPanel settingsPanel = FindFirstObjectByType<ParentVolumeSettingsPanel>();
+        Button settingsButton = settingsPanel != null ? settingsPanel.GetComponent<Button>() : null;
+
         if (connectButton != null)
         {
             connectButton.onClick = new Button.ButtonClickedEvent();
-            connectButton.interactable = false;
-            connectButton.navigation = new Navigation { mode = Navigation.Mode.None };
-
-            ColorBlock cb = connectButton.colors;
-            cb.disabledColor = Color.white;
-            connectButton.colors = cb;
+            connectButton.interactable = true;
+            connectButton.transition = Selectable.Transition.None;
 
             Image bgImage = connectButton.GetComponent<Image>();
             if (bgImage != null) bgImage.enabled = false;
@@ -244,17 +245,24 @@ public class ParentTitleConnectionUI : MonoBehaviour
                 if (graphics[i] != null) graphics[i].raycastTarget = false;
             }
 
+            Selectable downTarget = soloButton != null ? (Selectable)soloButton : settingsButton;
+            Selectable upTarget = settingsButton != null ? (Selectable)settingsButton : soloButton;
+            connectButton.navigation = new Navigation
+            {
+                mode = Navigation.Mode.Explicit,
+                selectOnDown = downTarget,
+                selectOnUp = upTarget,
+                selectOnLeft = downTarget,
+                selectOnRight = downTarget
+            };
+
             connectButton.gameObject.SetActive(true);
         }
 
         if (connectButtonLabel != null && string.IsNullOrEmpty(_lastAppliedConnectLabel))
         {
-            connectButtonLabel.text = "Waiting for Child...";
+            connectButtonLabel.text = "Waiting for the other device...";
         }
-
-        Button soloButton = soloStartButtonObject != null ? soloStartButtonObject.GetComponent<Button>() : null;
-        ParentVolumeSettingsPanel settingsPanel = FindFirstObjectByType<ParentVolumeSettingsPanel>();
-        Button settingsButton = settingsPanel != null ? settingsPanel.GetComponent<Button>() : null;
 
         if (soloButton != null && settingsButton != null)
         {

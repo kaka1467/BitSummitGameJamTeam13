@@ -481,6 +481,7 @@ public class ChildSleepLockApplier : MonoBehaviour
         if (!enableSleepDebugKey) return false;                 // OFFにしたらデバッグ状態を解除して再計算させる
         if (!IsSleepDebugSupportedInThisBuild()) return false;   // 展示用ビルドでは動作させない
         if (!Application.isFocused) return false;                // フォーカスを失ったらデバッグ状態を解除する
+        if (TutorialFlow.IsSlideTimeScalePaused || GameDifficulty.IncludeTutorial) return false; // チュートリアル中（Spaceでのスライド送り時）は発動させない
 
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null) return false;                      // Input System 未初期化でも例外にしない

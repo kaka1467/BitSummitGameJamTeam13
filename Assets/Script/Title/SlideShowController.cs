@@ -17,13 +17,6 @@ public class SlideShowController : MonoBehaviour
     [Header("イージング")]
     [SerializeField] private AnimationCurve slideCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
-    private static readonly string[] ParentTutorialSpritePaths =
-    {
-        "Tutorial/Parent/Tutorial01",
-        "Tutorial/Parent/Tutorial02",
-        "Tutorial/Parent/Tutorial03"
-    };
-
     private float  _slideWidth;
     private float  _currentOffset = 0f;   // 全体の現在X位置
     private CancellationTokenSource _cts;
@@ -31,57 +24,7 @@ public class SlideShowController : MonoBehaviour
     private void Awake()
     {
         _slideWidth = GetComponent<RectTransform>().rect.width;
-        ApplySharedParentTutorialSlidesIfAvailable();
         InitSlidePositions();
-    }
-
-    /// <summary>
-    /// 親機ローディング画面（ParentLoading）では、共有された親機チュートリアル画像3枚
-    /// （Tutorial01〜03）を順番に表示し、旧スライドの重複表示（P20）を解消する。
-    /// </summary>
-    private void ApplySharedParentTutorialSlidesIfAvailable()
-    {
-        if (slides == null || slides.Length == 0) return;
-
-        string sceneName = SceneManager.GetActiveScene().name;
-        if (!sceneName.Contains("Parent")) return;
-
-        List<Sprite> loadedSprites = new List<Sprite>(ParentTutorialSpritePaths.Length);
-        for (int i = 0; i < ParentTutorialSpritePaths.Length; i++)
-        {
-            Sprite sp = Resources.Load<Sprite>(ParentTutorialSpritePaths[i]);
-            if (sp != null) loadedSprites.Add(sp);
-        }
-
-        if (loadedSprites.Count == 0) return;
-
-        List<RectTransform> activeSlides = new List<RectTransform>(loadedSprites.Count);
-        for (int i = 0; i < slides.Length; i++)
-        {
-            RectTransform rt = slides[i];
-            if (rt == null) continue;
-
-            if (i < loadedSprites.Count)
-            {
-                Image img = rt.GetComponent<Image>() ?? rt.GetComponentInChildren<Image>(true);
-                if (img != null)
-                {
-                    img.sprite = loadedSprites[i];
-                    img.preserveAspect = true;
-                }
-                rt.gameObject.SetActive(true);
-                activeSlides.Add(rt);
-            }
-            else
-            {
-                rt.gameObject.SetActive(false);
-            }
-        }
-
-        if (activeSlides.Count > 0)
-        {
-            slides = activeSlides.ToArray();
-        }
     }
 
     private void OnEnable()

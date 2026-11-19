@@ -46,10 +46,12 @@ public static class ChildGamePause
         float duration = Mathf.Max(0f, Time.unscaledTime - _pausedAtRealtime);
         _completedPausedSeconds += duration;
 
-        // 他の停止要因（QTE・結果確定）が続いているなら 0 のまま、無ければ通常速度へ戻す。
+        // 他の停止要因（QTE・結果確定・チュートリアルスライド表示中）が続いているなら 0 のまま、無ければ通常速度へ戻す。
         QTEManager qte = QTEManager.Instance;
         GameManager gm = GameManager.instance;
-        bool otherStop = (qte != null && qte.IsQteActive) || (gm != null && gm.IsGameOver);
+        bool otherStop = (qte != null && qte.IsQteActive)
+                         || (gm != null && gm.IsGameOver)
+                         || TutorialFlow.IsSlideTimeScalePaused;
         Time.timeScale = otherStop ? 0f : 1f;
 
         PauseChanged?.Invoke(false);
