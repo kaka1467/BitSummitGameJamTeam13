@@ -76,9 +76,11 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     // 最後にUIへ反映した接続状態（同値の再適用を避ける）
     private ChildConnectionLink.LinkState? _lastAppliedState;
+    private bool _isWaitingForGameStart;
 
     private void Awake()
     {
+        _isWaitingForGameStart = false;
         CaptureSceneLayoutPosition();
         ApplyInitialPanelState();
     }
@@ -174,7 +176,11 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     private void HandleConnectionStateChanged(ChildConnectionLink.LinkState state)
     {
-        ApplyConnectionState(state);
+        if (state != ChildConnectionLink.LinkState.Connected)
+        {
+            _isWaitingForGameStart = false;
+        }
+        ApplyConnectionState(state, force: true);
     }
 
     private void ApplyCurrentStateIfNeeded()
@@ -183,9 +189,9 @@ public class ChildTitleConnectionUI : MonoBehaviour
         ApplyConnectionState(_host.ConnectionState);
     }
 
-    private void ApplyConnectionState(ChildConnectionLink.LinkState state)
+    private void ApplyConnectionState(ChildConnectionLink.LinkState state, bool force = false)
     {
-        if (_lastAppliedState.HasValue && _lastAppliedState.Value == state) return;
+        if (!force && _lastAppliedState.HasValue && _lastAppliedState.Value == state) return;
         _lastAppliedState = state;
 
         if (connectButtonLabel != null)
@@ -196,10 +202,12 @@ public class ChildTitleConnectionUI : MonoBehaviour
                     connectButtonLabel.text = connectLabel;
                     break;
                 case ChildConnectionLink.LinkState.Connecting:
-                    connectButtonLabel.text = connectingLabel;
+                    connectButtonLabel.text = string.IsNullOrEmpty(connectingLabel) || connectingLabel == "接続中"
+                        ? "Connecting..."
+                        : connectingLabel;
                     break;
                 case ChildConnectionLink.LinkState.Connected:
-                    connectButtonLabel.text = "START!";
+                    connectButtonLabel.text = _isWaitingForGameStart ? "Waiting..." : "START!";
                     break;
             }
         }
@@ -207,17 +215,17 @@ public class ChildTitleConnectionUI : MonoBehaviour
         if (connectButton != null)
         {
             connectButton.gameObject.SetActive(true);
-            connectButton.interactable = state != ChildConnectionLink.LinkState.Connecting;
+            connectButton.interactable = state != ChildConnectionLink.LinkState.Connecting && !_isWaitingForGameStart;
 
             Transform moveTarget = connectButton.transform.parent != null
                 ? connectButton.transform.parent
                 : connectButton.transform;
 
+            // Keep the initial vertical menu layout position even when Connected
+            // so START! does not jump into CREDIT / SOLO START and break the layout.
             if (moveTarget is RectTransform rect)
             {
-                rect.anchoredPosition = state == ChildConnectionLink.LinkState.Connected
-                    ? connectButtonStartPosition
-                    : connectButtonDefaultPosition;
+                rect.anchoredPosition = connectButtonDefaultPosition;
             }
         }
 
@@ -237,11 +245,11 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         if (soloStartButton == null) return;
 
-        bool connected = _lastAppliedState.HasValue && _lastAppliedState.Value == ChildConnectionLink.LinkState.Connected;
+        bool connecting = _lastAppliedState.HasValue && _lastAppliedState.Value == ChildConnectionLink.LinkState.Connecting;
         bool panelOpen = (creditsPanel != null && creditsPanel.activeSelf) ||
                          (settingsPanel != null && settingsPanel.activeSelf);
 
-        ResolveToggleTarget(soloStartButton).SetActive(!connected && !panelOpen);
+        ResolveToggleTarget(soloStartButton).SetActive(!connecting && !panelOpen);
     }
 
     private void ApplyInitialPanelState()
@@ -313,16 +321,25 @@ public class ChildTitleConnectionUI : MonoBehaviour
         // 接続完了後（START! ボタン押下時）も難易度選択を確認してからゲームを開始できるようにする
         if (_host.ConnectionState == ChildConnectionLink.LinkState.Connected)
         {
+            if (_isWaitingForGameStart) return;
+
             DifficultyTitleUI diffUi = DifficultyTitleUI.EnsureAttached();
             if (diffUi != null)
             {
                 diffUi.OpenForGameStart(() =>
                 {
                     if (EnsureHost())
+                    {
+                        _isWaitingForGameStart = true;
+                        ApplyConnectionState(_host.ConnectionState, force: true);
                         _host.OnConnectButtonClicked();
+                    }
                 });
                 return;
             }
+
+            _isWaitingForGameStart = true;
+            ApplyConnectionState(_host.ConnectionState, force: true);
         }
 
         _host.OnConnectButtonClicked();

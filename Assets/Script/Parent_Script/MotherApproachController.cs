@@ -3064,6 +3064,9 @@ public class MotherApproachController : MonoBehaviour
 
         yield return new WaitForSeconds(_gardenPeekDuration);
 
+        // 窓覗きアニメーション（Peek_Window）が途中でぶつ切りにならないよう、アニメーション再生完了まで待機する。
+        yield return WaitForWindowPeekAnimationFinished();
+
         // 覗き待機終了：継続疑惑が次tick以内に確実に停止するよう、フラグを先に解除する。
         _isGardenPeeking = false;
         DiagPhase("Window Peek終了", $"庭覗き中=false（帰路へ）");
@@ -4168,9 +4171,17 @@ public class MotherApproachController : MonoBehaviour
         Vector3 slideDirection = GetHorizontalLeftDirection();
         float distance = doorPeekSlideDistance;
 
+        // アニメーション再生速度倍率（Animator.speed × State.speed × State.speedMultiplier）に横スライドタイミングを同期する
+        float animSpeedMultiplier = GetCurrentStateEffectiveSpeedMultiplier();
+        float effectiveStartDelay = doorPeekSlideStartDelay / animSpeedMultiplier;
+        float effectiveOutDuration = doorPeekSlideOutDuration / animSpeedMultiplier;
+        float effectiveReturnDelay = doorPeekSlideReturnDelay / animSpeedMultiplier;
+        float effectiveBackDuration = doorPeekSlideBackDuration / animSpeedMultiplier;
+
         Debug.Log($"[MotherApproachController] Door Peek 横スライド開始 | origin={_peekSlideOriginPosition} " +
-                  $"distance={distance:F2} startDelay={doorPeekSlideStartDelay:F2} " +
-                  $"returnDelay={doorPeekSlideReturnDelay:F2} outDuration={doorPeekSlideOutDuration:F2}");
+                  $"distance={distance:F2} animSpeed={animSpeedMultiplier:F2} " +
+                  $"startDelay={effectiveStartDelay:F2} returnDelay={effectiveReturnDelay:F2} " +
+                  $"outDuration={effectiveOutDuration:F2} backDuration={effectiveBackDuration:F2}");
 
         Vector3 outTarget = _peekSlideOriginPosition + slideDirection * distance;
 
@@ -4186,10 +4197,10 @@ public class MotherApproachController : MonoBehaviour
             yield break;
         }
 
-        // 3. 区間の境界（すべてPeek実再生開始からの経過時間）。
-        float outStart = doorPeekSlideStartDelay;
-        float outEnd = doorPeekSlideStartDelay + doorPeekSlideOutDuration;
-        float returnStart = doorPeekSlideStartDelay + doorPeekSlideReturnDelay;
+        // 3. 区間の境界（すべてPeek実再生開始からの経過時間、アニメーション再生速度倍率を反映）。
+        float outStart = effectiveStartDelay;
+        float outEnd = effectiveStartDelay + effectiveOutDuration;
+        float returnStart = effectiveStartDelay + effectiveReturnDelay;
         // 外向きは「戻り開始時刻」を超えて続けない（returnDelayを守る）。
         float outEffectiveEnd = Mathf.Min(outEnd, returnStart);
 
@@ -4218,9 +4229,9 @@ public class MotherApproachController : MonoBehaviour
             else if (peakElapsed < outEffectiveEnd)
             {
                 // 外向き補間（outDuration=0 ならこの区間は存在せず即座に通過）
-                float t = doorPeekSlideOutDuration <= 0f
+                float t = effectiveOutDuration <= 0f
                     ? 1f
-                    : Mathf.Clamp01((peakElapsed - outStart) / doorPeekSlideOutDuration);
+                    : Mathf.Clamp01((peakElapsed - outStart) / effectiveOutDuration);
                 horizontal = Vector3.Lerp(HorizontalOnly(_peekSlideOriginPosition),
                     HorizontalOnly(outTarget), t);
                 phase = 1;
@@ -4234,9 +4245,9 @@ public class MotherApproachController : MonoBehaviour
             else
             {
                 // 戻り区間：returnStart から backDuration で元位置へ
-                float backT = doorPeekSlideBackDuration <= 0f
+                float backT = effectiveBackDuration <= 0f
                     ? 1f
-                    : Mathf.Clamp01((peakElapsed - returnStart) / doorPeekSlideBackDuration);
+                    : Mathf.Clamp01((peakElapsed - returnStart) / effectiveBackDuration);
                 horizontal = Vector3.Lerp(HorizontalOnly(outTarget),
                     HorizontalOnly(_peekSlideOriginPosition), backT);
                 phase = 3;
@@ -4270,6 +4281,116 @@ public class MotherApproachController : MonoBehaviour
             peakElapsed += Time.deltaTime; // ゲーム内時間（通常ポーズ中は進めない）
             yield return null;
         }
+    }
+
+    private const string WindowPeekStateFullPath = "Base Layer.Peek_Window";
+
+    /// <summary>
+    /// 現在再生中のアニメーションステートの実効速度倍率（Animator.speed × State.speed × State.speedMultiplier）を返す。
+    /// </summary>
+    private float GetCurrentStateEffectiveSpeedMultiplier()
+    {
+        Animator animator = ResolveMotherAnimator();
+        if (animator != null && TryResolveIdleState(animator, out int layerIndex, out _, out _))
+        {
+            AnimatorStateInfo info = animator.GetCurrentAnimatorStateInfo(layerIndex);
+            float stateSpeed = Mathf.Abs(info.speed * info.speedMultiplier);
+            if (stateSpeed <= 0.0001f || float.IsNaN(stateSpeed) || float.IsInfinity(stateSpeed))
+                stateSpeed = 1f;
+
+            float animSpeed = Mathf.Abs(animator.speed);
+            if (animSpeed <= 0.0001f || float.IsNaN(animSpeed) || float.IsInfinity(animSpeed))
+                animSpeed = 1f;
+
+            float total = stateSpeed * animSpeed;
+            if (total > 0.0001f)
+                return total;
+        }
+
+        return 1f;
+    }
+
+    /// <summary>
+    /// ドア覗き（Peek_Door）のアニメーションおよび横スライド演出が完了するまで待機する。
+    /// 覗きアニメーションが途中でぶつ切りになってドアが閉まったり帰路へ移行するのを防ぐ。
+    /// </summary>
+    public IEnumerator WaitForDoorPeekAnimationAndSlideFinished(float maxWaitSeconds = 10f)
+    {
+        yield return WaitForPeekStateAndSlideCompletion(DoorPeekStateFullPath, waitForDoorSlide: true, maxWaitSeconds: maxWaitSeconds);
+    }
+
+    /// <summary>
+    /// 窓覗き（Peek_Window）のアニメーションが完了するまで待機する。
+    /// </summary>
+    public IEnumerator WaitForWindowPeekAnimationFinished(float maxWaitSeconds = 10f)
+    {
+        yield return WaitForPeekStateAndSlideCompletion(WindowPeekStateFullPath, waitForDoorSlide: false, maxWaitSeconds: maxWaitSeconds);
+    }
+
+    private IEnumerator WaitForPeekStateAndSlideCompletion(string peekStateFullPath, bool waitForDoorSlide, float maxWaitSeconds)
+    {
+        Animator animator = ResolveMotherAnimator();
+        if (animator == null || !TryResolveIdleState(animator, out int layerIndex, out _, out _))
+        {
+            yield break;
+        }
+
+        int peekHash = Animator.StringToHash(peekStateFullPath);
+        float timeout = Mathf.Max(0.5f, maxWaitSeconds);
+        float elapsed = 0f;
+
+        // Trigger発火直後でまだ遷移が始まっていない場合のため、最大0.4秒だけPeekステート突入を待つ
+        float enterWait = 0f;
+        while (enterWait < 0.4f)
+        {
+            if (IsPeekWaitAborted()) yield break;
+
+            AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(layerIndex);
+            bool inTransition = animator.IsInTransition(layerIndex);
+            int nextHash = inTransition ? animator.GetNextAnimatorStateInfo(layerIndex).fullPathHash : 0;
+
+            if (current.fullPathHash == peekHash || (inTransition && nextHash == peekHash))
+                break;
+
+            enterWait += Time.deltaTime;
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        while (elapsed < timeout)
+        {
+            if (IsPeekWaitAborted()) yield break;
+
+            AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(layerIndex);
+            bool inTransition = animator.IsInTransition(layerIndex);
+            int nextHash = inTransition ? animator.GetNextAnimatorStateInfo(layerIndex).fullPathHash : 0;
+
+            bool isEnteringPeek = inTransition && nextHash == peekHash;
+            bool isPlayingPeek = current.fullPathHash == peekHash && !inTransition && current.normalizedTime < 0.96f;
+            bool isSlideRunning = waitForDoorSlide && _peekSlideCoroutine != null;
+
+            if (!isEnteringPeek && !isPlayingPeek && !isSlideRunning)
+            {
+                break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+    }
+
+    private bool IsPeekWaitAborted()
+    {
+        if (IsReturnHomeAborted || _routeExecutionFailed || IsGameOverSequenceActive)
+            return true;
+
+        MotherSuspicionSystem pd = parentDetection != null
+            ? parentDetection
+            : UnityEngine.Object.FindFirstObjectByType<MotherSuspicionSystem>();
+        if (pd != null && (pd.isCaught || pd.HasPermanentGameOver))
+            return true;
+
+        return false;
     }
 
     /// <summary>

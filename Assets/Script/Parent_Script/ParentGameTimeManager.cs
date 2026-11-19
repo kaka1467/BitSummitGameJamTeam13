@@ -307,6 +307,8 @@ public class ParentGameTimeManager : MonoBehaviour
 
     private bool _parentSlidePausedTimeScale;
     private bool _parentSlideOkClicked;
+    private bool _isWaitingForParentSlideOk;
+    private float _lastRemoteTutorialNextTime = -10f;
 
     private void PauseParentSlideTimeScale()
     {
@@ -597,6 +599,7 @@ public class ParentGameTimeManager : MonoBehaviour
     {
         RestoreParentSlideTimeScaleIfPaused();
         _parentSlideOkClicked = false;
+        _isWaitingForParentSlideOk = false;
 
         if (parentTutorialDimBackground == null || parentTutorialSlideImage == null || parentTutorialOkButton == null)
         {
@@ -649,9 +652,26 @@ public class ParentGameTimeManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 子機から UDP ("TUTORIAL_NEXT" / "TUTORIAL_OK") を受信した際、
+    /// 親機チュートリアルの OK! ボタンが表示中かつ待機中であれば次のスライドへ進める。
+    /// </summary>
+    public void NotifyRemoteTutorialNext()
+    {
+        if (!_isWaitingForParentSlideOk) return;
+        if (parentTutorialOkButton == null || !parentTutorialOkButton.gameObject.activeInHierarchy) return;
+        if (Time.unscaledTime - _lastRemoteTutorialNextTime < 0.25f) return;
+
+        _lastRemoteTutorialNextTime = Time.unscaledTime;
+        _parentSlideOkClicked = true;
+        Debug.Log("[ParentGameTimeManager] Received TUTORIAL_NEXT from Child — advancing parent tutorial slide.", this);
+    }
+
     private IEnumerator WaitForParentTutorialButtonPress()
     {
         _parentSlideOkClicked = false;
+        _isWaitingForParentSlideOk = false;
+
         float elapsed = 0f;
         while (!_parentSlideOkClicked && elapsed < 0.2f)
         {
@@ -659,11 +679,19 @@ public class ParentGameTimeManager : MonoBehaviour
             yield return null;
         }
 
-        while (!_parentSlideOkClicked && IsParentTutorialButtonDown(heldOnly: true))
-            yield return null;
+        _isWaitingForParentSlideOk = true;
+        try
+        {
+            while (!_parentSlideOkClicked && IsParentTutorialButtonDown(heldOnly: true))
+                yield return null;
 
-        while (!_parentSlideOkClicked && !IsParentTutorialButtonDown(heldOnly: false))
-            yield return null;
+            while (!_parentSlideOkClicked && !IsParentTutorialButtonDown(heldOnly: false))
+                yield return null;
+        }
+        finally
+        {
+            _isWaitingForParentSlideOk = false;
+        }
     }
 
     private static bool IsParentTutorialButtonDown(bool heldOnly)

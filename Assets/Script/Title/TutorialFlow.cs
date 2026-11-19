@@ -436,8 +436,74 @@ public class TutorialFlow : MonoBehaviour
                 gameManager.TriggerResult(GameManager.ResultType.TimeUp);
             }
         }
+        else
+        {
+            StartCoroutine(ForwardRemoteParentTutorialAdvanceRoutine(host));
+        }
 
         tutorialRunning = false;
+    }
+
+    private IEnumerator ForwardRemoteParentTutorialAdvanceRoutine(ChildUdpRuntimeHost initialHost)
+    {
+        // 前ステップの押しっぱなしが解除されるのを待つ
+        while (IsRemoteParentTutorialAdvanceInput(checkHeldOnly: true))
+        {
+            yield return null;
+        }
+
+        float lastSentUnscaledTime = -10f;
+        const float sendCooldownSeconds = 0.25f;
+
+        while (tutorialPauseOverlayRoot != null && tutorialPauseOverlayRoot.activeInHierarchy)
+        {
+            if (Time.unscaledTime - lastSentUnscaledTime >= sendCooldownSeconds &&
+                IsRemoteParentTutorialAdvanceInput(checkHeldOnly: false))
+            {
+                lastSentUnscaledTime = Time.unscaledTime;
+                ChildUdpRuntimeHost activeHost = initialHost != null ? initialHost : ResolveHost();
+                if (activeHost != null)
+                {
+                    activeHost.SendState("TUTORIAL_NEXT");
+                }
+            }
+
+            yield return null;
+        }
+    }
+
+    private static bool IsRemoteParentTutorialAdvanceInput(bool checkHeldOnly)
+    {
+        if (IsSlideAdvancePressedThisFrameOrHeld(checkHeldOnly))
+            return true;
+
+        Pointer pointer = Pointer.current;
+        if (pointer != null)
+        {
+            if (checkHeldOnly)
+            {
+                if (pointer.press.isPressed) return true;
+            }
+            else
+            {
+                if (pointer.press.wasPressedThisFrame) return true;
+            }
+        }
+
+        Touchscreen touch = Touchscreen.current;
+        if (touch != null)
+        {
+            if (checkHeldOnly)
+            {
+                if (touch.primaryTouch.press.isPressed) return true;
+            }
+            else
+            {
+                if (touch.primaryTouch.press.wasPressedThisFrame) return true;
+            }
+        }
+
+        return false;
     }
 
     [ContextMenu("子機チュートリアルUIをシーン上に生成（Unity内で配置・サイズ調整用）")]

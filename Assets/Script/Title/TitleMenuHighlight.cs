@@ -106,11 +106,10 @@ public class TitleMenuHighlight : MonoBehaviour
 
     private void Start()
     {
-        if (initialSelection != null
-            && initialSelection.gameObject.activeInHierarchy
-            && EventSystem.current != null)
+        Selectable targetSelection = ResolveValidInitialSelection();
+        if (targetSelection != null && EventSystem.current != null)
         {
-            EventSystem.current.SetSelectedGameObject(initialSelection.gameObject);
+            EventSystem.current.SetSelectedGameObject(targetSelection.gameObject);
         }
 
         UpdateFollowPosition(useSnap: true);
@@ -122,22 +121,60 @@ public class TitleMenuHighlight : MonoBehaviour
         UpdateFollowPosition(useSnap: false);
     }
 
-    // 選択中のオブジェクトが非表示・破棄などで無効になっていたら、初期選択へ選び直す。
-    // （例：ボタンを押すと自身を非表示にするため、選択先が宙に浮いて
-    //   矢印キーでの移動が止まってしまう問題への対策）
+    // 選択中のオブジェクトが非表示・破棄・操作不能（interactable=false）になっていたら、有効な初期選択へ選び直す。
     private void EnsureValidSelection()
     {
         if (EventSystem.current == null) return;
 
         GameObject selected = EventSystem.current.currentSelectedGameObject;
-        bool selectionIsValid = selected != null && selected.activeInHierarchy;
+        Selectable selectedSelectable = selected != null ? selected.GetComponent<Selectable>() : null;
+        bool selectionIsValid = selected != null
+            && selected.activeInHierarchy
+            && selectedSelectable != null
+            && selectedSelectable.IsInteractable();
 
-        if (!selectionIsValid
-            && initialSelection != null
-            && initialSelection.gameObject.activeInHierarchy)
+        if (!selectionIsValid)
         {
-            EventSystem.current.SetSelectedGameObject(initialSelection.gameObject);
+            Selectable fallback = ResolveValidInitialSelection();
+            if (fallback != null)
+            {
+                EventSystem.current.SetSelectedGameObject(fallback.gameObject);
+            }
         }
+    }
+
+    private Selectable ResolveValidInitialSelection()
+    {
+        if (initialSelection != null
+            && initialSelection.gameObject.activeInHierarchy
+            && initialSelection.IsInteractable())
+        {
+            return initialSelection;
+        }
+
+        GameObject soloObj = GameObject.Find("SoloStartButton");
+        if (soloObj != null && soloObj.activeInHierarchy)
+        {
+            Selectable soloSel = soloObj.GetComponent<Selectable>();
+            if (soloSel != null && soloSel.IsInteractable())
+            {
+                initialSelection = soloSel;
+                return soloSel;
+            }
+        }
+
+        Selectable[] allSelectables = Selectable.allSelectablesArray;
+        for (int i = 0; i < allSelectables.Length; i++)
+        {
+            Selectable s = allSelectables[i];
+            if (s != null && s.gameObject.activeInHierarchy && s.IsInteractable() && s.navigation.mode != Navigation.Mode.None)
+            {
+                initialSelection = s;
+                return s;
+            }
+        }
+
+        return null;
     }
 
     private void UpdateFollowPosition(bool useSnap)
