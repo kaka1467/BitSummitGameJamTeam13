@@ -477,6 +477,12 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
 
         if (msg == "SLEEP_LOCK")
         {
+            if (KeepTutorialInterruptScreen)
+            {
+                if (ShowDebug) Debug.Log("[ChildUdpRuntimeHost] Ignored SLEEP_LOCK during Parent Tutorial interrupt screen.");
+                return;
+            }
+
             if (_notifications.IsSleepLocked)
             {
                 if (ShowDebug) Debug.Log("[ChildUdpRuntimeHost] Received redundant SLEEP_LOCK (already locked) — skipped.");
@@ -743,6 +749,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     private void HandleTimeUpAccepted(string activeScene)
     {
         _session.TimeUpHandled = true;
+        KeepTutorialInterruptScreen = false;
         _notifications.SetSleepLocked(false);
 
         if (_notifications.HasTimeUpSubscriber)

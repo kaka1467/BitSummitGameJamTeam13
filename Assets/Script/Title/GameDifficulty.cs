@@ -251,15 +251,9 @@ public static class GameDifficulty
     {
         return level switch
         {
-            Level.Easy => GameLanguage.Pick(
-                "制限時間 4分（20:00〜00:00）\n足音が聞こえやすく、サイレンが出ない入門モード",
-                "Time Limit: 4 min (20:00-00:00)\nLouder footsteps, no siren items, shorter QTE"),
-            Level.Hard => GameLanguage.Pick(
-                "制限時間 8分（20:00〜00:00）\n廊下の照明予兆なし・親の接近とスクロールが速い高難度モード",
-                "Time Limit: 8 min (20:00-00:00)\nNo hallway warning lights, faster pace & longer QTE"),
-            _ => GameLanguage.Pick(
-                "制限時間 6分（20:00〜00:00）\n標準のバランスで遊べる通常モード",
-                "Time Limit: 6 min (20:00-00:00)\nStandard balanced mode"),
+            Level.Easy => "Time Limit: 4 min (20:00-00:00)\nLouder footsteps, no siren items, shorter QTE",
+            Level.Hard => "Time Limit: 8 min (20:00-00:00)\nNo hallway warning lights, faster pace & longer QTE",
+            _ => "Time Limit: 6 min (20:00-00:00)\nStandard balanced mode",
         };
     }
 
@@ -584,6 +578,7 @@ public class DifficultyTitleUI : MonoBehaviour
     [SerializeField] private Image _detailOkSelectedOutline;
     [SerializeField] private Image _detailBackSelectedOutline;
     [SerializeField] private TextMeshProUGUI _closeModalBtnLabel;
+    [SerializeField] private Image _closeModalSelectedOutline;
     [SerializeField] private Image[] _cardSelectionOutlines = new Image[3];
     [SerializeField] private Image _tutorialSelectionOutline;
     [SerializeField] private TextMeshProUGUI _tutorialStateText;
@@ -596,39 +591,34 @@ public class DifficultyTitleUI : MonoBehaviour
 
     [Header("Layout Settings - Modal & Difficulty Cards")]
     [SerializeField] private int _modalSortingOrder = 100;
-    [SerializeField] private Vector2 _titleAnchoredPosition = new Vector2(0f, 380f);
-    [SerializeField] private Vector2 _titleSize = new Vector2(900f, 70f);
-    [SerializeField] private float _titleFontSize = 42f;
-    [SerializeField] private float[] _cardAnchoredX = new float[] { -420f, 0f, 420f };
-    [SerializeField] private float _cardAnchoredY = 60f;
-    [SerializeField] private Vector2 _cardSize = new Vector2(320f, 410f);
+    [SerializeField] private float[] _cardAnchoredX = new float[] { -460f, 0f, 460f };
+    [SerializeField] private float _cardAnchoredY = -150f;
+    [SerializeField] private Vector2 _cardSize = new Vector2(380f, 480f);
 
     [Header("Layout Settings - Tutorial Button & Back Button")]
-    [SerializeField] private Vector2 _tutorialBtnAnchoredPosition = new Vector2(0f, -260f);
-    [SerializeField] private Vector2 _tutorialBtnSize = new Vector2(620f, 150f);
-    [SerializeField] private Vector2 _tutorialStateAnchoredPosition = new Vector2(0f, -365f);
-    [SerializeField] private Vector2 _tutorialStateSize = new Vector2(900f, 50f);
-    [SerializeField] private float _tutorialStateFontSize = 24f;
-    [SerializeField] private Vector2 _closeBtnAnchoredPosition = new Vector2(0f, -445f);
+    [SerializeField] private Vector2 _tutorialBtnAnchoredPosition = new Vector2(0f, 260f);
+    [SerializeField] private Vector2 _tutorialBtnSize = new Vector2(1000f, 260f);
+    [SerializeField] private Vector2 _closeBtnAnchoredPosition = new Vector2(0f, -455f);
     [SerializeField] private Vector2 _closeBtnSize = new Vector2(320f, 64f);
     [SerializeField] private float _closeBtnFontSize = 26f;
 
     [Header("Layout Settings - Detail Popup (確認ポップアップ)")]
     [SerializeField] private Vector2 _detailCardAnchoredPosition = Vector2.zero;
     [SerializeField] private Vector2 _detailCardSize = new Vector2(1280f, 720f);
-    [SerializeField] private Vector2 _detailDescAnchoredPosition = new Vector2(150f, 40f);
-    [SerializeField] private Vector2 _detailDescSize = new Vector2(680f, 220f);
+    [SerializeField] private Vector2 _detailDescAnchoredPosition = new Vector2(148f, 15f);
+    [SerializeField] private Vector2 _detailDescSize = new Vector2(580f, 220f);
     [SerializeField] private float _detailDescFontSize = 28f;
-    [SerializeField] private Vector2 _detailOkAnchoredPosition = new Vector2(-16f, -152f);
-    [SerializeField] private Vector2 _detailBackAnchoredPosition = new Vector2(316f, -152f);
-    [SerializeField] private Vector2 _detailActionBtnSize = new Vector2(250f, 84f);
+    [SerializeField] private Vector2 _detailOkAnchoredPosition = new Vector2(-15f, -182f);
+    [SerializeField] private Vector2 _detailBackAnchoredPosition = new Vector2(310f, -182f);
+    [SerializeField] private Vector2 _detailActionBtnSize = new Vector2(250f, 95f);
     [SerializeField] private float _detailActionFontSize = 32f;
 
     private bool _isOpen;
     private bool _isDetailOpen;
     private bool _isTutorialDetailPopup;
     private GameDifficulty.Level _pendingLevel = GameDifficulty.Level.Normal;
-    private int _cursorIndex = 1; // 0=Easy, 1=Normal, 2=Hard, 3=TutorialMode
+    private int _cursorIndex = 1; // 0=Easy, 1=Normal, 2=Hard, 3=TutorialMode, 4=CloseModalBtn(BACK)
+    private int _lastCardCursorIndex = 1; // 0=Easy, 1=Normal, 2=Hard
     private int _detailCursorIndex = 0; // 0=OK, 1=BACK
     private int _openedFrame = -1;
     private int _detailOpenedFrame = -1;
@@ -650,20 +640,40 @@ public class DifficultyTitleUI : MonoBehaviour
 
     public static DifficultyTitleUI EnsureAttached()
     {
-        DifficultyTitleUI existing = FindFirstObjectByType<DifficultyTitleUI>();
-        if (existing != null) return existing;
+        DifficultyTitleUI existing = FindFirstObjectByType<DifficultyTitleUI>(FindObjectsInactive.Include);
+        if (existing != null)
+        {
+            if (!existing.gameObject.activeSelf) existing.gameObject.SetActive(true);
+            return existing;
+        }
 
         TryAttachToActiveScene(SceneManager.GetActiveScene().name);
-        return FindFirstObjectByType<DifficultyTitleUI>();
+        return FindFirstObjectByType<DifficultyTitleUI>(FindObjectsInactive.Include);
     }
 
     private static void TryAttachToActiveScene(string sceneName)
     {
         if (sceneName != "ChildTitle" && sceneName != "ParentTitle") return;
-        if (FindFirstObjectByType<DifficultyTitleUI>() != null) return;
+        DifficultyTitleUI existing = FindFirstObjectByType<DifficultyTitleUI>(FindObjectsInactive.Include);
+        if (existing != null)
+        {
+            if (!existing.gameObject.activeSelf) existing.gameObject.SetActive(true);
+            existing.ForceHideAllModalsInScene();
+            return;
+        }
 
         Canvas targetCanvas = FindMainUiCanvas();
         if (targetCanvas == null) return;
+
+        // もし既にシーン上に孤立した DifficultyModalPanel 等がある場合は既存の親を利用するか統合する
+        Transform strayModal = FindTransformInSceneByName("DifficultyModalPanel");
+        if (strayModal != null && strayModal.parent != null && strayModal.parent.GetComponent<Canvas>() == null)
+        {
+            GameObject hostObj = strayModal.parent.gameObject;
+            if (hostObj.GetComponent<DifficultyTitleUI>() == null)
+                hostObj.AddComponent<DifficultyTitleUI>();
+            return;
+        }
 
         var hostGo = new GameObject("DifficultyTitleUI", typeof(RectTransform));
         hostGo.transform.SetParent(targetCanvas.transform, false);
@@ -675,15 +685,69 @@ public class DifficultyTitleUI : MonoBehaviour
         hostGo.AddComponent<DifficultyTitleUI>();
     }
 
+    private static Transform FindTransformInSceneByName(string targetName)
+    {
+        Scene activeScene = SceneManager.GetActiveScene();
+        if (!activeScene.IsValid()) return null;
+
+        GameObject[] roots = activeScene.GetRootGameObjects();
+        for (int i = 0; i < roots.Length; i++)
+        {
+            Transform found = FindTransformRecursive(roots[i].transform, targetName);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static Transform FindTransformRecursive(Transform parent, string targetName)
+    {
+        if (parent == null) return null;
+        if (string.Equals(parent.name, targetName, StringComparison.Ordinal))
+            return parent;
+
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform found = FindTransformRecursive(parent.GetChild(i), targetName);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static List<Transform> FindAllTransformsInSceneByName(string targetName)
+    {
+        var list = new List<Transform>();
+        Scene activeScene = SceneManager.GetActiveScene();
+        if (!activeScene.IsValid()) return list;
+
+        GameObject[] roots = activeScene.GetRootGameObjects();
+        for (int i = 0; i < roots.Length; i++)
+        {
+            CollectTransformsRecursive(roots[i].transform, targetName, list);
+        }
+        return list;
+    }
+
+    private static void CollectTransformsRecursive(Transform parent, string targetName, List<Transform> results)
+    {
+        if (parent == null) return;
+        if (string.Equals(parent.name, targetName, StringComparison.Ordinal))
+            results.Add(parent);
+
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            CollectTransformsRecursive(parent.GetChild(i), targetName, results);
+        }
+    }
+
     private static Canvas FindMainUiCanvas()
     {
-        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         Canvas best = null;
         int bestScore = int.MinValue;
 
         foreach (Canvas c in canvases)
         {
-            if (c == null || !c.isActiveAndEnabled) continue;
+            if (c == null || !c.gameObject.activeInHierarchy) continue;
             int score = 0;
             if (c.isRootCanvas) score += 10;
             if (c.GetComponent<GraphicRaycaster>() != null) score += 20;
@@ -724,12 +788,79 @@ public class DifficultyTitleUI : MonoBehaviour
 
     private void Awake()
     {
+        // シーン内に重複した DifficultyTitleUI が存在する場合は1つに統合し、余分な方を無効化する
+        DifficultyTitleUI[] allInstances = FindObjectsByType<DifficultyTitleUI>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        if (Instance != null && Instance != this)
+        {
+            // 既に有効な Instance がある場合は、自分自身の配下のモーダルをすべて非表示にして自身を破棄する
+            if (_detailPopupRoot != null) _detailPopupRoot.SetActive(false);
+            if (_modalRoot != null) _modalRoot.SetActive(false);
+            Transform myModal = transform.Find("DifficultyModalPanel");
+            if (myModal != null) myModal.gameObject.SetActive(false);
+            Destroy(gameObject);
+            return;
+        }
+
         Instance = this;
-        BuildUI();
+        for (int i = 0; i < allInstances.Length; i++)
+        {
+            DifficultyTitleUI other = allInstances[i];
+            if (other != null && other != this)
+            {
+                Transform otherModal = other.transform.Find("DifficultyModalPanel");
+                if (otherModal != null) otherModal.gameObject.SetActive(false);
+                other.gameObject.SetActive(false);
+            }
+        }
+
+        _isOpen = false;
+        _isDetailOpen = false;
+        _isTutorialDetailPopup = false;
+
+        BuildUI(bindRuntimeListeners: true);
+        ForceHideAllModalsInScene();
+
         GameDifficulty.Changed += OnDifficultyChanged;
         GameDifficulty.IncludeTutorialChanged += OnTutorialChanged;
         GameLanguage.Changed += OnLanguageChanged;
         RefreshVisuals();
+    }
+
+    private void Start()
+    {
+        // エディタ上でモーダルを表示ONにしたまま保存されたシーンでも、再生開始時は必ず閉じた状態でスタートする
+        if (!_isOpen)
+        {
+            ForceHideAllModalsInScene();
+        }
+    }
+
+    /// <summary>
+    /// シーン上に配置・複製されたすべての DifficultyModalPanel / DifficultyDetailPopup を確実に非表示にし、
+    /// 内部状態も閉じた状態（_isOpen = false, _isDetailOpen = false）に初期化する。
+    /// </summary>
+    public void ForceHideAllModalsInScene()
+    {
+        _isOpen = false;
+        _isDetailOpen = false;
+        _isTutorialDetailPopup = false;
+
+        if (_detailPopupRoot != null) _detailPopupRoot.SetActive(false);
+        if (_modalRoot != null) _modalRoot.SetActive(false);
+
+        List<Transform> allDetails = FindAllTransformsInSceneByName("DifficultyDetailPopup");
+        for (int i = 0; i < allDetails.Count; i++)
+        {
+            if (allDetails[i] != null && allDetails[i].gameObject.activeSelf)
+                allDetails[i].gameObject.SetActive(false);
+        }
+
+        List<Transform> allModals = FindAllTransformsInSceneByName("DifficultyModalPanel");
+        for (int i = 0; i < allModals.Count; i++)
+        {
+            if (allModals[i] != null && allModals[i].gameObject.activeSelf)
+                allModals[i].gameObject.SetActive(false);
+        }
     }
 
     private void OnDestroy()
@@ -834,13 +965,47 @@ public class DifficultyTitleUI : MonoBehaviour
             if (moveX != 0)
             {
                 if (_cursorIndex < 3)
+                {
                     _cursorIndex = (_cursorIndex + moveX + 3) % 3;
+                    _lastCardCursorIndex = _cursorIndex;
+                }
                 _lastNavTime = Time.unscaledTime;
                 RefreshVisuals();
             }
             else if (moveY != 0)
             {
-                _cursorIndex = _cursorIndex < 3 ? 3 : (int)GameDifficulty.Current;
+                if (moveY < 0) // Up
+                {
+                    if (_cursorIndex == 4)
+                    {
+                        _cursorIndex = Mathf.Clamp(_lastCardCursorIndex, 0, 2);
+                    }
+                    else if (_cursorIndex < 3)
+                    {
+                        _lastCardCursorIndex = _cursorIndex;
+                        _cursorIndex = 3;
+                    }
+                    else if (_cursorIndex == 3)
+                    {
+                        _cursorIndex = 4;
+                    }
+                }
+                else // Down (moveY > 0)
+                {
+                    if (_cursorIndex == 3)
+                    {
+                        _cursorIndex = Mathf.Clamp(_lastCardCursorIndex, 0, 2);
+                    }
+                    else if (_cursorIndex < 3)
+                    {
+                        _lastCardCursorIndex = _cursorIndex;
+                        _cursorIndex = 4;
+                    }
+                    else if (_cursorIndex == 4)
+                    {
+                        _cursorIndex = 3;
+                    }
+                }
                 _lastNavTime = Time.unscaledTime;
                 RefreshVisuals();
             }
@@ -853,10 +1018,12 @@ public class DifficultyTitleUI : MonoBehaviour
 
         if (submit)
         {
-            if (_cursorIndex == 3)
+            if (_cursorIndex == 4)
+                ClosePanel();
+            else if (_cursorIndex == 3)
                 OpenTutorialDetailPopup();
             else
-                OpenDetailPopup((GameDifficulty.Level)_cursorIndex);
+                OpenDetailPopup((GameDifficulty.Level)Mathf.Clamp(_cursorIndex, 0, 2));
         }
         else if (close)
         {
@@ -880,7 +1047,8 @@ public class DifficultyTitleUI : MonoBehaviour
         _isDetailOpen = false;
         _isTutorialDetailPopup = false;
         _openedFrame = Time.frameCount;
-        _cursorIndex = GameDifficulty.IncludeTutorial ? 3 : (int)GameDifficulty.Current;
+        _lastCardCursorIndex = (int)GameDifficulty.Current;
+        _cursorIndex = GameDifficulty.IncludeTutorial ? 3 : _lastCardCursorIndex;
         if (_detailPopupRoot != null) _detailPopupRoot.SetActive(false);
         _modalRoot.SetActive(true);
         _modalRoot.transform.SetAsLastSibling();
@@ -907,6 +1075,7 @@ public class DifficultyTitleUI : MonoBehaviour
     private void OpenDetailPopup(GameDifficulty.Level level)
     {
         _cursorIndex = (int)level;
+        _lastCardCursorIndex = _cursorIndex;
         _pendingLevel = level;
 
         if (_detailPopupRoot == null) return;
@@ -967,9 +1136,7 @@ public class DifficultyTitleUI : MonoBehaviour
 
         if (_detailDescText != null)
         {
-            _detailDescText.text = GameLanguage.Pick(
-                "チュートリアル専用モードです。\n子機と親機の操作を順番に練習します（クリア時スコアは0）。",
-                "Tutorial Mode.\nPractice both Child and Parent controls step by step.");
+            _detailDescText.text = "Tutorial Mode.\nPractice both Child and Parent controls step by step.";
             _detailDescText.color = new Color(0.05f, 0.02f, 0.18f, 1f);
         }
 
@@ -1024,11 +1191,22 @@ public class DifficultyTitleUI : MonoBehaviour
 
         _isDetailOpen = false;
         _isTutorialDetailPopup = false;
-        if (_detailPopupRoot != null)
-            _detailPopupRoot.SetActive(false);
 
-        ClosePanel();
-        startCallback?.Invoke();
+        if (startCallback != null)
+        {
+            // ゲーム開始時：ロード画面（ChildLoading等）へ遷移するまでの1フレーム間に
+            // 背後のタイトル画面が一瞬映るのを防ぐため、_modalRoot / _detailPopupRoot は非表示にせず
+            // 暗転カバーを表示したまま（CLOSE_DIFFICULTY も送らずに）ゲーム開始処理を実行する
+            _isOpen = false;
+            startCallback.Invoke();
+        }
+        else
+        {
+            // 単なる難易度設定変更時（右上バッジやTabキーから開いた場合）は従来どおりパネルを閉じる
+            if (_detailPopupRoot != null)
+                _detailPopupRoot.SetActive(false);
+            ClosePanel();
+        }
     }
 
     private void RefreshDetailSelectionVisuals()
@@ -1044,6 +1222,194 @@ public class DifficultyTitleUI : MonoBehaviour
     {
         BuildUI(bindRuntimeListeners: Application.isPlaying);
         RefreshVisuals();
+
+        // エディタ編集時は Scene ビューでそのまま配置・サイズを調整できるようモーダルを表示状態にする
+        if (!Application.isPlaying && _modalRoot != null)
+        {
+            _modalRoot.SetActive(true);
+            if (_detailPopupRoot != null)
+            {
+                if (_detailCardImage != null && _detailCardImage.sprite == null)
+                    _detailCardImage.sprite = LoadResourceSprite("Difficulty/ui_difficulty_normal");
+                if (_detailDescText != null && string.IsNullOrEmpty(_detailDescText.text))
+                    _detailDescText.text = GameDifficulty.GetDescription(GameDifficulty.Level.Normal);
+                _detailPopupRoot.SetActive(false);
+            }
+        }
+    }
+
+    [ContextMenu("確認ポップアップをプレビュー編集 (EASY)")]
+    public void PreviewDetailEasyInEditor() => PreviewDetailPopupInEditor(0);
+
+    [ContextMenu("確認ポップアップをプレビュー編集 (NORMAL)")]
+    public void PreviewDetailNormalInEditor() => PreviewDetailPopupInEditor(1);
+
+    [ContextMenu("確認ポップアップをプレビュー編集 (HARD)")]
+    public void PreviewDetailHardInEditor() => PreviewDetailPopupInEditor(2);
+
+    [ContextMenu("確認ポップアップをプレビュー編集 (TUTORIAL)")]
+    public void PreviewDetailTutorialInEditor() => PreviewDetailPopupInEditor(3);
+
+    /// <summary>
+    /// Unityエディタ上で DifficultyDetailPopup を表示し、指定モード（0=Easy, 1=Normal, 2=Hard, 3=Tutorial）の
+    /// 背景カード画像・説明文・ボタン文字色に切り替えて Scene ビューで直接位置やサイズを編集できるようにする。
+    /// </summary>
+    public GameObject PreviewDetailPopupInEditor(int modeIndex)
+    {
+        BuildUI(bindRuntimeListeners: Application.isPlaying);
+        if (_modalRoot != null) _modalRoot.SetActive(true);
+        if (_detailPopupRoot == null) return null;
+
+        _detailPopupRoot.SetActive(true);
+        _detailPopupRoot.transform.SetAsLastSibling();
+
+        if (modeIndex == 3)
+        {
+            if (_detailCardImage != null)
+                _detailCardImage.sprite = LoadResourceSprite("Difficulty/ui_tutorial_desc");
+            if (_detailDescText != null)
+            {
+                _detailDescText.text = "Tutorial Mode.\nPractice both Child and Parent controls step by step.";
+                _detailDescText.color = new Color(0.05f, 0.02f, 0.18f, 1f);
+            }
+            if (_detailOkLabel != null)
+            {
+                _detailOkLabel.text = "OK";
+                _detailOkLabel.color = Color.white;
+            }
+            if (_detailBackLabel != null)
+            {
+                _detailBackLabel.text = "BACK";
+                _detailBackLabel.color = Color.white;
+            }
+        }
+        else
+        {
+            GameDifficulty.Level lv = (GameDifficulty.Level)Mathf.Clamp(modeIndex, 0, 2);
+            string spritePath = lv switch
+            {
+                GameDifficulty.Level.Easy => "Difficulty/ui_difficulty_easy",
+                GameDifficulty.Level.Hard => "Difficulty/ui_difficulty_hard",
+                _ => "Difficulty/ui_difficulty_normal"
+            };
+            if (_detailCardImage != null)
+                _detailCardImage.sprite = LoadResourceSprite(spritePath);
+            if (_detailDescText != null)
+            {
+                _detailDescText.text = GameDifficulty.GetDescription(lv);
+                _detailDescText.color = Color.white;
+            }
+            if (_detailOkLabel != null)
+            {
+                _detailOkLabel.text = "OK";
+                _detailOkLabel.color = new Color(0.05f, 0.02f, 0.15f, 1f);
+            }
+            if (_detailBackLabel != null)
+            {
+                _detailBackLabel.text = "BACK";
+                _detailBackLabel.color = new Color(0.05f, 0.02f, 0.15f, 1f);
+            }
+        }
+
+        _detailCursorIndex = 0;
+        RefreshDetailSelectionVisuals();
+        return _detailPopupRoot;
+    }
+
+    /// <summary>
+    /// DifficultyDetailPopup 内の DetailCard / DetailDescText / ConfirmBtn / BackBtn / 選択枠の位置・サイズを
+    /// 背景カード画像（ui_difficulty_* / ui_tutorial_desc）の枠にぴったり合う既定値に整列する。
+    /// </summary>
+    [ContextMenu("確認ポップアップの位置・サイズを背景画像枠に自動整列")]
+    public void ResetDetailPopupLayoutToArtwork()
+    {
+        _detailCardAnchoredPosition = Vector2.zero;
+        _detailCardSize = new Vector2(1280f, 720f);
+        _detailDescAnchoredPosition = new Vector2(148f, 15f);
+        _detailDescSize = new Vector2(580f, 220f);
+        _detailOkAnchoredPosition = new Vector2(-15f, -182f);
+        _detailBackAnchoredPosition = new Vector2(310f, -182f);
+        _detailActionBtnSize = new Vector2(250f, 95f);
+
+        BuildUI(bindRuntimeListeners: Application.isPlaying);
+        if (_detailPopupRoot == null) return;
+
+        Transform detailCardTr = _detailPopupRoot.transform.Find("DetailCard");
+        if (detailCardTr == null) return;
+
+        RectTransform cardRt = detailCardTr.GetComponent<RectTransform>();
+        if (cardRt != null)
+        {
+            cardRt.anchoredPosition = _detailCardAnchoredPosition;
+            cardRt.sizeDelta = _detailCardSize;
+        }
+
+        if (_detailDescText != null)
+        {
+            RectTransform descRt = _detailDescText.rectTransform;
+            descRt.anchoredPosition = _detailDescAnchoredPosition;
+            descRt.sizeDelta = _detailDescSize;
+        }
+
+        Transform okTr = detailCardTr.Find("ConfirmBtn");
+        if (okTr != null)
+        {
+            RectTransform okRt = okTr.GetComponent<RectTransform>();
+            if (okRt != null)
+            {
+                okRt.anchoredPosition = _detailOkAnchoredPosition;
+                okRt.sizeDelta = _detailActionBtnSize;
+            }
+            if (_detailOkLabel != null)
+            {
+                _detailOkLabel.rectTransform.anchoredPosition = Vector2.zero;
+                _detailOkLabel.rectTransform.sizeDelta = _detailActionBtnSize;
+            }
+            Transform okSelTr = okTr.Find("OkSelectedOutline");
+            if (okSelTr != null)
+            {
+                RectTransform okSelRt = okSelTr.GetComponent<RectTransform>();
+                if (okSelRt != null)
+                {
+                    okSelRt.anchorMin = Vector2.zero;
+                    okSelRt.anchorMax = Vector2.one;
+                    okSelRt.offsetMin = new Vector2(-46f, -26f);
+                    okSelRt.offsetMax = new Vector2(46f, 26f);
+                }
+                Image okSelImg = okSelTr.GetComponent<Image>();
+                if (okSelImg != null) okSelImg.preserveAspect = false;
+            }
+        }
+
+        Transform backTr = detailCardTr.Find("BackBtn");
+        if (backTr != null)
+        {
+            RectTransform backRt = backTr.GetComponent<RectTransform>();
+            if (backRt != null)
+            {
+                backRt.anchoredPosition = _detailBackAnchoredPosition;
+                backRt.sizeDelta = _detailActionBtnSize;
+            }
+            if (_detailBackLabel != null)
+            {
+                _detailBackLabel.rectTransform.anchoredPosition = Vector2.zero;
+                _detailBackLabel.rectTransform.sizeDelta = _detailActionBtnSize;
+            }
+            Transform backSelTr = backTr.Find("BackSelectedOutline");
+            if (backSelTr != null)
+            {
+                RectTransform backSelRt = backSelTr.GetComponent<RectTransform>();
+                if (backSelRt != null)
+                {
+                    backSelRt.anchorMin = Vector2.zero;
+                    backSelRt.anchorMax = Vector2.one;
+                    backSelRt.offsetMin = new Vector2(-46f, -26f);
+                    backSelRt.offsetMax = new Vector2(46f, 26f);
+                }
+                Image backSelImg = backSelTr.GetComponent<Image>();
+                if (backSelImg != null) backSelImg.preserveAspect = false;
+            }
+        }
     }
 
     private void BuildUI(bool bindRuntimeListeners = true)
@@ -1052,7 +1418,7 @@ public class DifficultyTitleUI : MonoBehaviour
 
         if (_badgeRoot == null)
         {
-            Transform existingBadge = transform.Find("DifficultyBadgeButton");
+            Transform existingBadge = transform.Find("DifficultyBadgeButton") ?? FindTransformInSceneByName("DifficultyBadgeButton");
             if (existingBadge != null) _badgeRoot = existingBadge.gameObject;
         }
 
@@ -1097,16 +1463,14 @@ public class DifficultyTitleUI : MonoBehaviour
         if (bindRuntimeListeners)
         {
             Button badgeBtn = _badgeRoot.GetComponent<Button>();
-            if (badgeBtn != null)
-            {
-                badgeBtn.onClick.RemoveAllListeners();
-                badgeBtn.onClick.AddListener(() => OpenPanel());
-            }
+            if (badgeBtn == null) badgeBtn = _badgeRoot.AddComponent<Button>();
+            badgeBtn.onClick.RemoveAllListeners();
+            badgeBtn.onClick.AddListener(() => OpenPanel());
         }
 
         if (_modalRoot == null)
         {
-            Transform existingModal = transform.Find("DifficultyModalPanel");
+            Transform existingModal = transform.Find("DifficultyModalPanel") ?? FindTransformInSceneByName("DifficultyModalPanel");
             if (existingModal != null) _modalRoot = existingModal.gameObject;
         }
 
@@ -1125,11 +1489,85 @@ public class DifficultyTitleUI : MonoBehaviour
             modalRt.offsetMax = Vector2.zero;
 
             Image modalBg = _modalRoot.GetComponent<Image>();
-            modalBg.color = new Color(0.03f, 0.02f, 0.10f, 0.94f);
+            modalBg.color = new Color(0.03f, 0.02f, 0.10f, 0.97f);
+        }
+        else
+        {
+            Image modalBg = _modalRoot.GetComponent<Image>();
+            if (modalBg != null && modalBg.color.a < 0.97f)
+            {
+                Color c = modalBg.color;
+                c.a = 0.97f;
+                modalBg.color = c;
+            }
 
-            CreateLabel(_modalRoot.transform, sharedFont, "SELECT DIFFICULTY", _titleAnchoredPosition, _titleSize, _titleFontSize, Color.white);
+            // 旧バージョンの不要な上部タイトルラベル・下部モード表示テキストがあれば非表示にする
+            Transform oldTitleTr = _modalRoot.transform.Find("Text");
+            if (oldTitleTr != null) oldTitleTr.gameObject.SetActive(false);
+            Transform oldStateTr = _modalRoot.transform.Find("TutorialStateText");
+            if (oldStateTr != null) oldStateTr.gameObject.SetActive(false);
         }
 
+        // 1) 上段中央：TutorialToggleBtn
+        Transform tutTr = _modalRoot.transform.Find("TutorialToggleBtn");
+        GameObject tutBtnGo;
+        if (tutTr == null)
+        {
+            tutBtnGo = new GameObject("TutorialToggleBtn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Button));
+            tutBtnGo.transform.SetParent(_modalRoot.transform, false);
+            RectTransform tutRt = tutBtnGo.GetComponent<RectTransform>();
+            tutRt.anchoredPosition = _tutorialBtnAnchoredPosition;
+            tutRt.sizeDelta = _tutorialBtnSize;
+
+            var tutSelGo = new GameObject("TutorialSelectedOutline", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            tutSelGo.transform.SetParent(tutBtnGo.transform, false);
+            RectTransform tutSelRt = tutSelGo.GetComponent<RectTransform>();
+            tutSelRt.anchorMin = Vector2.zero;
+            tutSelRt.anchorMax = Vector2.one;
+            tutSelRt.offsetMin = new Vector2(-16f, -16f);
+            tutSelRt.offsetMax = new Vector2(16f, 16f);
+
+            _tutorialSelectionOutline = tutSelGo.GetComponent<Image>();
+            _tutorialSelectionOutline.sprite = LoadResourceSprite("Difficulty/selected_tutorial_UI");
+            _tutorialSelectionOutline.preserveAspect = true;
+            _tutorialSelectionOutline.raycastTarget = false;
+
+            var tutArtGo = new GameObject("CardVisual", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            tutArtGo.transform.SetParent(tutBtnGo.transform, false);
+            RectTransform tutArtRt = tutArtGo.GetComponent<RectTransform>();
+            tutArtRt.anchorMin = Vector2.zero;
+            tutArtRt.anchorMax = Vector2.one;
+            tutArtRt.offsetMin = Vector2.zero;
+            tutArtRt.offsetMax = Vector2.zero;
+
+            Image tutImg = tutArtGo.GetComponent<Image>();
+            tutImg.sprite = LoadResourceSprite("Difficulty/Tutorial_UI");
+            tutImg.preserveAspect = true;
+            tutImg.raycastTarget = true;
+
+            Button tutBtn = tutBtnGo.GetComponent<Button>();
+            tutBtn.targetGraphic = tutImg;
+        }
+        else
+        {
+            tutBtnGo = tutTr.gameObject;
+            if (_tutorialSelectionOutline == null)
+            {
+                Transform tutSelTr = tutTr.Find("TutorialSelectedOutline");
+                if (tutSelTr != null) _tutorialSelectionOutline = tutSelTr.GetComponent<Image>();
+            }
+            EnsureCardVisualAboveOutline(tutBtnGo, "Difficulty/Tutorial_UI", _tutorialSelectionOutline);
+        }
+
+        if (bindRuntimeListeners)
+        {
+            Button tutBtn = tutBtnGo.GetComponent<Button>();
+            if (tutBtn == null) tutBtn = tutBtnGo.AddComponent<Button>();
+            tutBtn.onClick.RemoveAllListeners();
+            tutBtn.onClick.AddListener(OpenTutorialDetailPopup);
+        }
+
+        // 2) 下段横並び：Card_Easy (左), Card_Normal (中), Card_Hard (右)
         string[] cardSprites = { "Difficulty/Easy_UI", "Difficulty/Normal_UI", "Difficulty/Hard_UI" };
         if (_cardSelectionOutlines == null || _cardSelectionOutlines.Length != 3)
             _cardSelectionOutlines = new Image[3];
@@ -1142,30 +1580,42 @@ public class DifficultyTitleUI : MonoBehaviour
             GameObject cardGo;
             if (cardTr == null)
             {
-                float cardX = (_cardAnchoredX != null && i < _cardAnchoredX.Length) ? _cardAnchoredX[i] : (i - 1) * 420f;
-                cardGo = new GameObject(cardName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+                float cardX = (_cardAnchoredX != null && i < _cardAnchoredX.Length) ? _cardAnchoredX[i] : (i - 1) * 460f;
+                cardGo = new GameObject(cardName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Button));
                 cardGo.transform.SetParent(_modalRoot.transform, false);
                 RectTransform rt = cardGo.GetComponent<RectTransform>();
                 rt.anchoredPosition = new Vector2(cardX, _cardAnchoredY);
                 rt.sizeDelta = _cardSize;
-
-                Image img = cardGo.GetComponent<Image>();
-                img.sprite = LoadResourceSprite(cardSprites[i]);
-                img.preserveAspect = true;
 
                 var selGo = new GameObject("SelectedOutline", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
                 selGo.transform.SetParent(cardGo.transform, false);
                 RectTransform selRt = selGo.GetComponent<RectTransform>();
                 selRt.anchorMin = Vector2.zero;
                 selRt.anchorMax = Vector2.one;
-                selRt.offsetMin = new Vector2(-14f, -14f);
-                selRt.offsetMax = new Vector2(14f, 14f);
+                selRt.offsetMin = new Vector2(-16f, -16f);
+                selRt.offsetMax = new Vector2(16f, 16f);
 
                 Image selImg = selGo.GetComponent<Image>();
                 selImg.sprite = LoadResourceSprite("Difficulty/selected_UI");
                 selImg.preserveAspect = true;
                 selImg.raycastTarget = false;
                 _cardSelectionOutlines[i] = selImg;
+
+                var artGo = new GameObject("CardVisual", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                artGo.transform.SetParent(cardGo.transform, false);
+                RectTransform artRt = artGo.GetComponent<RectTransform>();
+                artRt.anchorMin = Vector2.zero;
+                artRt.anchorMax = Vector2.one;
+                artRt.offsetMin = Vector2.zero;
+                artRt.offsetMax = Vector2.zero;
+
+                Image img = artGo.GetComponent<Image>();
+                img.sprite = LoadResourceSprite(cardSprites[i]);
+                img.preserveAspect = true;
+                img.raycastTarget = true;
+
+                Button btn = cardGo.GetComponent<Button>();
+                btn.targetGraphic = img;
             }
             else
             {
@@ -1175,78 +1625,21 @@ public class DifficultyTitleUI : MonoBehaviour
                     Transform selTr = cardTr.Find("SelectedOutline");
                     if (selTr != null) _cardSelectionOutlines[i] = selTr.GetComponent<Image>();
                 }
+                EnsureCardVisualAboveOutline(cardGo, cardSprites[i], _cardSelectionOutlines[i]);
             }
 
             if (bindRuntimeListeners)
             {
                 Button btn = cardGo.GetComponent<Button>();
-                if (btn != null)
-                {
-                    btn.onClick.RemoveAllListeners();
-                    btn.onClick.AddListener(() => OpenDetailPopup((GameDifficulty.Level)idx));
-                }
+                if (btn == null) btn = cardGo.AddComponent<Button>();
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(() => OpenDetailPopup((GameDifficulty.Level)idx));
             }
         }
 
-        Transform tutTr = _modalRoot.transform.Find("TutorialToggleBtn");
-        GameObject tutBtnGo;
-        if (tutTr == null)
+        if (_tutorialStateText != null)
         {
-            tutBtnGo = new GameObject("TutorialToggleBtn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-            tutBtnGo.transform.SetParent(_modalRoot.transform, false);
-            RectTransform tutRt = tutBtnGo.GetComponent<RectTransform>();
-            tutRt.anchoredPosition = _tutorialBtnAnchoredPosition;
-            tutRt.sizeDelta = _tutorialBtnSize;
-
-            Image tutImg = tutBtnGo.GetComponent<Image>();
-            tutImg.sprite = LoadResourceSprite("Difficulty/Tutorial_UI");
-            tutImg.preserveAspect = true;
-
-            var tutSelGo = new GameObject("TutorialSelectedOutline", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            tutSelGo.transform.SetParent(tutBtnGo.transform, false);
-            RectTransform tutSelRt = tutSelGo.GetComponent<RectTransform>();
-            tutSelRt.anchorMin = Vector2.zero;
-            tutSelRt.anchorMax = Vector2.one;
-            tutSelRt.offsetMin = new Vector2(-12f, -12f);
-            tutSelRt.offsetMax = new Vector2(12f, 12f);
-
-            _tutorialSelectionOutline = tutSelGo.GetComponent<Image>();
-            _tutorialSelectionOutline.sprite = LoadResourceSprite("Difficulty/selected_tutorial_UI");
-            _tutorialSelectionOutline.preserveAspect = true;
-            _tutorialSelectionOutline.raycastTarget = false;
-        }
-        else
-        {
-            tutBtnGo = tutTr.gameObject;
-            if (_tutorialSelectionOutline == null)
-            {
-                Transform tutSelTr = tutTr.Find("TutorialSelectedOutline");
-                if (tutSelTr != null) _tutorialSelectionOutline = tutSelTr.GetComponent<Image>();
-            }
-        }
-
-        if (bindRuntimeListeners)
-        {
-            Button tutBtn = tutBtnGo.GetComponent<Button>();
-            if (tutBtn != null)
-            {
-                tutBtn.onClick.RemoveAllListeners();
-                tutBtn.onClick.AddListener(OpenTutorialDetailPopup);
-            }
-        }
-
-        if (_tutorialStateText == null)
-        {
-            Transform tutStateTr = _modalRoot.transform.Find("TutorialStateText");
-            if (tutStateTr != null)
-            {
-                _tutorialStateText = tutStateTr.GetComponent<TextMeshProUGUI>();
-            }
-            else
-            {
-                _tutorialStateText = CreateLabel(_modalRoot.transform, sharedFont, "", _tutorialStateAnchoredPosition, _tutorialStateSize, _tutorialStateFontSize, new Color(0.8f, 1f, 0.8f, 1f));
-                _tutorialStateText.gameObject.name = "TutorialStateText";
-            }
+            _tutorialStateText.gameObject.SetActive(false);
         }
 
         Transform closeTr = _modalRoot.transform.Find("CloseModalBtn");
@@ -1268,19 +1661,42 @@ public class DifficultyTitleUI : MonoBehaviour
                 _closeModalBtnLabel = closeBtnGo.GetComponentInChildren<TextMeshProUGUI>(true);
         }
 
+        Transform closeSelTr = closeBtnGo.transform.Find("CloseSelectedOutline");
+        if (closeSelTr == null)
+        {
+            var closeSelGo = new GameObject("CloseSelectedOutline", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            closeSelGo.transform.SetParent(closeBtnGo.transform, false);
+            RectTransform closeSelRt = closeSelGo.GetComponent<RectTransform>();
+            closeSelRt.anchorMin = Vector2.zero;
+            closeSelRt.anchorMax = Vector2.one;
+            closeSelRt.offsetMin = new Vector2(-46f, -18f);
+            closeSelRt.offsetMax = new Vector2(46f, 18f);
+            _closeModalSelectedOutline = closeSelGo.GetComponent<Image>();
+            _closeModalSelectedOutline.sprite = LoadResourceSprite("Difficulty/ui_difficulty_selected");
+            _closeModalSelectedOutline.preserveAspect = false;
+            _closeModalSelectedOutline.raycastTarget = false;
+            _closeModalSelectedOutline.gameObject.SetActive(false);
+        }
+        else if (_closeModalSelectedOutline == null)
+        {
+            _closeModalSelectedOutline = closeSelTr.GetComponent<Image>();
+        }
+
         if (bindRuntimeListeners)
         {
             Button closeBtn = closeBtnGo.GetComponent<Button>();
-            if (closeBtn != null)
+            if (closeBtn == null) closeBtn = closeBtnGo.AddComponent<Button>();
+            closeBtn.onClick.RemoveAllListeners();
+            closeBtn.onClick.AddListener(() =>
             {
-                closeBtn.onClick.RemoveAllListeners();
-                closeBtn.onClick.AddListener(() => ClosePanel());
-            }
+                _cursorIndex = 4;
+                ClosePanel();
+            });
         }
 
         if (_detailPopupRoot == null)
         {
-            Transform detailTr = _modalRoot.transform.Find("DifficultyDetailPopup");
+            Transform detailTr = _modalRoot.transform.Find("DifficultyDetailPopup") ?? FindTransformInSceneByName("DifficultyDetailPopup");
             if (detailTr != null) _detailPopupRoot = detailTr.gameObject;
         }
 
@@ -1319,11 +1735,11 @@ public class DifficultyTitleUI : MonoBehaviour
             RectTransform okSelRt = okSelGo.GetComponent<RectTransform>();
             okSelRt.anchorMin = Vector2.zero;
             okSelRt.anchorMax = Vector2.one;
-            okSelRt.offsetMin = new Vector2(-12f, -12f);
-            okSelRt.offsetMax = new Vector2(12f, 12f);
+            okSelRt.offsetMin = new Vector2(-46f, -26f);
+            okSelRt.offsetMax = new Vector2(46f, 26f);
             _detailOkSelectedOutline = okSelGo.GetComponent<Image>();
             _detailOkSelectedOutline.sprite = LoadResourceSprite("Difficulty/ui_difficulty_selected");
-            _detailOkSelectedOutline.preserveAspect = true;
+            _detailOkSelectedOutline.preserveAspect = false;
             _detailOkSelectedOutline.raycastTarget = false;
 
             var backBtnGo = new GameObject("BackBtn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
@@ -1339,11 +1755,11 @@ public class DifficultyTitleUI : MonoBehaviour
             RectTransform backSelRt = backSelGo.GetComponent<RectTransform>();
             backSelRt.anchorMin = Vector2.zero;
             backSelRt.anchorMax = Vector2.one;
-            backSelRt.offsetMin = new Vector2(-12f, -12f);
-            backSelRt.offsetMax = new Vector2(12f, 12f);
+            backSelRt.offsetMin = new Vector2(-46f, -26f);
+            backSelRt.offsetMax = new Vector2(46f, 26f);
             _detailBackSelectedOutline = backSelGo.GetComponent<Image>();
             _detailBackSelectedOutline.sprite = LoadResourceSprite("Difficulty/ui_difficulty_selected");
-            _detailBackSelectedOutline.preserveAspect = true;
+            _detailBackSelectedOutline.preserveAspect = false;
             _detailBackSelectedOutline.raycastTarget = false;
         }
         else
@@ -1357,24 +1773,65 @@ public class DifficultyTitleUI : MonoBehaviour
                     Transform descTr = detailCardTr.Find("DetailDescText") ?? detailCardTr.Find("Text");
                     if (descTr != null) _detailDescText = descTr.GetComponent<TextMeshProUGUI>();
                 }
+                if (_detailDescText != null)
+                {
+                    RectTransform descRt = _detailDescText.rectTransform;
+                    // 旧デフォルト値 (150, 40) / (680, 220) のまま未調整のオブジェクトであれば新レイアウトへ自動移行する
+                    if (Vector2.Distance(descRt.anchoredPosition, new Vector2(150f, 40f)) < 1f &&
+                        Vector2.Distance(descRt.sizeDelta, new Vector2(680f, 220f)) < 1f)
+                    {
+                        descRt.anchoredPosition = new Vector2(148f, 15f);
+                        descRt.sizeDelta = new Vector2(580f, 220f);
+                    }
+                }
                 Transform okTr = detailCardTr.Find("ConfirmBtn");
                 if (okTr != null)
                 {
-                    if (_detailOkLabel == null) _detailOkLabel = okTr.GetComponentInChildren<TextMeshProUGUI>(true);
-                    if (_detailOkSelectedOutline == null)
+                    RectTransform okRt = okTr.GetComponent<RectTransform>();
+                    if (okRt != null &&
+                        Vector2.Distance(okRt.anchoredPosition, new Vector2(-16f, -152f)) < 1f &&
+                        Vector2.Distance(okRt.sizeDelta, new Vector2(250f, 84f)) < 1f)
                     {
-                        Transform okSelTr = okTr.Find("OkSelectedOutline");
-                        if (okSelTr != null) _detailOkSelectedOutline = okSelTr.GetComponent<Image>();
+                        okRt.anchoredPosition = new Vector2(-15f, -182f);
+                        okRt.sizeDelta = new Vector2(250f, 95f);
+                    }
+                    if (_detailOkLabel == null) _detailOkLabel = okTr.GetComponentInChildren<TextMeshProUGUI>(true);
+                    Transform okSelTr = okTr.Find("OkSelectedOutline");
+                    if (okSelTr != null)
+                    {
+                        if (_detailOkSelectedOutline == null) _detailOkSelectedOutline = okSelTr.GetComponent<Image>();
+                        RectTransform okSelRt = okSelTr.GetComponent<RectTransform>();
+                        if (okSelRt != null && Vector2.Distance(okSelRt.offsetMin, new Vector2(-12f, -12f)) < 1f)
+                        {
+                            okSelRt.offsetMin = new Vector2(-46f, -26f);
+                            okSelRt.offsetMax = new Vector2(46f, 26f);
+                            if (_detailOkSelectedOutline != null) _detailOkSelectedOutline.preserveAspect = false;
+                        }
                     }
                 }
                 Transform backTr = detailCardTr.Find("BackBtn");
                 if (backTr != null)
                 {
-                    if (_detailBackLabel == null) _detailBackLabel = backTr.GetComponentInChildren<TextMeshProUGUI>(true);
-                    if (_detailBackSelectedOutline == null)
+                    RectTransform backRt = backTr.GetComponent<RectTransform>();
+                    if (backRt != null &&
+                        Vector2.Distance(backRt.anchoredPosition, new Vector2(316f, -152f)) < 1f &&
+                        Vector2.Distance(backRt.sizeDelta, new Vector2(250f, 84f)) < 1f)
                     {
-                        Transform backSelTr = backTr.Find("BackSelectedOutline");
-                        if (backSelTr != null) _detailBackSelectedOutline = backSelTr.GetComponent<Image>();
+                        backRt.anchoredPosition = new Vector2(310f, -182f);
+                        backRt.sizeDelta = new Vector2(250f, 95f);
+                    }
+                    if (_detailBackLabel == null) _detailBackLabel = backTr.GetComponentInChildren<TextMeshProUGUI>(true);
+                    Transform backSelTr = backTr.Find("BackSelectedOutline");
+                    if (backSelTr != null)
+                    {
+                        if (_detailBackSelectedOutline == null) _detailBackSelectedOutline = backSelTr.GetComponent<Image>();
+                        RectTransform backSelRt = backSelTr.GetComponent<RectTransform>();
+                        if (backSelRt != null && Vector2.Distance(backSelRt.offsetMin, new Vector2(-12f, -12f)) < 1f)
+                        {
+                            backSelRt.offsetMin = new Vector2(-46f, -26f);
+                            backSelRt.offsetMax = new Vector2(46f, 26f);
+                            if (_detailBackSelectedOutline != null) _detailBackSelectedOutline.preserveAspect = false;
+                        }
                     }
                 }
             }
@@ -1389,31 +1846,80 @@ public class DifficultyTitleUI : MonoBehaviour
                 if (okTr != null)
                 {
                     Button okBtn = okTr.GetComponent<Button>();
-                    if (okBtn != null)
+                    if (okBtn == null) okBtn = okTr.gameObject.AddComponent<Button>();
+                    okBtn.onClick.RemoveAllListeners();
+                    okBtn.onClick.AddListener(() =>
                     {
-                        okBtn.onClick.RemoveAllListeners();
-                        okBtn.onClick.AddListener(() =>
-                        {
-                            _detailCursorIndex = 0;
-                            ConfirmDetailSelection();
-                        });
-                    }
+                        _detailCursorIndex = 0;
+                        ConfirmDetailSelection();
+                    });
                 }
                 Transform backTr = detailCardTr.Find("BackBtn");
                 if (backTr != null)
                 {
                     Button backBtn = backTr.GetComponent<Button>();
-                    if (backBtn != null)
-                    {
-                        backBtn.onClick.RemoveAllListeners();
-                        backBtn.onClick.AddListener(OnDetailBackButtonClicked);
-                    }
+                    if (backBtn == null) backBtn = backTr.gameObject.AddComponent<Button>();
+                    backBtn.onClick.RemoveAllListeners();
+                    backBtn.onClick.AddListener(OnDetailBackButtonClicked);
                 }
             }
         }
 
-        if (_detailPopupRoot != null) _detailPopupRoot.SetActive(false);
-        if (_modalRoot != null) _modalRoot.SetActive(false);
+        // 実行時（Awake等）はエディタで表示ONのまま保存されていても必ず非表示で初期化する
+        if (Application.isPlaying)
+        {
+            if (_detailPopupRoot != null) _detailPopupRoot.SetActive(false);
+            if (_modalRoot != null) _modalRoot.SetActive(false);
+        }
+    }
+
+    /// <summary>
+    /// SelectedOutline（selected_UI / selected_tutorial_UI）は塗りつぶし画像のため、
+    /// 親オブジェクト自身の Image よりも手前（子）にあるとカード本体を覆い隠してしまう。
+    /// SelectedOutline を背面（FirstSibling）に置き、カード本体（CardVisual）を前面（LastSibling）に配置して外枠だけが見えるようにする。
+    /// </summary>
+    private static void EnsureCardVisualAboveOutline(GameObject cardGo, string spriteResourcePath, Image outlineImg)
+    {
+        if (cardGo == null) return;
+
+        if (outlineImg != null)
+        {
+            outlineImg.transform.SetAsFirstSibling();
+        }
+
+        Transform visualTr = cardGo.transform.Find("CardVisual");
+        Image rootImg = cardGo.GetComponent<Image>();
+
+        if (visualTr == null)
+        {
+            Sprite sp = (rootImg != null && rootImg.sprite != null) ? rootImg.sprite : LoadResourceSprite(spriteResourcePath);
+            var artGo = new GameObject("CardVisual", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            artGo.transform.SetParent(cardGo.transform, false);
+            RectTransform artRt = artGo.GetComponent<RectTransform>();
+            artRt.anchorMin = Vector2.zero;
+            artRt.anchorMax = Vector2.one;
+            artRt.offsetMin = Vector2.zero;
+            artRt.offsetMax = Vector2.zero;
+
+            Image artImg = artGo.GetComponent<Image>();
+            artImg.sprite = sp;
+            artImg.preserveAspect = true;
+            artImg.raycastTarget = true;
+
+            if (rootImg != null)
+            {
+                rootImg.enabled = false;
+            }
+
+            Button btn = cardGo.GetComponent<Button>();
+            if (btn != null) btn.targetGraphic = artImg;
+            artGo.transform.SetAsLastSibling();
+        }
+        else
+        {
+            if (rootImg != null) rootImg.enabled = false;
+            visualTr.SetAsLastSibling();
+        }
     }
 
     private static TextMeshProUGUI CreateLabel(Transform parent, TMP_FontAsset font, string text, Vector2 anchoredPos, Vector2 size, float fontSize, Color color)
@@ -1447,14 +1953,33 @@ public class DifficultyTitleUI : MonoBehaviour
                 : $"MODE: {GameDifficulty.GetDisplayName(lv)} ({minutes}m)\n[Tab / Y]";
         }
 
+        bool isCloseBtnCursor = _isOpen && _cursorIndex == 4;
         if (_closeModalBtnLabel != null)
         {
             _closeModalBtnLabel.text = "BACK";
+            _closeModalBtnLabel.color = isCloseBtnCursor ? new Color(1f, 0.96f, 0.55f, 1f) : Color.white;
+            Transform closeBtnTr = _closeModalBtnLabel.transform.parent;
+            if (closeBtnTr != null)
+            {
+                Image closeBtnBg = closeBtnTr.GetComponent<Image>();
+                if (closeBtnBg != null)
+                {
+                    closeBtnBg.color = isCloseBtnCursor
+                        ? new Color(0.45f, 0.35f, 0.78f, 1f)
+                        : new Color(0.25f, 0.2f, 0.45f, 1f);
+                }
+            }
+        }
+
+        if (_closeModalSelectedOutline != null)
+        {
+            _closeModalSelectedOutline.gameObject.SetActive(isCloseBtnCursor);
         }
 
         for (int i = 0; i < _cardSelectionOutlines.Length; i++)
         {
             if (_cardSelectionOutlines[i] == null) continue;
+            _cardSelectionOutlines[i].transform.SetAsFirstSibling();
             bool isCurrentMode = !isTutMode && ((int)lv == i);
             bool isCursor = _isOpen && _cursorIndex == i;
             _cardSelectionOutlines[i].gameObject.SetActive(isCurrentMode || isCursor);
@@ -1465,6 +1990,7 @@ public class DifficultyTitleUI : MonoBehaviour
 
         if (_tutorialSelectionOutline != null)
         {
+            _tutorialSelectionOutline.transform.SetAsFirstSibling();
             bool isCursor = _isOpen && _cursorIndex == 3;
             _tutorialSelectionOutline.gameObject.SetActive(isTutMode || isCursor);
             _tutorialSelectionOutline.color = isCursor
@@ -1474,9 +2000,7 @@ public class DifficultyTitleUI : MonoBehaviour
 
         if (_tutorialStateText != null)
         {
-            _tutorialStateText.text = isTutMode
-                ? GameLanguage.Pick("現在のモード：TUTORIAL（チュートリアル専用モード）", "Current Mode: TUTORIAL")
-                : GameLanguage.Pick($"現在のモード：{GameDifficulty.GetDisplayName(lv)}（チュートリアルなしで本編開始）", $"Current Mode: {GameDifficulty.GetDisplayName(lv)} (No tutorial)");
+            _tutorialStateText.gameObject.SetActive(false);
         }
     }
 }

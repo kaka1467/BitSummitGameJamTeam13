@@ -114,6 +114,14 @@ public class QTEManager : MonoBehaviour
     // 実行中QTEが報酬対象（本プレイ）かどうか。QTE開始時に確定し、付与または中断時に消費する。
     private bool successRewardPending;
 
+    // 7個配置されたQTEスロットの初期座標キャッシュ（難易度に応じて4個/6個/7個を常に中央揃え配置するため）
+    private bool hasCachedSlotLayout;
+    private Vector2[] initialSlotImagePositions;
+    private Vector2[] initialSlotLabelPositions;
+    private bool[] slotLabelIsIndependent;
+    private float cachedSlotCenterX;
+    private float cachedSlotStepX = 140f;
+
     public bool IsQteActive => isQteActive;
 
     private void Awake()
@@ -125,6 +133,7 @@ public class QTEManager : MonoBehaviour
         }
 
         Instance = this;
+        CacheInitialSlotPositions();
         ResolvePlayerAnimator();
         ResolveAnimatorComponent();
         SetQteVisible(false);
@@ -238,7 +247,94 @@ public class QTEManager : MonoBehaviour
         remainingTime = GameDifficulty.ChildQteTimeLimitSeconds > 0f
             ? GameDifficulty.ChildQteTimeLimitSeconds
             : timeLimitSeconds;
+        UpdateSlotLayoutForActiveCount(targetCount);
         UpdateQteText();
+    }
+
+    /// <summary>
+    /// シーン上に配置された7個のスロットの初期座標・中心X・スロット間隔をキャッシュする。
+    /// </summary>
+    private void CacheInitialSlotPositions()
+    {
+        if (hasCachedSlotLayout || slots == null || slots.Length == 0) return;
+
+        int n = slots.Length;
+        initialSlotImagePositions = new Vector2[n];
+        initialSlotLabelPositions = new Vector2[n];
+        slotLabelIsIndependent = new bool[n];
+
+        float minX = float.PositiveInfinity;
+        float maxX = float.NegativeInfinity;
+        float firstX = 0f;
+        float lastX = 0f;
+        int validCount = 0;
+
+        for (int i = 0; i < n; i++)
+        {
+            QteSlot slot = slots[i];
+            if (slot == null || slot.image == null) continue;
+
+            RectTransform imgRt = slot.image.rectTransform;
+            Vector2 imgPos = imgRt.anchoredPosition;
+            initialSlotImagePositions[i] = imgPos;
+
+            if (validCount == 0) firstX = imgPos.x;
+            lastX = imgPos.x;
+            if (imgPos.x < minX) minX = imgPos.x;
+            if (imgPos.x > maxX) maxX = imgPos.x;
+            validCount++;
+
+            if (slot.label != null)
+            {
+                RectTransform lblRt = slot.label.rectTransform;
+                initialSlotLabelPositions[i] = lblRt.anchoredPosition;
+                slotLabelIsIndependent[i] = !lblRt.IsChildOf(imgRt);
+            }
+        }
+
+        if (validCount > 0)
+        {
+            cachedSlotCenterX = (minX + maxX) * 0.5f;
+            if (validCount > 1)
+            {
+                float step = (lastX - firstX) / (validCount - 1);
+                if (Mathf.Abs(step) > 1f)
+                    cachedSlotStepX = step;
+            }
+            hasCachedSlotLayout = true;
+        }
+    }
+
+    /// <summary>
+    /// 有効なスロット数（EASY=4, NORMAL=6, HARD=7）に応じて、表示されるスロット群（0..activeCount-1）が
+    /// 常に画面中央（元の7スロット全体の中心X）を基準に左右対称・等間隔で並ぶように座標を再配置する。
+    /// </summary>
+    private void UpdateSlotLayoutForActiveCount(int activeCount)
+    {
+        if (slots == null || slots.Length == 0) return;
+        CacheInitialSlotPositions();
+        if (!hasCachedSlotLayout) return;
+
+        int count = Mathf.Clamp(activeCount, 1, slots.Length);
+        float halfSpan = (count - 1) * 0.5f;
+
+        for (int i = 0; i < count; i++)
+        {
+            QteSlot slot = slots[i];
+            if (slot == null || slot.image == null) continue;
+
+            float targetX = cachedSlotCenterX + (i - halfSpan) * cachedSlotStepX;
+            Vector2 baseImgPos = initialSlotImagePositions[i];
+            float deltaX = targetX - baseImgPos.x;
+
+            slot.image.rectTransform.anchoredPosition = new Vector2(targetX, baseImgPos.y);
+
+            if (slot.label != null && slotLabelIsIndependent[i])
+            {
+                Vector2 baseLblPos = initialSlotLabelPositions[i];
+                slot.label.rectTransform.anchoredPosition = new Vector2(baseLblPos.x + deltaX, baseLblPos.y);
+            }
+        }
     }
 
     private void TriggerPlayerDamage()
@@ -561,6 +657,10 @@ public class QTEManager : MonoBehaviour
             {
                 slot.image.gameObject.SetActive(withinSequence);
             }
+            if (slot.label != null && slotLabelIsIndependent != null && i < slotLabelIsIndependent.Length && slotLabelIsIndependent[i])
+            {
+                slot.label.gameObject.SetActive(withinSequence);
+            }
             if (!withinSequence) continue;
 
             bool pressed = i < currentIndex;
@@ -608,10 +708,15 @@ public class QTEManager : MonoBehaviour
         for (int i = 0; i < slots.Length; i++)
         {
             QteSlot slot = slots[i];
-            if (slot != null && slot.image != null)
+            if (slot == null) continue;
+            bool showSlot = visible && (string.IsNullOrEmpty(currentSequence) || i < currentSequence.Length);
+            if (slot.image != null)
             {
-                bool showSlot = visible && (string.IsNullOrEmpty(currentSequence) || i < currentSequence.Length);
                 slot.image.gameObject.SetActive(showSlot);
+            }
+            if (slot.label != null && slotLabelIsIndependent != null && i < slotLabelIsIndependent.Length && slotLabelIsIndependent[i])
+            {
+                slot.label.gameObject.SetActive(showSlot);
             }
         }
     }
