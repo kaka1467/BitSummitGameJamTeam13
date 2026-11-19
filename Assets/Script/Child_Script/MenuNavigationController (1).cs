@@ -57,6 +57,14 @@ public class MenuNavigationController : MonoBehaviour
         if (selectableButtons.Count == 0 || selectionArrow == null)
             return;
 
+        // 難易度選択モーダルが開いている間は背景のメニュー矢印や決定入力を抑止する
+        if (DifficultyTitleUI.IsAnyModalOpen)
+        {
+            if (selectionArrow.activeSelf)
+                selectionArrow.SetActive(false);
+            return;
+        }
+
         EnsureValidSelection();
         HandleNavigation();
         HandleConfirm();

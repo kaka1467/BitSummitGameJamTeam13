@@ -8683,9 +8683,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3173275c580c34a43a0d9e3041dd1ea8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ParentGameTimeManager
-  limitSeconds: 300
-  startHour: 21
-  gameMinutesTotal: 300
+  limitSeconds: 360
+  startHour: 20
+  gameMinutesTotal: 240
   clockFormat: '{0:00}:{1:00}'
   enableTimeUp: 1
   timeUpSceneName: ParentGameClear

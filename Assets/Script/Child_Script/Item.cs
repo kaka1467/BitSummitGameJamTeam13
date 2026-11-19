@@ -134,6 +134,7 @@ public class Item : MonoBehaviour
                 if (gm != null) gm.AddScore(scoreAmount);
 
                 // BGMアイテム（ラウドアイテム）を拾った時に親機へUDP通知を送る
+                bool sentToConnectedParent = false;
                 {
                     // 送信元は稼働中の子機Host（旧互換窓口へのフォールバックは作らない）。
                     // 取得できない場合は明示的に記録する（アイテム効果・得点・時間・QTE・SE/BGMの処理順序は変更しない）。
@@ -142,6 +143,8 @@ public class Item : MonoBehaviour
                     {
                         Debug.Log("[Item] BGM Item matched! Calling SendLoudItem().");
                         udpHost.SendLoudItem();
+                        sentToConnectedParent = udpHost.IsRunning &&
+                                                udpHost.ConnectionState == ChildConnectionLink.LinkState.Connected;
                     }
                     else
                     {
@@ -172,8 +175,18 @@ public class Item : MonoBehaviour
                 }
 
                 float vol = Mathf.Clamp01(bgmVolume);
-                Debug.Log($"Item.ApplyEffect: Calling PlayBGM for clip '{bgmClip.name}' (loop={loopBgm}, vol={vol})");
-                AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
+                if (sentToConnectedParent)
+                {
+                    // 親機と連動中は親機側（ParentGameAudioPlayer / PlayRushIn）で再生するため、
+                    // 子機ローカルでの二重再生を避けて状態通知のみ行う（M-S02）。
+                    Debug.Log($"Item.ApplyEffect: Parent connected — delegating BGM '{bgmClip.name}' playback to Parent (M-S02).");
+                    AudioManager.NotifyBgmStateChanged(bgmClip, true, loopBgm, vol);
+                }
+                else
+                {
+                    Debug.Log($"Item.ApplyEffect: Calling PlayBGM for clip '{bgmClip.name}' (loop={loopBgm}, vol={vol})");
+                    AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
+                }
                 break;
         }
     }

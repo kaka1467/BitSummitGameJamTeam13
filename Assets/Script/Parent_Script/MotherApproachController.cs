@@ -226,9 +226,20 @@ public class MotherApproachController : MonoBehaviour
     ///  ・割り込み・中断・Scene遷移は既存の _choreRouteAborted／_routeExecutionFailed 判定で抜ける。
     ///  ・待ち時間は scaled（Time.deltaTime）で進め、timeScale=0 で止まる既存方針を維持する。
     /// </summary>
+    private bool _forceChoreReturnLookBack;
+
+    /// <summary>【M-F02 / M-Q03】片付け帰路中のサイレン取得により、choreReturnPoint_1 での退室前振り向きを強制確定させる。</summary>
+    public void ForceChoreReturnLookBack()
+    {
+        _forceChoreReturnLookBack = true;
+    }
+
     private IEnumerator ChoreReturnLookBackRoutine()
     {
-        if (UnityEngine.Random.value >= Mathf.Clamp01(choreReturnLookBackChance))
+        bool forced = _forceChoreReturnLookBack;
+        _forceChoreReturnLookBack = false;
+
+        if (!forced && UnityEngine.Random.value >= Mathf.Clamp01(choreReturnLookBackChance))
         {
             Debug.Log($"[MotherApproachController] 退室前の振り向き：抽選 外れ（chance={choreReturnLookBackChance:F2}）— 追加の停止も振り向きも行いません。");
             yield break;
@@ -1276,6 +1287,7 @@ public class MotherApproachController : MonoBehaviour
 
         _choreRouteAborted = false;
         _chorePerformanceFinished = false;
+        _forceChoreReturnLookBack = false;
         IsChoreRouteActive = false;
         // ドア通過の記憶も初期化する（ゲームオーバー演出のドア判定へ古い値を残さない）。
         IsChoreDoorPassed = false;
@@ -2158,6 +2170,18 @@ public class MotherApproachController : MonoBehaviour
         Debug.Log($"[MotherApproachController] Door pause: {doorPause:F2}s (IsRushIn={IsRushIn})");
         yield return new WaitForSeconds(doorPause);
 
+        // 【親機チュートリアル用】ドアの目の前で停止し、枕センサーが押されるまでドアを開けずに待機する
+        if (TutorialHoldBeforeDoorOpen)
+        {
+            TutorialWaitingForPillowAtDoor = true;
+            Debug.Log("[MotherApproachController] 親機チュートリアル：ドア前で停止し、枕センサー入力を待機しています");
+            while (TutorialHoldBeforeDoorOpen && !IsReturnHomeAborted && !_routeExecutionFailed)
+            {
+                yield return null;
+            }
+            TutorialWaitingForPillowAtDoor = false;
+        }
+
         StoppedAtDoor = true;
         IsApproaching = false;
         // IsInHallwayPhaseは意図的にここでは解除しない。
@@ -2885,6 +2909,26 @@ public class MotherApproachController : MonoBehaviour
     ///   PD.OnApproachPassedBy → ResetCycle + EndWarningSequence の既存経路で行う
     ///   （ドア開閉・疑惑加算・捕獲判定には到達しない）。
     /// </summary>
+    /// <summary>親機チュートリアル用：ドア前に到着した後、枕センサーが押されるまでドア開放（onStoppedAtDoor）を待機するか。</summary>
+    public static bool TutorialHoldBeforeDoorOpen { get; set; }
+
+    /// <summary>親機チュートリアル用：現在ドア前で枕センサー入力待ちで停止中か。</summary>
+    public static bool TutorialWaitingForPillowAtDoor { get; private set; }
+
+    /// <summary>親機チュートリアル用：庭の窓前に到着した後、枕センサーが押されるまで窓覗き開始を待機するか。</summary>
+    public static bool TutorialHoldBeforeGardenPeek { get; set; }
+
+    /// <summary>親機チュートリアル用：現在庭の窓前で枕センサー入力待ちで停止中か。</summary>
+    public static bool TutorialWaitingForPillowAtGarden { get; private set; }
+
+    public static void ResetTutorialHolds()
+    {
+        TutorialHoldBeforeDoorOpen = false;
+        TutorialWaitingForPillowAtDoor = false;
+        TutorialHoldBeforeGardenPeek = false;
+        TutorialWaitingForPillowAtGarden = false;
+    }
+
     private IEnumerator GardenPeekRoutine()
     {
         Debug.Log("[MotherApproachController] GardenPeekRoutine（庭側覗き・短縮接近）：開始");
@@ -2957,6 +3001,18 @@ public class MotherApproachController : MonoBehaviour
             // Idleへ到達できなかった → 覗きを要求せず、安全に中断する（ライト・覗きフラグを残さない）。
             HandleIdleWaitFailure("WindowPeek");
             yield break;
+        }
+
+        // 【親機チュートリアル用】庭の窓の前に到着した状態で停止し、枕センサーが押されるまで窓覗き開始を待機する
+        if (TutorialHoldBeforeGardenPeek)
+        {
+            TutorialWaitingForPillowAtGarden = true;
+            Debug.Log("[MotherApproachController] 親機チュートリアル：庭の窓前で停止し、枕センサー入力を待機しています");
+            while (TutorialHoldBeforeGardenPeek && !IsReturnHomeAborted && !_routeExecutionFailed)
+            {
+                yield return null;
+            }
+            TutorialWaitingForPillowAtGarden = false;
         }
 
         // 窓覗きのアニメーションを再生する。

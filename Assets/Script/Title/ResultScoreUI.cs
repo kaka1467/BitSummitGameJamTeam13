@@ -1,12 +1,10 @@
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// ResultScoreUI: Displays latest score and top rankings for a specific result type.
-///
-/// Set resultType to GameOver on the GAME_OVER result scene,
-/// and to TimeUp on the TIME_UP result scene.
-/// Optionally assign cross-type rank texts to show the other type's ranking.
+/// ResultScoreUI: Displays latest score and top rankings for a specific result type,
+/// scoped per difficulty (EASY / NORMAL / HARD) with a difficulty badge (D-Q03 / M-R06).
 /// </summary>
 public class ResultScoreUI : MonoBehaviour
 {
@@ -35,43 +33,33 @@ public class ResultScoreUI : MonoBehaviour
     [Tooltip("「未同期」「前回同期データ」「同期完了」を表示する小さなテキスト。未設定でも値は正しく扱います。")]
     [SerializeField] private TextMeshProUGUI syncStateText;
 
-    private const string KeyGameOverScore = "LastGameOverScore";
-    private const string KeyTimeUpScore   = "LastTimeUpScore";
-    private const string KeyGameOverRank  = "GameOverRank_";
-    private const string KeyTimeUpRank    = "TimeUpRank_";
-    private const int    RankingSize      = 5;
+    private const int RankingSize = 5;
 
     // 親機で子機データ未同期のときに表示する文字（「最新の子機データ」と誤解させない）
     private const string NoDataText = "------";
 
+    private Image _difficultyBadgeImage;
+    private TextMeshProUGUI _difficultyBadgeLabel;
+
     private void OnEnable()
     {
-        // 結果データへの書き込み（GameManager.TriggerResult など）が
-        // シーン読み込み後に完了したときに、表示を自動で再読み込みする。
-        // （データ書き込みがシーン読み込み後の表示リフレッシュより後に行われるケースに対応するため）
         GameManager.ResultDataCommitted += RefreshResultData;
-        // 親機側: 子機からUDP受信した最終スコアの保存・ランキング更新完了でも表示を再読み込みする。
-        // 子機GameManagerのイベントだけに依存せず、親機のUDP受信・保存経路とも同期する。
-        // 購読先は Host 個体（まだ取得できない場合は Start／次フレームの再取得経路で接続する）。
+        GameDifficulty.OnSettingsChanged += RefreshResultData;
         SubscribeParentHost();
+        EnsureDifficultyBadgeUI();
         RefreshResultData();
     }
 
     private void OnDisable()
     {
         GameManager.ResultDataCommitted -= RefreshResultData;
+        GameDifficulty.OnSettingsChanged -= RefreshResultData;
         UnsubscribeParentHost();
     }
 
     // 親機Host個体（購読した個体を保持し、解除も同じ個体へ行う）
     private ParentUdpRuntimeHost _subscribedHost;
 
-    /// <summary>
-    /// 親機Host個体を取得して ResultDataCommitted を購読する。
-    ///  ・同じ個体への二重購読はしない。
-    ///  ・個体が変わった場合は旧購読を外してから接続する。
-    ///  ・まだ取得できない場合は何もしない（Start・次フレームの既存再取得経路で接続する）。
-    /// </summary>
     private void SubscribeParentHost()
     {
         ParentUdpRuntimeHost host = ResolveParentHost();
@@ -90,7 +78,6 @@ public class ResultScoreUI : MonoBehaviour
         _subscribedHost = null;
     }
 
-    /// <summary>稼働中のHost個体を優先し、無ければシーン上のHost（DDOLの生存個体）を探す。</summary>
     private static ParentUdpRuntimeHost ResolveParentHost()
     {
         ParentUdpRuntimeHost host = ParentUdpRuntimeHost.Running;
@@ -101,13 +88,9 @@ public class ResultScoreUI : MonoBehaviour
 
     private void Start()
     {
-        // 購読の再取得（OnEnable 時点で Host が取得できなかった場合に接続する）。
         SubscribeParentHost();
+        EnsureDifficultyBadgeUI();
         RefreshResultData();
-
-        // 書き込み側（GameManager.Start / Awake）が Start の後に走るケースに備え、
-        // 1フレーム後に同じ表示処理をもう一度実行する安全網。
-        // 同一の読み出し・同一の書き込みなので、通常ケースでは表示は変化しない。
         StartCoroutine(RefreshResultDataNextFrame());
     }
 
@@ -118,10 +101,101 @@ public class ResultScoreUI : MonoBehaviour
         RefreshResultData();
     }
 
+    /// <summary>
+    /// リザルト・ランキング画面に現在の難易度バッジ（EASY / NORMAL / HARD）を表示し、
+    /// タップで別難易度のランキングも切り替え確認できるようにする（D-Q03）。
+    /// </summary>
+    private void EnsureDifficultyBadgeUI()
+    {
+        if (_difficultyBadgeImage != null || _difficultyBadgeLabel != null)
+        {
+            UpdateDifficultyBadgeVisual();
+            return;
+        }
+
+        Canvas canvas = GetComponentInParent<Canvas>();
+        if (canvas == null) canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null) return;
+
+        Transform existing = canvas.transform.Find("DifficultyRankingBadge");
+        if (existing != null)
+        {
+            _difficultyBadgeImage = existing.GetComponent<Image>();
+            _difficultyBadgeLabel = existing.GetComponentInChildren<TextMeshProUGUI>(true);
+            UpdateDifficultyBadgeVisual();
+            return;
+        }
+
+        GameObject badgeObj = new GameObject("DifficultyRankingBadge", typeof(RectTransform), typeof(Image), typeof(Button));
+        badgeObj.transform.SetParent(canvas.transform, false);
+        RectTransform rect = badgeObj.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.02f, 0.90f);
+        rect.anchorMax = new Vector2(0.22f, 0.98f);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        _difficultyBadgeImage = badgeObj.GetComponent<Image>();
+        _difficultyBadgeImage.preserveAspect = true;
+
+        Button btn = badgeObj.GetComponent<Button>();
+        btn.onClick.AddListener(CycleDifficultyRankingView);
+
+        GameObject labelObj = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+        labelObj.transform.SetParent(badgeObj.transform, false);
+        RectTransform labelRect = labelObj.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = Vector2.zero;
+
+        _difficultyBadgeLabel = labelObj.GetComponent<TextMeshProUGUI>();
+        _difficultyBadgeLabel.alignment = TextAlignmentOptions.Center;
+        _difficultyBadgeLabel.fontSize = 24f;
+        _difficultyBadgeLabel.color = Color.white;
+
+        UpdateDifficultyBadgeVisual();
+    }
+
+    private void CycleDifficultyRankingView()
+    {
+        int next = ((int)GameDifficulty.Current + 1) % 3;
+        GameDifficulty.SetDifficulty((GameDifficulty.Level)next, true);
+        RefreshResultData();
+    }
+
+    private void UpdateDifficultyBadgeVisual()
+    {
+        string spritePath = GameDifficulty.Current switch
+        {
+            GameDifficulty.Level.Easy => "Difficulty/Easy_UI",
+            GameDifficulty.Level.Hard => "Difficulty/Hard_UI",
+            _ => "Difficulty/Normal_UI"
+        };
+        Sprite sp = Resources.Load<Sprite>(spritePath);
+        if (_difficultyBadgeImage != null)
+        {
+            if (sp != null)
+            {
+                _difficultyBadgeImage.sprite = sp;
+                _difficultyBadgeImage.color = Color.white;
+                if (_difficultyBadgeLabel != null) _difficultyBadgeLabel.text = "";
+            }
+            else
+            {
+                _difficultyBadgeImage.color = new Color(0.15f, 0.15f, 0.22f, 0.9f);
+                if (_difficultyBadgeLabel != null)
+                    _difficultyBadgeLabel.text = $"RANKING: {GameDifficulty.DisplayName}";
+            }
+        }
+    }
+
     private void RefreshResultData()
     {
-        // 親機では「子機データの表示用コピー」だけを表示する（親機の独自ランキングは使わない）。
-        // 子機では従来どおり自分のランキング（唯一の基準）を表示する。
+        UpdateDifficultyBadgeVisual();
+
+        // 選択中の難易度のランキングをミラーキーへ同期する（D-Q03）
+        GameDifficulty.SyncActiveDifficultyRankingToMirrorKeys(false);
+
         ParentUdpRuntimeHost host = ResolveParentHost();
         if (host != null)
         {
@@ -129,9 +203,16 @@ public class ResultScoreUI : MonoBehaviour
             return;
         }
 
-        string scoreKey   = resultType == DisplayResultType.GameOver ? KeyGameOverScore  : KeyTimeUpScore;
-        string rankKey    = resultType == DisplayResultType.GameOver ? KeyGameOverRank   : KeyTimeUpRank;
-        string crossKey   = resultType == DisplayResultType.GameOver ? KeyTimeUpRank     : KeyGameOverRank;
+        GameDifficulty.Level diff = GameDifficulty.Current;
+        string scoreKey = resultType == DisplayResultType.GameOver
+            ? GameDifficulty.GetLastGameOverScoreKey(diff)
+            : GameDifficulty.GetLastTimeUpScoreKey(diff);
+        string rankKey = resultType == DisplayResultType.GameOver
+            ? GameDifficulty.GetGameOverRankPrefix(diff)
+            : GameDifficulty.GetTimeUpRankPrefix(diff);
+        string crossKey = resultType == DisplayResultType.GameOver
+            ? GameDifficulty.GetTimeUpRankPrefix(diff)
+            : GameDifficulty.GetGameOverRankPrefix(diff);
 
         int score = PlayerPrefs.GetInt(scoreKey, 0);
 
@@ -142,8 +223,7 @@ public class ResultScoreUI : MonoBehaviour
         TextMeshProUGUI[] primaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
         ApplyRankingTexts(primaryTexts, ranking);
 
-        // 2位がどこで0になるかを追えるように、UIへ渡した順位をログに出す。
-        UnityEngine.Debug.Log($"[ResultScoreUI] (child) resultType={resultType}, scoreKey='{scoreKey}', score={score}, " +
+        UnityEngine.Debug.Log($"[ResultScoreUI] (child) diff={diff}, resultType={resultType}, scoreKey='{scoreKey}', score={score}, " +
                               $"rankKey='{rankKey}', ranking=[{string.Join(", ", ranking)}], " +
                               $"rankTextsCount={(primaryTexts != null ? primaryTexts.Length : 0)}");
 
@@ -152,11 +232,6 @@ public class ResultScoreUI : MonoBehaviour
         ApplyRankingTexts(otherTexts, crossRanking);
     }
 
-    /// <summary>
-    /// 親機: 子機から同期した表示用コピーを表示する。
-    /// ・GAME_OVER と TIME_UP は別々に読む（混ぜない）
-    /// ・未同期（未接続・同期前）は「------」を表示し、古い親機ランキングを最新として出さない
-    /// </summary>
     private void RefreshFromParentSyncCopy(ParentUdpRuntimeHost host)
     {
         bool isGameOver = resultType == DisplayResultType.GameOver;
@@ -170,13 +245,11 @@ public class ResultScoreUI : MonoBehaviour
         TextMeshProUGUI[] primaryTexts = ResolveTexts(rankTexts, rank1Text, rank2Text, rank3Text);
         TextMeshProUGUI[] otherTexts = ResolveTexts(crossRankTexts, crossRank1Text, crossRank2Text, crossRank3Text);
 
-        // 理由が分かるように状態を表示（未設定ならログのみ）
         if (syncStateText != null)
         {
-            syncStateText.text = RankSyncDisplay.ToLabel(state);
+            syncStateText.text = $"{GameDifficulty.DisplayName} / {RankSyncDisplay.ToLabel(state)}";
         }
 
-        // 初回同期前（一度も受信していない）
         if (state == RankSyncDisplayState.NoData || !hasThis)
         {
             if (resultScoreText != null) resultScoreText.text = NoDataText;
@@ -186,17 +259,13 @@ public class ResultScoreUI : MonoBehaviour
             return;
         }
 
-        // 前回同期データ（未接続・切替確認中）: 最新の子機データと誤表示しない。
-        // 状態ラベル（syncStateText）が未設定の場合は値を伏せて『------』表示にする（誤表示防止を優先）。
-        // Current（同期完了）ならラベル未割当でも値を表示する。判定は RankSyncDisplay に集約。
         if (!RankSyncDisplay.ShouldShowValues(state, syncStateText != null))
         {
             if (resultScoreText != null) resultScoreText.text = NoDataText;
             ApplyNoDataTexts(primaryTexts);
             ApplyNoDataTexts(otherTexts);
             UnityEngine.Debug.LogWarning($"[ResultScoreUI] (parent) 前回同期データ（最新の接続相手ではありません）。" +
-                                         $"状態表示先(syncStateText)が未設定のため値を伏せます (resultType={resultType}). " +
-                                         "値を表示する場合は ResultScoreUI.syncStateText を割り当ててください。");
+                                         $"状態表示先(syncStateText)が未設定のため値を伏せます (resultType={resultType}).");
             return;
         }
 
@@ -210,7 +279,7 @@ public class ResultScoreUI : MonoBehaviour
         ApplyRankingTexts(primaryTexts, ranking);
         ApplyRankingTexts(otherTexts, crossRanking);
 
-        UnityEngine.Debug.Log($"[ResultScoreUI] (parent {RankSyncDisplay.ToLabel(state)}) resultType={resultType}, score={score}, " +
+        UnityEngine.Debug.Log($"[ResultScoreUI] (parent {GameDifficulty.DisplayName} {RankSyncDisplay.ToLabel(state)}) resultType={resultType}, score={score}, " +
                               $"ranking=[{string.Join(", ", ranking)}], source='{host.RankSyncSourceId}', update={host.RankSyncUpdateNo}, peer='{host.ConnectedPeerSourceId}'");
     }
 

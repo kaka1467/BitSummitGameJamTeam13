@@ -3,12 +3,6 @@ using UnityEngine;
 
 /// <summary>
 /// 通常出現の「調整値」と「短い配置パターン」。
-///
-/// 通常のランダム出現（レーン別タイマー）と配置パターンが二重に出ないよう、次の順で整理している。
-///  ・パターンを出したら、その配置が画面右端を抜けきるまで（＋余裕）ランダム出現を止める（_patternBlockUntil）。
-///  ・パターンの配置前に、全スロットを既存アイテムとの重なり判定にかける。1つでも重なれば何も出さずに後で再試行する。
-///  ・休憩区間は「アイテムを出さず、ランダム出現を薄くする」だけ。パターンとは同時に走らない。
-///  ・フィーバー中はフィーバー用パターンだけを選び、フィーバー開始時に1回出す。
 /// </summary>
 public partial class ItemSpawner
 {
@@ -20,8 +14,7 @@ public partial class ItemSpawner
     [Tooltip("通常出現の量の倍率（1=現状、2=出現間隔が半分、0.5=2倍に間引く）。休憩区間ではさらに薄くなる。")]
     [SerializeField, Min(0.05f)] private float spawnAmountMultiplier = 1f;
 
-    [Tooltip("悪いアイテム（Clock・サイレン）の出やすさの倍率。Normal Spawn Rules の個数(重み)に掛ける。" +
-             "1=現状、0=悪いアイテムを出さない、2=2倍出やすい。悪い割合 = 悪い重み合計 ÷ 全体の重み合計。")]
+    [Tooltip("悪いアイテム（Clock・サイレン）の出やすさの倍率。Normal Spawn Rules の個数(重み)に掛ける。")]
     [SerializeField, Min(0f)] private float badItemWeightMultiplier = 1f;
 
     // ── 配置パターン（C11・C12・C14） ───────────────────────────────────────
@@ -44,32 +37,29 @@ public partial class ItemSpawner
     [Tooltip("フィーバーが始まったとき、フィーバー用パターン（use=FeverOnly）を1回すぐに出す。")]
     [SerializeField] private bool spawnFeverPatternOnFeverStart = true;
 
-    [Tooltip("配置パターンの一覧。追加・削除・並べ替え・数値変更ができる。lane は 0=上 / 1=中 / 2=下、column は先頭からの列番号。")]
+    [Tooltip("配置パターンの一覧。")]
     [SerializeField] private List<SpawnPattern> patterns = ItemSpawnPatternDefaults.Create();
 
     private const int PatternKindCount = 5;
 
-    private float _patternVisibleUntil;    // 出したパターンが画面から出きるまでの時刻（レーン制限など、他の演出がパターン中を避けるために使う）
-    private float _nextPatternTime;        // 次にパターンを試す時刻（Time.unscaledTime）
-    private float _patternBlockUntil;      // この時刻までランダム出現を止める（パターンの配置が抜けきるまで）
-    private float _restFrom;               // 休憩区間の開始
-    private float _restUntil;              // 休憩区間の終了
-    private float _restDensity = 1f;       // 休憩区間中の通常出現の濃さ
+    private float _patternVisibleUntil;
+    private float _nextPatternTime;
+    private float _patternBlockUntil;
+    private float _restFrom;
+    private float _restUntil;
+    private float _restDensity = 1f;
     private bool _patternWasFever;
     private int _lastPatternIndex = -1;
     private int _debugPatternIndex = -1;
     private readonly GameObject[] _patternPrefabs = new GameObject[PatternKindCount];
 
-    /// <summary>出したパターンのアイテムが、まだ画面上に残っている可能性がある間は true。</summary>
     public bool IsPatternVisible => Time.unscaledTime < _patternVisibleUntil;
 
-    /// <summary>通常出現・パターンのアイテムに掛けている速度倍率（レーン制限の流れる速さをそろえるために見る）。</summary>
-    public float ItemSpeedMultiplier => Mathf.Max(0.1f, itemSpeedMultiplier);
+    /// <summary>通常出現・パターンのアイテムに掛けている速度倍率（難易度倍率込み）。</summary>
+    public float ItemSpeedMultiplier => Mathf.Max(0.1f, itemSpeedMultiplier * GameDifficulty.ChildItemSpeedMultiplier);
 
-    /// <summary>アイテムを置く奥行き（Z）。同じ面に置く演出（レーン制限など）が使う。</summary>
     public float ItemPlaneZ => SpawnZ;
 
-    /// <summary>パターンの管理状態を初期化する（ResetLaneSpawnTimers から呼ぶ＝本プレイ開始・停止明け）。</summary>
     private void ResetPatternDirector()
     {
         float now = Time.unscaledTime;
@@ -83,7 +73,6 @@ public partial class ItemSpawner
         _lastPatternIndex = -1;
     }
 
-    /// <summary>通常出現の濃さ（出現量の倍率 × 休憩区間の薄さ）。待ち時間はこの値で割る。</summary>
     private float GetSpawnDensityFactor(float now)
     {
         float factor = Mathf.Max(0.05f, spawnAmountMultiplier);
@@ -92,38 +81,41 @@ public partial class ItemSpawner
         return factor;
     }
 
-    /// <summary>パターンの配置が抜けきるまでランダム出現を止めるべきか。</summary>
     private bool IsRandomSpawnBlockedByPattern(float now)
     {
         return now < _patternBlockUntil;
     }
 
-    /// <summary>通常出現の候補の重み。悪いアイテム（Clock・サイレン）だけ badItemWeightMultiplier を掛ける。</summary>
+    /// <summary>
+    /// 通常出現の候補の重み。
+    /// ・EASY ではサイレン（ItemType.BGM）を出さず、減点時計（Clock）のみにする（D-R05）。
+    /// ・悪いアイテム（Clock・サイレン）に badItemWeightMultiplier × 難易度倍率を掛ける。
+    /// </summary>
     private float GetNormalCandidateWeight(PrefabSpawnCount entry)
     {
         float weight = entry.count;
 
         Item item = entry.prefab.GetComponent<Item>();
-        if (item != null && (item.itemType == ItemType.Clock || item.itemType == ItemType.BGM))
-            weight *= Mathf.Max(0f, badItemWeightMultiplier);
+        if (item != null)
+        {
+            if (item.itemType == ItemType.BGM && !GameDifficulty.ChildAllowSirenItem)
+                return 0f;
+
+            if (item.itemType == ItemType.Clock || item.itemType == ItemType.BGM)
+                weight *= Mathf.Max(0f, badItemWeightMultiplier * GameDifficulty.ChildBadItemWeightMultiplier);
+        }
 
         return weight;
     }
 
-    /// <summary>通常出現・パターンで出したアイテムに、速度倍率を設定する（プール返却時は ItemMove 側で1に戻る）。</summary>
     private void ApplySpawnSpeedScale(GameObject item)
     {
         if (item == null) return;
 
         ItemMove move = item.GetComponent<ItemMove>();
-        if (move != null) move.SpeedScale = Mathf.Max(0.1f, itemSpeedMultiplier);
+        if (move != null) move.SpeedScale = ItemSpeedMultiplier;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  ディレクター
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /// <summary>毎フレーム呼ぶ。パターンを出す時刻になったら1つ選んで配置する。</summary>
     private void UpdatePatternDirector()
     {
         if (!patternsEnabled || patterns == null || patterns.Count == 0) return;
@@ -134,7 +126,6 @@ public partial class ItemSpawner
         float now = Time.unscaledTime;
         bool fever = IsFeverActiveForSpawn();
 
-        // フィーバー開始の瞬間：休憩を打ち切り、フィーバー用パターンをすぐ試す。
         if (fever != _patternWasFever)
         {
             _patternWasFever = fever;
@@ -145,7 +136,6 @@ public partial class ItemSpawner
             }
         }
 
-        // レーン制限の演出中は、パターンを始めない（フィーバー用パターンは優先する。その場合はレーン制限が自分で中止する）。
         if (!fever && LaneRestriction.IsRunning)
         {
             _nextPatternTime = Mathf.Max(_nextPatternTime, now + 0.5f);
@@ -157,14 +147,12 @@ public partial class ItemSpawner
         int index = SelectPatternIndex(fever, now - normalScheduleStartTime);
         if (index < 0)
         {
-            // 使えるパターンが無い（フィーバー用が無い・条件未達など）。少し待って再判定する。
             _nextPatternTime = now + Mathf.Max(1f, patternIntervalMinSeconds);
             return;
         }
 
         if (!TrySpawnPattern(patterns[index], now, out float endTime))
         {
-            // 既存アイテムと重なった。何も出さずに短い間隔で再試行する（毎フレームは試さない）。
             _nextPatternTime = now + 0.4f;
             return;
         }
@@ -180,7 +168,6 @@ public partial class ItemSpawner
         return (max <= min) ? min : Random.Range(min, max);
     }
 
-    /// <summary>条件に合うパターンを重み付きで1つ選ぶ。無ければ -1。直前と同じものは、他に候補があれば避ける。</summary>
     private int SelectPatternIndex(bool fever, float elapsed)
     {
         BuildPatternPrefabCache();
@@ -234,11 +221,10 @@ public partial class ItemSpawner
         return p.weight;
     }
 
-    /// <summary>必要なアイテムがすべて ItemPool に登録されていて、配置または休憩が成立するか。</summary>
     private bool IsPatternResolvable(SpawnPattern p)
     {
         bool hasSlots = p.slots != null && p.slots.Count > 0;
-        if (!hasSlots) return p.restSeconds > 0f;   // 休憩専用パターン
+        if (!hasSlots) return p.restSeconds > 0f;
 
         for (int i = 0; i < p.slots.Count; i++)
         {
@@ -249,15 +235,6 @@ public partial class ItemSpawner
         return true;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  配置
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// パターンを1つ配置する。成功したら endTime（ランダム出現を再開してよい時刻。休憩があればその終わり）を返す。
-    ///  ・全スロットぶんのアイテムを先に確保し、既存アイテムとの重なりを全部確認してから動かす（部分的には出さない）。
-    ///  ・パターン内のアイテム同士は重なり判定にかけない（意図した並びのため）。
-    /// </summary>
     private bool TrySpawnPattern(SpawnPattern p, float now, out float endTime)
     {
         endTime = now;
@@ -280,14 +257,12 @@ public partial class ItemSpawner
 
         if (p.restSeconds > 0f)
         {
-            // 休憩はパターンの配置が抜けきった後から始める。
             _restFrom = blockUntil;
             _restUntil = blockUntil + p.restSeconds;
             _restDensity = Mathf.Clamp(p.restDensity, 0.05f, 1f);
             endTime = _restUntil;
         }
 
-        // ランダム出現の各レーンは、止めている間の分をまとめて出さないよう、再開後に改めて待ち時間を引く。
         if (_laneNextSpawnTime != null)
         {
             for (int i = 0; i < _laneNextSpawnTime.Length; i++)
@@ -302,7 +277,6 @@ public partial class ItemSpawner
         return true;
     }
 
-    /// <summary>全スロットを確保 → 重なり確認 → 配置。失敗時は確保したアイテムをすべてプールへ戻す。</summary>
     private bool TryPlacePatternSlots(SpawnPattern p, float now, out float extentSeconds, out float lifetimeSeconds)
     {
         extentSeconds = 0f;
@@ -330,7 +304,6 @@ public partial class ItemSpawner
             int lane = Mathf.Clamp(slot.lane, 0, laneCount - 1);
             if (flip) lane = laneCount - 1 - lane;
 
-            // 確保した直後は画面外の遠くへ退避する（前回使用時の位置が、後続スロットの重なり判定に影響しないように）。
             item.transform.position = new Vector3(baseX + 10000f, lanesY[lane], SpawnZ);
 
             items.Add(item);
@@ -338,13 +311,11 @@ public partial class ItemSpawner
             maxWidth = Mathf.Max(maxWidth, GetApproxHalfSize(item).x * 2f);
         }
 
-        // 列の間隔：指定値、ただしアイテムの実サイズ＋余白より狭くしない（パターン内で重ならないように）。
         float spacing = Mathf.Max(p.columnSpacing, maxWidth + GetGoodItemCloseMarginX());
         float maxColumn = 0f;
         for (int i = 0; i < p.slots.Count; i++)
             maxColumn = Mathf.Max(maxColumn, p.slots[i].column);
 
-        // 先に全スロットを既存アイテム（直近の出現記録・同フレーム・画面上の実物）と照合する。
         for (int i = 0; i < items.Count; i++)
         {
             Vector3 candidate = new Vector3(baseX + p.slots[i].column * spacing, lanesY[lanes[i]], SpawnZ);
@@ -355,7 +326,6 @@ public partial class ItemSpawner
             }
         }
 
-        // 問題なし：配置する。
         for (int i = 0; i < items.Count; i++)
         {
             Vector3 position = new Vector3(baseX + p.slots[i].column * spacing, lanesY[lanes[i]], SpawnZ);
@@ -365,13 +335,11 @@ public partial class ItemSpawner
             RegisterPendingFrameRecord(items[i], position, now);
         }
 
-        // 配置全体が出現位置を抜けきるまでの時間（先頭アイテムの実効速度で見積もる）。
         ItemMove move = items[0].GetComponent<ItemMove>();
         float speed = (move != null) ? move.EffectiveSpeed : 0f;
         if (speed < 0.05f) speed = 0.8f;
         extentSeconds = (maxColumn * spacing + maxWidth) / speed;
 
-        // 最後のアイテムが出現位置から画面の左端を抜けるまで（パターンが画面上に残る時間の見積もり）
         float leftEdgeX = GetScreenRightEdgeX() - GetScreenWidthWorld() - 1f;
         lifetimeSeconds = extentSeconds + Mathf.Max(0f, baseX - leftEdgeX) / speed;
 
@@ -385,12 +353,6 @@ public partial class ItemSpawner
             ItemPool.Instance.ReturnToPool(items[i]);
     }
 
-    /// <summary>
-    /// ItemPool の登録内容から、パターンの種類ごとのPrefabを選ぶ。
-    ///  ・LowScore / HighScore：Score型のうち scoreAmount が最小／最大のもの。
-    ///  ・Bad：Clock型（サイレンは時間条件があるため使わない）。
-    ///  ・無い種類は null（その種類を使うパターンは選ばれない）。
-    /// </summary>
     private void BuildPatternPrefabCache()
     {
         for (int i = 0; i < PatternKindCount; i++) _patternPrefabs[i] = null;
@@ -439,14 +401,6 @@ public partial class ItemSpawner
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  寝たふり中の停止からの再開（出現が「まとめて」起きないようにする）
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// 再開時に、実時間で管理している出現の時刻を停止していた秒数だけ後ろへずらす。
-    /// そのうえで各レーンは待ち時間を引き直し、停止前に溜まっていた分が再開直後に同時に出ないようにする。
-    /// </summary>
     private void OnGameResumed(float pausedSeconds)
     {
         if (pausedSeconds <= 0f) return;
@@ -455,7 +409,8 @@ public partial class ItemSpawner
 
         normalScheduleStartTime += pausedSeconds;
         nextNormalSpawnAllowedTime += pausedSeconds;
-        if (isHugeSpawnScheduled) nextHugeSpawnTime += pausedSeconds;
+        if (isHugeSpawnScheduled)
+            nextHugeSpawnTime = Mathf.Max(nextHugeSpawnTime + pausedSeconds, now + 2.5f);
 
         if (_nextPatternTime > 0f) _nextPatternTime += pausedSeconds;
         if (_patternBlockUntil > 0f) _patternBlockUntil += pausedSeconds;
@@ -463,13 +418,11 @@ public partial class ItemSpawner
         if (_restFrom > 0f) _restFrom += pausedSeconds;
         if (_restUntil > 0f) _restUntil += pausedSeconds;
 
-        // 直近の出現記録（重なり判定用）も、アイテムが動いていない分だけ寿命を延ばす。
         for (int i = 0; i < recentSpawnRecords.Count; i++)
         {
             if (recentSpawnRecords[i] != null) recentSpawnRecords[i].time += pausedSeconds;
         }
 
-        // 各レーンは再開時点から改めて待ち時間を引く（同時に出さない・遅れを取り戻さない）。
         if (_laneNextSpawnTime != null)
         {
             for (int i = 0; i < _laneNextSpawnTime.Length; i++)
@@ -479,10 +432,6 @@ public partial class ItemSpawner
         if (showDebugLogs)
             Debug.Log($"[ItemSpawner] 停止から再開しました（停止={pausedSeconds:F1}s）。出現の時刻をずらし、各レーンの待ち時間を引き直しました。");
     }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    //  デバッグ：数字キー7で、一覧のパターンを順番に1つずつ出す（時刻・フィーバー条件を無視）
-    // ──────────────────────────────────────────────────────────────────────────
 
     private void SpawnDebugPattern()
     {

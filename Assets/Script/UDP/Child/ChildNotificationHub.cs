@@ -119,6 +119,59 @@ public sealed class ChildNotificationHub
         return CaughtPendingOutcome.Notified;
     }
 
+    // ── TIME_UP（親機の時間切れクリア）の未通知保留と通知 ──────────────────────
+    /// <summary>親機の時間切れクリア（TIME_UP）を通知するイベント。</summary>
+    public event Action TimeUpReceived;
+
+    /// <summary>TIME_UP の実際の購読者が居るか。</summary>
+    public bool HasTimeUpSubscriber => TimeUpReceived != null;
+
+    /// <summary>未通知の TIME_UP が保留されているか。</summary>
+    public bool HasPendingTimeUp { get; private set; }
+
+    /// <summary>保留した TIME_UP のプレイID。</summary>
+    public string PendingTimeUpPlayId { get; private set; } = "";
+
+    /// <summary>購読前の TIME_UP を1件保留する。</summary>
+    public void EnqueuePendingTimeUp(string receivedPlayId)
+    {
+        HasPendingTimeUp = true;
+        PendingTimeUpPlayId = receivedPlayId ?? "";
+    }
+
+    /// <summary>TIME_UP の保留を破棄する。</summary>
+    public void ClearPendingTimeUp()
+    {
+        HasPendingTimeUp = false;
+        PendingTimeUpPlayId = "";
+    }
+
+    /// <summary>現在の購読者へ TIME_UP を通知する。</summary>
+    public void NotifyTimeUpNow()
+    {
+        TimeUpReceived?.Invoke();
+    }
+
+    /// <summary>TIME_UP 保留の消費。</summary>
+    public CaughtPendingOutcome ConsumePendingTimeUp(bool isNonGameplayScene, bool isGameplayScene, string currentPlayId)
+    {
+        if (!HasPendingTimeUp) return CaughtPendingOutcome.None;
+
+        if (isNonGameplayScene)
+        {
+            ClearPendingTimeUp();
+            return CaughtPendingOutcome.Cleared;
+        }
+
+        if (!isGameplayScene) return CaughtPendingOutcome.Kept;
+        if (TimeUpReceived == null) return CaughtPendingOutcome.Kept;
+        if (PendingTimeUpPlayId != (currentPlayId ?? "")) return CaughtPendingOutcome.Kept;
+
+        ClearPendingTimeUp();
+        TimeUpReceived?.Invoke();
+        return CaughtPendingOutcome.Notified;
+    }
+
     // ── 捕獲演出待機の状態保持（今回の範囲：状態の保持のみ）─────────────────────
     /// <summary>
     /// 捕獲演出待機の段階（UnityEngine非依存の独自enum）。

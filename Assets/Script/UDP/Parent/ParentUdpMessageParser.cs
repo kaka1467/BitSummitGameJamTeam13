@@ -194,6 +194,22 @@ public static class ParentUdpMessageParser
             return new ParentUdpMessage(ParentMessageType.StartGame, rawPayload: payload, playSessionId: sid);
         }
 
+        // LOADING_COMPLETE:<playSessionId> — プレイ識別子付きのロード完了通知（旧: 引数なしの "LOADING_COMPLETE"）
+        const string loadingCompletePrefix = "LOADING_COMPLETE:";
+        if (payload.StartsWith(loadingCompletePrefix, StringComparison.Ordinal))
+        {
+            string sid = payload.Substring(loadingCompletePrefix.Length);
+            return new ParentUdpMessage(ParentMessageType.LoadingComplete, rawPayload: payload, playSessionId: sid);
+        }
+
+        // TIME_UP:<playSessionId> — プレイ識別子付きの時間切れ通知
+        const string timeUpPrefix = "TIME_UP:";
+        if (payload.StartsWith(timeUpPrefix, StringComparison.Ordinal))
+        {
+            string sid = payload.Substring(timeUpPrefix.Length);
+            return new ParentUdpMessage(ParentMessageType.TimeUp, rawPayload: payload, playSessionId: sid);
+        }
+
         // RETURN_TO_TITLE:<playSessionId>:<seq>[:FAST] — プレイ識別子＋そのプレイ内の連番＋復帰モード。
         // 旧フォーマット "RETURN_TO_TITLE:<seq>"（識別子なし）も受け付ける。
         // 3つ目の値は "FAST" のみ許可し、それ以外の追加値は推測で処理せず不正として拒否する。

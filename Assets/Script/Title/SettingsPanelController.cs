@@ -49,12 +49,20 @@ public class SettingsPanelController : MonoBehaviour
 
     private void OnEnable()
     {
+        GameDifficulty.OnSettingsChanged += HandleRemoteSettingsChanged;
         SyncFromAudio();
         RefreshLanguageLabel();
     }
 
+    private void OnDisable()
+    {
+        GameDifficulty.OnSettingsChanged -= HandleRemoteSettingsChanged;
+    }
+
     private void OnDestroy()
     {
+        GameDifficulty.OnSettingsChanged -= HandleRemoteSettingsChanged;
+
         if (bgmSlider != null)
         {
             bgmSlider.onValueChanged.RemoveListener(HandleBgmChanged);
@@ -76,11 +84,18 @@ public class SettingsPanelController : MonoBehaviour
         }
     }
 
+    private void HandleRemoteSettingsChanged()
+    {
+        SyncFromAudio();
+        RefreshLanguageLabel();
+    }
+
     /// <summary>日本語⇄英語を切り替えて保存する（音量・スコアなど他の保存値には触れない）。</summary>
     public void ToggleLanguage()
     {
         GameLanguage.Toggle();
         RefreshLanguageLabel();
+        GameDifficulty.SendSettingsSyncToPeer();
     }
 
     /// <summary>
@@ -134,12 +149,14 @@ public class SettingsPanelController : MonoBehaviour
     {
         EnsureAudioManager();
         AudioManager.Instance.SetBgmVolume(value);
+        GameDifficulty.SendSettingsSyncToPeer();
     }
 
     private void HandleSeChanged(float value)
     {
         EnsureAudioManager();
         AudioManager.Instance.SetSeVolume(value);
+        GameDifficulty.SendSettingsSyncToPeer();
     }
 
     public void ResetToDefaults()
@@ -157,6 +174,8 @@ public class SettingsPanelController : MonoBehaviour
         {
             seSlider.value = defaultSeVolume;
         }
+
+        GameDifficulty.SendSettingsSyncToPeer();
     }
 
     private void SyncFromAudio()

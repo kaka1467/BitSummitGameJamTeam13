@@ -7,17 +7,6 @@ using UnityEngine.UI;
 /// <summary>
 /// ChildTitleConnectionUI（子機タイトル専用）：
 /// 子機タイトル（ChildTitle）の接続UIを ChildUdpReceiver から分離したコンポーネント。
-///
-/// 責務の境界：
-///   本クラス           — タイトルUIの参照保持・表示更新・パネル開閉・タイトル用リスナー登録
-///   ChildUdpReceiver   — ソケット・受信スレッド・接続状態／PING・タイムアウト・Discovery・
-///                        START_GAME・プレイID・シーン遷移・ランキング同期（挙動は従来のまま）
-///
-///  ・このコンポーネントはタイトルシーンにのみ置く（DontDestroyOnLoad にしない）。
-///  ・接続先は稼働中の ChildUdpRuntimeHost（DDOLの生存個体）を基準にする。
-///    シーンの重複UDP個体は Awake で自壊するため掴まない（Inspector参照も持たない）。
-///  ・Inspector参照はすべて本コンポーネントが保持し、通常動作で名前検索は行わない。
-///  ・Connected→START の判断や START_GAME 送信は UDP 側の既存API（OnConnectButtonClicked）が持つ。
 /// </summary>
 public class ChildTitleConnectionUI : MonoBehaviour
 {
@@ -90,16 +79,12 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     private void Awake()
     {
-        // シーンで置いた接続ボタンの位置を、未接続時の位置として覚える（表示更新より先に行う）。
         CaptureSceneLayoutPosition();
-
-        // Inspector参照だけを使い、初期状態（パネルを閉じる）へ整える。名前検索はしない。
         ApplyInitialPanelState();
     }
 
     private void OnEnable()
     {
-        // 有効化し直したときも再接続・再購読・再登録できるようにする。
         TryBindHost();
         RegisterTitleListeners();
         ApplyCurrentStateIfNeeded();
@@ -107,8 +92,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     private void Start()
     {
-        // Awake/OnEnable の時点では ChildUdpReceiver.instance が未設定のことがある
-        // （同一シーン内の Awake 実行順は不定）。Start でも必ず試す。
         TryBindHost();
         RegisterTitleListeners();
         ApplyCurrentStateIfNeeded();
@@ -116,8 +99,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     private void Update()
     {
-        // 接続済みなら何もしない（毎フレームの検索は行わない）。
-        // 未接続の間だけ、static フィールドを見て再接続を試す。
         if (_host != null) return;
 
         TryBindHost();
@@ -136,10 +117,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         RemoveDynamicListeners();
     }
 
-    /// <summary>
-    /// 接続ボタン（の親）の現在位置＝シーンで置いた位置を、Disconnected/Connecting 時の位置として採用する。
-    /// （Inspector に残った古い座標で、再生時にボタンが動いてしまうのを防ぐ）
-    /// </summary>
     private void CaptureSceneLayoutPosition()
     {
         if (!useSceneLayoutAsDefaultPosition || connectButton == null) return;
@@ -152,12 +129,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
             connectButtonDefaultPosition = rect.anchoredPosition;
     }
 
-    // ── UDPへの接続（生存個体＝DDOLを基準にする）──────────────────────────────
-
-    /// <summary>
-    /// 稼働中の子機Hostへ接続し、状態通知を購読する。
-    /// まだ取得できない場合は何もしない（Start/Update/操作時に再試行する）。
-    /// </summary>
     private void TryBindHost()
     {
         if (_host != null) return;
@@ -170,7 +141,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         Debug.Log($"[ChildTitleConnectionUI] 子機Hostへ接続 '{host.gameObject.name}' (id={host.GetInstanceID()})", this);
     }
 
-    /// <summary>稼働中のHostを優先し、無ければ初期化済みHostを探す（未初期化Hostは購読先にしない）。</summary>
     private static ChildUdpRuntimeHost ResolveHost()
     {
         ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
@@ -180,7 +150,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         return (found != null && found.IsConfigured) ? found : null;
     }
 
-    /// <summary>購読した同じ個体から解除する。</summary>
     private void UnbindHost()
     {
         if (_host != null)
@@ -190,7 +159,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         _lastAppliedState = null;
     }
 
-    /// <summary>操作直前に接続先を保証する（未接続なら解決を試みる）。</summary>
     private bool EnsureHost()
     {
         if (_host == null) TryBindHost();
@@ -204,28 +172,20 @@ public class ChildTitleConnectionUI : MonoBehaviour
         return true;
     }
 
-    /// <summary>UDPからの状態通知（メインスレッドで発火される）。</summary>
     private void HandleConnectionStateChanged(ChildConnectionLink.LinkState state)
     {
         ApplyConnectionState(state);
     }
 
-    /// <summary>
-    /// 初回同期：購読前に状態が変わっていても正しい表示になるよう、現在値を読み取って適用する。
-    /// （ResetForNewSession より先に初期化が走った場合も、この同期で正しい表示に揃う）
-    /// </summary>
     private void ApplyCurrentStateIfNeeded()
     {
         if (_host == null) return;
         ApplyConnectionState(_host.ConnectionState);
     }
 
-
-    // ── 表示更新（従来の ChildUdpReceiver.UpdateUi と同じ見た目）───────────────
-
     private void ApplyConnectionState(ChildConnectionLink.LinkState state)
     {
-        if (_lastAppliedState.HasValue && _lastAppliedState.Value == state) return; // 同値では再適用しない
+        if (_lastAppliedState.HasValue && _lastAppliedState.Value == state) return;
         _lastAppliedState = state;
 
         if (connectButtonLabel != null)
@@ -266,17 +226,13 @@ public class ChildTitleConnectionUI : MonoBehaviour
         else if (cancelButton != null)
             cancelButton.gameObject.SetActive(state == ChildConnectionLink.LinkState.Connecting);
 
-        SetActiveForButton(creditsButton, state != ChildConnectionLink.LinkState.Connected);
-        SetActiveForButton(settingsButton, state != ChildConnectionLink.LinkState.Connected);
+        // 【M-F04】接続完了後も子機から設定・クレジットを開閉して親機へ同期できるよう、Connecting中以外は有効にする
+        SetActiveForButton(creditsButton, state != ChildConnectionLink.LinkState.Connecting);
+        SetActiveForButton(settingsButton, state != ChildConnectionLink.LinkState.Connecting);
 
         UpdateSoloStartVisibility();
     }
 
-    /// <summary>
-    /// 単独開始ボタンの表示：未接続／接続中で、かつクレジット・設定パネルが開いていないときだけ表示する。
-    /// 接続済み（START!）では通常の開始に任せ、親機と子機の開始がずれないよう隠す。
-    /// ボタンの親は触らず、ボタン自身（または装飾コンテナ）だけを切り替える。
-    /// </summary>
     private void UpdateSoloStartVisibility()
     {
         if (soloStartButton == null) return;
@@ -288,15 +244,12 @@ public class ChildTitleConnectionUI : MonoBehaviour
         ResolveToggleTarget(soloStartButton).SetActive(!connected && !panelOpen);
     }
 
-    /// <summary>タイトル表示時の初期状態：各パネルを閉じ、装飾を表示する。</summary>
     private void ApplyInitialPanelState()
     {
         if (creditsPanel != null) creditsPanel.SetActive(false);
         if (settingsPanel != null) settingsPanel.SetActive(false);
         if (cancelUiObject != null) cancelUiObject.SetActive(false);
 
-        // 旧実装（ChildUdpReceiver.RefreshUiReferences）と同じく、タイトル画像と装飾は
-        // クリックを遮らないようにする（ボタン操作を阻害しない既存挙動の維持）。
         DisableRaycastTargets(titleImageObject);
         if (animatedSpriteObjects != null)
         {
@@ -315,7 +268,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         if (titleImageObject != null)
             titleImageObject.SetActive(shouldShow);
 
-        // パネルを開いている間は、単独開始ボタンだけが残らないようにする。
         UpdateSoloStartVisibility();
 
         if (animatedSpriteObjects == null) return;
@@ -337,10 +289,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         target.SetActive(active);
     }
 
-    /// <summary>
-    /// ボタンの表示切替の対象を返す。ボタンが装飾コンテナ（Connect/Credit など）の子ならコンテナごと、
-    /// 親が Canvas だったり他のボタンだったりする場合は、巻き込まないようボタン自身だけを返す。
-    /// </summary>
     private static GameObject ResolveToggleTarget(Button button)
     {
         Transform parent = button.transform.parent;
@@ -350,7 +298,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         return button.gameObject;
     }
 
-    /// <summary>クリックを遮らないようにする（旧 ChildUdpReceiver.RefreshUiReferences と同じ処理）。</summary>
     private static void DisableRaycastTargets(GameObject target)
     {
         if (target == null) return;
@@ -359,34 +306,54 @@ public class ChildTitleConnectionUI : MonoBehaviour
             graphic.raycastTarget = false;
     }
 
-
-    // ── ボタン操作（通信・開始はUDP側の既存APIを1回だけ呼ぶ）─────────────────
-
-    /// <summary>
-    /// 接続ボタン。Connected なら START、でなければ接続開始、という分岐は UDP 側
-    /// （ChildUdpReceiver.OnConnectButtonClicked）が持つ。ここでは重複実装しない。
-    /// </summary>
     public void OnConnectClicked()
     {
         if (!EnsureHost()) return;
+
+        // 接続完了後（START! ボタン押下時）も難易度選択を確認してからゲームを開始できるようにする
+        if (_host.ConnectionState == ChildConnectionLink.LinkState.Connected)
+        {
+            DifficultyTitleUI diffUi = DifficultyTitleUI.EnsureAttached();
+            if (diffUi != null)
+            {
+                diffUi.OpenForGameStart(() =>
+                {
+                    if (EnsureHost())
+                        _host.OnConnectButtonClicked();
+                });
+                return;
+            }
+        }
+
         _host.OnConnectButtonClicked();
     }
 
-    /// <summary>Cancelボタン。接続状態を戻す処理は UDP 側が持つ。</summary>
     public void OnCancelClicked()
     {
         if (!EnsureHost()) return;
         _host.CancelConnect();
     }
 
-    /// <summary>子機だけで開始。START_GAME を送らずにゲームへ進む処理は Host 側が持つ。</summary>
     public void OnSoloStartClicked()
     {
         if (!EnsureHost()) return;
+
+        // 子機ソロスタート押下時に難易度選択画面を開き、難易度決定後にソロスタートを開始する
+        DifficultyTitleUI diffUi = DifficultyTitleUI.EnsureAttached();
+        if (diffUi != null)
+        {
+            diffUi.OpenForGameStart(() =>
+            {
+                if (EnsureHost())
+                    _host.OnSoloStartButtonClicked();
+            });
+            return;
+        }
+
         _host.OnSoloStartButtonClicked();
     }
 
-    /// <summary>クレジットの開閉（タイトルUIのみの処理）。</summary>
+    /// <summary>クレジットの開閉（タイトルUIのみの処理＋親機へ同期 M-F04）。</summary>
     public void OnCreditsClicked()
     {
         if (creditsPanel == null)
@@ -395,8 +362,10 @@ public class ChildTitleConnectionUI : MonoBehaviour
             return;
         }
 
-        creditsPanel.SetActive(!creditsPanel.activeSelf);
+        bool nextActive = !creditsPanel.activeSelf;
+        creditsPanel.SetActive(nextActive);
         UpdateAnimatedSpritesVisibility();
+        GameDifficulty.SendTitleCommandToParent(nextActive ? "OPEN_CREDITS" : "CLOSE_CREDITS");
     }
 
     public void OnCloseCreditsClicked()
@@ -404,9 +373,10 @@ public class ChildTitleConnectionUI : MonoBehaviour
         if (creditsPanel == null) return;
         creditsPanel.SetActive(false);
         UpdateAnimatedSpritesVisibility();
+        GameDifficulty.SendTitleCommandToParent("CLOSE_CREDITS");
     }
 
-    /// <summary>設定の開閉（タイトルUIのみの処理）。</summary>
+    /// <summary>設定の開閉（タイトルUIのみの処理＋親機へ同期 M-F04）。</summary>
     public void OnSettingsClicked()
     {
         if (settingsPanel == null)
@@ -415,8 +385,10 @@ public class ChildTitleConnectionUI : MonoBehaviour
             return;
         }
 
-        settingsPanel.SetActive(!settingsPanel.activeSelf);
+        bool nextActive = !settingsPanel.activeSelf;
+        settingsPanel.SetActive(nextActive);
         UpdateAnimatedSpritesVisibility();
+        GameDifficulty.SendTitleCommandToParent(nextActive ? "OPEN_SETTINGS" : "CLOSE_SETTINGS");
     }
 
     public void OnCloseSettingsClicked()
@@ -424,17 +396,9 @@ public class ChildTitleConnectionUI : MonoBehaviour
         if (settingsPanel == null) return;
         settingsPanel.SetActive(false);
         UpdateAnimatedSpritesVisibility();
+        GameDifficulty.SendTitleCommandToParent("CLOSE_SETTINGS");
     }
 
-    // ── タイトル用リスナー（Inspectorの永続リスナーと二重登録しない）──────────
-
-    /// <summary>
-    /// タイトルのボタンに動的リスナーを登録する。
-    ///  ・初回ロードではシーンの永続リスナーが本コンポーネントを指しているため登録しない
-    ///    （同一処理の二重実行を防ぐ）。
-    ///  ・タイトル復帰後は前回のUIインスタンスが破棄され、永続リスナーのターゲットが
-    ///    別インスタンス（破棄済み）になるため、そのときだけ動的登録される。
-    /// </summary>
     private void RegisterTitleListeners()
     {
         BindButton(connectButton, OnConnectClicked, nameof(OnConnectClicked));
@@ -446,11 +410,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         BindButton(settingsCloseButton, OnCloseSettingsClicked, nameof(OnCloseSettingsClicked));
     }
 
-    /// <summary>
-    /// 動的リスナーを1つだけ登録する。
-    ///  ・既に永続リスナーに「本コンポーネント＋同じメソッド」があれば何もしない。
-    ///  ・他コンポーネントのリスナー（SE再生など）は削除しない（RemoveAllListenersは使わない）。
-    /// </summary>
     private void BindButton(Button button, UnityAction action, string methodName)
     {
         if (button == null) return;
@@ -470,7 +429,6 @@ public class ChildTitleConnectionUI : MonoBehaviour
         _dynamicListeners.Add((button, action));
     }
 
-    /// <summary>本コンポーネントが追加した動的リスナーだけを外す。</summary>
     private void RemoveDynamicListeners()
     {
         for (int i = 0; i < _dynamicListeners.Count; i++)

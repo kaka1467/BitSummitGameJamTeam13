@@ -809,11 +809,15 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
 
-        // 片付け演出の解禁は、子機から届く実際の進行率（GAME_PROGRESS）のみで判定する。
-        // 親機側の経過時間フォールバックは、子機のアイテムによる時間変化やQTE中の停止を再現できず、
-        // 残り120秒以上ある状態から早期に解禁される恐れがあるため使わない（安全側に統一）。
+        // 【M-R01】時間管理を親機（ParentGameTimeManager）へ一本化したため、
+        // 片付け演出の解禁に使う進行率も親機の基準タイマー（ProgressRate）から同期する。
         if (motherChoreController == null)
             motherChoreController = Object.FindFirstObjectByType<MotherChoreController>();
+
+        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsRunning)
+        {
+            OnGameProgress(ParentGameTimeManager.Instance.ProgressRate);
+        }
 
         if (Keyboard.current == null) return;
 
@@ -1021,18 +1025,20 @@ public class MotherSuspicionSystem : MonoBehaviour
             }
         }
 
-        // 【片付け演出中】片付け専用ルートは差し替えない（通常のドア突入ルートへ切り替えない）。
-        //   移動速度だけを「片付けの通常速度 × 倍率」にする（基準は適用前の速度を保存して使う）。
+        // 【片付け演出中（M-F02 / M-Q03）】片付け専用ルートは差し替えない（通常のドア突入ルートへ切り替えない）。
+        //   移動速度を「片付けの通常速度 × 倍率」にしつつ、片付け演出限定の強制振り向き（Chore_Peek）を要求する。
         if (choreActive)
         {
+            motherChoreController.RequestForcedLookFromLoudItem();
+
             if (choreReturnTrip)
             {
                 // 片付けの帰路中は倍率を適用しない（帰路は通常の片付け速度のまま）。
-                Debug.Log("[PD] 片付けの帰路中のRushIn要求 — 速度倍率は適用しません（通常の片付け速度のまま／ルートは片付け専用のまま）");
+                Debug.Log("[PD] 片付けの帰路中のRushIn要求 — 速度倍率は適用しません（強制振り向きのみ予約／ルートは片付け専用のまま）");
             }
             else
             {
-                Debug.Log($"[PD] 片付け演出中のRushIn要求 — ルート=片付け専用（差し替えなし）/ 片付け中={choreActive} / " +
+                Debug.Log($"[PD] 片付け演出中のRushIn要求 — ルート=片付け専用（差し替えなし・強制振り向き要求）/ 片付け中={choreActive} / " +
                           $"手動(6キー)={manualChoreActive} / 帰路中={choreReturnTrip} / " +
                           $"基準速度={_approachSpeed:F2} / 倍率={choreRushInSpeedMultiplier:F2}");
                 ApplyChoreRushInSpeed(choreRushInSpeedMultiplier);
@@ -2221,10 +2227,13 @@ public class MotherSuspicionSystem : MonoBehaviour
         return IsInvincible && amount > 0;
     }
 
-    /// <summary>無敵中またはTIME_UP（クリア確定）後に捕獲・ゲームオーバーを抑止すべきか。捕獲の共通入口から参照する。</summary>
+    /// <summary>無敵中またはTIME_UP（クリア確定・同フレーム到達を含む）時に捕獲・ゲームオーバーを抑止すべきか。捕獲の共通入口から参照する。</summary>
     public bool ShouldBlockCapture()
     {
-        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUp)
+        if (GameDifficulty.IncludeTutorial)
+            return true;
+
+        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUpOrReachedThisFrame)
             return true;
 
         return IsInvincible;

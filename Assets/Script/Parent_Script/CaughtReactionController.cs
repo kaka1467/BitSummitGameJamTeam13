@@ -119,7 +119,7 @@ public class CaughtReactionController : MonoBehaviour
     {
         if (_hasTriggeredGameOver) return;
         if (motherGauge == null) return;
-        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUp) return;
+        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUpOrReachedThisFrame) return;
 
         // 無敵モード中は最大ゲージ監視による捕獲も行わない。
         if (EnsureSuspicionSystem() != null && suspicionSystem.IsInvincible) return;
@@ -185,8 +185,8 @@ public class CaughtReactionController : MonoBehaviour
     {
         if (_hasTriggeredGameOver) return;
 
-        // 【PA07 / M-R04】02:00（TIME_UP）到達後はクリア確定のため、ゲームオーバーを発火させない。
-        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUp)
+        // 【PA07 / M-R04】02:00（TIME_UP）到達後または同フレーム到達時はクリア優先のため、ゲームオーバーを発火させない。
+        if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsTimeUpOrReachedThisFrame)
         {
             Debug.Log("[CaughtReactionController] TIME_UP（クリア確定）済みの為ゲームオーバーを抑止します");
             return;

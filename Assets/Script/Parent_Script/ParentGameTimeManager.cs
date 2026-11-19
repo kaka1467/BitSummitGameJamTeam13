@@ -4,34 +4,23 @@ using UnityEngine;
 /// <summary>
 /// ParentGameTimeManager：親機側のゲーム全体タイムリミットと時計表示を管理する。
 ///
-/// 目的（P09）：
-///  ・ゲーム内時刻「夜9:00（21:00）スタート → 深夜2:00（26:00）到達でクリア」の進行を作る。
-///  ・ゲーム内時刻は時計モデル（Room/ClockFaceDisplay の ClockFacePresenter）へ表示する。
-///    GetClockText() の戻り値を表示側が取得する（ここでは画面へ表示しない）。
-///  ・制限時間（プレイ実時間）に到達したら TIME_UP として結果画面（ParentGameClear）へ遷移する。
-///
-/// 時間の対応：
-///  ・プレイ実時間 limitSeconds 秒で、ゲーム内は gameMinutesTotal 分（既定 300分 = 5時間）進む。
-///  ・開始時刻 startHour（既定 21 = 21:00）から単調増加し、24時間で折り返して表示する。
-///    例）21:00 → 26:00 は 02:00 として表示される（26 % 24 = 2）。
-///
-/// 責務の境界（ここでは行わない）：
-///  ・子機のタイマー（GameManager.time）は変更しない（親機側だけで独立に時間を持つ）。
-///  ・親機から子機への TIME_UP 送信は行わない（既存の UDP 仕様を変更しない）。
-///  ・捕獲（ゲームオーバー）が確定している場合は遷移しない（捕獲優先。既存の親機ルールに合わせる）。
+/// 目的（P09 / D-Q01）：
+///  ・ゲーム内時刻「夜8:00（20:00）スタート → 深夜0:00（24:00 = 00:00）到達でクリア」の進行を作る。
+///  ・難易度別の実時間制限：EASY=4分(240秒) / NORMAL=6分(360秒) / HARD=8分(480秒)。
+///  ・すべての難易度で同じ時計スケール（20:00 → 00:00 = 240分）を使用する。
 /// </summary>
 public class ParentGameTimeManager : MonoBehaviour
 {
     // ── 時間設定 ──────────────────────────────────────────────────────────────
     [Header("時間設定")]
-    [Tooltip("プレイ実時間の制限（秒）。この秒数でゲーム内の gameMinutesTotal 分が経過する。")]
-    [SerializeField, Min(1f)] private float limitSeconds = 300f;
+    [Tooltip("プレイ実時間の制限（秒）。EASY=240s(4分), NORMAL=360s(6分), HARD=480s(8分) が難易度から自動反映される。")]
+    [SerializeField, Min(1f)] private float limitSeconds = 360f;
 
-    [Tooltip("ゲーム内の開始時刻（時）。21 = 夜9時。")]
-    [SerializeField, Range(0, 23)] private int startHour = 21;
+    [Tooltip("ゲーム内の開始時刻（時）。20 = 夜8時（20:00）。")]
+    [SerializeField, Range(0, 23)] private int startHour = 20;
 
-    [Tooltip("ゲーム内で進む総時間（分）。300分 = 5時間（21:00 → 26:00 = 02:00）。")]
-    [SerializeField, Min(1f)] private float gameMinutesTotal = 300f;
+    [Tooltip("ゲーム内で進む総時間（分）。240分 = 4時間（20:00 → 24:00 = 00:00）。")]
+    [SerializeField, Min(1f)] private float gameMinutesTotal = 240f;
 
     // ── 時計表示 ──────────────────────────────────────────────────────────────
     [Header("時計表示")]
@@ -51,13 +40,13 @@ public class ParentGameTimeManager : MonoBehaviour
 
     // ── 開始前ディレイ ────────────────────────────────────────────────────────
     [Header("開始前ディレイ")]
-    [Tooltip("本編開始前の待機（秒）。この秒数だけ 21:00 のまま止め、経過後にタイマーを開始する。\n" +
+    [Tooltip("本編開始前の待機（秒）。この秒数だけ 20:00 のまま止め、経過後にタイマーを開始する。\n" +
              "0 以下なら Start 直後に即時開始する。")]
     [SerializeField, Min(0f)] private float startDelaySeconds = 0f;
 
     // ── クリア演出（PA07：閉眼・暗転） ────────────────────────────────────────
     [Header("クリア演出（PA07：閉眼・暗転）")]
-    [Tooltip("02:00（TIME_UP）到達時に、眠るようにまぶたが閉じて暗転してから結果画面へ遷移する演出を有効にする。")]
+    [Tooltip("00:00（TIME_UP）到達時に、眠るようにまぶたが閉じて暗転してから結果画面へ遷移する演出を有効にする。")]
     [SerializeField] private bool enableClearSleepSequence = true;
 
     [Tooltip("クリア時にまぶたがゆっくり閉じる時間（秒）。")]
@@ -70,82 +59,42 @@ public class ParentGameTimeManager : MonoBehaviour
     [SerializeField] private bool showDebugLogs;
 
     // ── 状態 ──────────────────────────────────────────────────────────────────
-    /// <summary>ゲーム開始からの経過（プレイ実時間・秒）。</summary>
     private float _elapsed;
-
-    /// <summary>TIME_UP を一度だけ実行するためのフラグ。</summary>
     private bool _timeUpFired;
-
-    /// <summary>タイマーが進行中か（本編開始後 true）。</summary>
     private bool _timerRunning;
-
-    /// <summary>結果確定（捕獲／クリア）により完全停止したか（以降は再開しない）。</summary>
     private bool _timerStopped;
-
-    /// <summary>MotherSuspicionSystem の参照キャッシュ（毎フレームの Find を避ける）。</summary>
     private MotherSuspicionSystem _suspicionSystem;
-
-    /// <summary>クリア閉眼演出のコルーチン。</summary>
     private Coroutine _clearSequenceCoroutine;
 
     // ── 公開（読み取り専用） ──────────────────────────────────────────────────
-    /// <summary>親機の時間管理をほかの機能から参照するためのインスタンス。</summary>
     public static ParentGameTimeManager Instance { get; private set; }
 
-    /// <summary>ゲーム進行率（0.0〜1.0）。経過実時間 ÷ 制限時間。</summary>
     public float ProgressRate => Mathf.Clamp01(_elapsed / Mathf.Max(1f, limitSeconds));
-
-    /// <summary>制限時間までの残り時間（秒）。</summary>
     public float RemainingSeconds => Mathf.Max(0f, LimitSeconds - _elapsed);
-
-    /// <summary>TIME_UP を実行済みか。</summary>
     public bool IsTimeUp => _timeUpFired;
 
-    /// <summary>タイマーが進行中か（読み取り専用）。開始前・結果確定後は false。</summary>
-    public bool IsRunning => _timerRunning;
+    public bool IsTimeUpOrReachedThisFrame =>
+        _timeUpFired ||
+        (_timerRunning && !_timerStopped && !IsCaptureConfirmed() &&
+         (_elapsed >= LimitSeconds || _elapsed + Time.deltaTime >= LimitSeconds));
 
-    /// <summary>結果確定（捕獲／クリア）により完全停止したか（読み取り専用）。</summary>
+    public bool IsRunning => _timerRunning;
     public bool IsStopped => _timerStopped;
 
-    /// <summary>
-    /// 本プレイが終了したか（新規の親イベントを開始してはいけない状態か）。
-    ///  ・時間切れ：TIME_UP を実行済み（_timeUpFired）
-    ///  ・開始済み計測の制限到達：進行中（_timerRunning）で _elapsed が制限時間へ到達
-    ///  ・明示的なタイマー停止：StopTimer() 済み（_timerStopped）
-    ///  ・結果確定：現在プレイの結果処理済み／現在プレイIDと一致する捕獲確定／シーン内捕獲
-    ///  ・タイマー未開始・遅延開始（_timerRunning=false かつ _elapsed<Limit）は終了としない。
-    ///  ・結果確定は参照時に即時評価する（IsStopped の翌Update反映を待たない）。
-    /// </summary>
     public bool IsPlayFinished
     {
         get
         {
-            // 時間切れ（TIME_UP 実行済み）
             if (_timeUpFired) return true;
-
-            // 明示的なタイマー停止（StopTimer 済み）
             if (_timerStopped) return true;
-
-            // 開始済み計測が制限時間へ到達（進行中で到達した場合）
             if (_timerRunning && _elapsed >= LimitSeconds) return true;
-
-            // 必須参照の不足は「終了」とは扱わない（1回だけ警告する）。
             WarnIfMissingReference();
-
-            // 結果確定（捕獲／クリア）
             return IsResultConfirmed();
         }
     }
 
-    /// <summary>必須参照（MotherSuspicionSystem）が不足したことを1回だけ警告済みか。</summary>
     private bool _missingRefWarned;
 
-    /// <summary>
-    /// 必須参照（MotherSuspicionSystem）が不足しているかを確認し、1回だけ警告する。
-    ///  ・Host（UDP）も無い場合は「単体デバッグ相当」として警告のみ（判定は継続）。
-    ///  ・Host があるのに参照が無い場合は通常シーンの設定不備として警告する。
-    ///  ・参照不足それ自体を「終了」とは扱わない。
-    /// </summary>
     private void WarnIfMissingReference()
     {
         if (_missingRefWarned) return;
@@ -158,14 +107,8 @@ public class ParentGameTimeManager : MonoBehaviour
             : "[ParentGameTimeManager] 必須参照不足：MotherSuspicionSystem も Host もありません（単体デバッグ相当）。捕獲状態は判定できません。", this);
     }
 
-    // ── 自動開始の可否（Manager 不在でも呼べる共通の窓口） ─────────────────────
-
-    /// <summary>判定不能による拒否を1回だけ記録済みか（毎フレームのログを避ける）。</summary>
     private static bool _unavailableRejectLogged;
 
-    /// <summary>
-    /// 判定不能による拒否を1回だけログする（毎フレームの出力を避ける）。
-    /// </summary>
     public static void LogUnavailableRejectOnce()
     {
         if (_unavailableRejectLogged) return;
@@ -175,13 +118,6 @@ public class ParentGameTimeManager : MonoBehaviour
                          "シーンに ParentGameTimeManager を配置してください。");
     }
 
-    /// <summary>
-    /// 自動で親イベントを開始してよいかの判定結果。
-    ///  ・Allow              ：許可（プレイ継続中）
-    ///  ・RejectPlayFinished ：終了による拒否（終了ラッチを立ててよい）
-    ///  ・RejectUnavailable  ：判定不能による拒否（終了ラッチは立てない）
-    ///  ・AllowSoloDebug     ：単体デバッグ互換の許可（規約）
-    /// </summary>
     public enum AutoStartDecision
     {
         Allow = 0,
@@ -190,39 +126,20 @@ public class ParentGameTimeManager : MonoBehaviour
         AllowSoloDebug = 3,
     }
 
-    /// <summary>Manager 不在時にも参照する MotherSuspicionSystem の共有キャッシュ（Start で設定）。</summary>
     private static MotherSuspicionSystem _sharedSuspicionSystem;
-    /// <summary>共有参照の解決を1回だけ試したか（毎フレームの Find を避ける）。</summary>
     private static bool _sharedSuspicionResolveAttempted;
 
-    /// <summary>
-    /// 自動で親イベントを開始してよいかを判定する（Manager 不在でも呼べる）。
-    ///  ・Manager がある場合：終了事実（IsPlayFinished）だけを見る。
-    ///  ・Manager が無い場合：
-    ///      1) 既存の捕獲・結果情報（Host の Session／MotherSuspicionSystem）を確認する
-    ///      2) 通常ゲームシーンなら「判定不能」として拒否する（Host 不在でも拒否）
-    ///      3) 非ゲームプレイシーンなら「単体デバッグ互換」として許可する
-    ///  ・規約：Host 不在かつ非ゲームプレイシーンを「単体デバッグ」とみなす
-    ///    （既存 MotherChoreController.IsGameplayScene と同じフォールバック "ParentGameScene"）。
-    ///  ・副作用なし（ログ・ラッチ・コルーチン起動を一切行わない）。
-    /// </summary>
     public static AutoStartDecision EvaluateAutoStart()
     {
         var manager = Instance;
         if (manager != null)
             return manager.IsPlayFinished ? AutoStartDecision.RejectPlayFinished : AutoStartDecision.Allow;
 
-        // Manager 不在：既存の捕獲・結果情報は無視しない。
         if (IsFinishedByExistingInfo()) return AutoStartDecision.RejectPlayFinished;
-
-        // 通常ゲームシーンで Manager 不在は設定異常として拒否する（終了ラッチは立てない）。
         if (IsGameplaySceneNow()) return AutoStartDecision.RejectUnavailable;
-
-        // 非ゲームプレイシーン：単体デバッグ互換。
         return AutoStartDecision.AllowSoloDebug;
     }
 
-    /// <summary>Manager 不在時に、既存の捕獲・結果情報から終了と判断できるか。</summary>
     private static bool IsFinishedByExistingInfo()
     {
         var host = ParentUdpRuntimeHost.Running;
@@ -236,20 +153,15 @@ public class ParentGameTimeManager : MonoBehaviour
         return s != null && (s.isCaught || s.HasPermanentGameOver);
     }
 
-    /// <summary>
-    /// 共有の MotherSuspicionSystem 参照を解決する（毎フレームの Find を避けるため1回だけ試す）。
-    ///  ・Manager がある場合は Start() が設定するため、ここは Manager 不在時のフォールバック。
-    /// </summary>
     private static MotherSuspicionSystem ResolveSharedSuspicion()
     {
-        if (_sharedSuspicionSystem != null) return _sharedSuspicionSystem;   // 破棄は Unity の null 判定で検知
+        if (_sharedSuspicionSystem != null) return _sharedSuspicionSystem;
         if (_sharedSuspicionResolveAttempted) return null;
         _sharedSuspicionResolveAttempted = true;
         _sharedSuspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
         return _sharedSuspicionSystem;
     }
 
-    /// <summary>現在のシーンが通常のゲームプレイシーンか（既存のシーン識別を優先して使う）。</summary>
     private static bool IsGameplaySceneNow()
     {
         string active = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
@@ -258,16 +170,9 @@ public class ParentGameTimeManager : MonoBehaviour
         if (host != null && host.Settings != null && !string.IsNullOrEmpty(host.Settings.GameplaySceneName))
             return ParentSceneBoundaryPolicy.IsGameplayScene(active, host.Settings.GameplaySceneName);
 
-        // 既存規約：Host 設定が無い場合は名前比較へフォールバックする
-        // （MotherChoreController.IsGameplayScene と同じ扱い）。
         return active == "ParentGameScene";
     }
 
-    /// <summary>
-    /// タイマーを開始する（本編開始時に呼ぶ）。
-    ///  ・結果確定で停止済み（_timerStopped）の場合は再開しない（時刻を固定したまま）。
-    ///  ・開始前ディレイ待ちの間に呼ばれても、ディレイ経過後に開始される（多重開始は無視）。
-    /// </summary>
     public void StartTimer()
     {
         if (_timerStopped)
@@ -276,21 +181,16 @@ public class ParentGameTimeManager : MonoBehaviour
             return;
         }
 
-        if (_timerRunning) return;   // 既に進行中（多重開始を無視）
+        if (_timerRunning) return;
 
         _timerRunning = true;
 
-        Debug.Log($"[ParentGameTimeManager] タイマー開始 — 表示={GetClockText()}", this);
+        Debug.Log($"[ParentGameTimeManager] タイマー開始 — 難易度={GameDifficulty.DisplayName} / 制限={LimitSeconds:F0}s / 表示={GetClockText()}", this);
     }
 
-    /// <summary>
-    /// タイマーを停止する（結果確定時に呼ぶ）。以降は _elapsed を加算せず時刻を固定する。
-    ///  ・完全停止フラグ（_timerStopped）を立てるため、後から StartTimer を呼んでも再開しない。
-    ///  ・停止中も時計表示は現在値のまま維持する（Update 側で表示更新を続ける）。
-    /// </summary>
     public void StopTimer()
     {
-        if (_timerStopped) return;   // 既に停止済み（冪等）
+        if (_timerStopped) return;
 
         _timerRunning = false;
         _timerStopped = true;
@@ -298,29 +198,23 @@ public class ParentGameTimeManager : MonoBehaviour
         Debug.Log($"[ParentGameTimeManager] タイマー停止 — 時刻を固定（表示={GetClockText()}）", this);
     }
 
-    /// <summary>ゲーム開始からの経過（秒）。</summary>
     public float ElapsedSeconds => _elapsed;
-
-    /// <summary>制限時間（秒）。</summary>
     public float LimitSeconds => Mathf.Max(1f, limitSeconds);
 
     /// <summary>
     /// 現在のゲーム内時刻を "HH:MM" で返す（24時間で折り返す）。
-    ///  ・21:00 スタート、進行率 1.0 で 26:00（= 02:00）へ到達する。
+    ///  ・20:00 スタート、進行率 1.0 で 24:00（= 00:00）へ到達する。
     /// </summary>
     public string GetClockText()
     {
         float totalMinutes = startHour * 60f + ProgressRate * gameMinutesTotal;
 
-        // 24時間で折り返す（26:00 → 02:00）。負値にならないよう剰余を正規化する。
         int totalMinutesInt = Mathf.FloorToInt(totalMinutes);
         int hour = ((totalMinutesInt / 60) % 24 + 24) % 24;
         int minute = ((totalMinutesInt % 60) + 60) % 60;
 
         return string.Format(clockFormat, hour, minute);
     }
-
-    // ── Unityライフサイクル ───────────────────────────────────────────────────
 
     private void Awake()
     {
@@ -332,6 +226,7 @@ public class ParentGameTimeManager : MonoBehaviour
         }
 
         Instance = this;
+        ApplyDifficultyTimeSettings();
     }
 
     private void OnDestroy()
@@ -340,37 +235,367 @@ public class ParentGameTimeManager : MonoBehaviour
             Instance = null;
     }
 
+    private void ApplyDifficultyTimeSettings()
+    {
+        limitSeconds = GameDifficulty.TimeLimitSeconds;
+        startHour = GameDifficulty.ClockStartHour;
+        gameMinutesTotal = GameDifficulty.ClockGameMinutesTotal;
+    }
+
     private void Start()
     {
-        // 再プレイ・シーン再読み込みで前回の状態を持ち越さない。
+        ApplyDifficultyTimeSettings();
+
         _elapsed = 0f;
         _timeUpFired = false;
         _timerRunning = false;
         _timerStopped = false;
 
-        // 開始前は 21:00 のまま（timer 開始まで _elapsed は進まない）。
-
-        // 毎フレームの検索を避けるため、参照はここで1回だけ解決する。
         _suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
         _missingRefWarned = false;
 
-        // Manager 不在時に参照する共有キャッシュも埋めておく（Find を繰り返さない）。
         _sharedSuspicionSystem = _suspicionSystem;
         _sharedSuspicionResolveAttempted = true;
 
+        MotherApproachController.ResetTutorialHolds();
+
+        // 【独立チュートリアルモード】親機チュートリアルを実行する
+        if (GameDifficulty.IncludeTutorial)
+        {
+            Debug.Log("[ParentGameTimeManager] TUTORIAL モードで開始 — 親機チュートリアルシーケンスを起動します。", this);
+            StartCoroutine(ParentTutorialRoutine());
+            return;
+        }
+
         if (showDebugLogs)
-            Debug.Log($"[ParentGameTimeManager] 開始 | 制限={LimitSeconds:F1}s | 開始時刻={startHour:00}:00 | " +
+            Debug.Log($"[ParentGameTimeManager] 開始 | 難易度={GameDifficulty.DisplayName} | 制限={LimitSeconds:F1}s | 開始時刻={startHour:00}:00 | " +
                       $"ゲーム内総時間={gameMinutesTotal:F0}分 | 遷移先='{timeUpSceneName}' | " +
                       $"開始前ディレイ={startDelaySeconds:F2}s", this);
 
-        // 本編開始：startDelaySeconds > 0 なら待ってから、0以下なら即時開始する。
         if (startDelaySeconds > 0f)
             StartCoroutine(StartTimerAfterDelay());
         else
             StartTimer();
     }
 
-    /// <summary>開始前ディレイを待ってからタイマーを開始する（待機中は 21:00 のまま）。</summary>
+    [Header("Parent Tutorial Slide Overlay (Resources/Tutorial/Parent)")]
+    [Tooltip("シーン上で位置・サイズを調整したImageがあればここに割り当てます（未割り当て時は自動生成）。")]
+    [SerializeField] private UnityEngine.UI.Image parentTutorialSlideImage;
+    [Tooltip("スライド下部の案内テキスト（未割り当て時は自動生成）。")]
+    [SerializeField] private TMPro.TextMeshProUGUI parentTutorialPromptText;
+    [SerializeField] private int tutorialCanvasSortingOrder = 250;
+    [SerializeField] private Vector2 tutorialSlideAnchorMin = Vector2.zero;
+    [SerializeField] private Vector2 tutorialSlideAnchorMax = Vector2.one;
+    [SerializeField] private Vector2 tutorialSlideAnchoredPosition = Vector2.zero;
+    [SerializeField] private Vector2 tutorialSlideSizeDelta = Vector2.zero;
+    [SerializeField] private Vector2 tutorialPromptAnchorMin = new Vector2(0.1f, 0.03f);
+    [SerializeField] private Vector2 tutorialPromptAnchorMax = new Vector2(0.9f, 0.10f);
+    [SerializeField] private float tutorialPromptFontSize = 32f;
+
+    [ContextMenu("親機チュートリアルUIをシーン上に生成（Unity内で配置・サイズ調整用）")]
+    public UnityEngine.UI.Image EnsureParentTutorialOverlay()
+    {
+        if (parentTutorialSlideImage != null)
+        {
+            if (parentTutorialPromptText == null)
+                parentTutorialPromptText = parentTutorialSlideImage.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+            return parentTutorialSlideImage;
+        }
+
+        GameObject existingCanvas = GameObject.Find("ParentTutorialOverlayCanvas");
+        if (existingCanvas != null)
+        {
+            Transform slideTr = existingCanvas.transform.Find("TutorialSlideImage");
+            if (slideTr != null)
+            {
+                parentTutorialSlideImage = slideTr.GetComponent<UnityEngine.UI.Image>();
+                parentTutorialPromptText = slideTr.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+                return parentTutorialSlideImage;
+            }
+        }
+
+        GameObject canvasObj = new GameObject("ParentTutorialOverlayCanvas",
+            typeof(RectTransform),
+            typeof(Canvas),
+            typeof(UnityEngine.UI.CanvasScaler),
+            typeof(UnityEngine.UI.GraphicRaycaster));
+
+        Canvas canvas = canvasObj.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = tutorialCanvasSortingOrder;
+
+        UnityEngine.UI.CanvasScaler scaler = canvasObj.GetComponent<UnityEngine.UI.CanvasScaler>();
+        scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        GameObject imgObj = new GameObject("TutorialSlideImage", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+        imgObj.transform.SetParent(canvasObj.transform, false);
+        RectTransform imgRt = imgObj.GetComponent<RectTransform>();
+        imgRt.anchorMin = tutorialSlideAnchorMin;
+        imgRt.anchorMax = tutorialSlideAnchorMax;
+        imgRt.anchoredPosition = tutorialSlideAnchoredPosition;
+        imgRt.sizeDelta = tutorialSlideSizeDelta;
+
+        parentTutorialSlideImage = imgObj.GetComponent<UnityEngine.UI.Image>();
+        parentTutorialSlideImage.preserveAspect = true;
+        parentTutorialSlideImage.raycastTarget = true;
+
+        GameObject promptObj = new GameObject("TutorialPromptText", typeof(RectTransform), typeof(TMPro.TextMeshProUGUI));
+        promptObj.transform.SetParent(imgObj.transform, false);
+        RectTransform promptRt = promptObj.GetComponent<RectTransform>();
+        promptRt.anchorMin = tutorialPromptAnchorMin;
+        promptRt.anchorMax = tutorialPromptAnchorMax;
+        promptRt.offsetMin = Vector2.zero;
+        promptRt.offsetMax = Vector2.zero;
+
+        parentTutorialPromptText = promptObj.GetComponent<TMPro.TextMeshProUGUI>();
+        TMPro.TMP_Text anyTmp = Object.FindFirstObjectByType<TMPro.TMP_Text>();
+        if (anyTmp != null && anyTmp.font != null)
+            parentTutorialPromptText.font = anyTmp.font;
+        parentTutorialPromptText.fontSize = tutorialPromptFontSize;
+        parentTutorialPromptText.alignment = TMPro.TextAlignmentOptions.Center;
+        parentTutorialPromptText.color = new Color(1f, 0.96f, 0.72f, 1f);
+        parentTutorialPromptText.enableWordWrapping = false;
+        parentTutorialPromptText.raycastTarget = false;
+
+        imgObj.SetActive(false);
+        return parentTutorialSlideImage;
+    }
+
+    private void ShowParentTutorialSlide(string resourcePath, string promptJa, string promptEn)
+    {
+        Sprite sp = Resources.Load<Sprite>(resourcePath);
+        if (sp == null)
+        {
+            Debug.LogWarning($"[ParentGameTimeManager] Tutorial slide not found at Resources/{resourcePath}");
+            return;
+        }
+
+        UnityEngine.UI.Image img = EnsureParentTutorialOverlay();
+        if (img == null) return;
+
+        img.sprite = sp;
+        if (parentTutorialPromptText != null)
+        {
+            parentTutorialPromptText.text = GameLanguage.Pick(promptJa, promptEn);
+        }
+        img.gameObject.SetActive(true);
+    }
+
+    private void HideParentTutorialSlide()
+    {
+        if (parentTutorialSlideImage != null && parentTutorialSlideImage.gameObject.activeSelf)
+        {
+            parentTutorialSlideImage.gameObject.SetActive(false);
+        }
+    }
+
+    private static IEnumerator WaitForParentTutorialButtonPress()
+    {
+        yield return new WaitForSecondsRealtime(0.25f);
+
+        while (IsParentTutorialButtonDown(heldOnly: true))
+            yield return null;
+
+        while (!IsParentTutorialButtonDown(heldOnly: false))
+            yield return null;
+    }
+
+    private static bool IsParentTutorialButtonDown(bool heldOnly)
+    {
+        var kb = UnityEngine.InputSystem.Keyboard.current;
+        if (kb != null)
+        {
+            if (heldOnly)
+            {
+                if (kb.spaceKey.isPressed || kb.enterKey.isPressed || kb.numpadEnterKey.isPressed || kb.zKey.isPressed)
+                    return true;
+            }
+            else
+            {
+                if (kb.spaceKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame ||
+                    kb.numpadEnterKey.wasPressedThisFrame || kb.zKey.wasPressedThisFrame)
+                    return true;
+            }
+        }
+
+        foreach (var pad in UnityEngine.InputSystem.Gamepad.all)
+        {
+            if (pad == null) continue;
+            if (heldOnly)
+            {
+                if (pad.buttonSouth.isPressed || pad.buttonEast.isPressed || pad.startButton.isPressed)
+                    return true;
+            }
+            else
+            {
+                if (pad.buttonSouth.wasPressedThisFrame || pad.buttonEast.wasPressedThisFrame || pad.startButton.wasPressedThisFrame)
+                    return true;
+            }
+        }
+
+        var mouse = UnityEngine.InputSystem.Mouse.current;
+        if (mouse != null)
+        {
+            if (heldOnly)
+            {
+                if (mouse.leftButton.isPressed) return true;
+            }
+            else
+            {
+                if (mouse.leftButton.wasPressedThisFrame) return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPillowSensorPressed(SleepingController sleepingController)
+    {
+        if (sleepingController != null && sleepingController.IsSleeping)
+            return true;
+
+        var kb = UnityEngine.InputSystem.Keyboard.current;
+        if (kb != null && kb.spaceKey.isPressed)
+            return true;
+
+        foreach (var pad in UnityEngine.InputSystem.Gamepad.all)
+        {
+            if (pad != null && pad.buttonSouth.isPressed)
+                return true;
+        }
+
+        return false;
+    }
+
+    private IEnumerator ParentTutorialRoutine()
+    {
+        yield return new WaitForSecondsRealtime(0.4f);
+
+        MotherApproachWarning warningSystem = Object.FindFirstObjectByType<MotherApproachWarning>();
+        SleepingController sleepingController = Object.FindFirstObjectByType<SleepingController>();
+        if (_suspicionSystem == null)
+            _suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
+
+        // 1) 怪しさメーターの説明スライド（ボタン入力で次へ）
+        ShowParentTutorialSlide(
+            "Tutorial/Parent/Tutorial01",
+            "Aボタン / Enter / Space / クリック で次へ",
+            "Press A / Enter / Space / Click to continue");
+        yield return WaitForParentTutorialButtonPress();
+
+        // 2) お母さんがどこから覗いてくるか（ドア・窓）の説明スライド（ボタン入力で次へ）
+        ShowParentTutorialSlide(
+            "Tutorial/Parent/Tutorial02",
+            "Aボタン / Enter / Space / クリック で次へ",
+            "Press A / Enter / Space / Click to continue");
+        yield return WaitForParentTutorialButtonPress();
+        HideParentTutorialSlide();
+
+        // 3) 1キーのドア演出：お母さんがドアの前まで来て停止し、枕センサーを押すまでドアを開けない
+        if (warningSystem != null)
+        {
+            MotherApproachController.ResetTutorialHolds();
+            MotherApproachController.TutorialHoldBeforeDoorOpen = true;
+
+            Debug.Log("[ParentGameTimeManager] 親機チュートリアル：1キードア演出を開始します");
+            warningSystem.StartManualDoorWarningSequence();
+
+            float waitDoorTimeout = 20f;
+            float waitedDoor = 0f;
+            while (!MotherApproachController.TutorialWaitingForPillowAtDoor &&
+                   waitedDoor < waitDoorTimeout &&
+                   warningSystem.isWarningActive)
+            {
+                waitedDoor += Time.deltaTime;
+                yield return null;
+            }
+
+            // ドア前に到達したら枕センサー説明スライド（Tutorial03）を表示し、枕センサーが押されるまで待機
+            ShowParentTutorialSlide(
+                "Tutorial/Parent/Tutorial03",
+                "枕センサー（または Space / Aボタン）を長押しして寝たふりをしよう！",
+                "Hold the Pillow Sensor (or Space / A Button) to pretend to sleep!");
+
+            while (!IsPillowSensorPressed(sleepingController))
+            {
+                yield return null;
+            }
+
+            // 枕センサーが押されたらスライドを閉じてドアを開けさせ、覗き〜帰宅まで完了させる
+            HideParentTutorialSlide();
+            MotherApproachController.TutorialHoldBeforeDoorOpen = false;
+
+            while (warningSystem != null && warningSystem.isWarningActive)
+            {
+                yield return null;
+            }
+        }
+
+        yield return new WaitForSeconds(0.8f);
+
+        // 4) 4キーの庭演出：お母さんが庭の窓の前まで来て、枕センサーを押してやり過ごす
+        if (warningSystem != null)
+        {
+            MotherApproachController.ResetTutorialHolds();
+            MotherApproachController.TutorialHoldBeforeGardenPeek = true;
+
+            Debug.Log("[ParentGameTimeManager] 親機チュートリアル：4キー庭演出を開始します");
+            warningSystem.StartManualGardenPeekWarningSequence();
+
+            float waitGardenTimeout = 20f;
+            float waitedGarden = 0f;
+            while (!MotherApproachController.TutorialWaitingForPillowAtGarden &&
+                   waitedGarden < waitGardenTimeout &&
+                   warningSystem.isWarningActive)
+            {
+                waitedGarden += Time.deltaTime;
+                yield return null;
+            }
+
+            ShowParentTutorialSlide(
+                "Tutorial/Parent/Tutorial03",
+                "窓からお母さんが来た！枕センサー（または Space / Aボタン）を長押しして寝たふりをしよう！",
+                "Mom is at the window! Hold the Pillow Sensor (or Space / A Button) to pretend to sleep!");
+
+            while (!IsPillowSensorPressed(sleepingController))
+            {
+                yield return null;
+            }
+
+            HideParentTutorialSlide();
+            MotherApproachController.TutorialHoldBeforeGardenPeek = false;
+
+            while (warningSystem != null && warningSystem.isWarningActive)
+            {
+                yield return null;
+            }
+        }
+
+        MotherApproachController.ResetTutorialHolds();
+        HideParentTutorialSlide();
+
+        // 5) 4キーの庭演出が終わったら、スコア0でゲームクリア画面へ遷移する
+        Debug.Log("[ParentGameTimeManager] 親機チュートリアル完了 — スコア0でゲームクリア画面へ遷移します");
+        GameDifficulty.RecordResultScore(false, 0);
+
+        _timeUpFired = true;
+        StopTimer();
+
+        if (enableClearSleepSequence)
+        {
+            if (_clearSequenceCoroutine != null)
+                StopCoroutine(_clearSequenceCoroutine);
+            _clearSequenceCoroutine = StartCoroutine(TimeUpClearSequenceCoroutine());
+        }
+        else
+        {
+            StopAllEventsForTimeUp();
+            TransitionToTimeUp();
+        }
+    }
+
     private IEnumerator StartTimerAfterDelay()
     {
         Debug.Log($"[ParentGameTimeManager] 本編開始前：{startDelaySeconds:F2}s 待機します（表示={GetClockText()}）", this);
@@ -384,20 +609,17 @@ public class ParentGameTimeManager : MonoBehaviour
     {
         if (_timeUpFired) return;
 
-        // ── 結果確定（捕獲／クリア）の検知：確定したら即座に停止して時刻を固定する ──
         if (!_timerStopped && IsResultConfirmed())
         {
             StopTimer();
             return;
         }
 
-        // 進行中でなければ加算しない（開始前・結果確定後は時刻が固定される）。
         if (!_timerRunning)
         {
             return;
         }
 
-        // プレイ実時間で進める（既存の親機タイマーと同じ Time.deltaTime）。
         _elapsed += Time.deltaTime;
 
         if (!enableTimeUp) return;
@@ -406,7 +628,6 @@ public class ParentGameTimeManager : MonoBehaviour
         {
             if (IsCaptureConfirmed())
             {
-                // 時間切れより前に捕獲（ゲームオーバー）が確定している場合は TIME_UP で遷移しない（捕獲優先）。
                 _timeUpFired = true;
                 _elapsed = LimitSeconds;
                 StopTimer();
@@ -414,7 +635,6 @@ public class ParentGameTimeManager : MonoBehaviour
                 return;
             }
 
-            // 1回だけ実行する（毎フレームの多重遷移を防ぐ）。
             _timeUpFired = true;
             _elapsed = LimitSeconds;
             StopTimer();
@@ -435,10 +655,6 @@ public class ParentGameTimeManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 【PA07】02:00到達時に親イベント・心拍・入力を停止し、
-    /// 「眠るように画面が閉じる」閉眼・暗転演出を行ってから ParentGameClear へ遷移する。
-    /// </summary>
     private IEnumerator TimeUpClearSequenceCoroutine()
     {
         StopAllEventsForTimeUp();
@@ -461,11 +677,10 @@ public class ParentGameTimeManager : MonoBehaviour
         TransitionToTimeUp();
     }
 
-    /// <summary>
-    /// 【PA07】クリア演出開始後に通常イベント・捕獲・心拍音・寝たふり通信が割り込まないよう停止する。
-    /// </summary>
     private void StopAllEventsForTimeUp()
     {
+        ParentUdpRuntimeHost.Running?.NotifyTimeUpFromParent();
+
         if (_suspicionSystem == null)
             _suspicionSystem = Object.FindFirstObjectByType<MotherSuspicionSystem>();
 
@@ -488,36 +703,21 @@ public class ParentGameTimeManager : MonoBehaviour
                 chore.AbortChore("TIME_UP");
         }
 
-        // 心拍音を停止する
         SuspicionHeartbeat heartbeat = Object.FindFirstObjectByType<SuspicionHeartbeat>();
         if (heartbeat != null)
             heartbeat.enabled = false;
 
-        // クリア演出中に寝たふり解除やUDP送信が走らないよう SleepingController を無効化する
         SleepingController sleeping = Object.FindFirstObjectByType<SleepingController>();
         if (sleeping != null)
             sleeping.enabled = false;
     }
 
-    // ── 内部処理 ──────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// 結果（捕獲／クリア）が確定しているかを判定する。
-    ///  ・捕獲確定：ParentPlaySession の「現在プレイID」と一致する CaptureConfirmedPlayId がある場合のみ。
-    ///    非空判定だけでは使わない（前プレイのIDが残っていても終了と誤認しないため）。
-    ///  ・終了確定：ParentPlaySession.ResultProcessed が true（捕獲・クリアのどちらでも立つ）。
-    ///  ・MotherSuspicionSystem 側の isCaught / HasPermanentGameOver も併せて見る。
-    ///  ・Host が無い（ソロ・デバッグ）場合は MotherSuspicionSystem のみで判定する。
-    /// </summary>
     private bool IsResultConfirmed()
     {
         var host = ParentUdpRuntimeHost.Running;
         if (host != null && host.Session != null)
         {
-            // 捕獲確定：現在プレイIDと一致する場合だけ「このプレイの捕獲確定」と見なす。
             if (IsCaptureConfirmedForCurrentPlay(host.Session)) return true;
-
-            // 終了確定（クリア＝TIME_UP 受信、または捕獲の結果処理済み）
             if (host.Session.ResultProcessed) return true;
         }
 
@@ -525,11 +725,6 @@ public class ParentGameTimeManager : MonoBehaviour
                (_suspicionSystem.isCaught || _suspicionSystem.HasPermanentGameOver);
     }
 
-    /// <summary>
-    /// 現在プレイの捕獲が確定しているか。
-    ///  ・現在 PlaySessionId が非空で、CaptureConfirmedPlayId と一致する場合のみ true。
-    ///  ・現在 PlaySessionId が空（プレイ未開始）の場合は false（古いIDで終了と誤認しない）。
-    /// </summary>
     private static bool IsCaptureConfirmedForCurrentPlay(ParentPlaySession session)
     {
         if (session == null) return false;
@@ -537,11 +732,6 @@ public class ParentGameTimeManager : MonoBehaviour
         return session.PlaySessionId == session.CaptureConfirmedPlayId;
     }
 
-    /// <summary>
-    /// 捕獲（ゲームオーバー）が確定しているかを判定する（TIME_UP 遷移の抑止に使う）。
-    ///  ・IsResultConfirmed() のうち「捕獲」だけを見る（クリア確定では抑止しない）。
-    ///  ・捕獲確定は「現在プレイIDと一致する CaptureConfirmedPlayId」に統一する（非空判定だけでは使わない）。
-    /// </summary>
     private bool IsCaptureConfirmed()
     {
         var host = ParentUdpRuntimeHost.Running;
@@ -553,7 +743,6 @@ public class ParentGameTimeManager : MonoBehaviour
                (_suspicionSystem.isCaught || _suspicionSystem.HasPermanentGameOver);
     }
 
-    /// <summary>TIME_UP の結果画面へ遷移する（既存の遷移ヘルパーを使う）。</summary>
     private void TransitionToTimeUp()
     {
         if (string.IsNullOrEmpty(timeUpSceneName))

@@ -39,6 +39,7 @@ public sealed class ChildPlaySession
     private string _playSessionId = "";
     private bool _gameSceneLoaded;
     private bool _caughtHandled;
+    private bool _timeUpHandled;
 
     /// <summary>現在プレイID。</summary>
     public string PlaySessionId
@@ -59,6 +60,13 @@ public sealed class ChildPlaySession
     {
         get => _caughtHandled;
         set => _caughtHandled = value;
+    }
+
+    /// <summary>このプレイで時間切れクリア（TIME_UP）を受理済みか。</summary>
+    public bool TimeUpHandled
+    {
+        get => _timeUpHandled;
+        set => _timeUpHandled = value;
     }
 
     /// <summary>
@@ -97,7 +105,11 @@ public sealed class ChildPlaySession
     }
 
     /// <summary>新プレイ開始時に、前プレイの受理済み状態をリセットする（プレイIDは呼び出し側が採用する）。</summary>
-    public void ResetAcceptedStateForNewPlay() => _caughtHandled = false;
+    public void ResetAcceptedStateForNewPlay()
+    {
+        _caughtHandled = false;
+        _timeUpHandled = false;
+    }
 
     /// <summary>
     /// タイトル復帰などのセッションリセット（プレイID・ロード状態・捕獲受理済み）。
@@ -108,5 +120,6 @@ public sealed class ChildPlaySession
         _playSessionId = "";
         _gameSceneLoaded = false;
         _caughtHandled = false;
+        _timeUpHandled = false;
     }
 }
