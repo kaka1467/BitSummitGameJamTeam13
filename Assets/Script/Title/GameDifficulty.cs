@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -1108,6 +1109,11 @@ public class DifficultyTitleUI : MonoBehaviour
         if (!keepPendingCallback)
             _pendingGameStartCallback = null;
 
+        // 背後のタイトルボタン（SOLOSTART / START!）に EventSystem フォーカスが残っていると、
+        // 最初の決定キーで背後のボタンが再発火して OpenPanel がやり直され、NORMAL が押せなくなるため必ず解除する
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(null);
+
         _isOpen = true;
         _isDetailOpen = false;
         _isTutorialDetailPopup = false;
@@ -1139,6 +1145,9 @@ public class DifficultyTitleUI : MonoBehaviour
 
     private void OpenDetailPopup(GameDifficulty.Level level)
     {
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(null);
+
         _cursorIndex = (int)level;
         _lastCardCursorIndex = _cursorIndex;
         _pendingLevel = level;

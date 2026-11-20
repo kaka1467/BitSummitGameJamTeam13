@@ -3,6 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
@@ -11,6 +12,17 @@ using UnityEngine.UI;
 /// </summary>
 public class ChildTitleConnectionUI : MonoBehaviour
 {
+    private sealed class CancelClickForwarder : MonoBehaviour, IPointerClickHandler
+    {
+        public ChildTitleConnectionUI Owner;
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (Owner == null) return;
+            Owner.HandleCancelPointerClick();
+        }
+    }
+
     [Header("接続UI")] [Tooltip("接続／STARTボタン（Connect TMP の親）。")] [SerializeField]
     private Button connectButton;
 
@@ -82,11 +94,16 @@ public class ChildTitleConnectionUI : MonoBehaviour
     // 最後にUIへ反映した接続状態（同値の再適用を避ける）
     private ChildConnectionLink.LinkState? _lastAppliedState;
     private bool _isWaitingForGameStart;
+    // EventSystem の Submit と MenuNavigationController の Enter/Space 判定が同一フレームで二重発火し、
+    // Cancel 直後に ConnectButton を即座に再押下してしまう競合を防ぐフレームガード。
+    private int _lastCancelFrame = -10;
+    private int _lastConnectFrame = -10;
 
     private void Awake()
     {
         _isWaitingForGameStart = false;
         CaptureSceneLayoutPosition();
+        EnsureCancelButtonClickable();
         ApplyInitialPanelState();
     }
 
@@ -94,6 +111,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         TryBindHost();
         RegisterTitleListeners();
+        EnsureCancelButtonClickable();
         ApplyCurrentStateIfNeeded();
     }
 
@@ -101,15 +119,28 @@ public class ChildTitleConnectionUI : MonoBehaviour
     {
         TryBindHost();
         RegisterTitleListeners();
+        EnsureCancelButtonClickable();
         ApplyCurrentStateIfNeeded();
     }
 
     private void Update()
     {
-        if (_host != null) return;
+        if (_host == null)
+        {
+            TryBindHost();
+            ApplyCurrentStateIfNeeded();
+        }
 
-        TryBindHost();
-        ApplyCurrentStateIfNeeded();
+        if (_host != null &&
+            !_isWaitingForGameStart &&
+            !DifficultyTitleUI.IsAnyModalOpen &&
+            (_host.ConnectionState == ChildConnectionLink.LinkState.Connecting ||
+             _host.ConnectionState == ChildConnectionLink.LinkState.Connected) &&
+            Keyboard.current != null &&
+            Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            OnCancelClicked();
+        }
     }
 
     private void OnDisable()
@@ -278,17 +309,8 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
         if (cancelButton != null)
         {
-            if (cancelButton.targetGraphic == null)
-            {
-                Graphic graphic = cancelButton.GetComponent<Graphic>();
-                if (graphic != null) cancelButton.targetGraphic = graphic;
-            }
-
             cancelButton.gameObject.SetActive(isConnectingOrConnected);
-            foreach (Graphic graphic in cancelButton.GetComponentsInChildren<Graphic>(true))
-            {
-                if (graphic is TextMeshProUGUI) graphic.raycastTarget = false;
-            }
+            EnsureCancelButtonClickable();
         }
 
         if (cancelButtonLabel != null)
@@ -424,6 +446,8 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     public void OnConnectClicked()
     {
+        if (DifficultyTitleUI.IsAnyModalOpen) return;
+        if (Time.frameCount <= _lastCancelFrame + 1) return;
         if (!EnsureHost()) return;
         if (_isWaitingForGameStart) return;
 
@@ -432,6 +456,8 @@ public class ChildTitleConnectionUI : MonoBehaviour
         {
             return;
         }
+
+        _lastConnectFrame = Time.frameCount;
 
         // 接続完了後（START! ボタン押下時）も難易度選択を確認してからゲームを開始できるようにする
         if (_host.ConnectionState == ChildConnectionLink.LinkState.Connected)
@@ -458,13 +484,50 @@ public class ChildTitleConnectionUI : MonoBehaviour
         _host.OnConnectButtonClicked();
     }
 
+    private void EnsureCancelButtonClickable()
+    {
+        if (cancelButton != null)
+        {
+            Image img = cancelButton.GetComponent<Image>();
+            if (img == null) img = cancelButton.gameObject.AddComponent<Image>();
+            img.enabled = true;
+            img.color = new Color(1f, 1f, 1f, 0f);
+            img.raycastTarget = true;
+            cancelButton.targetGraphic = img;
+
+            foreach (Graphic graphic in cancelButton.GetComponentsInChildren<Graphic>(true))
+            {
+                graphic.raycastTarget = true;
+            }
+        }
+
+        if (cancelUiObject != null && (cancelButton == null || cancelUiObject != cancelButton.gameObject))
+        {
+            Graphic parentGraphic = cancelUiObject.GetComponent<Graphic>();
+            if (parentGraphic != null) parentGraphic.raycastTarget = true;
+
+            CancelClickForwarder forwarder = cancelUiObject.GetComponent<CancelClickForwarder>();
+            if (forwarder == null) forwarder = cancelUiObject.AddComponent<CancelClickForwarder>();
+            forwarder.Owner = this;
+        }
+    }
+
+    private void HandleCancelPointerClick()
+    {
+        if (_isWaitingForGameStart) return;
+        if (cancelButton != null && (!cancelButton.gameObject.activeInHierarchy || !cancelButton.interactable)) return;
+        OnCancelClicked();
+    }
+
     public void OnCancelClicked()
     {
+        if (Time.frameCount == _lastConnectFrame) return;
+        _lastCancelFrame = Time.frameCount;
         _isWaitingForGameStart = false;
         if (EnsureHost())
         {
-            _host.ResetForNewSession();
-            ApplyConnectionState(_host.ConnectionState, force: true);
+            _host.CancelConnect();
+            ApplyConnectionState(ChildConnectionLink.LinkState.Disconnected, force: true);
             return;
         }
 
@@ -473,6 +536,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     public void OnSoloStartClicked()
     {
+        if (DifficultyTitleUI.IsAnyModalOpen) return;
         if (!EnsureHost()) return;
 
         // 子機ソロスタート押下時に難易度選択画面を開き、難易度決定後にソロスタートを開始する

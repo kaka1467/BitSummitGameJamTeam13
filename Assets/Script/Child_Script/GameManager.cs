@@ -44,6 +44,32 @@ public class GameManager : MonoBehaviour
     }
 
     [Header("得点段階による速度倍率（最高到達スコア → 倍率）")]
+    [Tooltip("ONならレーン出現に合わせた緩やかな加速カーブを使う（シーン保存の旧テーブルより優先）。")]
+    [SerializeField] private bool useBalancedRunSpeedCurve = true;
+
+    private static readonly ScoreSpeedStep[] BalancedRunSpeedSteps = new ScoreSpeedStep[]
+    {
+        // 序盤はテンポよく上がり、後半ほど必要スコア幅を広げて「高速化→高得点→さらに高速化」の暴走を防ぐ
+        new ScoreSpeedStep { score = 0,      multiplier = 1.00f },
+        new ScoreSpeedStep { score = 1500,   multiplier = 1.12f },
+        new ScoreSpeedStep { score = 3500,   multiplier = 1.24f },
+        new ScoreSpeedStep { score = 6500,   multiplier = 1.36f },
+        new ScoreSpeedStep { score = 10500,  multiplier = 1.48f },
+        new ScoreSpeedStep { score = 16000,  multiplier = 1.60f },
+        new ScoreSpeedStep { score = 23000,  multiplier = 1.72f },
+        new ScoreSpeedStep { score = 32000,  multiplier = 1.84f },
+        new ScoreSpeedStep { score = 44000,  multiplier = 1.96f },
+        new ScoreSpeedStep { score = 58000,  multiplier = 2.08f },
+        new ScoreSpeedStep { score = 76000,  multiplier = 2.20f },
+        new ScoreSpeedStep { score = 100000, multiplier = 2.32f },
+        new ScoreSpeedStep { score = 130000, multiplier = 2.44f },
+        new ScoreSpeedStep { score = 168000, multiplier = 2.56f },
+        new ScoreSpeedStep { score = 215000, multiplier = 2.68f },
+        new ScoreSpeedStep { score = 275000, multiplier = 2.82f },
+        new ScoreSpeedStep { score = 350000, multiplier = 2.98f },
+        new ScoreSpeedStep { score = 440000, multiplier = 3.15f },
+    };
+
     [SerializeField] private ScoreSpeedStep[] scoreSpeedSteps = new ScoreSpeedStep[]
     {
         new ScoreSpeedStep { score = 0,      multiplier = 1.00f },
@@ -510,11 +536,12 @@ public class GameManager : MonoBehaviour
         int bestThreshold = -1;
         bool found = false;
 
-        if (scoreSpeedSteps != null)
+        ScoreSpeedStep[] activeSteps = useBalancedRunSpeedCurve ? BalancedRunSpeedSteps : scoreSpeedSteps;
+        if (activeSteps != null)
         {
-            for (int i = 0; i < scoreSpeedSteps.Length; i++)
+            for (int i = 0; i < activeSteps.Length; i++)
             {
-                ScoreSpeedStep step = scoreSpeedSteps[i];
+                ScoreSpeedStep step = activeSteps[i];
 
                 if (step.score < 0) continue;
                 if (step.multiplier <= 0f || float.IsNaN(step.multiplier) || float.IsInfinity(step.multiplier)) continue;

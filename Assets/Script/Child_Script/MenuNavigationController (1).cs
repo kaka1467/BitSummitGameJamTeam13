@@ -37,6 +37,10 @@ public class MenuNavigationController : MonoBehaviour
             return;
         }
 
+        // 選択矢印が Cancel などのボタン上のクリック判定を遮らないようにする
+        foreach (Graphic g in selectionArrow.GetComponentsInChildren<Graphic>(true))
+            g.raycastTarget = false;
+
         // ボタンリストが空の場合、自動的に子オブジェクトからボタンを取得
         if (selectableButtons.Count == 0)
         {

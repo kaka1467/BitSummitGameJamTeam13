@@ -22,17 +22,20 @@ public partial class ItemSpawner
     [Tooltip("短い配置パターンを使うか。OFFなら従来のランダム出現だけ。")]
     [SerializeField] private bool patternsEnabled = true;
 
+    [Tooltip("ONならシーンに古いパターンが残っていてもコード定義のクッキーラン風レーンパターンと間隔を優先する。")]
+    [SerializeField] private bool useCodeDefinedRunPatterns = true;
+
     [Tooltip("本編開始から最初のパターンを出すまでの秒数。")]
-    [SerializeField, Min(0f)] private float firstPatternDelaySeconds = 0.3f;
+    [SerializeField, Min(0f)] private float firstPatternDelaySeconds = 0.25f;
 
     [Tooltip("パターン（と休憩）が終わってから、次のパターンまでのランダム出現期間の最小秒数。")]
-    [SerializeField, Min(0f)] private float patternIntervalMinSeconds = 1.5f;
+    [SerializeField, Min(0f)] private float patternIntervalMinSeconds = 0.25f;
 
     [Tooltip("同・最大秒数。最小より小さい値は最小として扱う。")]
-    [SerializeField, Min(0f)] private float patternIntervalMaxSeconds = 3.5f;
+    [SerializeField, Min(0f)] private float patternIntervalMaxSeconds = 0.65f;
 
     [Tooltip("パターンの最後のアイテムが出現位置を抜けた後、ランダム出現を再開するまでの余裕（秒）。")]
-    [SerializeField, Min(0f)] private float patternClearanceSeconds = 0.8f;
+    [SerializeField, Min(0f)] private float patternClearanceSeconds = 0.20f;
 
     [Tooltip("フィーバーが始まったとき、フィーバー用パターン（use=FeverOnly）を1回すぐに出す。")]
     [SerializeField] private bool spawnFeverPatternOnFeverStart = true;
@@ -42,6 +45,7 @@ public partial class ItemSpawner
 
     private const int PatternKindCount = 5;
 
+    private List<SpawnPattern> _runtimePatterns;
     private float _patternVisibleUntil;
     private float _nextPatternTime;
     private float _patternBlockUntil;
@@ -60,10 +64,36 @@ public partial class ItemSpawner
 
     public float ItemPlaneZ => SpawnZ;
 
+    private List<SpawnPattern> GetActivePatterns()
+    {
+        if (useCodeDefinedRunPatterns)
+        {
+            if (_runtimePatterns == null || _runtimePatterns.Count == 0)
+                _runtimePatterns = ItemSpawnPatternDefaults.Create();
+            return _runtimePatterns;
+        }
+
+        return patterns;
+    }
+
+    private float GetEffectiveFirstPatternDelay()
+    {
+        return useCodeDefinedRunPatterns
+            ? Mathf.Min(Mathf.Max(0f, firstPatternDelaySeconds), 0.25f)
+            : Mathf.Max(0f, firstPatternDelaySeconds);
+    }
+
+    private float GetEffectivePatternClearance()
+    {
+        float raw = useCodeDefinedRunPatterns ? 0.20f : Mathf.Max(0f, patternClearanceSeconds);
+        float speedFactor = Mathf.Max(1f, GameManager.CurrentScoreSpeedMultiplier);
+        return raw / speedFactor;
+    }
+
     private void ResetPatternDirector()
     {
         float now = Time.unscaledTime;
-        _nextPatternTime = now + Mathf.Max(0f, firstPatternDelaySeconds);
+        _nextPatternTime = now + GetEffectiveFirstPatternDelay();
         _patternBlockUntil = 0f;
         _patternVisibleUntil = 0f;
         _restFrom = 0f;
@@ -90,6 +120,7 @@ public partial class ItemSpawner
     /// 通常出現の候補の重み。
     /// ・EASY ではサイレン（ItemType.BGM）を出さず、減点時計（Clock）のみにする（D-R05）。
     /// ・悪いアイテム（Clock・サイレン）に badItemWeightMultiplier × 難易度倍率を掛ける。
+    /// ・パターン間のランダム出現では後半に悪いアイテムだけにならないよう重みを抑える。
     /// </summary>
     private float GetNormalCandidateWeight(PrefabSpawnCount entry)
     {
@@ -105,8 +136,9 @@ public partial class ItemSpawner
             {
                 float elapsed = Time.unscaledTime - normalScheduleStartTime;
                 float badScale = Mathf.Max(0f, badItemWeightMultiplier * GameDifficulty.ChildBadItemWeightMultiplier);
-                if (elapsed < 45f) badScale *= 0.25f;
-                else if (elapsed > 120f) badScale *= 1.25f;
+                if (elapsed < 30f) badScale *= 0.30f;
+                else if (elapsed < 90f) badScale *= 0.55f;
+                else badScale *= 0.80f;
                 weight *= badScale;
             }
         }
@@ -124,7 +156,8 @@ public partial class ItemSpawner
 
     private void UpdatePatternDirector()
     {
-        if (!patternsEnabled || patterns == null || patterns.Count == 0) return;
+        List<SpawnPattern> activePatterns = GetActivePatterns();
+        if (!patternsEnabled || activePatterns == null || activePatterns.Count == 0) return;
 
         GameManager gm = GameManager.instance;
         if (gm != null && gm.IsGameOver) return;
@@ -142,24 +175,21 @@ public partial class ItemSpawner
             }
         }
 
-        if (!fever && LaneRestriction.IsRunning)
-        {
-            _nextPatternTime = Mathf.Max(_nextPatternTime, now + 0.5f);
-            return;
-        }
+        // 障害レーン（LaneRestriction）中もパターンを止めず、空いている2レーンに流す
+        // （制限レーン上のスロットは TryPlacePatternSlots 側で除外・回避する）
 
         if (now < _nextPatternTime) return;
 
-        int index = SelectPatternIndex(fever, now - normalScheduleStartTime);
+        int index = SelectPatternIndex(activePatterns, fever, now - normalScheduleStartTime);
         if (index < 0)
         {
-            _nextPatternTime = now + Mathf.Max(1f, patternIntervalMinSeconds);
+            _nextPatternTime = now + 0.4f;
             return;
         }
 
-        if (!TrySpawnPattern(patterns[index], now, out float endTime))
+        if (!TrySpawnPattern(activePatterns[index], now, out float endTime))
         {
-            _nextPatternTime = now + 0.4f;
+            _nextPatternTime = now + 0.25f;
             return;
         }
 
@@ -169,20 +199,22 @@ public partial class ItemSpawner
 
     private float DrawPatternInterval()
     {
-        float min = Mathf.Max(0f, patternIntervalMinSeconds);
-        float max = Mathf.Max(min, patternIntervalMaxSeconds);
-        return (max <= min) ? min : Random.Range(min, max);
+        float min = useCodeDefinedRunPatterns ? 0.25f : Mathf.Max(0f, patternIntervalMinSeconds);
+        float max = useCodeDefinedRunPatterns ? 0.65f : Mathf.Max(min, patternIntervalMaxSeconds);
+        float raw = (max <= min) ? min : Random.Range(min, max);
+        float speedFactor = Mathf.Max(1f, GameManager.CurrentScoreSpeedMultiplier);
+        return raw / speedFactor;
     }
 
-    private int SelectPatternIndex(bool fever, float elapsed)
+    private int SelectPatternIndex(List<SpawnPattern> activePatterns, bool fever, float elapsed)
     {
         BuildPatternPrefabCache();
 
         float total = 0f;
         int candidates = 0;
-        for (int i = 0; i < patterns.Count; i++)
+        for (int i = 0; i < activePatterns.Count; i++)
         {
-            float w = GetPatternSelectionWeight(patterns[i], fever, elapsed);
+            float w = GetPatternSelectionWeight(activePatterns[i], fever, elapsed);
             if (w <= 0f) continue;
             total += w;
             candidates++;
@@ -194,20 +226,20 @@ public partial class ItemSpawner
         if (avoidLast)
         {
             total = 0f;
-            for (int i = 0; i < patterns.Count; i++)
+            for (int i = 0; i < activePatterns.Count; i++)
             {
                 if (i == _lastPatternIndex) continue;
-                total += GetPatternSelectionWeight(patterns[i], fever, elapsed);
+                total += GetPatternSelectionWeight(activePatterns[i], fever, elapsed);
             }
         }
 
         float pick = Random.value * total;
         int fallback = -1;
-        for (int i = 0; i < patterns.Count; i++)
+        for (int i = 0; i < activePatterns.Count; i++)
         {
             if (avoidLast && i == _lastPatternIndex) continue;
 
-            float w = GetPatternSelectionWeight(patterns[i], fever, elapsed);
+            float w = GetPatternSelectionWeight(activePatterns[i], fever, elapsed);
             if (w <= 0f) continue;
 
             fallback = i;
@@ -224,11 +256,15 @@ public partial class ItemSpawner
         if (fever != (p.use == PatternUse.FeverOnly)) return 0f;
         if (elapsed < p.minElapsedSeconds) return 0f;
         if (!IsPatternResolvable(p)) return 0f;
+
         float weight = p.weight;
-        if (!fever && p.restSeconds <= 0f && elapsed >= 45f)
-            weight *= 1.35f;
-        if (!fever && p.restSeconds > 0f)
-            weight *= 0.55f;
+        if (!fever && p.restSeconds <= 0f)
+        {
+            if (elapsed >= 60f && p.minElapsedSeconds >= 55f)
+                weight *= 1.6f;
+            else if (elapsed >= 60f && p.minElapsedSeconds == 0f)
+                weight *= 0.65f;
+        }
         return weight;
     }
 
@@ -260,7 +296,7 @@ public partial class ItemSpawner
             if (!TryPlacePatternSlots(p, now, out float extentSeconds, out float lifetimeSeconds)) return false;
             _patternVisibleUntil = Mathf.Max(_patternVisibleUntil, now + lifetimeSeconds);
 
-            blockUntil = now + extentSeconds + Mathf.Max(0f, patternClearanceSeconds);
+            blockUntil = now + extentSeconds + GetEffectivePatternClearance();
             _patternBlockUntil = Mathf.Max(_patternBlockUntil, blockUntil);
         }
 
@@ -295,16 +331,27 @@ public partial class ItemSpawner
 
         int laneCount = lanesY.Length;
         bool flip = p.allowVerticalFlip && laneCount >= 2 && Random.value < 0.5f;
-        float baseX = GetSpawnXWorld();
+        float spawnEdgeX = GetSpawnXWorld();
 
         var items = new List<GameObject>(p.slots.Count);
         var lanes = new List<int>(p.slots.Count);
+        var columns = new List<float>(p.slots.Count);
         float maxWidth = 0f;
+        float maxGoodWidth = 0f;
+        int blockedLane = LaneRestriction.IsRunning ? LaneRestriction.BlockedLane : -1;
 
         for (int i = 0; i < p.slots.Count; i++)
         {
             PatternSlot slot = p.slots[i];
-            GameObject prefab = (slot != null) ? _patternPrefabs[(int)slot.kind] : null;
+            if (slot == null) continue;
+
+            int lane = Mathf.Clamp(slot.lane, 0, laneCount - 1);
+            if (flip) lane = laneCount - 1 - lane;
+
+            // 障害レーンが出ているレーンにはアイテムを重ねて配置しない
+            if (blockedLane >= 0 && lane == blockedLane) continue;
+
+            GameObject prefab = _patternPrefabs[(int)slot.kind];
             GameObject item = (prefab != null) ? ItemPool.Instance.GetFromPoolByPrefab(prefab) : null;
             if (item == null)
             {
@@ -312,36 +359,54 @@ public partial class ItemSpawner
                 return false;
             }
 
-            int lane = Mathf.Clamp(slot.lane, 0, laneCount - 1);
-            if (flip) lane = laneCount - 1 - lane;
-
-            item.transform.position = new Vector3(baseX + 10000f, lanesY[lane], SpawnZ);
+            item.transform.position = new Vector3(spawnEdgeX + 10000f, lanesY[lane], SpawnZ);
 
             items.Add(item);
             lanes.Add(lane);
-            maxWidth = Mathf.Max(maxWidth, GetApproxHalfSize(item).x * 2f);
+            columns.Add(slot.column);
+            float itemWidth = GetApproxHalfSize(item).x * 2f;
+            maxWidth = Mathf.Max(maxWidth, itemWidth);
+            if (slot.kind == PatternItemKind.LowScore || slot.kind == PatternItemKind.HighScore)
+                maxGoodWidth = Mathf.Max(maxGoodWidth, itemWidth);
         }
 
-        // Keep columns compact and stable regardless of score-stage speed.
-        float spacing = Mathf.Clamp(p.columnSpacing, 0.10f, 0.22f);
-        spacing = Mathf.Min(spacing, Mathf.Max(0.10f, maxWidth * 0.38f));
-        float maxColumn = 0f;
-        for (int i = 0; i < p.slots.Count; i++)
-            maxColumn = Mathf.Max(maxColumn, p.slots[i].column);
+        if (items.Count == 0) return false;
 
-        for (int i = 0; i < items.Count; i++)
+        // クッキーラン風にアイテム幅ベースでぴったり並ぶ間隔を算出する（重なりすぎず、広がりすぎない）
+        float baseWidth = maxGoodWidth > 0.01f ? maxGoodWidth : maxWidth;
+        float unitSpacing = Mathf.Clamp(baseWidth * 1.06f, 0.20f, 0.36f);
+        float spacingMultiplier = (p.columnSpacing >= 0.75f && p.columnSpacing <= 1.5f) ? p.columnSpacing : 1.0f;
+        float spacing = unitSpacing * spacingMultiplier;
+
+        // 既存アイテムがスポーン直近にいる場合、パターンを破棄せず少し右へずらして確実に配置する
+        float baseX = spawnEdgeX;
+        float rightmostNearSpawnX = float.NegativeInfinity;
+        Item[] activeItems = GetActiveItemsForFrame();
+        for (int i = 0; i < activeItems.Length; i++)
         {
-            Vector3 candidate = new Vector3(baseX + p.slots[i].column * spacing, lanesY[lanes[i]], SpawnZ);
-            if (IsSpawnPositionOccupied(candidate, now, items[i]))
+            Item active = activeItems[i];
+            if (active == null || !active.gameObject.activeInHierarchy) continue;
+            if (items.Contains(active.gameObject)) continue;
+
+            float x = active.transform.position.x;
+            if (x >= spawnEdgeX - unitSpacing * 1.15f && x < spawnEdgeX + 500f)
             {
-                ReturnPatternItems(items);
-                return false;
+                if (x > rightmostNearSpawnX) rightmostNearSpawnX = x;
             }
         }
 
+        if (rightmostNearSpawnX > float.NegativeInfinity)
+        {
+            baseX = Mathf.Clamp(rightmostNearSpawnX + unitSpacing * 1.35f, spawnEdgeX, spawnEdgeX + 1.4f);
+        }
+
+        float maxColumn = 0f;
+        for (int i = 0; i < columns.Count; i++)
+            maxColumn = Mathf.Max(maxColumn, columns[i]);
+
         for (int i = 0; i < items.Count; i++)
         {
-            Vector3 position = new Vector3(baseX + p.slots[i].column * spacing, lanesY[lanes[i]], SpawnZ);
+            Vector3 position = new Vector3(baseX + columns[i] * spacing, lanesY[lanes[i]], SpawnZ);
             items[i].transform.position = position;
             ApplySpawnSpeedScale(items[i]);
             RegisterRecentSpawn(items[i], position, now);
@@ -351,7 +416,8 @@ public partial class ItemSpawner
         ItemMove move = items[0].GetComponent<ItemMove>();
         float speed = (move != null) ? move.EffectiveSpeed : 0f;
         if (speed < 0.05f) speed = 0.8f;
-        extentSeconds = (maxColumn * spacing + maxWidth) / speed;
+        float extraRightOffset = Mathf.Max(0f, baseX - spawnEdgeX);
+        extentSeconds = (extraRightOffset + maxColumn * spacing + baseWidth) / speed;
 
         float leftEdgeX = GetScreenRightEdgeX() - GetScreenWidthWorld() - 1f;
         lifetimeSeconds = extentSeconds + Mathf.Max(0f, baseX - leftEdgeX) / speed;
@@ -448,7 +514,8 @@ public partial class ItemSpawner
 
     private void SpawnDebugPattern()
     {
-        if (patterns == null || patterns.Count == 0)
+        List<SpawnPattern> activePatterns = GetActivePatterns();
+        if (activePatterns == null || activePatterns.Count == 0)
         {
             Debug.LogWarning("[ItemSpawner] デバッグ出現キー7: 配置パターンが登録されていません。");
             return;
@@ -456,10 +523,10 @@ public partial class ItemSpawner
 
         BuildPatternPrefabCache();
 
-        for (int step = 0; step < patterns.Count; step++)
+        for (int step = 0; step < activePatterns.Count; step++)
         {
-            _debugPatternIndex = (_debugPatternIndex + 1) % patterns.Count;
-            SpawnPattern p = patterns[_debugPatternIndex];
+            _debugPatternIndex = (_debugPatternIndex + 1) % activePatterns.Count;
+            SpawnPattern p = activePatterns[_debugPatternIndex];
             if (p == null || !IsPatternResolvable(p)) continue;
 
             if (TrySpawnPattern(p, Time.unscaledTime, out _))

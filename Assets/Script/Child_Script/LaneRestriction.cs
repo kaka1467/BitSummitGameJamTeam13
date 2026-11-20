@@ -41,11 +41,11 @@ public class LaneRestriction : MonoBehaviour
 
     [Header("出現のタイミング（ゲーム内時間・秒）")]
     [Tooltip("本編開始から最初のレーン制限までの秒数。")]
-    [SerializeField, Min(0f)] private float firstDelaySeconds = 25f;
+    [SerializeField, Min(0f)] private float firstDelaySeconds = 18f;
     [Tooltip("帯が抜けきってから次のレーン制限までの最小秒数。")]
-    [SerializeField, Min(0f)] private float intervalMinSeconds = 15f;
+    [SerializeField, Min(0f)] private float intervalMinSeconds = 12f;
     [Tooltip("同・最大秒数。最小より小さい値は最小として扱う。")]
-    [SerializeField, Min(0f)] private float intervalMaxSeconds = 30f;
+    [SerializeField, Min(0f)] private float intervalMaxSeconds = 22f;
     [Tooltip("帯が入ってくる前に、警告マークを点滅させる秒数。")]
     [SerializeField, Min(0.1f)] private float warningSeconds = 1.5f;
 
@@ -63,6 +63,10 @@ public class LaneRestriction : MonoBehaviour
     [Header("効果")]
     [Tooltip("プレイヤーが制限レーンにいて、帯と重なっている間、1秒あたりに減らすポイント。")]
     [SerializeField, Min(0f)] private float drainPointsPerSecond = 120f;
+    [Tooltip("帯に乗っている間、1回目のSE再生終了後に次のSEを鳴らすまでの追加待ち時間（秒）。0で再生終了直後に次を鳴らす。")]
+    [SerializeField, Min(0f)] private float drainSeGapAfterClipSeconds = 0f;
+    [Tooltip("帯に乗っている間のマイナスSEの音量倍率（他のアイテム音と同等に聞こえる基準音量）。")]
+    [SerializeField, Range(0f, 1f)] private float drainSeVolume = 0.65f;
 
     [Header("帯の大きさ・位置（ワールド座標）")]
     [Tooltip("帯の高さ。左右の端の絵・縞模様の絵は、この高さに合わせて同じ倍率で拡大縮小される。")]
@@ -117,6 +121,10 @@ public class LaneRestriction : MonoBehaviour
     private int _lane = -1;
     private int _lastLane = -1;
     private float _drainRemainder;
+    private float _drainSeTimer;
+    private AudioClip _drainSeClip;
+    private float _drainSeVolume = 1f;
+    private bool _drainSeResolved;
 
     // 流れている帯の状態（左端のX座標と全体の長さ）
     private float _barLeftX;
@@ -225,13 +233,14 @@ public class LaneRestriction : MonoBehaviour
             return;
         }
 
-        // 配置パターンが画面に残っている間は始めない（少し待って再判定する）。
-        if (_spawner.IsPatternVisible)
+        // QTEボス出現中・QTE中は障害レーンを開始しない
+        if (_spawner.IsHugeObstacleOrQteActive())
         {
-            _nextStartTime = Time.time + 0.5f;
+            _nextStartTime = Time.time + 1f;
             return;
         }
 
+        // レーンパターンと共存させる（制限レーンへのアイテム生成抑止は ItemSpawner 側で行う）。
         Begin();
     }
 
@@ -253,6 +262,7 @@ public class LaneRestriction : MonoBehaviour
         _lastLane = lane;
         BlockedLane = lane;
         _drainRemainder = 0f;
+        _drainSeTimer = 0f;
         _barTint = Color.white;
         _phase = Phase.Warning;
         _phaseTimer = 0f;
@@ -308,7 +318,15 @@ public class LaneRestriction : MonoBehaviour
 
         // プレイヤーが同じレーンにいて、帯と重なっている間だけ、ポイントが減る。
         bool draining = IsPlayerOnBar();
-        if (draining) Drain(Time.deltaTime);
+        if (draining)
+        {
+            Drain(Time.deltaTime);
+            TickDrainSe(Time.deltaTime);
+        }
+        else
+        {
+            _drainSeTimer = 0f;
+        }
 
         // 減っている間は、帯をほんのり染めて脈動させる。
         _barTint = Color.white;
@@ -327,6 +345,57 @@ public class LaneRestriction : MonoBehaviour
         }
     }
 
+    private void TickDrainSe(float deltaTime)
+    {
+        GameManager gm = GameManager.instance;
+        if (gm != null && gm.IsFeverActive) return;
+
+        _drainSeTimer -= deltaTime;
+        if (_drainSeTimer > 0f) return;
+
+        ResolveDrainSeClip();
+        if (_drainSeClip == null) return;
+
+        PlayDrainSe();
+        // 1回目のSEが再生し終わってから次を鳴らす（音の長さに合わせて待機）
+        float clipDuration = Mathf.Max(0.15f, _drainSeClip.length);
+        _drainSeTimer = clipDuration + Mathf.Max(0f, drainSeGapAfterClipSeconds);
+    }
+
+    private void ResolveDrainSeClip()
+    {
+        if (_drainSeResolved) return;
+
+        ItemPool pool = ItemPool.Instance;
+        if (pool == null || pool.itemPrefabs == null) return;
+
+        _drainSeResolved = true;
+        for (int i = 0; i < pool.itemPrefabs.Length; i++)
+        {
+            GameObject prefab = pool.itemPrefabs[i];
+            if (prefab == null) continue;
+
+            Item item = prefab.GetComponent<Item>();
+            if (item != null && item.itemType == ItemType.Clock && item.seClip != null)
+            {
+                _drainSeClip = item.seClip;
+                _drainSeVolume = item.seVolume;
+                return;
+            }
+        }
+    }
+
+    private void PlayDrainSe()
+    {
+        if (_drainSeClip == null) return;
+
+        if (AudioManager.Instance == null)
+            new GameObject("AudioManager").AddComponent<AudioManager>();
+
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlaySE(_drainSeClip, Mathf.Clamp01(Mathf.Max(drainSeVolume, _drainSeVolume)));
+    }
+
     private void ScheduleNext()
     {
         float min = Mathf.Max(0f, intervalMinSeconds);
@@ -338,6 +407,7 @@ public class LaneRestriction : MonoBehaviour
     {
         _phase = Phase.Idle;
         _phaseTimer = 0f;
+        _drainSeTimer = 0f;
         _lane = -1;
         BlockedLane = -1;
         IsRunning = false;

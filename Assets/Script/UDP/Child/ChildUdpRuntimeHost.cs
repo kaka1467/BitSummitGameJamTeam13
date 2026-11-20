@@ -318,6 +318,13 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
 
     private void HandleDiscoveryAccept(string parentIP)
     {
+        if (_link == null || !_link.IsConnecting)
+        {
+            if (ShowDebug)
+                Debug.Log($"[ChildUdpRuntimeHost] DISCOVERY_ACCEPT from {parentIP} ignored (state={ConnectionState}).");
+            return;
+        }
+
         _link.SetTargetIP(parentIP);
         _link.SetState(ChildConnectionLink.LinkState.Connected);
         _link.NoteReceive(Time.time);

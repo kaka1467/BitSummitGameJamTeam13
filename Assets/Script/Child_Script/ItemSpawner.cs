@@ -192,6 +192,7 @@ public partial class ItemSpawner : MonoBehaviour
 
     private float nextHugeSpawnTime = -1f;
     private bool isHugeSpawnScheduled = false;
+    private bool _wasHugeBossActive;
     private ChildNotificationHub _motherPeakNotificationHub;
     private bool _motherPeakActive;
 
@@ -369,12 +370,45 @@ public partial class ItemSpawner : MonoBehaviour
         return _motherPeakActive;
     }
 
+    /// <summary>QTEボス（HugeObstacle）が画面上に出現中、またはQTE進行中か。</summary>
+    public bool IsHugeObstacleOrQteActive()
+    {
+        if (QTEManager.Instance != null && QTEManager.Instance.IsQteActive)
+            return true;
+
+        Item[] activeItems = GetActiveItemsForFrame();
+        if (activeItems != null)
+        {
+            for (int i = 0; i < activeItems.Length; i++)
+            {
+                Item item = activeItems[i];
+                if (item != null && item.gameObject.activeInHierarchy && item.itemType == ItemType.HugeObstacle)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void ResumeSpawnsAfterHugeBoss(float now)
+    {
+        _nextPatternTime = Mathf.Max(_nextPatternTime, now + 0.5f);
+        _patternBlockUntil = Mathf.Max(_patternBlockUntil, now + 0.5f);
+        if (_laneNextSpawnTime != null)
+        {
+            for (int i = 0; i < _laneNextSpawnTime.Length; i++)
+                _laneNextSpawnTime[i] = Mathf.Max(_laneNextSpawnTime[i], now + 0.5f + DrawLaneSpawnInterval());
+        }
+    }
+
     private void OnHugeQteFinished(bool success)
     {
         if (success)
         {
-            nextHugeSpawnTime = Time.unscaledTime + hugeCooldownAfterQte;
+            float now = Time.unscaledTime;
+            nextHugeSpawnTime = now + hugeCooldownAfterQte;
             isHugeSpawnScheduled = true;
+            ResumeSpawnsAfterHugeBoss(now);
         }
     }
 
@@ -403,11 +437,26 @@ public partial class ItemSpawner : MonoBehaviour
             _wasSpawnEnabled = true;
         }
 
-        // 配置パターン（短い並び・休憩区間）。出したらその間はランダム出現を止める（二重に出さない）
-        UpdatePatternDirector();
+        // QTEボス出現中〜撃破までは、後ろに新規アイテムを湧かせず、撃破後から再開する
+        bool hugeBossActive = IsHugeObstacleOrQteActive();
+        if (hugeBossActive)
+        {
+            _wasHugeBossActive = true;
+        }
+        else
+        {
+            if (_wasHugeBossActive)
+            {
+                _wasHugeBossActive = false;
+                ResumeSpawnsAfterHugeBoss(Time.unscaledTime);
+            }
 
-        // 通常出現はレーン別タイマー方式のみ（旧・時刻付き予定方式は呼ばない＝二重実行しない）
-        UpdateNormalSpawnByLaneTimers();
+            // 配置パターン（短い並び・休憩区間）。出したらその間はランダム出現を止める（二重に出さない）
+            UpdatePatternDirector();
+
+            // 通常出現はレーン別タイマー方式のみ（旧・時刻付き予定方式は呼ばない＝二重実行しない）
+            UpdateNormalSpawnByLaneTimers();
+        }
 
         // 調査用の集計ログ（enableSpawnStats が ON のときだけ、実時間の間隔で1行出力する）
         LogSpawnStatsIfNeeded(Time.unscaledTime);
@@ -677,6 +726,12 @@ public partial class ItemSpawner : MonoBehaviour
     {
         float min = GetLaneSpawnIntervalMin();
         float max = GetLaneSpawnIntervalMax();
+        if (patternsEnabled && useCodeDefinedRunPatterns)
+        {
+            // パターン間の短い隙間に補助アイテム（Fever/Boost/BGM等）を程よく出すため、乱発を抑える
+            min = Mathf.Max(min, 0.45f);
+            max = Mathf.Max(max, 0.95f);
+        }
         float interval = (max <= min) ? min : UnityEngine.Random.Range(min, max);
 
         // 出現量の倍率と休憩区間の薄さで割る（量が多いほど間隔が短くなる）
