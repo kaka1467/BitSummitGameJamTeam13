@@ -554,6 +554,19 @@ public class MotherApproachController : MonoBehaviour
     /// </summary>
     public bool IsChorePerformanceFinished => _chorePerformanceFinished;
 
+    /// <summary>
+    /// 【M-F03】親機が接近中またはドア前停止・窓覗き・片付け入室〜退室前の山場状態にあるか。
+    /// 覗き終了後の帰路（IsReturnTripActive / IsReturnHomePending）は除外する。
+    /// </summary>
+    public bool IsPeakApproachOrPeekActive =>
+        !IsGameOverSequenceActive &&
+        !_routeExecutionFailed &&
+        ((IsApproaching && !IsReturnTripActive) ||
+         (StoppedAtDoor && !IsReturnTripActive && !IsReturnHomePending) ||
+         _isGardenPeeking ||
+         (IsChoreRouteActive && !_chorePerformanceFinished) ||
+         _lookBackDetectionOn);
+
     // ── 実行モード ────────────────────────────────────────────────────────────
     /// <summary>大きな音による突入開始前にMotherApproachWarningが設定する。移動ループ音を抑制し、rushInPauseAtDoorSecondsを使用する。</summary>
     public bool IsRushIn { get; set; }
@@ -727,6 +740,9 @@ public class MotherApproachController : MonoBehaviour
 
         // 無効化・破棄でも、退室前の振り向きが取得した状態を残さない（何度呼んでも安全）。
         ReleaseLookBackState();
+
+        if (parentDetection != null)
+            parentDetection.SyncMotherPeakState();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1116,6 +1132,7 @@ public class MotherApproachController : MonoBehaviour
         {
             parentDetection.SetChoreWalkingOverrideSuppressed(false);
             parentDetection.SetChoreMovementSuppressed(false);
+            parentDetection.SyncMotherPeakState();
         }
     }
 
@@ -1172,6 +1189,9 @@ public class MotherApproachController : MonoBehaviour
         }
 
         IsGameOverSequenceActive = true;
+
+        if (parentDetection != null)
+            parentDetection.SyncMotherPeakState();
 
         Debug.Log("[MotherApproachController] ゲームオーバー演出へ制御を移しました（位置・モデル表示は維持）");
     }
@@ -2077,6 +2097,7 @@ public class MotherApproachController : MonoBehaviour
 
         IsApproaching = true;
         onApproachStarted?.Invoke();
+        parentDetection?.SyncMotherPeakState();
 
         Debug.Log(
             $"[MotherApproachController] BeginApproach | hallwayPassBy={hallwayPassBy} | gardenPassBy={gardenPassBy} | gardenPeek={gardenPeek} | choreRoute={choreRoute} | pitch={_fixedPitch:F1} roll={_fixedRoll:F1}");
@@ -2339,6 +2360,7 @@ public class MotherApproachController : MonoBehaviour
         // DoorRoutine が次フレームで検知するまでの間も IsReturnHomePending が true になるため、
         // PDは「まだ受け付けただけ」を完了と誤認しない。
         ReturnHomePhase = ReturnHomeState.Requested;
+        parentDetection?.SyncMotherPeakState();
         Debug.Log("[MotherApproachController] RequestReturnHome 受理（Requested）— DoorRoutineの検知を待つ");
         DiagPhase("帰路要求 受理", "Requested（DoorRoutineの検知待ち）");
         return true;
@@ -3061,6 +3083,7 @@ public class MotherApproachController : MonoBehaviour
         // 覗き待機開始：庭覗き中の継続疑惑（PD）に開始を通知する。
         _isGardenPeeking = true;
         onGardenPeekStarted?.Invoke();
+        parentDetection?.SyncMotherPeakState();
 
         yield return new WaitForSeconds(_gardenPeekDuration);
 
@@ -3069,6 +3092,7 @@ public class MotherApproachController : MonoBehaviour
 
         // 覗き待機終了：継続疑惑が次tick以内に確実に停止するよう、フラグを先に解除する。
         _isGardenPeeking = false;
+        parentDetection?.SyncMotherPeakState();
         DiagPhase("Window Peek終了", $"庭覗き中=false（帰路へ）");
         // グループ（B）追加照明の終了。グループ（A）がONなら点灯は維持され、
         // 顔ライトもここでは消えない（帰路の非表示でまとめて消灯する）。
@@ -5137,6 +5161,8 @@ public class MotherApproachController : MonoBehaviour
 
         // 【LOUD_ITEM 即時中断】で見た目だけ消したRendererを戻す（サイクル／RushIn開始で見た目を必ず戻す）。
         RestoreImmediateHiddenRenderers();
+
+        parentDetection?.SyncMotherPeakState();
     }
 
     // ──────────────────────────────────────────────────────────────────────────

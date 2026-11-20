@@ -44,6 +44,26 @@ public sealed class ChildNotificationHub
         SleepLockChanged?.Invoke(next);
     }
 
+    // ── MOTHER_PEAK（親機の山場：接近・覗き中）の状態保持と変化通知 ───────────
+    private bool _isMotherPeakActive;
+
+    /// <summary>【M-F03】親機の山場状態（接近開始〜覗き終了）の変化通知（同値では発火しない）。</summary>
+    public event Action<bool> MotherPeakChanged;
+
+    /// <summary>【M-F03】現在の親機の山場状態（購読者が居なくても保持される）。</summary>
+    public bool IsMotherPeakActive => _isMotherPeakActive;
+
+    /// <summary>
+    /// 【M-F03】親機の山場状態を更新する（同値なら何もしない）。
+    /// </summary>
+    public void SetMotherPeakActive(bool next)
+    {
+        if (_isMotherPeakActive == next) return;
+
+        _isMotherPeakActive = next;
+        MotherPeakChanged?.Invoke(next);
+    }
+
     // ── CAUGHT（親機の捕獲）の未通知保留と通知 ────────────────────────────────
     /// <summary>
     /// 親機の捕獲（CAUGHT）を通知するイベント（購読準備前の受信は最大1件保留する）。

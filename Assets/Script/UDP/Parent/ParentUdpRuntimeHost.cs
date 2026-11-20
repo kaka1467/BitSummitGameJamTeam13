@@ -65,6 +65,9 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
     private Coroutine _sequenceDoneRetryCoroutine;
     private Coroutine _returnToTitleNotifyCoroutine;
     private int _returnToTitleSendSeq;
+    private bool _isMotherPeakActive;
+
+    public bool IsMotherPeakActive => _isMotherPeakActive;
 
     private readonly List<Coroutine> _transitionCoroutines = new List<Coroutine>();
 
@@ -531,6 +534,8 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
         if (startDecision == ParentPlaySession.StartGameDecision.AcceptNewPlay ||
             startDecision == ParentPlaySession.StartGameDecision.AcceptRepeatOfAcceptedPlay)
         {
+            SetMotherPeakActive(false, forceSend: true);
+
             if (startDecision == ParentPlaySession.StartGameDecision.AcceptNewPlay)
                 ResetChildLoadingCompleteRecordPrepared("START_GAME受理");
 
@@ -547,6 +552,8 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
 
     private void HandleTimeUpPrepared(string rawPayload)
     {
+        SetMotherPeakActive(false, forceSend: true);
+
         if (!_session.ResultProcessed)
         {
             _session.ResultProcessed = true;
@@ -588,6 +595,8 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
             return;
         }
 
+        SetMotherPeakActive(false, forceSend: true);
+
         ResultSceneChamger changer = FindFirstObjectByType<ResultSceneChamger>();
         if (changer != null)
         {
@@ -614,6 +623,8 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
         if (_returningToTitle) return;
         _returningToTitle = true;
         _returnToTitleHeld = 0f;
+
+        SetMotherPeakActive(false, forceSend: true);
 
         Debug.Log($"[ParentUdpRuntimeHost] ReturnToTitle — '{SceneManager.GetActiveScene().name}' から '{_settings.MotherTitleSceneName}' へ戻ります。");
 
@@ -704,6 +715,9 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
                 {
                     byte[] data = Encoding.UTF8.GetBytes(MagicNumber + "PING");
                     _channel.Send(data, data.Length, _link.TargetIP, _settings.NormalPort);
+
+                    byte[] peakData = Encoding.UTF8.GetBytes(MagicNumber + (_isMotherPeakActive ? "MOTHER_PEAK:1" : "MOTHER_PEAK:0"));
+                    _channel.Send(peakData, peakData.Length, _link.TargetIP, _settings.NormalPort);
                 }
             }
             catch (Exception e) { Debug.LogError($"[ParentUdpRuntimeHost] Heartbeat error: {e.Message}"); }
@@ -736,6 +750,7 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
 
         if (ParentSceneBoundaryPolicy.IsNewSessionScene(scene.name, _settings.GameSceneName, _settings.SoloGameSceneName))
         {
+            SetMotherPeakActive(false, forceSend: true);
             _session.ResetResultProcessed();
             _notifications.ClearPending();
 
@@ -764,12 +779,14 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
         }
         else
         {
+            SetMotherPeakActive(false, forceSend: true);
             _notifications.ClearPending();
         }
     }
 
     public void ResetForNewSessionPrepared()
     {
+        SetMotherPeakActive(false, forceSend: true);
         _link.ResetForNewSession();
         _session.ResetForNewSession();
         ResetChildLoadingCompleteRecordPrepared("タイトル復帰");
@@ -845,6 +862,7 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
 
         _link.SetState(ParentConnectionLink.LinkState.Connected);
         GameDifficulty.SendSettingsSyncToPeer();
+        SendMotherPeakStateNow();
     }
 
     private void HandleLinkStateChanged(ParentConnectionLink.LinkState state)
@@ -856,6 +874,7 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
         if (ParentSceneBoundaryPolicy.IsTitleScene(SceneManager.GetActiveScene().name, _settings.MotherTitleSceneName, _settings.TitleSceneName)) return;
 
         _link.SetState(ParentConnectionLink.LinkState.Connected);
+        SendMotherPeakStateNow();
         Debug.LogWarning("[ParentUdpRuntimeHost] PING resumed after timeout — connection restored.");
     }
 
@@ -1177,6 +1196,7 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
     {
         _session.PlaySessionId = ParentPlaySession.NewPlaySessionId();
         _session.ClearCaptureConfirmed();
+        SetMotherPeakActive(false, forceSend: true);
         GameDifficulty.SendSettingsSyncToPeer();
         SendState($"START_GAME:{_session.PlaySessionId}");
         Debug.Log($"[ParentUdpRuntimeHost] Sent START_GAME (playSessionId={_session.PlaySessionId}) to child at {_link.TargetIP}:{_settings.NormalPort}");
@@ -1196,6 +1216,7 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
         _session.GameStarted = true;
         _session.PlaySessionId = ParentPlaySession.NewPlaySessionId();
         _session.ClearCaptureConfirmed();
+        SetMotherPeakActive(false, forceSend: true);
 
         Debug.Log($"[ParentUdpRuntimeHost] OnSoloStartButtonClicked — starting without waiting for child connection. playSessionId={_session.PlaySessionId}");
 
@@ -1207,9 +1228,33 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
     public void SendStateSLEEP_LOCK() => SendState("SLEEP_LOCK");
     public void SendStateSLEEP_UNLOCK() => SendState("SLEEP_UNLOCK");
 
+    /// <summary>
+    /// 【M-F03】親機の山場状態（接近開始〜ドア前・窓での覗き終了まで）を更新し、
+    /// 状態が切り替わったタイミング（または forceSend 指定時）で子機へ MOTHER_PEAK:1 / MOTHER_PEAK:0 を送信する。
+    /// </summary>
+    public void SetMotherPeakActive(bool active, bool forceSend = false)
+    {
+        bool changed = _isMotherPeakActive != active;
+        _isMotherPeakActive = active;
+
+        if (!changed && !forceSend) return;
+
+        SendMotherPeakStateNow();
+    }
+
+    /// <summary>
+    /// 【M-F03】現在の親機の山場状態を即座に子機へ送信する。
+    /// </summary>
+    public void SendMotherPeakStateNow()
+    {
+        SendState(_isMotherPeakActive ? "MOTHER_PEAK:1" : "MOTHER_PEAK:0");
+    }
+
     public void NotifyTimeUpFromParent()
     {
         if (!IsRunning) return;
+
+        SetMotherPeakActive(false, forceSend: true);
 
         if (!string.IsNullOrEmpty(_session.PlaySessionId) &&
             _session.PlaySessionId == _session.CaptureConfirmedPlayId)
@@ -1251,6 +1296,8 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
     public void NotifyGameOverFromParentCatchPrepared()
     {
         if (!IsRunning) return;
+
+        SetMotherPeakActive(false, forceSend: true);
 
         if (_session.ResultProcessed && _caughtRetryCoroutine != null) return;
 

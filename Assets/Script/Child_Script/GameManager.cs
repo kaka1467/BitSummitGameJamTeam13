@@ -142,7 +142,7 @@ public class GameManager : MonoBehaviour
 
     public float MainPlayElapsedSeconds =>
         isMainPlayActive
-            ? Mathf.Max(0f, Time.unscaledTime - mainPlayStartUnscaledTime)
+            ? Mathf.Max(0f, (Time.unscaledTime - mainPlayStartUnscaledTime) - Mathf.Max(0f, ChildGamePause.TotalPausedSeconds - mainPlayPausedBase))
             : 0f;
 
     public void MarkMainPlayStarted()

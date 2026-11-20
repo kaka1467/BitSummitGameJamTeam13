@@ -81,6 +81,9 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     /// <summary>子機チュートリアル完了後、親機チュートリアル終了まで中断画面を維持するか。</summary>
     public bool KeepTutorialInterruptScreen { get; set; }
 
+    /// <summary>【M-F03】親機が現在山場状態（接近・覗き中）か。</summary>
+    public bool IsMotherPeakActive => _notifications != null && _notifications.IsMotherPeakActive;
+
     private bool _sceneLoadedSubscribed;
     private bool _startupPrepared;
     private bool _rankSyncRestored;
@@ -238,6 +241,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         if (_link.IsTimedOut(Time.time, _settings.TimeoutLimit))
         {
             _link.Disconnect();
+            _notifications.SetMotherPeakActive(false);
             Debug.LogWarning("[ChildUdpRuntimeHost] Connection timed out — parent heartbeat lost.");
         }
 
@@ -296,7 +300,9 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
             string text = datagram.Text;
             IPEndPoint ep = datagram.RemoteEndPoint;
 
-            if (text != MagicNumber + "PING")
+            if (text != MagicNumber + "PING" &&
+                text != MagicNumber + "MOTHER_PEAK:0" &&
+                text != MagicNumber + "MOTHER_PEAK:1")
                 EnqueueLog(LogType.Log, $"[ChildUdpRuntimeHost] Received: '{text}' from {(ep != null ? ep.Address.ToString() : "unknown")}");
 
             if (text == MagicNumber + "DISCOVERY_ACCEPT")
@@ -355,6 +361,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
             {
                 _session.CaughtHandled = false;
                 _session.TimeUpHandled = false;
+                _notifications.SetMotherPeakActive(false);
                 ClearPendingCaught("新プレイ開始（START_GAME）");
                 ClearPendingTimeUp("新プレイ開始（START_GAME）");
                 ResetCaptureWaitState("新プレイ開始（START_GAME）");
@@ -513,6 +520,20 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
             return;
         }
 
+        if (msg.StartsWith("MOTHER_PEAK:", StringComparison.Ordinal))
+        {
+            _link.NoteReceive(Time.time);
+            string flagText = msg.Substring("MOTHER_PEAK:".Length).Trim();
+            bool peakActive = flagText == "1" || string.Equals(flagText, "true", StringComparison.OrdinalIgnoreCase);
+            if (_notifications.IsMotherPeakActive != peakActive)
+            {
+                _notifications.SetMotherPeakActive(peakActive);
+                if (ShowDebug)
+                    Debug.Log($"[ChildUdpRuntimeHost] Received MOTHER_PEAK:{flagText} — IsMotherPeakActive={peakActive}");
+            }
+            return;
+        }
+
         if (msg.StartsWith(GameDifficulty.SyncPrefix, StringComparison.Ordinal))
         {
             GameDifficulty.ApplyRemoteSettingsSync(msg);
@@ -552,7 +573,11 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         => _link != null ? _link.State : ChildConnectionLink.LinkState.Disconnected;
 
     public void RequestConnect() => _link?.BeginConnecting();
-    public void CancelConnect() => _link?.Disconnect();
+    public void CancelConnect()
+    {
+        _link?.Disconnect();
+        _notifications?.SetMotherPeakActive(false);
+    }
 
     private void LoadGameScene()
     {
@@ -612,6 +637,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     private void HandleCaughtAccepted(string activeScene)
     {
         _session.CaughtHandled = true;
+        _notifications.SetMotherPeakActive(false);
         EnterCaptureWait("CAUGHT受理");
 
         if (_notifications.HasCaughtSubscriber)
@@ -751,6 +777,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         _session.TimeUpHandled = true;
         KeepTutorialInterruptScreen = false;
         _notifications.SetSleepLocked(false);
+        _notifications.SetMotherPeakActive(false);
 
         if (_notifications.HasTimeUpSubscriber)
         {
@@ -950,6 +977,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         else if (scene.name == ChildCaughtFallbackPolicy.GameOverSceneName ||
                  scene.name == ChildCaughtFallbackPolicy.GameClearSceneName)
         {
+            _notifications.SetMotherPeakActive(false);
             ClearPendingCaught("結果シーン読込");
             ClearPendingTimeUp("結果シーン読込");
         }
@@ -969,6 +997,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         ResetCaptureWaitState("ResetForNewSession（タイトル復帰）");
 
         _notifications.SetSleepLocked(false);
+        _notifications.SetMotherPeakActive(false);
 
         _session.PlaySessionId = "";
         _lastPeerReturnToTitleSeq = 0;
@@ -1071,6 +1100,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         IsSoloPlayActive = false;
         _session.CaughtHandled = false;
         _session.TimeUpHandled = false;
+        _notifications.SetMotherPeakActive(false);
         ClearPendingCaught("新プレイ開始（子機起点）");
         ClearPendingTimeUp("新プレイ開始（子機起点）");
         ResetCaptureWaitState("新プレイ開始（子機起点）");
@@ -1089,6 +1119,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
         IsSoloPlayActive = true;
         _session.CaughtHandled = false;
         _session.TimeUpHandled = false;
+        _notifications.SetMotherPeakActive(false);
         ClearPendingCaught("新プレイ開始（子機単独）");
         ClearPendingTimeUp("新プレイ開始（子機単独）");
         ResetCaptureWaitState("新プレイ開始（子機単独）");

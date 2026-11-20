@@ -364,6 +364,8 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         // GAME_PROGRESS の購読も同様に保険を張る（再試行は Update）。
         TrySubscribeGameProgress();
+
+        SyncMotherPeakState(forceSend: true, forceInactive: true);
     }
 
     /// <summary>
@@ -384,6 +386,8 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         StopChoreLookSuspicion();
         _choreLooking = false;
+
+        SyncMotherPeakState(forceSend: true, forceInactive: true);
     }
 
     private void OnDestroy()
@@ -805,6 +809,8 @@ public class MotherSuspicionSystem : MonoBehaviour
             TrySubscribeGameProgress();
         }
 
+        SyncMotherPeakState();
+
         // 足音の更新は MotherApproachWarning.UpdateMotherFootsteps が担当する（移管済み）。
 
         // 覗き機能削除に伴い、覗き見による即時ゲームオーバー判定は廃止する。
@@ -842,6 +848,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     /// </summary>
     public void OnApproachReachedDoor()
     {
+        SyncMotherPeakState();
         Debug.Log($"[PD] OnApproachReachedDoor | isCaught={isCaught} hasPermanentGameOver={_hasPermanentGameOver} | invincible={IsInvincible}");
 
         // 片付け演出のサイクル中は通常のドア分岐・疑惑・捕獲を行わない（重複防止）。
@@ -923,6 +930,8 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (warningSystem != null)
             warningSystem.EndWarningSequence();
+
+        SyncMotherPeakState();
     }
 
     public void NotifyGameOver()
@@ -937,6 +946,8 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 片付け演出を中断する（既存のゲームオーバー処理には介入しない）。
         if (motherChoreController != null)
             motherChoreController.AbortChore("ゲームオーバー");
+
+        SyncMotherPeakState(forceSend: true, forceInactive: true);
     }
 
     /// <summary>
@@ -1124,6 +1135,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         Debug.Log("[PD] TriggerPrimaryEvent — door FULL open, isMotherLookingNow=true");
         isMotherLookingNow = true;
+        SyncMotherPeakState();
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Peek);
@@ -1354,6 +1366,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         // 受理されなかった場合（突入・入室・ゲームオーバー等）は従来どおり即時復帰する。
         if (approachController != null && approachController.RequestReturnHome())
         {
+            SyncMotherPeakState();
             Debug.Log("[PD] ReturnHome requested — waiting for the mother to walk back");
 
             float returnTimeout = Mathf.Max(1f, returnHomeSafetyTimeout);
@@ -1433,6 +1446,7 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (_dummyResetCoroutine != null) StopCoroutine(_dummyResetCoroutine);
         _dummyResetCoroutine = StartCoroutine(HandleDummySequence());
+        SyncMotherPeakState();
     }
 
     private IEnumerator HandleDummySequence()
@@ -1450,12 +1464,13 @@ public class MotherSuspicionSystem : MonoBehaviour
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
 
+        _dummyResetCoroutine = null;
         ResetCycle();
 
         if (warningSystem != null)
             warningSystem.EndWarningSequence();
 
-        _dummyResetCoroutine = null;
+        SyncMotherPeakState();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1756,6 +1771,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         }
 
         _gardenPeekSuspicionCoroutine = StartCoroutine(ContinuousGardenPeekSuspicionCoroutine());
+        SyncMotherPeakState();
     }
 
     /// <summary>
@@ -1830,6 +1846,7 @@ public class MotherSuspicionSystem : MonoBehaviour
     public void OnApproachStarted()
     {
         warningSystem?.CancelPassByDoorSound();
+        SyncMotherPeakState();
 
         // 片付け演出のサイクル中は通常の接近開始処理を行わない（重複防止）。
         if (IsChoreOverrideActive)
@@ -1883,6 +1900,8 @@ public class MotherSuspicionSystem : MonoBehaviour
             // 片付けRushInの速度倍率も解除する（中断・正常終了・次サイクル・再プレイへ持ち越さない）。
             ReleaseChoreRushInSpeed("片付け終了/中断");
         }
+
+        SyncMotherPeakState();
     }
 
     /// <summary>
@@ -1916,6 +1935,8 @@ public class MotherSuspicionSystem : MonoBehaviour
             // 視線終了：加算コルーチンとハンドルを確実に解除する（減少処理は行わない）。
             StopChoreLookSuspicion();
         }
+
+        SyncMotherPeakState();
     }
 
     /// <summary>
@@ -2278,6 +2299,8 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (motherGauge != null)
             motherGauge.enableAutoDecrease = false;
+
+        SyncMotherPeakState(forceSend: true, forceInactive: true);
     }
 
     /// <summary>
@@ -2433,6 +2456,41 @@ public class MotherSuspicionSystem : MonoBehaviour
 
         if (targetDoorController != null)
             targetDoorController.SetDoorState(DoorController.DoorState.Closed);
+
+        SyncMotherPeakState();
+    }
+
+    /// <summary>
+    /// 【M-F03】現在、親機が「山場状態」（接近開始〜ドア前・窓での覗き・片付け入室終了まで）にあるかを判定する。
+    /// ゲーム終了（捕獲・TIME_UP）時や覗き終了後の帰路移動中は false を返す。
+    /// </summary>
+    public bool IsMotherPeakActive
+    {
+        get
+        {
+            if (isCaught || _hasPermanentGameOver) return false;
+            if (ParentGameTimeManager.Instance != null && ParentGameTimeManager.Instance.IsPlayFinished) return false;
+
+            if (isMotherLookingNow || _choreLooking || _dummyResetCoroutine != null)
+                return true;
+
+            if (approachController != null && approachController.IsPeakApproachOrPeekActive)
+                return true;
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 【M-F03】親機の山場状態を評価し、変化があれば ParentUdpRuntimeHost 経由で子機へ MOTHER_PEAK:1 / 0 を通知する。
+    /// </summary>
+    public void SyncMotherPeakState(bool forceSend = false, bool forceInactive = false)
+    {
+        ParentUdpRuntimeHost host = ResolveParentHost();
+        if (host == null) return;
+
+        bool active = !forceInactive && IsMotherPeakActive;
+        host.SetMotherPeakActive(active, forceSend);
     }
 
     /// <summary>
@@ -2496,6 +2554,8 @@ public class MotherSuspicionSystem : MonoBehaviour
         isCaught = true;
         isMotherLookingNow = true;
         Debug.LogError("ゲームオーバー：母親に捕まりました！");
+
+        SyncMotherPeakState(forceSend: true, forceInactive: true);
 
         // 片付け演出を中断する（既存の捕獲・ゲームオーバー処理はそのまま実行する）。
         if (motherChoreController != null)
