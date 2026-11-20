@@ -188,9 +188,12 @@ public partial class ItemSpawner : MonoBehaviour
     // フィーバー中に通常のHugeObstacle出現タイミングが来たとき、次の再判定まで先延ばしする秒数。
     // 予定は消費せず（出現機会を恒久的に失わず）、フィーバー終了後に再開する（毎フレーム再試行はしない）。
     [UnityEngine.SerializeField, Min(0.5f)] private float hugeFeverDeferralSeconds = 5f;
+    [UnityEngine.SerializeField, Min(0f)] private float hugeMotherPeakGraceSeconds = 2.5f;
 
     private float nextHugeSpawnTime = -1f;
     private bool isHugeSpawnScheduled = false;
+    private ChildNotificationHub _motherPeakNotificationHub;
+    private bool _motherPeakActive;
 
     // ── 通常出現の成功間隔の状態（BuildNormalSpawnSchedule で初期化する） ──
     //  ・「配置に成功した時刻＋休止時間」を絶対時刻で保持する。Time.unscaledTime と比較する。
@@ -277,6 +280,7 @@ public partial class ItemSpawner : MonoBehaviour
     void Start()
     {
         ValidateAndNormalizeSettings();
+        SubscribeMotherPeakNotifications();
         // 通常出現はレーン別タイマー方式（旧・時刻付き予定方式 BuildNormalSpawnSchedule は使わない）
         ResetLaneSpawnTimers();
 
@@ -293,12 +297,76 @@ public partial class ItemSpawner : MonoBehaviour
     {
         QTEManager.HugeQteFinished += OnHugeQteFinished;
         ChildGamePause.Resumed += OnGameResumed;
+        SubscribeMotherPeakNotifications();
     }
 
     private void OnDisable()
     {
         QTEManager.HugeQteFinished -= OnHugeQteFinished;
         ChildGamePause.Resumed -= OnGameResumed;
+        UnsubscribeMotherPeakNotifications();
+    }
+
+    private void SubscribeMotherPeakNotifications()
+    {
+        UnsubscribeMotherPeakNotifications();
+
+        ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
+        if (host == null)
+            host = UnityEngine.Object.FindFirstObjectByType<ChildUdpRuntimeHost>();
+        if (host == null)
+            return;
+
+        _motherPeakNotificationHub = host.Notifications;
+        if (_motherPeakNotificationHub == null)
+            return;
+
+        _motherPeakActive = _motherPeakNotificationHub.IsMotherPeakActive;
+        _motherPeakNotificationHub.MotherPeakChanged += OnMotherPeakChanged;
+    }
+
+    private void UnsubscribeMotherPeakNotifications()
+    {
+        if (_motherPeakNotificationHub != null)
+            _motherPeakNotificationHub.MotherPeakChanged -= OnMotherPeakChanged;
+        _motherPeakNotificationHub = null;
+    }
+
+    private void OnMotherPeakChanged(bool active)
+    {
+        bool wasActive = _motherPeakActive;
+        _motherPeakActive = active;
+
+        if (wasActive && !active)
+        {
+            float graceSeconds = Mathf.Max(0f, hugeMotherPeakGraceSeconds);
+            nextHugeSpawnTime = Mathf.Max(nextHugeSpawnTime, Time.unscaledTime + graceSeconds);
+            isHugeSpawnScheduled = true;
+
+            if (showDebugLogs)
+                Debug.Log($"[ItemSpawner] 親機の山場終了。HugeObstacleを {graceSeconds:F1}s 後まで延期します。");
+        }
+    }
+
+    private bool IsMotherPeakActiveForSpawn()
+    {
+        // Hub購読前や接続復帰直後の保険として、稼働中Hostから最新状態を読む。
+        if (_motherPeakNotificationHub != null)
+            _motherPeakActive = _motherPeakNotificationHub.IsMotherPeakActive;
+        else
+        {
+            ChildUdpRuntimeHost host = ChildUdpRuntimeHost.Running;
+            if (host == null)
+                host = UnityEngine.Object.FindFirstObjectByType<ChildUdpRuntimeHost>();
+            if (host != null && host.Notifications != null)
+            {
+                _motherPeakNotificationHub = host.Notifications;
+                _motherPeakActive = _motherPeakNotificationHub.IsMotherPeakActive;
+                _motherPeakNotificationHub.MotherPeakChanged += OnMotherPeakChanged;
+            }
+        }
+
+        return _motherPeakActive;
     }
 
     private void OnHugeQteFinished(bool success)
@@ -349,7 +417,15 @@ public partial class ItemSpawner : MonoBehaviour
 
         if (Time.unscaledTime >= nextHugeSpawnTime)
         {
-            if (IsFeverActiveForSpawn())
+            if (IsMotherPeakActiveForSpawn())
+            {
+                // 親機の山場中は鷹ボス（HugeObstacle）を新規スポーンしない。
+                float deferral = Mathf.Max(0.5f, hugeFeverDeferralSeconds);
+                nextHugeSpawnTime = Time.unscaledTime + deferral;
+                if (showDebugLogs)
+                    Debug.Log($"[ItemSpawner] 親機山場中のため通常のHugeObstacle出現を {deferral:F1}s 先へ延期します。");
+            }
+            else if (IsFeverActiveForSpawn())
             {
                 // フィーバー中は通常のHugeObstacleを出現させない。
                 // 予定は消費せず、次の再判定まで先延ばしする（毎フレーム再試行はしない）。
@@ -375,6 +451,7 @@ public partial class ItemSpawner : MonoBehaviour
     public void RestartSchedule()
     {
         ValidateAndNormalizeSettings();
+        SubscribeMotherPeakNotifications();
         // 本プレイ開始：レーン別タイマーを全レーン再抽選する（旧方式の予定は作らない）
         ResetLaneSpawnTimers();
         nextHugeSpawnTime = Time.unscaledTime + hugeInitialDelay;
@@ -394,10 +471,11 @@ public partial class ItemSpawner : MonoBehaviour
 
         // フィーバー中は HugeObstacle を出現させない（通常予定・6キー・他APIと同じ。抜け道を作らない）。
         Item prefabItem = prefab.GetComponent<Item>();
-        if (prefabItem != null && prefabItem.itemType == ItemType.HugeObstacle && IsFeverActiveForSpawn())
+        if (prefabItem != null && prefabItem.itemType == ItemType.HugeObstacle &&
+            (IsMotherPeakActiveForSpawn() || IsFeverActiveForSpawn()))
         {
             if (showDebugLogs)
-                Debug.Log($"[ItemSpawner] フィーバー中のため HugeObstacle を出現させません（TrySpawnByPrefab: {prefab.name}）。");
+                Debug.Log($"[ItemSpawner] 親機山場中またはフィーバー中のため HugeObstacle を出現させません（TrySpawnByPrefab: {prefab.name}）。");
             return false;
         }
 
@@ -436,6 +514,12 @@ public partial class ItemSpawner : MonoBehaviour
         }
 
         // フィーバー中は HugeObstacle を出現させない（通常予定・6キーと同じ禁止条件。別APIからも抜け道を作らない）。
+        if (IsMotherPeakActiveForSpawn())
+        {
+            if (showDebugLogs)
+                Debug.Log("[ItemSpawner] 親機山場中のため HugeObstacle を出現させません（TrySpawnHugeObstacle）。");
+            return false;
+        }
         if (IsFeverActiveForSpawn())
         {
             if (showDebugLogs)
@@ -1726,6 +1810,7 @@ public partial class ItemSpawner : MonoBehaviour
 
     private void SpawnSingleHugeObstacle()
     {
+        if (IsMotherPeakActiveForSpawn()) return;
         if (ItemPool.Instance == null) return;
 
         GameObject item = ItemPool.Instance.GetFromPoolByItemType(ItemType.HugeObstacle);
@@ -1846,6 +1931,12 @@ public partial class ItemSpawner : MonoBehaviour
     /// </summary>
     private void SpawnDebugItemByKey(int keyNumber, ItemType itemType)
     {
+        if (itemType == ItemType.HugeObstacle && IsMotherPeakActiveForSpawn())
+        {
+            Debug.Log($"[ItemSpawner] デバッグ出現キー{keyNumber}: 親機山場中のため {itemType} は出現させません。");
+            return;
+        }
+
         if (itemType == ItemType.HugeObstacle && IsFeverActiveForSpawn())
         {
             Debug.Log($"[ItemSpawner] デバッグ出現キー{keyNumber}: フィーバー中のため {itemType} は出現させません。");

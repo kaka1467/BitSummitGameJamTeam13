@@ -96,6 +96,22 @@ public class TitleMenuHighlight : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 外部から選択対象の Selectable を明示的に切り替え、矢印位置を更新する。
+    /// </summary>
+    public void SetSelectedSelectable(Selectable target, bool snap = true)
+    {
+        if (target == null) return;
+
+        _lastValidSelection = target;
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(target.gameObject);
+        }
+
+        UpdateFollowPosition(useSnap: snap);
+    }
+
     private void Awake()
     {
         if (selectionGlow != null)
@@ -227,7 +243,7 @@ public class TitleMenuHighlight : MonoBehaviour
 
     /// <summary>
     /// 対象ボタン内の TextMeshProUGUI の実際の文字描画左端（textBounds / preferredValues）を基準に、
-    /// 文字から一定間隔（textLeftGap）だけ左の位置へ矢印の座標を算出する。
+    /// 文字に被らないよう一定間隔（textLeftGap および矢印幅）だけ左の位置へ矢印の座標を算出する。
     /// </summary>
     private Vector2 CalculateArrowTargetPosition(RectTransform target, Vector2 basePos)
     {
@@ -235,35 +251,110 @@ public class TitleMenuHighlight : MonoBehaviour
             return basePos + arrowOffset;
 
         RectTransform arrowParent = arrowIndicator.parent as RectTransform;
-        TMP_Text tmp = target.GetComponentInChildren<TMP_Text>();
-        if (arrowParent == null || tmp == null)
+        if (arrowParent == null)
             return basePos + arrowOffset;
 
-        RectTransform textRt = tmp.rectTransform;
-        tmp.ForceMeshUpdate();
+        return ComputeTextAlignedArrowPosition(target, arrowIndicator, arrowParent, basePos, arrowOffset, textLeftGap);
+    }
+
+    /// <summary>
+    /// 親機・子機共通：対象ボタン内の TMP_Text の描画左端（またはボタン左端）を arrowParent ローカル座標へ変換し、
+    /// 矢印が文字に被らず綺麗に左側に揃う座標を算出する。
+    /// </summary>
+    public static Vector2 ComputeTextAlignedArrowPosition(
+        RectTransform target,
+        RectTransform arrowRect,
+        RectTransform arrowParent,
+        Vector2 fallbackBasePos,
+        Vector2 offset,
+        float gapFromTextLeft)
+    {
+        if (target == null || arrowRect == null || arrowParent == null)
+            return fallbackBasePos + offset;
+
+        TMP_Text tmp = target.GetComponentInChildren<TMP_Text>();
+        float arrowHalfWidth = Mathf.Abs(arrowRect.rect.width * arrowRect.localScale.x) * 0.5f;
+        // 矢印スプライトの見た目幅を考慮し、文字左端から十分な距離を確保して文字被りを防ぐ
+        float effectiveGap = Mathf.Max(gapFromTextLeft, arrowHalfWidth * 0.55f + 16f);
+
+        if (tmp != null)
+        {
+            RectTransform textRt = tmp.rectTransform;
+            tmp.ForceMeshUpdate();
+
+            float localLeftX;
+            float localCenterY;
+
+            if (TryGetVisibleTextLocalBounds(tmp, out float minX, out float centerY))
+            {
+                localLeftX = minX;
+                localCenterY = centerY;
+            }
+            else
+            {
+                string rawText = tmp.text != null ? tmp.text.Trim() : string.Empty;
+                Vector2 pref = tmp.GetPreferredValues(rawText);
+                float width = Mathf.Max(0f, pref.x);
+                localLeftX = textRt.rect.center.x - width * 0.5f;
+                localCenterY = textRt.rect.center.y;
+            }
+
+            Vector3 worldLeft = textRt.TransformPoint(new Vector3(localLeftX, localCenterY, 0f));
+            Vector3 parentLocalLeft = arrowParent.InverseTransformPoint(worldLeft);
+
+            return new Vector2(parentLocalLeft.x - effectiveGap, parentLocalLeft.y + offset.y);
+        }
+
+        // TMP_Text が無いボタンの場合はボタン矩形の左端を基準にする
+        Vector3 buttonLeftWorld = target.TransformPoint(new Vector3(target.rect.xMin, target.rect.center.y, 0f));
+        Vector3 buttonLeftLocal = arrowParent.InverseTransformPoint(buttonLeftWorld);
+        return new Vector2(buttonLeftLocal.x - effectiveGap, buttonLeftLocal.y + offset.y);
+    }
+
+    private static bool TryGetVisibleTextLocalBounds(TMP_Text tmp, out float minX, out float centerY)
+    {
+        minX = 0f;
+        centerY = 0f;
+
+        if (tmp == null) return false;
+
+        TMP_TextInfo textInfo = tmp.textInfo;
+        if (textInfo != null && textInfo.characterCount > 0)
+        {
+            float foundMinX = float.PositiveInfinity;
+            float foundMinY = float.PositiveInfinity;
+            float foundMaxY = float.NegativeInfinity;
+            bool hasVisible = false;
+
+            int count = Mathf.Min(textInfo.characterCount, textInfo.characterInfo != null ? textInfo.characterInfo.Length : 0);
+            for (int i = 0; i < count; i++)
+            {
+                TMP_CharacterInfo charInfo = textInfo.characterInfo[i];
+                if (!charInfo.isVisible) continue;
+
+                hasVisible = true;
+                if (charInfo.bottomLeft.x < foundMinX) foundMinX = charInfo.bottomLeft.x;
+                if (charInfo.bottomLeft.y < foundMinY) foundMinY = charInfo.bottomLeft.y;
+                if (charInfo.topRight.y > foundMaxY) foundMaxY = charInfo.topRight.y;
+            }
+
+            if (hasVisible)
+            {
+                minX = foundMinX;
+                centerY = (foundMinY + foundMaxY) * 0.5f;
+                return true;
+            }
+        }
 
         Bounds textBounds = tmp.textBounds;
-        float localLeftX;
-        float localCenterY;
-
-        if (textBounds.size.x > 0.01f && tmp.textInfo != null && tmp.textInfo.characterCount > 0)
+        if (textBounds.size.x > 0.01f)
         {
-            localLeftX = textBounds.min.x;
-            localCenterY = textBounds.center.y;
-        }
-        else
-        {
-            string rawText = tmp.text != null ? tmp.text.Trim() : string.Empty;
-            Vector2 pref = tmp.GetPreferredValues(rawText);
-            float width = Mathf.Max(0f, pref.x);
-            localLeftX = textRt.rect.center.x - width * 0.5f;
-            localCenterY = textRt.rect.center.y;
+            minX = textBounds.min.x;
+            centerY = textBounds.center.y;
+            return true;
         }
 
-        Vector3 worldLeft = textRt.TransformPoint(new Vector3(localLeftX, localCenterY, 0f));
-        Vector3 parentLocalLeft = arrowParent.InverseTransformPoint(worldLeft);
-
-        return new Vector2(parentLocalLeft.x - textLeftGap, basePos.y + arrowOffset.y);
+        return false;
     }
 
     /// <summary>

@@ -1,0 +1,23 @@
+{
+  "name": "com.unity.ide.rider",
+  "displayName": "JetBrains Rider Editor",
+  "description": "The JetBrains Rider Editor package provides an integration for using the JetBrains Rider IDE as a code editor for Unity. It adds support for generating .csproj files for code completion and auto-discovery of installations.",
+  "version": "3.1.1",
+  "unity": "6000.0",
+  "relatedPackages": {
+    "com.unity.ide.rider.tests": "3.1.1"
+  },
+  "_upm": {
+    "changelog": "- Switch to the SDK style project format for Unity 6.7+.\n- Skip generating and remove old project files when MSBuild Compilation (Experimental) Unity feature is enabled\n- Fix RIDER-142281 Generated csproj emits unresolved virtual path for .globalconfig in local (file:) packages"
+  },
+  "upmCi": {
+    "footprint": "b690589fc8181c2fc643fc6fe80f7f0a22e98a6f"
+  },
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.ide.rider@3.1/manual/index.html",
+  "repository": {
+    "url": "https://github.cds.internal.unity3d.com/unity/com.unity.ide.rider.git",
+    "type": "git",
+    "revision": "c9c856a319a3d6e984f4a646a24f0b9d91090434"
+  },
+  "_fingerprint": "9532b49736f4a5eedc278b751bb34359056b6475"
+}

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
 
@@ -10,6 +11,8 @@ public class MenuNavigationController : MonoBehaviour
     [SerializeField] private GameObject selectionArrow;
     [SerializeField] private float arrowOffsetX = -50f; // 矢印のX座標オフセット
     [SerializeField] private float arrowOffsetY = 0f;   // 矢印のY座標オフセット
+    [SerializeField] private bool alignArrowToTextLeftEdge = true;
+    [SerializeField] private float textLeftGap = 36f;
     [SerializeField] private List<Button> cancelButtons = new List<Button>();
     [SerializeField] private float cancelArrowOffsetX = -50f;
     [SerializeField] private float cancelArrowOffsetY = 0f;
@@ -44,6 +47,7 @@ public class MenuNavigationController : MonoBehaviour
         // 最初のボタンを選択
         if (selectableButtons.Count > 0)
         {
+            SyncEventSystemSelection();
             UpdateArrowPosition();
         }
         else
@@ -199,6 +203,7 @@ public class MenuNavigationController : MonoBehaviour
 
         } while (!IsButtonInteractable(currentIndex));
 
+        SyncEventSystemSelection();
         UpdateArrowPosition();
     }
 
@@ -220,6 +225,7 @@ public class MenuNavigationController : MonoBehaviour
 
         } while (!IsButtonInteractable(currentIndex));
 
+        SyncEventSystemSelection();
         UpdateArrowPosition();
     }
 
@@ -281,6 +287,7 @@ public class MenuNavigationController : MonoBehaviour
             {
                 selectionArrow.SetActive(true);
             }
+            SyncEventSystemSelection();
             UpdateArrowPosition();
         }
         else
@@ -305,6 +312,21 @@ public class MenuNavigationController : MonoBehaviour
         return -1;
     }
 
+    private void SyncEventSystemSelection()
+    {
+        if (EventSystem.current == null) return;
+        if (currentIndex < 0 || currentIndex >= selectableButtons.Count) return;
+
+        Button selectedButton = selectableButtons[currentIndex];
+        if (selectedButton != null && selectedButton.gameObject.activeInHierarchy)
+        {
+            if (EventSystem.current.currentSelectedGameObject != selectedButton.gameObject)
+            {
+                EventSystem.current.SetSelectedGameObject(selectedButton.gameObject);
+            }
+        }
+    }
+
     private void UpdateArrowPosition()
     {
         if (currentIndex < 0 || currentIndex >= selectableButtons.Count)
@@ -325,17 +347,34 @@ public class MenuNavigationController : MonoBehaviour
             float offsetX = isConnectingCancel ? connectingCancelArrowOffsetX : (isCancelButton ? cancelArrowOffsetX : arrowOffsetX);
             float offsetY = isConnectingCancel ? connectingCancelArrowOffsetY : (isCancelButton ? cancelArrowOffsetY : arrowOffsetY);
 
-            // ボタンの位置を取得して矢印を配置
-            Vector3 buttonPos = buttonRect.position;
-            arrowRect.position = new Vector3(
-                buttonPos.x + offsetX,
-                buttonPos.y + offsetY,
-                buttonPos.z
-            );
-        }
+            RectTransform arrowParent = arrowRect.parent as RectTransform;
+            if (alignArrowToTextLeftEdge && arrowParent != null)
+            {
+                Vector3 buttonWorldCenter = buttonRect.TransformPoint(buttonRect.rect.center);
+                Vector3 buttonLocalCenter = arrowParent.InverseTransformPoint(buttonWorldCenter);
+                Vector2 fallbackBase = new Vector2(buttonLocalCenter.x, buttonLocalCenter.y);
 
-        // 視覚的なフィードバック（オプション）
-        // selectedButton.Select();
+                Vector2 targetAnchoredPos = TitleMenuHighlight.ComputeTextAlignedArrowPosition(
+                    buttonRect,
+                    arrowRect,
+                    arrowParent,
+                    fallbackBase,
+                    new Vector2(offsetX, offsetY),
+                    textLeftGap);
+
+                arrowRect.anchoredPosition = targetAnchoredPos;
+            }
+            else
+            {
+                // ボタンの位置を取得して矢印を配置
+                Vector3 buttonPos = buttonRect.position;
+                arrowRect.position = new Vector3(
+                    buttonPos.x + offsetX,
+                    buttonPos.y + offsetY,
+                    buttonPos.z
+                );
+            }
+        }
     }
 
     private void ExecuteCurrentButton()
@@ -359,8 +398,35 @@ public class MenuNavigationController : MonoBehaviour
         if (index >= 0 && index < selectableButtons.Count)
         {
             currentIndex = index;
+            SyncEventSystemSelection();
             UpdateArrowPosition();
         }
+    }
+
+    /// <summary>
+    /// 指定したボタンを現在の選択先に設定し、EventSystem と矢印位置を即座に同期する。
+    /// </summary>
+    public void SelectButton(Button targetButton)
+    {
+        if (targetButton == null) return;
+
+        int index = selectableButtons.IndexOf(targetButton);
+        if (index >= 0)
+        {
+            currentIndex = index;
+        }
+
+        if (EventSystem.current != null && targetButton.gameObject.activeInHierarchy)
+        {
+            EventSystem.current.SetSelectedGameObject(targetButton.gameObject);
+        }
+
+        if (selectionArrow != null && !DifficultyTitleUI.IsAnyModalOpen && !selectionArrow.activeSelf)
+        {
+            selectionArrow.SetActive(true);
+        }
+
+        UpdateArrowPosition();
     }
 
     // 外部からボタンリストを更新するメソッド
@@ -368,6 +434,7 @@ public class MenuNavigationController : MonoBehaviour
     {
         selectableButtons = buttons;
         currentIndex = 0;
+        SyncEventSystemSelection();
         UpdateArrowPosition();
     }
 

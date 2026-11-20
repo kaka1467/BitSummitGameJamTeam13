@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
@@ -69,6 +70,8 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     // ── 接続先（実行時に解決する。Inspectorでは指定しない）────────────────────
     private ChildUdpRuntimeHost _host;
+    private MenuNavigationController _menuNavigation;
+    private TitleMenuHighlight _menuHighlight;
 
     // 本コンポーネントが動的に追加したリスナー（OnDisable/OnDestroy で自分のものだけ外す）
     private readonly List<(Button button, UnityAction action)> _dynamicListeners =
@@ -210,12 +213,17 @@ public class ChildTitleConnectionUI : MonoBehaviour
                     connectButtonLabel.text = _isWaitingForGameStart ? "Waiting..." : "START!";
                     break;
             }
+
+            connectButtonLabel.ForceMeshUpdate();
         }
 
         if (connectButton != null)
         {
             connectButton.gameObject.SetActive(true);
-            connectButton.interactable = state != ChildConnectionLink.LinkState.Connecting && !_isWaitingForGameStart;
+            // Connecting / Connected 遷移直後に MenuNavigationController や EventSystem が
+            // connectButton を選択不可とみなして Cancel へ飛ばないよう interactable を維持する
+            // （Connecting 中の押下は OnConnectClicked 側で無視する）
+            connectButton.interactable = !_isWaitingForGameStart;
 
             Transform moveTarget = connectButton.transform.parent != null
                 ? connectButton.transform.parent
@@ -262,6 +270,38 @@ public class ChildTitleConnectionUI : MonoBehaviour
         SetActiveForButton(settingsButton, !isConnectingOrConnected);
 
         UpdateAnimatedSpritesVisibility();
+
+        // 接続状態（Connecting / Connected / Disconnected）に切り替わった直後は、
+        // 必ず connectButton（Connecting... / START! / Connect）をデフォルトの選択先に設定する
+        SelectConnectButtonAsDefault();
+    }
+
+    private void SelectConnectButtonAsDefault()
+    {
+        if (connectButton == null || !connectButton.gameObject.activeInHierarchy) return;
+
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(connectButton.gameObject);
+        }
+
+        if (_menuNavigation == null)
+        {
+            _menuNavigation = FindFirstObjectByType<MenuNavigationController>();
+        }
+        if (_menuNavigation != null)
+        {
+            _menuNavigation.SelectButton(connectButton);
+        }
+
+        if (_menuHighlight == null)
+        {
+            _menuHighlight = FindFirstObjectByType<TitleMenuHighlight>();
+        }
+        if (_menuHighlight != null)
+        {
+            _menuHighlight.SetSelectedSelectable(connectButton, snap: true);
+        }
     }
 
     private void UpdateSoloStartVisibility()
@@ -342,12 +382,17 @@ public class ChildTitleConnectionUI : MonoBehaviour
     public void OnConnectClicked()
     {
         if (!EnsureHost()) return;
+        if (_isWaitingForGameStart) return;
+
+        // Connecting 中に決定が押された場合は何もしない（選択位置は connectButton に維持）
+        if (_host.ConnectionState == ChildConnectionLink.LinkState.Connecting)
+        {
+            return;
+        }
 
         // 接続完了後（START! ボタン押下時）も難易度選択を確認してからゲームを開始できるようにする
         if (_host.ConnectionState == ChildConnectionLink.LinkState.Connected)
         {
-            if (_isWaitingForGameStart) return;
-
             DifficultyTitleUI diffUi = DifficultyTitleUI.EnsureAttached();
             if (diffUi != null)
             {
