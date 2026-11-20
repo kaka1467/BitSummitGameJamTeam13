@@ -25,6 +25,10 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
     [SerializeField] private Slider bgmSlider;
     [SerializeField] private TextMeshProUGUI seLabel;
     [SerializeField] private Slider seSlider;
+    [SerializeField] private TextMeshProUGUI childBgmLabel;
+    [SerializeField] private Slider childBgmSlider;
+    [SerializeField] private TextMeshProUGUI childSeLabel;
+    [SerializeField] private Slider childSeSlider;
     [SerializeField] private Button resetButton;
     [SerializeField] private Button closeButton;
 
@@ -64,6 +68,8 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
     private Button _entryButton;          // 閉じたときに選択を戻す「設定」入口
     private SettingsVolumeRow _bgmRow;
     private SettingsVolumeRow _seRow;
+    private SettingsVolumeRow _childBgmRow;
+    private SettingsVolumeRow _childSeRow;
     private bool _isOpen;
 
     private readonly List<Selectable> _blockedSelectables = new List<Selectable>();
@@ -71,6 +77,7 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
 
     private void Awake()
     {
+        EnsureChildVolumeRows();
         // 実行開始時は閉じた状態にする（Scene の配置・サイズ・文字には触れない）。
         if (settingsPanel != null) settingsPanel.SetActive(false);
 
@@ -94,7 +101,8 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
     /// <summary>必須参照がすべて揃っているか。</summary>
     private bool IsReady()
     {
-        return settingsPanel != null && bgmSlider != null && seSlider != null;
+        return settingsPanel != null && bgmSlider != null && seSlider != null &&
+               childBgmSlider != null && childSeSlider != null;
     }
 
     private void ReportMissingReferences()
@@ -223,6 +231,20 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
             seSlider.onValueChanged.RemoveListener(OnSeChanged);
             seSlider.onValueChanged.AddListener(OnSeChanged);
         }
+
+        if (childBgmSlider != null)
+        {
+            childBgmSlider.SetValueWithoutNotify(ParentAudioSettings.ChildBgmVolume);
+            childBgmSlider.onValueChanged.RemoveListener(OnChildBgmChanged);
+            childBgmSlider.onValueChanged.AddListener(OnChildBgmChanged);
+        }
+
+        if (childSeSlider != null)
+        {
+            childSeSlider.SetValueWithoutNotify(ParentAudioSettings.ChildSeVolume);
+            childSeSlider.onValueChanged.RemoveListener(OnChildSeChanged);
+            childSeSlider.onValueChanged.AddListener(OnChildSeChanged);
+        }
     }
 
     private void OnBgmChanged(float v)
@@ -233,6 +255,16 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
     private void OnSeChanged(float v)
     {
         if (ParentAudioSettings.Instance != null) ParentAudioSettings.Instance.SetSeVolume(v);
+    }
+
+    private void OnChildBgmChanged(float v)
+    {
+        if (ParentAudioSettings.Instance != null) ParentAudioSettings.Instance.SetChildBgmVolume(v);
+    }
+
+    private void OnChildSeChanged(float v)
+    {
+        if (ParentAudioSettings.Instance != null) ParentAudioSettings.Instance.SetChildSeVolume(v);
     }
 
     public void ResetToDefaults()
@@ -275,6 +307,120 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
     {
         _bgmRow = EnsureRow(bgmLabel, bgmSlider);
         _seRow = EnsureRow(seLabel, seSlider);
+        _childBgmRow = EnsureRow(childBgmLabel, childBgmSlider);
+        _childSeRow = EnsureRow(childSeLabel, childSeSlider);
+    }
+
+    private void EnsureChildVolumeRows()
+    {
+        if (settingsPanel == null) return;
+
+        Transform existingChildBgm = settingsPanel.transform.Find("ChildBgmLabel");
+        if (existingChildBgm != null)
+        {
+            childBgmLabel = existingChildBgm.GetComponent<TextMeshProUGUI>();
+            childBgmSlider = settingsPanel.transform.Find("ChildBgmSlider")?.GetComponent<Slider>();
+        }
+        if (existingChildBgm == null)
+        {
+            CreateRuntimeChildVolumeRow("Child BGM", "ChildBgmLabel", "ChildBgmSlider", -6f,
+                out childBgmLabel, out childBgmSlider);
+        }
+
+        Transform existingChildSe = settingsPanel.transform.Find("ChildSeLabel");
+        if (existingChildSe != null)
+        {
+            childSeLabel = existingChildSe.GetComponent<TextMeshProUGUI>();
+            childSeSlider = settingsPanel.transform.Find("ChildSeSlider")?.GetComponent<Slider>();
+        }
+        if (existingChildSe == null)
+        {
+            CreateRuntimeChildVolumeRow("Child SE", "ChildSeLabel", "ChildSeSlider", -94f,
+                out childSeLabel, out childSeSlider);
+        }
+    }
+
+    private void CreateRuntimeChildVolumeRow(
+        string labelText,
+        string labelName,
+        string sliderName,
+        float y,
+        out TextMeshProUGUI label,
+        out Slider slider)
+    {
+        label = null;
+        slider = null;
+
+        TMP_Text fontSource = settingsPanel.GetComponentInChildren<TMP_Text>(true);
+        if (fontSource == null) return;
+
+        GameObject labelGo = new GameObject(labelName, typeof(RectTransform), typeof(CanvasRenderer));
+        RectTransform labelRt = (RectTransform)labelGo.transform;
+        labelRt.SetParent(settingsPanel.transform, false);
+        labelRt.anchorMin = labelRt.anchorMax = new Vector2(0.5f, 0.5f);
+        labelRt.pivot = new Vector2(0.5f, 0.5f);
+        labelRt.anchoredPosition = new Vector2(-300f, y);
+        labelRt.sizeDelta = new Vector2(220f, 56f);
+        label = labelGo.AddComponent<TextMeshProUGUI>();
+        label.font = fontSource.font;
+        label.fontSharedMaterial = fontSource.fontSharedMaterial;
+        label.text = labelText;
+        label.fontSize = 36f;
+        label.color = Color.white;
+        label.alignment = TextAlignmentOptions.Center;
+        label.raycastTarget = false;
+
+        GameObject sliderGo = new GameObject(sliderName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform sliderRt = (RectTransform)sliderGo.transform;
+        sliderRt.SetParent(settingsPanel.transform, false);
+        sliderRt.anchorMin = sliderRt.anchorMax = new Vector2(0.5f, 0.5f);
+        sliderRt.pivot = new Vector2(0.5f, 0.5f);
+        sliderRt.anchoredPosition = new Vector2(60f, y);
+        sliderRt.sizeDelta = new Vector2(440f, 36f);
+        sliderGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.18f);
+        slider = sliderGo.AddComponent<Slider>();
+        slider.transition = Selectable.Transition.None;
+
+        GameObject fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
+        RectTransform fillAreaRt = (RectTransform)fillAreaGo.transform;
+        fillAreaRt.SetParent(sliderRt, false);
+        fillAreaRt.anchorMin = Vector2.zero;
+        fillAreaRt.anchorMax = Vector2.one;
+        fillAreaRt.offsetMin = new Vector2(10f, 10f);
+        fillAreaRt.offsetMax = new Vector2(-10f, -10f);
+
+        GameObject fillGo = new GameObject("Fill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform fillRt = (RectTransform)fillGo.transform;
+        fillRt.SetParent(fillAreaRt, false);
+        fillRt.anchorMin = Vector2.zero;
+        fillRt.anchorMax = new Vector2(0f, 1f);
+        fillRt.sizeDelta = new Vector2(10f, 0f);
+        fillGo.GetComponent<Image>().color = new Color(1f, 0.85f, 0.35f, 1f);
+
+        GameObject handleAreaGo = new GameObject("Handle Slide Area", typeof(RectTransform));
+        RectTransform handleAreaRt = (RectTransform)handleAreaGo.transform;
+        handleAreaRt.SetParent(sliderRt, false);
+        handleAreaRt.anchorMin = Vector2.zero;
+        handleAreaRt.anchorMax = Vector2.one;
+        handleAreaRt.offsetMin = new Vector2(10f, 0f);
+        handleAreaRt.offsetMax = new Vector2(-10f, 0f);
+
+        GameObject handleGo = new GameObject("Handle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform handleRt = (RectTransform)handleGo.transform;
+        handleRt.SetParent(handleAreaRt, false);
+        handleRt.anchorMin = Vector2.zero;
+        handleRt.anchorMax = new Vector2(0f, 1f);
+        handleRt.sizeDelta = new Vector2(28f, 0f);
+        Image handleImage = handleGo.GetComponent<Image>();
+        handleImage.color = Color.white;
+
+        slider.fillRect = fillRt;
+        slider.handleRect = handleRt;
+        slider.targetGraphic = handleImage;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+        slider.wholeNumbers = false;
     }
 
     private SettingsVolumeRow EnsureRow(TextMeshProUGUI label, Slider slider)
@@ -299,7 +445,9 @@ public class ParentVolumeSettingsPanel : MonoBehaviour
     private void ConfigureNavigation()
     {
         SetNavigation(_bgmRow, up: null, down: _seRow, left: null, right: null);
-        SetNavigation(_seRow, up: _bgmRow, down: resetButton, left: null, right: null);
+        SetNavigation(_seRow, up: _bgmRow, down: _childBgmRow, left: null, right: null);
+        SetNavigation(_childBgmRow, up: _seRow, down: _childSeRow, left: null, right: null);
+        SetNavigation(_childSeRow, up: _childBgmRow, down: resetButton, left: null, right: null);
         SetNavigation(resetButton, up: _seRow, down: null, left: null, right: closeButton);
         SetNavigation(closeButton, up: _seRow, down: null, left: resetButton, right: null);
     }

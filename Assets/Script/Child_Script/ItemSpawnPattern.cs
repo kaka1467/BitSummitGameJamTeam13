@@ -76,54 +76,77 @@ public static class ItemSpawnPatternDefaults
         var list = new List<SpawnPattern>();
 
         // ── 連続収集 ──────────────────────────────────────────
-        list.Add(Pattern("連続収集・中段", 1f, PatternUse.NormalOnly, 0f, 0.5f, false, 0f,
+        list.Add(Pattern("連続収集・中段", 1.2f, PatternUse.NormalOnly, 0f, 0.18f, false, 0f,
             Row(PatternItemKind.LowScore, 1, 0, 6)));
 
-        list.Add(Pattern("連続収集・端レーン", 1f, PatternUse.NormalOnly, 0f, 0.5f, true, 0f,
+        list.Add(Pattern("連続収集・端レーン", 1.2f, PatternUse.NormalOnly, 0f, 0.18f, true, 0f,
             Row(PatternItemKind.LowScore, 0, 0, 6)));
 
         // ── 上下移動 ──────────────────────────────────────────
         // 低得点を上下に動かす並びに、「直前までいたレーン」へ悪いアイテムを置いて、止まっていると当たるようにする
         //（プレイヤーが動き続けるよう促す）。
-        list.Add(Pattern("上下移動・階段", 1f, PatternUse.NormalOnly, 0f, 0.6f, true, 0f,
+        list.Add(Pattern("上下移動・階段", 1f, PatternUse.NormalOnly, 0f, 0.20f, true, 0f,
             Seq(PatternItemKind.LowScore, 0, 1, 2, 1, 0, 1, 2),
             LeftBehindBad(0, 1, 2, 1, 0, 1, 2)));
 
-        list.Add(Pattern("上下移動・往復", 0.8f, PatternUse.NormalOnly, 15f, 0.7f, true, 0f,
+        list.Add(Pattern("上下移動・往復", 0.9f, PatternUse.NormalOnly, 15f, 0.20f, true, 0f,
             Seq(PatternItemKind.LowScore, 0, 2, 0, 2, 0),
             LeftBehindBad(0, 2, 0, 2, 0)));
 
         // ── 安全な低得点 / 危険な高得点 ───────────────────────────
         // 下段：安全な低得点が5個。上段：先頭に悪いアイテム、その後ろに高得点が3個。
-        list.Add(Pattern("選択・端の高得点", 1f, PatternUse.NormalOnly, 20f, 0.5f, true, 0f,
+        list.Add(Pattern("選択・端の高得点", 1f, PatternUse.NormalOnly, 20f, 0.18f, true, 0f,
             Row(PatternItemKind.LowScore, 2, 0, 5),
             Row(PatternItemKind.Bad, 0, 0, 1),
             Row(PatternItemKind.HighScore, 0, 1, 3)));
 
         // 中段：悪いアイテムの後ろに高得点が3個。上下段：安全な低得点。
-        list.Add(Pattern("選択・中段の高得点", 0.8f, PatternUse.NormalOnly, 30f, 0.5f, false, 0f,
+        list.Add(Pattern("選択・中段の高得点", 0.9f, PatternUse.NormalOnly, 30f, 0.18f, false, 0f,
             Row(PatternItemKind.LowScore, 0, 0, 5),
             Row(PatternItemKind.LowScore, 2, 0, 5),
             Row(PatternItemKind.Bad, 1, 0, 1),
             Row(PatternItemKind.HighScore, 1, 1, 3)));
 
         // ── 低密度・休憩 ──────────────────────────────────────
-        SpawnPattern shortRest = Pattern("休憩・短め", 0.8f, PatternUse.NormalOnly, 0f, 0.5f, false, 4f);
+        SpawnPattern shortRest = Pattern("休憩・短め", 0.25f, PatternUse.NormalOnly, 0f, 0.18f, false, 2f);
         shortRest.restDensity = 0.25f;
         list.Add(shortRest);
 
-        SpawnPattern longRest = Pattern("休憩・長め", 0.5f, PatternUse.NormalOnly, 60f, 0.5f, false, 7f);
+        SpawnPattern longRest = Pattern("休憩・長め", 0.12f, PatternUse.NormalOnly, 60f, 0.18f, false, 3f);
         longRest.restDensity = 0.1f;
         list.Add(longRest);
 
         // ── フィーバー中に稼ぐ配置（悪いアイテムなし） ─────────────────
-        list.Add(Pattern("フィーバー・得点の壁", 1f, PatternUse.FeverOnly, 0f, 0.45f, false, 0f,
+        list.Add(Pattern("フィーバー・得点の壁", 1f, PatternUse.FeverOnly, 0f, 0.18f, false, 0f,
             Row(PatternItemKind.LowScore, 0, 0, 5),
             Row(PatternItemKind.LowScore, 1, 0, 5),
             Row(PatternItemKind.LowScore, 2, 0, 5)));
 
-        list.Add(Pattern("フィーバー・高得点の波", 1f, PatternUse.FeverOnly, 0f, 0.4f, false, 0f,
+        list.Add(Pattern("フィーバー・高得点の波", 1f, PatternUse.FeverOnly, 0f, 0.18f, false, 0f,
             Seq(PatternItemKind.HighScore, 1, 0, 1, 2, 1, 0, 1, 2, 1)));
+
+        // Short/long gaps and lane branches.
+        list.Add(Pattern("Short Gap Shift", 1.05f, PatternUse.NormalOnly, 10f, 0.18f, true, 0.35f,
+            Seq(PatternItemKind.LowScore, 1, 1, 1, 2),
+            Row(PatternItemKind.Bad, 0, 2, 1)));
+
+        list.Add(Pattern("Long Gate Branch", 1f, PatternUse.NormalOnly, 25f, 0.18f, true, 0.7f,
+            Row(PatternItemKind.LowScore, 0, 0, 7),
+            Row(PatternItemKind.Bad, 1, 3, 2),
+            Row(PatternItemKind.HighScore, 2, 4, 4)));
+
+        list.Add(Pattern("Split Branch", 1.1f, PatternUse.NormalOnly, 35f, 0.18f, true, 0.6f,
+            Row(PatternItemKind.LowScore, 1, 0, 2),
+            Branch(PatternItemKind.HighScore, 0, 2, 2, PatternItemKind.HighScore, 2, 2, 2),
+            Row(PatternItemKind.Bad, 1, 4, 1),
+            Row(PatternItemKind.LowScore, 0, 5, 3),
+            Row(PatternItemKind.LowScore, 2, 5, 3)));
+
+        list.Add(Pattern("Lane Block Guide", 1.15f, PatternUse.NormalOnly, 45f, 0.18f, true, 0.7f,
+            Row(PatternItemKind.LowScore, 0, 0, 5),
+            Row(PatternItemKind.Bad, 0, 2, 1),
+            Row(PatternItemKind.Bad, 1, 4, 2),
+            Row(PatternItemKind.HighScore, 2, 5, 3)));
 
         return list;
     }
@@ -177,6 +200,18 @@ public static class ItemSpawnPatternDefaults
         var row = new List<PatternSlot>(lanes.Length);
         for (int i = 0; i < lanes.Length; i++)
             row.Add(new PatternSlot { kind = kind, lane = lanes[i], column = i });
+        return row;
+    }
+
+    private static List<PatternSlot> Branch(
+        PatternItemKind leftKind, int leftLane, int leftStart, int leftCount,
+        PatternItemKind rightKind, int rightLane, int rightStart, int rightCount)
+    {
+        var row = new List<PatternSlot>(leftCount + rightCount);
+        for (int i = 0; i < leftCount; i++)
+            row.Add(new PatternSlot { kind = leftKind, lane = leftLane, column = leftStart + i });
+        for (int i = 0; i < rightCount; i++)
+            row.Add(new PatternSlot { kind = rightKind, lane = rightLane, column = rightStart + i });
         return row;
     }
 }

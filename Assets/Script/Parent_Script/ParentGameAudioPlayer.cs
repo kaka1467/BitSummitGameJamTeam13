@@ -515,8 +515,8 @@ public class ParentGameAudioPlayer : MonoBehaviour
     private void ApplyVolumes()
     {
         bool sleeping = IsSleepingNow();
-        float settingsBgm = ParentAudioSettings.BgmVolume;
-        float settingsSe = ParentAudioSettings.SeVolume;
+        float settingsBgm = ParentAudioSettings.ChildBgmVolume;
+        float settingsSe = ParentAudioSettings.ChildSeVolume;
 
         if (bgmSource != null)
         {

@@ -1112,8 +1112,8 @@ public class DifficultyTitleUI : MonoBehaviour
         _isDetailOpen = false;
         _isTutorialDetailPopup = false;
         _openedFrame = Time.frameCount;
-        _lastCardCursorIndex = (int)GameDifficulty.Current;
-        _cursorIndex = GameDifficulty.IncludeTutorial ? 3 : _lastCardCursorIndex;
+        _lastCardCursorIndex = 1;
+        _cursorIndex = 1;
         if (_detailPopupRoot != null) _detailPopupRoot.SetActive(false);
         _modalRoot.SetActive(true);
         _modalRoot.transform.SetAsLastSibling();
@@ -1629,7 +1629,11 @@ public class DifficultyTitleUI : MonoBehaviour
             Button tutBtn = tutBtnGo.GetComponent<Button>();
             if (tutBtn == null) tutBtn = tutBtnGo.AddComponent<Button>();
             tutBtn.onClick.RemoveAllListeners();
-            tutBtn.onClick.AddListener(OpenTutorialDetailPopup);
+            tutBtn.onClick.AddListener(() =>
+            {
+                if (Time.frameCount > _openedFrame + 1)
+                    OpenTutorialDetailPopup();
+            });
         }
 
         // 2) 下段横並び：Card_Easy (左), Card_Normal (中), Card_Hard (右)
@@ -1698,7 +1702,11 @@ public class DifficultyTitleUI : MonoBehaviour
                 Button btn = cardGo.GetComponent<Button>();
                 if (btn == null) btn = cardGo.AddComponent<Button>();
                 btn.onClick.RemoveAllListeners();
-                btn.onClick.AddListener(() => OpenDetailPopup((GameDifficulty.Level)idx));
+                btn.onClick.AddListener(() =>
+                {
+                    if (Time.frameCount > _openedFrame + 1)
+                        OpenDetailPopup((GameDifficulty.Level)idx);
+                });
             }
         }
 

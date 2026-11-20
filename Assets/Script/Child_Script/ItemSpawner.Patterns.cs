@@ -23,13 +23,13 @@ public partial class ItemSpawner
     [SerializeField] private bool patternsEnabled = true;
 
     [Tooltip("本編開始から最初のパターンを出すまでの秒数。")]
-    [SerializeField, Min(0f)] private float firstPatternDelaySeconds = 8f;
+    [SerializeField, Min(0f)] private float firstPatternDelaySeconds = 0.3f;
 
     [Tooltip("パターン（と休憩）が終わってから、次のパターンまでのランダム出現期間の最小秒数。")]
-    [SerializeField, Min(0f)] private float patternIntervalMinSeconds = 6f;
+    [SerializeField, Min(0f)] private float patternIntervalMinSeconds = 1.5f;
 
     [Tooltip("同・最大秒数。最小より小さい値は最小として扱う。")]
-    [SerializeField, Min(0f)] private float patternIntervalMaxSeconds = 14f;
+    [SerializeField, Min(0f)] private float patternIntervalMaxSeconds = 3.5f;
 
     [Tooltip("パターンの最後のアイテムが出現位置を抜けた後、ランダム出現を再開するまでの余裕（秒）。")]
     [SerializeField, Min(0f)] private float patternClearanceSeconds = 0.8f;
@@ -102,7 +102,13 @@ public partial class ItemSpawner
                 return 0f;
 
             if (item.itemType == ItemType.Clock || item.itemType == ItemType.BGM)
-                weight *= Mathf.Max(0f, badItemWeightMultiplier * GameDifficulty.ChildBadItemWeightMultiplier);
+            {
+                float elapsed = Time.unscaledTime - normalScheduleStartTime;
+                float badScale = Mathf.Max(0f, badItemWeightMultiplier * GameDifficulty.ChildBadItemWeightMultiplier);
+                if (elapsed < 45f) badScale *= 0.25f;
+                else if (elapsed > 120f) badScale *= 1.25f;
+                weight *= badScale;
+            }
         }
 
         return weight;
@@ -218,7 +224,12 @@ public partial class ItemSpawner
         if (fever != (p.use == PatternUse.FeverOnly)) return 0f;
         if (elapsed < p.minElapsedSeconds) return 0f;
         if (!IsPatternResolvable(p)) return 0f;
-        return p.weight;
+        float weight = p.weight;
+        if (!fever && p.restSeconds <= 0f && elapsed >= 45f)
+            weight *= 1.35f;
+        if (!fever && p.restSeconds > 0f)
+            weight *= 0.55f;
+        return weight;
     }
 
     private bool IsPatternResolvable(SpawnPattern p)
@@ -311,7 +322,9 @@ public partial class ItemSpawner
             maxWidth = Mathf.Max(maxWidth, GetApproxHalfSize(item).x * 2f);
         }
 
-        float spacing = Mathf.Max(p.columnSpacing, maxWidth + GetGoodItemCloseMarginX());
+        // Keep columns compact and stable regardless of score-stage speed.
+        float spacing = Mathf.Clamp(p.columnSpacing, 0.10f, 0.22f);
+        spacing = Mathf.Min(spacing, Mathf.Max(0.10f, maxWidth * 0.38f));
         float maxColumn = 0f;
         for (int i = 0; i < p.slots.Count; i++)
             maxColumn = Mathf.Max(maxColumn, p.slots[i].column);

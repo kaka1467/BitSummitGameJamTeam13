@@ -1183,7 +1183,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -305.16, y: 432}
+  m_AnchoredPosition: {x: -255.16, y: 432}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &223633230
@@ -2146,7 +2146,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -451.12003, y: 432}
+  m_AnchoredPosition: {x: -401.12003, y: 432}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &465321843
@@ -3495,7 +3495,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -597.08, y: 432}
+  m_AnchoredPosition: {x: -547.08, y: 432}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &990690995
@@ -4271,7 +4271,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -743.0395, y: 432}
+  m_AnchoredPosition: {x: -693.0395, y: 432}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1388987945
@@ -5053,7 +5053,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -889, y: 432}
+  m_AnchoredPosition: {x: -839, y: 432}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1535141224
@@ -5240,9 +5240,9 @@ MonoBehaviour:
   enableSpawnStats: 0
   spawnStatsLogIntervalSeconds: 10
   enableGoodItemClosePlacement: 1
-  goodItemCloseMarginX: 0.15
-  laneSpawnIntervalMinSeconds: 0.15
-  laneSpawnIntervalMaxSeconds: 0.85
+  goodItemCloseMarginX: 0.05
+  laneSpawnIntervalMinSeconds: 0.08
+  laneSpawnIntervalMaxSeconds: 0.35
   hugeObstacleSpawnCount: 1
   hugeObstacleSpawnY: 0.00000001929803
   bgmNormalSpawnElapsedSeconds: 120
@@ -5267,9 +5267,9 @@ MonoBehaviour:
   spawnAmountMultiplier: 1
   badItemWeightMultiplier: 1
   patternsEnabled: 1
-  firstPatternDelaySeconds: 8
-  patternIntervalMinSeconds: 6
-  patternIntervalMaxSeconds: 14
+  firstPatternDelaySeconds: 0.3
+  patternIntervalMinSeconds: 1.5
+  patternIntervalMaxSeconds: 3.5
   patternClearanceSeconds: 0.8
   spawnFeverPatternOnFeverStart: 1
   patterns:
@@ -7633,7 +7633,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 86, y: 483.3}
+  m_AnchoredPosition: {x: 226, y: 483.3}
   m_SizeDelta: {x: 1259, y: 459}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2126195359

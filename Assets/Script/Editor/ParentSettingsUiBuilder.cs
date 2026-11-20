@@ -32,17 +32,19 @@ public static class ParentSettingsUiBuilder
     private const string PanelName = "SettingsPanel";
 
     // ── 初期レイアウト（前回指定の「大きめ」レイアウト）──
-    private static readonly Vector2 PanelSize = new Vector2(900f, 620f);
+    private static readonly Vector2 PanelSize = new Vector2(900f, 760f);
     private static readonly Color PanelColor = new Color(0.07f, 0.07f, 0.10f, 0.90f);
     private static readonly Vector2 LabelSize = new Vector2(220f, 56f);
     private static readonly Vector2 SliderSize = new Vector2(440f, 36f);
     private static readonly Vector2 ButtonSize = new Vector2(260f, 64f);
     private const float LabelX = -300f;
     private const float SliderX = 60f;
-    private const float TitleY = 240f;
-    private const float BgmY = 110f;
-    private const float SeY = 10f;
-    private const float ButtonY = -220f;
+    private const float TitleY = 300f;
+    private const float BgmY = 170f;
+    private const float SeY = 82f;
+    private const float ChildBgmY = -6f;
+    private const float ChildSeY = -94f;
+    private const float ButtonY = -300f;
     private const float ButtonX = 180f;
 
     [MenuItem(MenuPath)]
@@ -165,6 +167,15 @@ public static class ParentSettingsUiBuilder
         TextMeshProUGUI seLabel = CreateLabel("SeLabel", rootRt, fontSource, "SE", 36f);
         Place((RectTransform)seLabel.transform, new Vector2(LabelX, SeY), LabelSize);
         Slider seSlider = CreateSlider("SeSlider", rootRt, new Vector2(SliderX, SeY));
+
+        // Child game audio rows
+        TextMeshProUGUI childBgmLabel = CreateLabel("ChildBgmLabel", rootRt, fontSource, "Child BGM", 36f);
+        Place((RectTransform)childBgmLabel.transform, new Vector2(LabelX, ChildBgmY), LabelSize);
+        Slider childBgmSlider = CreateSlider("ChildBgmSlider", rootRt, new Vector2(SliderX, ChildBgmY));
+
+        TextMeshProUGUI childSeLabel = CreateLabel("ChildSeLabel", rootRt, fontSource, "Child SE", 36f);
+        Place((RectTransform)childSeLabel.transform, new Vector2(LabelX, ChildSeY), LabelSize);
+        Slider childSeSlider = CreateSlider("ChildSeSlider", rootRt, new Vector2(SliderX, ChildSeY));
 
         // 下段（Reset 左／Close 右。パネル内に収まる余白を確保）
         CreateButton("ResetButton", rootRt, fontSource, "リセット", new Vector2(-ButtonX, ButtonY));
@@ -300,6 +311,10 @@ public static class ParentSettingsUiBuilder
         SetRef(so, "bgmSlider", FindComponentInChild<Slider>(root, "BgmSlider"));
         SetRef(so, "seLabel", FindComponentInChild<TextMeshProUGUI>(root, "SeLabel"));
         SetRef(so, "seSlider", FindComponentInChild<Slider>(root, "SeSlider"));
+        SetRef(so, "childBgmLabel", FindComponentInChild<TextMeshProUGUI>(root, "ChildBgmLabel"));
+        SetRef(so, "childBgmSlider", FindComponentInChild<Slider>(root, "ChildBgmSlider"));
+        SetRef(so, "childSeLabel", FindComponentInChild<TextMeshProUGUI>(root, "ChildSeLabel"));
+        SetRef(so, "childSeSlider", FindComponentInChild<Slider>(root, "ChildSeSlider"));
         SetRef(so, "resetButton", FindComponentInChild<Button>(root, "ResetButton"));
         SetRef(so, "closeButton", FindComponentInChild<Button>(root, "CloseButton"));
 

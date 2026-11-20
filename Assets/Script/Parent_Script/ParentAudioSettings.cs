@@ -21,6 +21,8 @@ public class ParentAudioSettings : MonoBehaviour
 {
     private const string KeyBgm = "ParentBgmVolume";
     private const string KeySe  = "ParentSeVolume";
+    private const string KeyChildBgm = "ParentChildBgmVolume";
+    private const string KeyChildSe = "ParentChildSeVolume";
 
     /// <summary>未保存時・Reset時の既定値（子機の既定に合わせる）。</summary>
     public const float DefaultVolume = 1f;
@@ -34,9 +36,13 @@ public class ParentAudioSettings : MonoBehaviour
 
     public static float BgmVolume => Instance != null ? Instance._bgm : DefaultVolume;
     public static float SeVolume  => Instance != null ? Instance._se  : DefaultVolume;
+    public static float ChildBgmVolume => Instance != null ? Instance._childBgm : DefaultVolume;
+    public static float ChildSeVolume => Instance != null ? Instance._childSe : DefaultVolume;
 
     private float _bgm = DefaultVolume;
     private float _se  = DefaultVolume;
+    private float _childBgm = DefaultVolume;
+    private float _childSe = DefaultVolume;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Bootstrap()
@@ -61,6 +67,8 @@ public class ParentAudioSettings : MonoBehaviour
         // 保存値を有効範囲（0〜1）に収めて読み出す。
         _bgm = Mathf.Clamp01(PlayerPrefs.GetFloat(KeyBgm, DefaultVolume));
         _se  = Mathf.Clamp01(PlayerPrefs.GetFloat(KeySe,  DefaultVolume));
+        _childBgm = Mathf.Clamp01(PlayerPrefs.GetFloat(KeyChildBgm, DefaultVolume));
+        _childSe = Mathf.Clamp01(PlayerPrefs.GetFloat(KeyChildSe, DefaultVolume));
 
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
@@ -94,13 +102,33 @@ public class ParentAudioSettings : MonoBehaviour
         ApplyAll();
     }
 
+    public void SetChildBgmVolume(float value)
+    {
+        _childBgm = Mathf.Clamp01(value);
+        PlayerPrefs.SetFloat(KeyChildBgm, _childBgm);
+        PlayerPrefs.Save();
+        ApplyAll();
+    }
+
+    public void SetChildSeVolume(float value)
+    {
+        _childSe = Mathf.Clamp01(value);
+        PlayerPrefs.SetFloat(KeyChildSe, _childSe);
+        PlayerPrefs.Save();
+        ApplyAll();
+    }
+
     /// <summary>既定値（子機と同じ 1.0）へ戻し、その結果も保存する。</summary>
     public void ResetToDefaults()
     {
         _bgm = DefaultVolume;
         _se  = DefaultVolume;
+        _childBgm = DefaultVolume;
+        _childSe = DefaultVolume;
         PlayerPrefs.SetFloat(KeyBgm, _bgm);
         PlayerPrefs.SetFloat(KeySe,  _se);
+        PlayerPrefs.SetFloat(KeyChildBgm, _childBgm);
+        PlayerPrefs.SetFloat(KeyChildSe, _childSe);
         PlayerPrefs.Save();
         ApplyAll();
     }
