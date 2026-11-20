@@ -1101,7 +1101,7 @@ MonoBehaviour:
   - {fileID: 1433361295}
   - {fileID: 1030482005}
   selectionArrow: {fileID: 1684528022}
-  arrowOffsetX: 4
+  arrowOffsetX: 34
   arrowOffsetY: 0
   cancelButtons:
   - {fileID: 228826732}
@@ -1756,7 +1756,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: conecting...
+  m_text: Cancel
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
   m_sharedMaterial: {fileID: 3271106341989512478, guid: 2c97b27c7d28648afbd4d12516f2d37c, type: 2}
@@ -4115,6 +4115,7 @@ MonoBehaviour:
   connectButtonStartPosition: {x: 489.3, y: -281.7}
   cancelUiObject: {fileID: 716815019}
   cancelButton: {fileID: 1707610820}
+  cancelButtonLabel: {fileID: 517307910}
   soloStartButton: {fileID: 1523134378}
   connectLabel: connect
   connectingLabel: connecting

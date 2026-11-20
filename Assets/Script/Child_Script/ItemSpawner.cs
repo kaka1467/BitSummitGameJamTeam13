@@ -680,7 +680,9 @@ public partial class ItemSpawner : MonoBehaviour
         float interval = (max <= min) ? min : UnityEngine.Random.Range(min, max);
 
         // 出現量の倍率と休憩区間の薄さで割る（量が多いほど間隔が短くなる）
-        return interval / GetSpawnDensityFactor(Time.unscaledTime);
+        float densityFactor = GetSpawnDensityFactor(Time.unscaledTime);
+        float speedFactor = Mathf.Max(1f, GameManager.CurrentScoreSpeedMultiplier);
+        return interval / Mathf.Max(0.1f, densityFactor * speedFactor);
     }
 
     /// <summary>
@@ -739,11 +741,13 @@ public partial class ItemSpawner : MonoBehaviour
             if (now < _laneNextSpawnTime[lane]) continue;
 
             // このレーンに1個だけ試す（失敗しても別レーンへ移さない・蓄積しない）
-            TrySpawnNormalItemInLane(lane);
+            bool placed = TrySpawnNormalItemInLane(lane);
 
             // 成功でも失敗でも「今回の現在時刻＋抽選値」で次回を決める。
             // 0秒を引いても、このレーンの次回試行は次フレーム以降になる（whileで取り戻さない）。
             _laneNextSpawnTime[lane] = now + DrawLaneSpawnInterval();
+            if (placed)
+                break;
         }
 
         _laneRoundRobinStart = (start + 1) % laneCount;

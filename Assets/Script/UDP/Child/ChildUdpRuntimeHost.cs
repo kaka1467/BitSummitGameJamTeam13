@@ -575,8 +575,17 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     public void RequestConnect() => _link?.BeginConnecting();
     public void CancelConnect()
     {
-        _link?.Disconnect();
-        _notifications?.SetMotherPeakActive(false);
+        ResetForNewSession();
+        if (_discoveryCoroutine != null)
+        {
+            StopCoroutine(_discoveryCoroutine);
+            _discoveryCoroutine = null;
+        }
+        if (_heartbeatCoroutine != null)
+        {
+            StopCoroutine(_heartbeatCoroutine);
+            _heartbeatCoroutine = null;
+        }
     }
 
     private void LoadGameScene()

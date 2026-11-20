@@ -354,13 +354,10 @@ public class MenuNavigationController : MonoBehaviour
                 Vector3 buttonLocalCenter = arrowParent.InverseTransformPoint(buttonWorldCenter);
                 Vector2 fallbackBase = new Vector2(buttonLocalCenter.x, buttonLocalCenter.y);
 
-                Vector2 targetAnchoredPos = TitleMenuHighlight.ComputeTextAlignedArrowPosition(
-                    buttonRect,
-                    arrowRect,
-                    arrowParent,
-                    fallbackBase,
-                    new Vector2(offsetX, offsetY),
-                    textLeftGap);
+                // ChildTitle is intentionally right-arrow-only. Scene serialization cannot move it back to the left.
+                Vector2 targetAnchoredPos = TitleMenuHighlight.ComputeTextAlignedRightArrowPosition(
+                    buttonRect, arrowRect, arrowParent, fallbackBase,
+                    new Vector2(offsetX, offsetY), textLeftGap);
 
                 arrowRect.anchoredPosition = targetAnchoredPos;
             }
@@ -436,6 +433,28 @@ public class MenuNavigationController : MonoBehaviour
         currentIndex = 0;
         SyncEventSystemSelection();
         UpdateArrowPosition();
+    }
+
+    public void EnsureSelectableButton(Button button)
+    {
+        if (button == null) return;
+        if (!selectableButtons.Contains(button))
+            selectableButtons.Add(button);
+
+        int index = selectableButtons.IndexOf(button);
+        if (index >= 0)
+        {
+            currentIndex = index;
+            SyncEventSystemSelection();
+            UpdateArrowPosition();
+        }
+    }
+
+    public void RemoveSelectableButton(Button button)
+    {
+        if (button == null) return;
+        if (selectableButtons.Remove(button))
+            EnsureValidSelection();
     }
 
     // 現在選択されているボタンを取得

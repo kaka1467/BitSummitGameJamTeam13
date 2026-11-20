@@ -39,6 +39,7 @@ public class TitleMenuHighlight : MonoBehaviour
     [SerializeField] private Vector2 arrowOffset = new Vector2(-60f, 0f);
     [Tooltip("ONなら、ボタン固定幅ではなくボタン内 TextMeshProUGUI の実際の文字描画左端から textLeftGap だけ左に矢印を揃える。")]
     [SerializeField] private bool alignArrowToTextLeftEdge = true;
+    [SerializeField] private bool placeArrowOnRightEdge = false;
     [Tooltip("alignArrowToTextLeftEdge が ON のとき、文字の左端から矢印中心までの余白（px）。")]
     [SerializeField] private float textLeftGap = 36f;
 
@@ -84,6 +85,11 @@ public class TitleMenuHighlight : MonoBehaviour
     /// </summary>
     /// <summary>追従している矢印（設定パネル用の矢印を同じ見た目で作るために参照する。読み取り専用）。</summary>
     public RectTransform ArrowIndicator => arrowIndicator;
+
+    public void SetArrowOnRightEdge(bool rightSide)
+    {
+        placeArrowOnRightEdge = rightSide;
+    }
 
     public void SetIndicatorVisible(bool visible)
     {
@@ -254,7 +260,9 @@ public class TitleMenuHighlight : MonoBehaviour
         if (arrowParent == null)
             return basePos + arrowOffset;
 
-        return ComputeTextAlignedArrowPosition(target, arrowIndicator, arrowParent, basePos, arrowOffset, textLeftGap);
+        return placeArrowOnRightEdge
+            ? ComputeTextAlignedRightArrowPosition(target, arrowIndicator, arrowParent, basePos, arrowOffset, textLeftGap)
+            : ComputeTextAlignedArrowPosition(target, arrowIndicator, arrowParent, basePos, arrowOffset, textLeftGap);
     }
 
     /// <summary>
@@ -309,6 +317,73 @@ public class TitleMenuHighlight : MonoBehaviour
         Vector3 buttonLeftWorld = target.TransformPoint(new Vector3(target.rect.xMin, target.rect.center.y, 0f));
         Vector3 buttonLeftLocal = arrowParent.InverseTransformPoint(buttonLeftWorld);
         return new Vector2(buttonLeftLocal.x - effectiveGap, buttonLeftLocal.y + offset.y);
+    }
+
+    /// <summary>
+    /// 右側矢印用：TMP の実際の文字描画右端、またはボタン矩形右端を基準に、
+    /// 矢印幅と余白を加えて右側へ配置する。
+    /// </summary>
+    public static Vector2 ComputeTextAlignedRightArrowPosition(
+        RectTransform target,
+        RectTransform arrowRect,
+        RectTransform arrowParent,
+        Vector2 fallbackBasePos,
+        Vector2 offset,
+        float gapFromTextRight)
+    {
+        if (target == null || arrowRect == null || arrowParent == null)
+            return fallbackBasePos + offset;
+
+        float arrowHalfWidth = Mathf.Abs(arrowRect.rect.width * arrowRect.localScale.x) * 0.5f;
+        float effectiveGap = Mathf.Max(gapFromTextRight + 28f, 28f);
+
+        Vector3 buttonRightWorld = target.TransformPoint(new Vector3(target.rect.xMax, target.rect.center.y, 0f));
+        Vector3 buttonRightLocal = arrowParent.InverseTransformPoint(buttonRightWorld);
+        return new Vector2(buttonRightLocal.x + arrowHalfWidth + effectiveGap + offset.x, buttonRightLocal.y + offset.y);
+    }
+
+    private static bool TryGetVisibleTextRightBounds(TMP_Text tmp, out float maxX, out float centerY)
+    {
+        maxX = 0f;
+        centerY = 0f;
+        if (tmp == null) return false;
+
+        TMP_TextInfo textInfo = tmp.textInfo;
+        if (textInfo != null && textInfo.characterCount > 0)
+        {
+            float foundMaxX = float.NegativeInfinity;
+            float foundMinY = float.PositiveInfinity;
+            float foundMaxY = float.NegativeInfinity;
+            bool hasVisible = false;
+
+            int count = Mathf.Min(textInfo.characterCount, textInfo.characterInfo != null ? textInfo.characterInfo.Length : 0);
+            for (int i = 0; i < count; i++)
+            {
+                TMP_CharacterInfo charInfo = textInfo.characterInfo[i];
+                if (!charInfo.isVisible) continue;
+                hasVisible = true;
+                if (charInfo.topRight.x > foundMaxX) foundMaxX = charInfo.topRight.x;
+                if (charInfo.bottomLeft.y < foundMinY) foundMinY = charInfo.bottomLeft.y;
+                if (charInfo.topRight.y > foundMaxY) foundMaxY = charInfo.topRight.y;
+            }
+
+            if (hasVisible)
+            {
+                maxX = foundMaxX;
+                centerY = (foundMinY + foundMaxY) * 0.5f;
+                return true;
+            }
+        }
+
+        Bounds textBounds = tmp.textBounds;
+        if (textBounds.size.x > 0.01f)
+        {
+            maxX = textBounds.max.x;
+            centerY = textBounds.center.y;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryGetVisibleTextLocalBounds(TMP_Text tmp, out float minX, out float centerY)

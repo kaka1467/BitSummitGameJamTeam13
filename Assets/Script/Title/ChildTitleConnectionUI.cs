@@ -32,6 +32,8 @@ public class ChildTitleConnectionUI : MonoBehaviour
 
     [Tooltip("Cancelボタン（cancelUiObject が未設定のときの表示切替に使う）。")] [SerializeField]
     private Button cancelButton;
+    [Tooltip("Cancelボタンのラベル（シーン上のTMP）。実行時に常に 'Cancel'へ揃える。")] [SerializeField]
+    private TextMeshProUGUI cancelButtonLabel;
 
     [Header("子機だけで開始（親機なしの単独プレイ）")]
     [Tooltip("親機に接続せず、子機だけでゲームを始めるボタン。押すと START_GAME は送らずにそのままゲームへ進む。" +
@@ -264,6 +266,46 @@ public class ChildTitleConnectionUI : MonoBehaviour
         if (cancelButton != null)
             cancelButton.interactable = isConnectingOrConnected && !_isWaitingForGameStart;
 
+        if (_menuNavigation == null)
+            _menuNavigation = FindFirstObjectByType<MenuNavigationController>();
+        if (_menuNavigation != null)
+        {
+            if (isConnectingOrConnected && cancelButton != null)
+                _menuNavigation.EnsureSelectableButton(cancelButton);
+            else
+                _menuNavigation.RemoveSelectableButton(cancelButton);
+        }
+
+        if (cancelButton != null)
+        {
+            if (cancelButton.targetGraphic == null)
+            {
+                Graphic graphic = cancelButton.GetComponent<Graphic>();
+                if (graphic != null) cancelButton.targetGraphic = graphic;
+            }
+
+            cancelButton.gameObject.SetActive(isConnectingOrConnected);
+            foreach (Graphic graphic in cancelButton.GetComponentsInChildren<Graphic>(true))
+            {
+                if (graphic is TextMeshProUGUI) graphic.raycastTarget = false;
+            }
+        }
+
+        if (cancelButtonLabel != null)
+        {
+            cancelButtonLabel.text = "Cancel";
+            cancelButtonLabel.ForceMeshUpdate();
+        }
+        else if (cancelButton != null)
+        {
+            TextMeshProUGUI foundLabel = cancelButton.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (foundLabel != null)
+            {
+                foundLabel.text = "Cancel";
+                foundLabel.ForceMeshUpdate();
+            }
+        }
+
         // Connecting / Connected のときは SOLO START, CREDIT, SETTING をすべて非表示にし、
         // Disconnected に戻ったときだけ元のメニューボタン（CONNECT, SOLO START, CREDIT, SETTING）を再表示する。
         SetActiveForButton(creditsButton, !isConnectingOrConnected);
@@ -300,6 +342,7 @@ public class ChildTitleConnectionUI : MonoBehaviour
         }
         if (_menuHighlight != null)
         {
+            _menuHighlight.SetArrowOnRightEdge(true);
             _menuHighlight.SetSelectedSelectable(connectButton, snap: true);
         }
     }
@@ -418,9 +461,14 @@ public class ChildTitleConnectionUI : MonoBehaviour
     public void OnCancelClicked()
     {
         _isWaitingForGameStart = false;
-        if (!EnsureHost()) return;
-        _host.CancelConnect();
-        ApplyConnectionState(_host.ConnectionState, force: true);
+        if (EnsureHost())
+        {
+            _host.ResetForNewSession();
+            ApplyConnectionState(_host.ConnectionState, force: true);
+            return;
+        }
+
+        ApplyConnectionState(ChildConnectionLink.LinkState.Disconnected, force: true);
     }
 
     public void OnSoloStartClicked()
