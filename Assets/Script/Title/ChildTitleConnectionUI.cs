@@ -12,16 +12,6 @@ using UnityEngine.UI;
 /// </summary>
 public class ChildTitleConnectionUI : MonoBehaviour
 {
-    private sealed class CancelClickForwarder : MonoBehaviour, IPointerClickHandler
-    {
-        public ChildTitleConnectionUI Owner;
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (Owner == null) return;
-            Owner.HandleCancelPointerClick();
-        }
-    }
 
     [Header("接続UI")] [Tooltip("接続／STARTボタン（Connect TMP の親）。")] [SerializeField]
     private Button connectButton;
@@ -506,9 +496,13 @@ public class ChildTitleConnectionUI : MonoBehaviour
             Graphic parentGraphic = cancelUiObject.GetComponent<Graphic>();
             if (parentGraphic != null) parentGraphic.raycastTarget = true;
 
-            CancelClickForwarder forwarder = cancelUiObject.GetComponent<CancelClickForwarder>();
-            if (forwarder == null) forwarder = cancelUiObject.AddComponent<CancelClickForwarder>();
-            forwarder.Owner = this;
+            EventTrigger trigger = cancelUiObject.GetComponent<EventTrigger>();
+            if (trigger == null) trigger = cancelUiObject.AddComponent<EventTrigger>();
+            if (trigger.triggers == null) trigger.triggers = new List<EventTrigger.Entry>();
+            trigger.triggers.RemoveAll(e => e != null && e.eventID == EventTriggerType.PointerClick);
+            EventTrigger.Entry clickEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerClick };
+            clickEntry.callback.AddListener(_ => HandleCancelPointerClick());
+            trigger.triggers.Add(clickEntry);
         }
     }
 
