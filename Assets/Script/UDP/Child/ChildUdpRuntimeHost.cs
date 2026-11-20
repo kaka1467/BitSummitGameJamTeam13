@@ -100,7 +100,7 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     private const string PrefKeyTimeUpRankPrefix = "TimeUpRank_";
 
     private const float RankSyncResendInterval = 0.5f;
-    private const int RankSyncMaxAttempts = 6;
+    private const int RankSyncMaxAttempts = 20;
 
     private struct LogEntry
     {
@@ -1049,6 +1049,12 @@ public sealed class ChildUdpRuntimeHost : MonoBehaviour
     {
         SendState("LOUD_ITEM");
         Debug.Log("[ChildUdpRuntimeHost] Sent LOUD_ITEM packet to Parent.");
+    }
+
+    public void SendMinusItem()
+    {
+        SendState("MINUS_ITEM");
+        if (ShowDebug) Debug.Log("[ChildUdpRuntimeHost] Sent MINUS_ITEM packet to Parent.");
     }
 
     public void SendGameAudioSe(string playId, int seq, int soundId, float volume)

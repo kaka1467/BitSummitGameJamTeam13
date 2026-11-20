@@ -444,6 +444,7 @@ public class MotherSuspicionSystem : MonoBehaviour
         ParentNotificationHub hub = host.Notifications;
         _loudItemHub = hub;
         _loudItemHub.LoudItemReceived += HandleLoudItemReceived;
+        _loudItemHub.MinusItemReceived += HandleMinusItemReceived;
         _loudItemSubscribed = true;
         _loudItemSubscriber = this;
 
@@ -461,6 +462,7 @@ public class MotherSuspicionSystem : MonoBehaviour
             if (_loudItemHub != null)
             {
                 _loudItemHub.LoudItemReceived -= HandleLoudItemReceived;
+                _loudItemHub.MinusItemReceived -= HandleMinusItemReceived;
             }
 
             _loudItemSubscribed = false;
@@ -495,6 +497,33 @@ public class MotherSuspicionSystem : MonoBehaviour
     {
         if (!isActiveAndEnabled) return;   // 無効化中は反応しない（購読解除済みだが念のため）
         OnLoudItemTriggered();
+    }
+
+    private void HandleMinusItemReceived()
+    {
+        if (!isActiveAndEnabled) return;
+        OnMinusItemTriggered();
+    }
+
+    /// <summary>
+    /// 子機のマイナスポイントアイテム（時計）取得時：片付け演出中なら母親がこちらを覗いてくる。
+    /// </summary>
+    public void OnMinusItemTriggered()
+    {
+        if (isCaught || _hasPermanentGameOver) return;
+
+        var autoStart = ParentGameTimeManager.EvaluateAutoStart();
+        if (autoStart == ParentGameTimeManager.AutoStartDecision.RejectPlayFinished ||
+            autoStart == ParentGameTimeManager.AutoStartDecision.RejectUnavailable)
+        {
+            return;
+        }
+
+        if (motherChoreController != null && motherChoreController.IsChoreActive)
+        {
+            Debug.Log("[PD] MINUS_ITEM 受信 — 片付け演出中のため強制振り向き（覗き）を要求します");
+            motherChoreController.RequestForcedLookFromMinusItem();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1003,65 +1032,19 @@ public class MotherSuspicionSystem : MonoBehaviour
             if (isCaught || _hasPermanentGameOver) return;
         }
 
-        Debug.Log($"[PD] Loud item → rush-in request — adding {loudItemGaugeAmount} gauge stage(s) (once)");
+        Debug.Log("[PD] Loud item (Siren) — 即死捕獲を実行します");
 
-        // 【音】6キーで開始した片付け演出中は、RushIn専用の効果音を鳴らさない
-        //   （他の音＝足音・ドア音・MAX到達音・心拍・Jumpscareは止めない。AudioSourceのStopや全体ミュートはしない）。
-        //   ※ 自動発生の片付けは今回の変更対象ではないため従来どおり鳴らす。
-        bool choreActive = motherChoreController != null && motherChoreController.IsChoreActive;
-        bool manualChoreActive = motherChoreController != null && motherChoreController.IsManualChoreActive;
-        bool choreReturnTrip = approachController != null && approachController.IsReturnTripActive;
+        warningSystem?.PlayRushIn();
 
-        if (manualChoreActive)
+        if (motherGauge != null && motherGauge.currentGauge < motherGauge.maxGauge)
         {
-            Debug.Log("[PD] 6キーで開始した片付け演出中のため、RushIn専用の効果音は再生しません" +
-                      "（ゲージ加算・捕獲判定・速度倍率は通常どおり）");
-        }
-        else
-        {
-            warningSystem?.PlayRushIn();
+            motherGauge.AddGauge(motherGauge.maxGauge - motherGauge.currentGauge);
         }
 
-        if (motherGauge != null)
-        {
-            // ゲージ加算は1回だけ（中断処理側では加算しない）。
-            motherGauge.AddGauge(loudItemGaugeAmount);
+        // サイレンは寝たふり状態・片付け中にかかわらず即死（無敵モード／チュートリアル時は OnPlayerCaught 内で抑止）
+        if (OnPlayerCaught()) return;
 
-            if (motherGauge.currentGauge >= motherGauge.maxGauge)
-            {
-                // 捕獲が成立した場合だけ突入演出を打ち切る（以降はゲームオーバー処理へ委ねる）。
-                // 無敵で抑止された場合は捕獲済みにせず、通常どおり突入（ラッシュイン）演出を続行する。
-                if (OnPlayerCaught()) return;
-                Debug.Log("[PD] 無敵で捕獲を抑止したため、突入（ラッシュイン）演出を続行します");
-            }
-        }
-
-        // 【片付け演出中（M-F02 / M-Q03）】片付け専用ルートは差し替えない（通常のドア突入ルートへ切り替えない）。
-        //   移動速度を「片付けの通常速度 × 倍率」にしつつ、片付け演出限定の強制振り向き（Chore_Peek）を要求する。
-        if (choreActive)
-        {
-            motherChoreController.RequestForcedLookFromLoudItem();
-
-            if (choreReturnTrip)
-            {
-                // 片付けの帰路中は倍率を適用しない（帰路は通常の片付け速度のまま）。
-                Debug.Log("[PD] 片付けの帰路中のRushIn要求 — 速度倍率は適用しません（強制振り向きのみ予約／ルートは片付け専用のまま）");
-            }
-            else
-            {
-                Debug.Log($"[PD] 片付け演出中のRushIn要求 — ルート=片付け専用（差し替えなし・強制振り向き要求）/ 片付け中={choreActive} / " +
-                          $"手動(6キー)={manualChoreActive} / 帰路中={choreReturnTrip} / " +
-                          $"基準速度={_approachSpeed:F2} / 倍率={choreRushInSpeedMultiplier:F2}");
-                ApplyChoreRushInSpeed(choreRushInSpeedMultiplier);
-            }
-
-            return;   // 通常RushIn（loudItemRushInMoveSpeed・DoorPeekルート）は開始しない
-        }
-
-        // 新しいRushInを1回だけ開始する（isWarningActiveは上記の中断でfalseになっており、
-        // StartLoudItemRushInSequence 側でも二重起動をガードしている）。
-        if (warningSystem != null)
-            warningSystem.StartLoudItemRushInSequence();
+        Debug.Log("[PD] 無敵モード等によりサイレン即死が抑止されました");
     }
 
     /// <summary>

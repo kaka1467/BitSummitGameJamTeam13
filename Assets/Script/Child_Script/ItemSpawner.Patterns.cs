@@ -43,7 +43,7 @@ public partial class ItemSpawner
     [Tooltip("配置パターンの一覧。")]
     [SerializeField] private List<SpawnPattern> patterns = ItemSpawnPatternDefaults.Create();
 
-    private const int PatternKindCount = 5;
+    private const int PatternKindCount = 6;
 
     private List<SpawnPattern> _runtimePatterns;
     private float _patternVisibleUntil;
@@ -55,6 +55,7 @@ public partial class ItemSpawner
     private bool _patternWasFever;
     private int _lastPatternIndex = -1;
     private int _debugPatternIndex = -1;
+    private float _nextSirenPatternAllowedTime;
     private readonly GameObject[] _patternPrefabs = new GameObject[PatternKindCount];
 
     public bool IsPatternVisible => Time.unscaledTime < _patternVisibleUntil;
@@ -101,6 +102,7 @@ public partial class ItemSpawner
         _restDensity = 1f;
         _patternWasFever = IsFeverActiveForSpawn();
         _lastPatternIndex = -1;
+        _nextSirenPatternAllowedTime = 0f;
     }
 
     private float GetSpawnDensityFactor(float now)
@@ -250,6 +252,17 @@ public partial class ItemSpawner
         return fallback;
     }
 
+    private static bool PatternContainsSiren(SpawnPattern p)
+    {
+        if (p == null || p.slots == null) return false;
+        for (int i = 0; i < p.slots.Count; i++)
+        {
+            if (p.slots[i] != null && p.slots[i].kind == PatternItemKind.Siren)
+                return true;
+        }
+        return false;
+    }
+
     private float GetPatternSelectionWeight(SpawnPattern p, bool fever, float elapsed)
     {
         if (p == null || !p.enabled || p.weight <= 0f) return 0f;
@@ -257,8 +270,15 @@ public partial class ItemSpawner
         if (elapsed < p.minElapsedSeconds) return 0f;
         if (!IsPatternResolvable(p)) return 0f;
 
+        bool hasSiren = PatternContainsSiren(p);
+        if (hasSiren)
+        {
+            if (fever || !IsBgmNormalSpawnAllowed()) return 0f;
+            if (Time.unscaledTime < _nextSirenPatternAllowedTime) return 0f;
+        }
+
         float weight = p.weight;
-        if (!fever && p.restSeconds <= 0f)
+        if (!fever && p.restSeconds <= 0f && !hasSiren)
         {
             if (elapsed >= 60f && p.minElapsedSeconds >= 55f)
                 weight *= 1.6f;
@@ -308,6 +328,11 @@ public partial class ItemSpawner
             _restUntil = blockUntil + p.restSeconds;
             _restDensity = Mathf.Clamp(p.restDensity, 0.05f, 1f);
             endTime = _restUntil;
+        }
+
+        if (PatternContainsSiren(p))
+        {
+            _nextSirenPatternAllowedTime = now + Random.Range(14f, 20f);
         }
 
         if (_laneNextSpawnTime != null)
@@ -476,6 +501,10 @@ public partial class ItemSpawner
                     if (_patternPrefabs[(int)PatternItemKind.Boost] == null)
                         _patternPrefabs[(int)PatternItemKind.Boost] = prefab;
                     break;
+                case ItemType.BGM:
+                    if (_patternPrefabs[(int)PatternItemKind.Siren] == null)
+                        _patternPrefabs[(int)PatternItemKind.Siren] = prefab;
+                    break;
             }
         }
     }
@@ -496,6 +525,7 @@ public partial class ItemSpawner
         if (_patternVisibleUntil > 0f) _patternVisibleUntil += pausedSeconds;
         if (_restFrom > 0f) _restFrom += pausedSeconds;
         if (_restUntil > 0f) _restUntil += pausedSeconds;
+        if (_nextSirenPatternAllowedTime > 0f) _nextSirenPatternAllowedTime += pausedSeconds;
 
         for (int i = 0; i < recentSpawnRecords.Count; i++)
         {

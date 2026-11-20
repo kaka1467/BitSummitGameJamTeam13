@@ -66,6 +66,16 @@ public class Item : MonoBehaviour
 
                 // 時計の減点（scoreAmount は Inspector で調整可能。負の値で減点）
                 if (gm != null) gm.AddScore(scoreAmount);
+
+                // マイナスポイント取得を親機へ通知（片付け演出中の覗きトリガー）
+                {
+                    ChildUdpRuntimeHost minusUdpHost = ChildUdpRuntimeHost.Running;
+                    if (minusUdpHost != null && minusUdpHost.IsRunning &&
+                        minusUdpHost.ConnectionState == ChildConnectionLink.LinkState.Connected)
+                    {
+                        minusUdpHost.SendMinusItem();
+                    }
+                }
                 break;
 
             case ItemType.Boost:
@@ -186,6 +196,13 @@ public class Item : MonoBehaviour
                 {
                     Debug.Log($"Item.ApplyEffect: Calling PlayBGM for clip '{bgmClip.name}' (loop={loopBgm}, vol={vol})");
                     AudioManager.Instance.PlayBGM(bgmClip, loopBgm, vol);
+
+                    // サイレンは即死：親機と未接続（ソロ）時は子機側で即座にゲームオーバーへ遷移する
+                    if (gm != null && !gm.IsTutorialMode)
+                    {
+                        Debug.Log("[Item] Siren (BGM) picked up in solo mode — instant GameOver.");
+                        gm.TriggerResult(GameManager.ResultType.GameOver);
+                    }
                 }
                 break;
         }

@@ -2097,8 +2097,15 @@ public partial class ItemSpawner : MonoBehaviour
     /// </summary>
     private bool IsBgmNormalSpawnAllowed()
     {
+        if (!GameDifficulty.ChildAllowSirenItem) return false;
+
         GameManager gm = GameManager.instance;
-        if (gm == null || !gm.IsMainPlayActive) return false; // 本編が始まっていなければ許可しない
-        return gm.MainPlayElapsedSeconds >= bgmNormalSpawnElapsedSeconds;
+        if (gm == null || gm.IsTutorialMode) return false;
+
+        float elapsed = gm.IsMainPlayActive
+            ? gm.MainPlayElapsedSeconds
+            : Mathf.Max(0f, Time.unscaledTime - normalScheduleStartTime);
+        float halfTimeLimit = GameDifficulty.TimeLimitSeconds * 0.5f;
+        return elapsed >= halfTimeLimit;
     }
 }

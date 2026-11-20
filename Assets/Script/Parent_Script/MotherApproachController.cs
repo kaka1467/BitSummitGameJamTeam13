@@ -169,6 +169,27 @@ public class MotherApproachController : MonoBehaviour
     [SerializeField, Min(0f)]
     private float gardenPassByPauseSeconds = 1f;
 
+    [Tooltip("ONなら素通り時の立ち止まり秒数を毎回ランダムにゆらし、本覗きかフェイントかを見抜きにくくする。")]
+    [SerializeField]
+    private bool randomizePassByPause = true;
+
+    [Tooltip("素通り立ち止まり秒数の最小倍率（短いフェイント用）。")]
+    [SerializeField, Min(0f)]
+    private float passByPauseMinMultiplier = 0.6f;
+
+    [Tooltip("素通り立ち止まり秒数の最大倍率（本覗きと見分けにくい長めの溜めフェイント用）。")]
+    [SerializeField, Min(0f)]
+    private float passByPauseMaxMultiplier = 2.4f;
+
+    private float ResolvePassByPauseSeconds(float basePauseSeconds)
+    {
+        float baseVal = Mathf.Max(0f, basePauseSeconds);
+        if (baseVal <= 0f || !randomizePassByPause) return baseVal;
+        float minMult = Mathf.Min(passByPauseMinMultiplier, passByPauseMaxMultiplier);
+        float maxMult = Mathf.Max(passByPauseMinMultiplier, passByPauseMaxMultiplier);
+        return baseVal * UnityEngine.Random.Range(minMult, maxMult);
+    }
+
     // ── 片付け専用ルート（MotherChoreController から開始される） ──────────────
     //   既存の廊下ルート（hallwaypeak）と固定地点はそのまま使い、途中地点だけを
     //   この List<Transform> で追加指定する。既存の廊下／庭ルートと同じ
@@ -2595,7 +2616,7 @@ public class MotherApproachController : MonoBehaviour
         // 往路の残り → 最後の点で立ち止まり → Back Points → hallwayPassByPoint。
         // ※ doorPoint は通らない。Turn Back Point も使わない（それはPeek後の帰路専用）。
         yield return PassByTailRoutine(route, hallwayGoBackPoints,
-            hallwayPassByPoint, hallwayPassByPauseSeconds, "HallwayPassBy");
+            hallwayPassByPoint, ResolvePassByPauseSeconds(hallwayPassByPauseSeconds), "HallwayPassBy");
         if (_routeExecutionFailed) yield break;
 
         // 1) モデル非表示
@@ -2647,7 +2668,7 @@ public class MotherApproachController : MonoBehaviour
         // ※ gardenPeekPoint は通らない（Window Peek の覗き地点へ寄らない）。
         // ※ Turn Back Point も使わない（それはPeek後の帰路専用）。
         yield return PassByTailRoutine(route, gardenGoBackPoints,
-            gardenPassByPoint, gardenPassByPauseSeconds, "GardenPassBy");
+            gardenPassByPoint, ResolvePassByPauseSeconds(gardenPassByPauseSeconds), "GardenPassBy");
         if (_routeExecutionFailed) yield break;
 
         // 1) モデル非表示

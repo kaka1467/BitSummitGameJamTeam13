@@ -132,6 +132,10 @@ public sealed class ParentRankSyncCoordinator
         return SnapshotDecision.Applied;
     }
 
+    /// <summary>接続済み子機から正当な RANK_SYNC が届いた際、未確定の接続相手を補完確定する。</summary>
+    public void ConfirmPeerFromConnectedSnapshot(string sourceId)
+        => PeerGate.ConfirmPeerFromConnectedSnapshot(sourceId);
+
     /// <summary>
     /// 受信で確認できたことを記録する（検証済みフラグ）。
     ///  ・呼ぶのは Duplicate と新規適用のときだけ（Stale／Mismatch／受理拒否では呼ばない）。

@@ -379,6 +379,7 @@ public class MotherApproachWarning : MonoBehaviour
     private float     _gameplayElapsedSeconds;
     private bool      _gameplayClockActive;
     private int       _consecutiveAutomaticFeints;
+    private int       _consecutiveAutomaticPeeks;
 
     // 直前の自動抽選で確定したルート。連続制限の判定に使う。
     //  ・ActiveRoute はイベント終了時に None へ戻るため、直前ルートの記憶には使えない。
@@ -657,6 +658,7 @@ public class MotherApproachWarning : MonoBehaviour
         _gameplayElapsedSeconds = 0f;
         _gameplayClockActive = true;
         _consecutiveAutomaticFeints = 0;
+        _consecutiveAutomaticPeeks = 0;
         // 再プレイ・シーン再読み込みで連続制限の履歴を持ち越さない。
         _lastChosenRoute = RouteState.None;
         _sameRouteStreak = 0;
@@ -906,8 +908,9 @@ public class MotherApproachWarning : MonoBehaviour
             return false;
         }
 
-        // 連続Feint制限（既存）：2連続したら Peek を強制する。
+        // 連続制限：Feintが2連続したら Peek を強制し、本覗き（Peek）直後は必ず Feint を挟んで連続本覗きを防ぐ。
         bool forcePeek = _consecutiveAutomaticFeints >= 2;
+        bool forceFeint = !forcePeek && _consecutiveAutomaticPeeks >= 1 && _stageFeintPool.Count > 0;
 
         // 強制PeekでPeek候補が空なら開始しない（Feintへは切り替えない）。
         if (forcePeek && _stagePeekPool.Count == 0)
@@ -921,7 +924,7 @@ public class MotherApproachWarning : MonoBehaviour
         RouteState avoidTarget = avoid ? _lastChosenRoute : RouteState.None;
 
         bool ok = TryPickRoute(settings, _stagePeekPool, _stageFeintPool,
-                               forcePeek, avoid, avoidTarget,
+                               forcePeek, forceFeint, avoid, avoidTarget,
                                out RouteState route, out bool isFeint,
                                out RoutePickFailure failure, out bool limitedBySameRoute);
 
@@ -1824,6 +1827,9 @@ public class MotherApproachWarning : MonoBehaviour
             _consecutiveAutomaticFeints = isFeint
                 ? _consecutiveAutomaticFeints + 1
                 : 0;
+            _consecutiveAutomaticPeeks = isFeint
+                ? 0
+                : _consecutiveAutomaticPeeks + 1;
 
             // 連続制限用の履歴を更新する（実際に開始できた自動ルートのみ）。
             if (ActiveRoute == _lastChosenRoute)
@@ -1838,7 +1844,7 @@ public class MotherApproachWarning : MonoBehaviour
 
             Debug.Log($"[MotherApproachWarning] AUTOMATIC ROUTE COMMITTED | route={ActiveRoute} | " +
                       $"group={(isFeint ? "Feint" : "Peek")} | lastPickIsFeint={_lastPickIsFeint} | " +
-                      $"consecutiveFeints={_consecutiveAutomaticFeints} | " +
+                      $"consecutiveFeints={_consecutiveAutomaticFeints} | consecutivePeeks={_consecutiveAutomaticPeeks} | " +
                       $"sameRouteStreak={_sameRouteStreak}");
         }
         else if (!started)
@@ -1928,9 +1934,9 @@ public class MotherApproachWarning : MonoBehaviour
         {
             settings = new StageRouteSettings
             {
-                feintProbability = stage == RouteStage.Early ? 0.50f
-                                 : stage == RouteStage.Mid   ? 0.40f
-                                                             : 0.25f,
+                feintProbability = stage == RouteStage.Early ? 0.55f
+                                 : stage == RouteStage.Mid   ? 0.48f
+                                                             : 0.40f,
             };
             return true;
         }
@@ -2146,7 +2152,7 @@ public class MotherApproachWarning : MonoBehaviour
     /// </summary>
     private bool TryPickRoute(StageRouteSettings s,
                               List<RouteCandidate> peekPool, List<RouteCandidate> feintPool,
-                              bool forcePeek, bool avoidRoute, RouteState avoidTarget,
+                              bool forcePeek, bool forceFeint, bool avoidRoute, RouteState avoidTarget,
                               out RouteState route, out bool isFeint,
                               out RoutePickFailure failure, out bool limitedBySameRoute)
     {
@@ -2155,15 +2161,15 @@ public class MotherApproachWarning : MonoBehaviour
         failure = RoutePickFailure.None;
         limitedBySameRoute = false;
 
-        // グループを一度だけ選ぶ。強制Peekではグループ選択を行わない。
+        // グループを一度だけ選ぶ。強制Peek／強制Feint（本覗き連続防止）ではグループ選択を行わない。
         //  ・診断用に、実際に使った乱数値をそのまま保持する（乱数を余分に消費しない）。
         float clampFeintProbability = Mathf.Clamp01(s.feintProbability);
-        float groupRoll = forcePeek ? -1f : Random.value;
-        bool usePeek = forcePeek || groupRoll >= clampFeintProbability;
+        float groupRoll = (forcePeek || forceFeint) ? -1f : Random.value;
+        bool usePeek = forcePeek || (!forceFeint && groupRoll >= clampFeintProbability);
         List<RouteCandidate> pool = usePeek ? peekPool : feintPool;
 
         Debug.Log($"[MotherApproachWarning] グループ抽選 | feintProbability={clampFeintProbability:F2}" +
-                  $" | roll={(forcePeek ? "forced" : groupRoll.ToString("F4"))}" +
+                  $" | roll={(forcePeek ? "forcedPeek" : forceFeint ? "forcedFeint" : groupRoll.ToString("F4"))}" +
                   $" | group={(usePeek ? "Peek" : "Feint")}" +
                   $" | peek候補={peekPool.Count} | feint候補={feintPool.Count}" +
                   $" | avoidLast={(avoidRoute ? avoidTarget.ToString() : "none")}");
@@ -2177,8 +2183,8 @@ public class MotherApproachWarning : MonoBehaviour
             return false;
         }
 
-        // 連続制限（P14）：回避対象を選択グループから除外する（別グループへは回さない）。
-        if (avoidRoute)
+        // 連続制限（P14）：回避対象を選択グループから除外する（強制Feintで候補が1件しかない場合のみ維持）。
+        if (avoidRoute && !(forceFeint && pool.Count == 1))
         {
             RemoveRoute(pool, avoidTarget);
 
@@ -2867,8 +2873,9 @@ public class MotherApproachWarning : MonoBehaviour
 
     private IEnumerator PlayPassByDoorSoundCoroutine()
     {
-        float delay = Mathf.Max(0f, passByDoorSoundDelay);
-        Debug.Log($"[MotherApproachWarning] Pass-by door sound: waiting {delay:F1}s");
+        float baseDelay = Mathf.Max(0f, passByDoorSoundDelay);
+        float delay = baseDelay > 0f ? baseDelay * Random.Range(0.6f, 1.45f) : 0f;
+        Debug.Log($"[MotherApproachWarning] Pass-by door sound: waiting {delay:F2}s (base={baseDelay:F2}s)");
         yield return new WaitForSeconds(delay);
 
         if (passByDoorAudioSource != null)

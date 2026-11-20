@@ -599,9 +599,20 @@ public class GameManager : MonoBehaviour
 
         ResultDataCommitted?.Invoke();
 
+        string resultTypeName = resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP";
+        ChildUdpRuntimeHost host = ResolveHost();
+        if (host != null)
+        {
+            host.NotifyRankingChanged(resultTypeName);
+            Debug.Log($"[GameManager] Notified ranking change immediately (snapshot sync): {resultTypeName}:{score}");
+        }
+        else
+        {
+            Debug.LogWarning("[GameManager] 子機Hostが見つからないため、結果を親機へ送信できません。");
+        }
+
         Time.timeScale = 0f;
 
-        string resultTypeName = resultType == ResultType.GameOver ? "GAME_OVER" : "TIME_UP";
         string targetScene = resultType == ResultType.GameOver ? gameOverSceneName : timeUpSceneName;
         StartCoroutine(HandleGameOver(resultTypeName, score, targetScene));
     }
@@ -641,17 +652,6 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator HandleGameOver(string resultTypeName, int finalScore, string targetScene)
     {
-        ChildUdpRuntimeHost host = ResolveHost();
-        if (host != null)
-        {
-            host.NotifyRankingChanged(resultTypeName);
-            Debug.Log($"[GameManager] Notified ranking change (snapshot sync): {resultTypeName}:{finalScore}");
-        }
-        else
-        {
-            Debug.LogWarning("[GameManager] 子機Hostが見つからないため、結果を親機へ送信できません。");
-        }
-
         yield return new WaitForSecondsRealtime(0.1f);
 
         if (fadeCanvasGroup != null)

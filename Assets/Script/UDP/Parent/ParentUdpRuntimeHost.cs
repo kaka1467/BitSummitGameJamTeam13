@@ -432,6 +432,10 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
                 HandleLoudItemPrepared();
                 break;
 
+            case ParentMessageType.MinusItem:
+                HandleMinusItemPrepared();
+                break;
+
             case ParentMessageType.GameAudio:
                 HandleGameAudioPrepared(message.GameAudio);
                 break;
@@ -1003,6 +1007,17 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
             Debug.Log($"[ParentUdpRuntimeHost] LOUD_ITEM outcome={outcome}。");
     }
 
+    private void HandleMinusItemPrepared()
+    {
+        if (!ParentSceneBoundaryPolicy.IsGameplayScene(SceneManager.GetActiveScene().name, _settings.GameplaySceneName))
+            return;
+
+        if (ShowDebug)
+            Debug.Log("[ParentUdpRuntimeHost] Received MINUS_ITEM network packet from Child.");
+
+        _notifications.HandleMinusItemReceived();
+    }
+
     private void HandleGameProgressPrepared(int rawScore)
     {
         float progressRate = Mathf.Clamp01(rawScore / 1000f);
@@ -1067,6 +1082,12 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
         string activeScene = SceneManager.GetActiveScene().name;
         bool onTitle = ParentSceneBoundaryPolicy.IsTitleScene(activeScene, _settings.MotherTitleSceneName, _settings.TitleSceneName);
 
+        if (_link != null && _link.IsConnected && string.IsNullOrEmpty(_rankSync.ConfirmedPeerSourceId))
+        {
+            _rankSync.ConfirmPeerFromConnectedSnapshot(snap.SourceId);
+            Debug.Log($"[ParentUdpRuntimeHost] RANK_SYNC: 未確定の接続相手を '{snap.SourceId}' で補完確定しました。");
+        }
+
         ParentRankSyncCoordinator.SnapshotDecision decision = _rankSync.EvaluateSnapshot(snap, out RankSyncApply result);
 
         if (decision == ParentRankSyncCoordinator.SnapshotDecision.NotAccepted)
@@ -1090,7 +1111,14 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
 
             SendRankSyncAck(snap);
             NotifySyncStateChanged();
+            RaiseResultDataCommitted($"RANK_SYNC {result} verified");
             return;
+        }
+
+        if (snap.LatestResultType == RankingSnapshot.TypeTimeUp && _timeUpRetryCoroutine != null)
+        {
+            StopCoroutine(_timeUpRetryCoroutine);
+            _timeUpRetryCoroutine = null;
         }
 
         PlayerPrefs.SetString(PrefRankSyncData, _rankSync.SerializeForSave());
@@ -1281,12 +1309,18 @@ public sealed class ParentUdpRuntimeHost : MonoBehaviour
 
     private IEnumerator TimeUpRetryRoutine(string message)
     {
-        const int retryCount = 3;
-        const float retryInterval = 0.15f;
+        const int retryCount = 12;
+        const float retryInterval = 0.25f;
 
         for (int i = 0; i < retryCount; i++)
         {
             yield return new WaitForSecondsRealtime(retryInterval);
+            if (_rankSync != null && _rankSync.StoreLatestResultType == RankingSnapshot.TypeTimeUp &&
+                !string.IsNullOrEmpty(_session.PlaySessionId) &&
+                _rankSync.StoreLatestResultPlayId == _session.PlaySessionId)
+            {
+                break;
+            }
             SendState(message);
         }
 

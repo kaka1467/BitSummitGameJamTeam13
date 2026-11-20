@@ -444,9 +444,9 @@ public class MotherChoreController : MonoBehaviour
     }
 
     /// <summary>
-    /// サイレン（LOUD_ITEM）取得時に、片付け演出中の強制振り向き（Chore_Peek）を要求する（M-F02 / M-Q03）。
+    /// マイナスポイントアイテム（MINUS_ITEM）取得時に、片付け演出中の強制振り向き（Chore_Peek）を要求する。
     /// </summary>
-    public void RequestForcedLookFromLoudItem()
+    public void RequestForcedLookFromMinusItem()
     {
         if (!IsChoreActive) return;
 
@@ -455,7 +455,13 @@ public class MotherChoreController : MonoBehaviour
             approachController.ForceChoreReturnLookBack();
 
         if (showDebugLogs)
-            Debug.Log($"[MotherChore] LOUD_ITEM による強制振り向きを要求しました (phase={CurrentPhase})");
+            Debug.Log($"[MotherChore] MINUS_ITEM による強制振り向きを要求しました (phase={CurrentPhase})");
+    }
+
+    /// <summary>互換用エイリアス（MINUS_ITEM へ委譲）。</summary>
+    public void RequestForcedLookFromLoudItem()
+    {
+        RequestForcedLookFromMinusItem();
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ public enum ParentMessageType
     ChildScore,
     LoadingComplete,
     LoudItem,
+    MinusItem,
     TeamReturnToTitle,
     // 片付け演出用：子機のゲーム進行率（0〜1を1000倍した整数）通知
     GameProgress,
@@ -134,6 +135,8 @@ public static class ParentUdpMessageParser
                 return new ParentUdpMessage(ParentMessageType.LoadingComplete, rawPayload: payload);
             case "LOUD_ITEM":
                 return new ParentUdpMessage(ParentMessageType.LoudItem, rawPayload: payload);
+            case "MINUS_ITEM":
+                return new ParentUdpMessage(ParentMessageType.MinusItem, rawPayload: payload);
         }
 
         // GAME_AUDIO_SE / GAME_AUDIO_STATE — 子機の本編音（親機は同じIDのAudioClipをローカル再生する）
@@ -817,6 +820,20 @@ public sealed class RankSyncPeerGate
     /// <summary>確定済みの接続相手と一致するスナップショットだけを適用対象にする。</summary>
     public bool AcceptsSnapshot(string sourceId)
         => IsConfirmed && !string.IsNullOrEmpty(sourceId) && sourceId == ConnectedSourceId;
+
+    /// <summary>
+    /// 接続済み子機から正当な RANK_SYNC が届いた際、タイトルでのチャレンジ応答が未完了だった場合のみ
+    /// その sourceId を接続相手として確定し、クリア時のスコア取りこぼしを防ぐ。
+    /// </summary>
+    public void ConfirmPeerFromConnectedSnapshot(string sourceId)
+    {
+        if (IsConfirmed || !RankingSnapshot.IsValidId(sourceId, allowEmpty: false)) return;
+        ConnectedSourceId = sourceId;
+        PendingChallengeId = "";
+        PendingSourceId = "";
+        PendingSessionSeq = -1;
+        ChallengeSendCount = 0;
+    }
 }
 
 /// <summary>親機の表示用コピーの状態（UIの理由表示に使用）。</summary>

@@ -9,10 +9,12 @@ public enum PatternItemKind
     LowScore,
     /// <summary>得点の高い Score（同じく scoreAmount が最大。Score型が1種類だけなら LowScore と同じ）。</summary>
     HighScore,
-    /// <summary>悪いアイテム（Clock＝減点）。サイレン(BGM)は時間条件があるためパターンには使わない。</summary>
+    /// <summary>悪いアイテム（Clock＝減点）。</summary>
     Bad,
     Fever,
     Boost,
+    /// <summary>サイレン（BGM＝即死）。タイムリミット後半（50%以降）かつ非EASYでのみ出現する。</summary>
+    Siren,
 }
 
 /// <summary>そのパターンをいつ使うか。</summary>
@@ -232,6 +234,23 @@ public static class ItemSpawnPatternDefaults
             Slot(PatternItemKind.Bad, 2, 13.2f),
             Row(PatternItemKind.HighScore, 0, 14.0f, 6),
             Slot(PatternItemKind.Bad, 0, 21.2f)));
+
+        // ── 後半（タイムリミット50%以降）専用：サイレン（即死）入り回避パターン ─────────
+        // ※ サイレンは即死のため、必ず安全レーンまたは十分な回避余白を確保する
+        list.Add(Pattern("Late_SirenGuard_Mid", 2.2f, PatternUse.NormalOnly, 0f, 1.0f, true, 0f,
+            Row(PatternItemKind.HighScore, 0, 0f, 7),
+            Slot(PatternItemKind.Siren, 1, 3.8f),
+            Slot(PatternItemKind.Bad, 2, 7.5f)));
+
+        list.Add(Pattern("Late_SirenSwitch", 2.2f, PatternUse.NormalOnly, 0f, 1.0f, true, 0f,
+            Row(PatternItemKind.LowScore, 0, 0f, 5),
+            Slot(PatternItemKind.Siren, 0, 7.2f),
+            Row(PatternItemKind.HighScore, 2, 8.0f, 6)));
+
+        list.Add(Pattern("Late_SirenFork", 2.0f, PatternUse.NormalOnly, 0f, 1.0f, true, 0f,
+            Row(PatternItemKind.HighScore, 0, 0f, 6),
+            Slot(PatternItemKind.Siren, 0, 8.4f),
+            Row(PatternItemKind.LowScore, 2, 0f, 7)));
 
         // ── 短い息継ぎ（ごくまれに挟むだけ） ──────────────────────────────────────────
         SpawnPattern shortRest = Pattern("ShortBreather", 0.15f, PatternUse.NormalOnly, 20f, 1.0f, false, 0.9f);

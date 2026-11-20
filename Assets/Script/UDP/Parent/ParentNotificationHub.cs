@@ -35,6 +35,19 @@ public sealed class ParentNotificationHub
     /// <summary>購読者不在で保留中の LOUD_ITEM があるか。</summary>
     public bool HasPendingLoudItem { get; set; }
 
+    // ── MINUS_ITEM（減点アイテム取得 → 片付け中の覗きトリガー）───────────────
+    /// <summary>減点アイテム（時計）の取得イベント。</summary>
+    public event Action MinusItemReceived;
+
+    /// <summary>実際の購読者が居るか。</summary>
+    public bool HasMinusItemSubscriber => MinusItemReceived != null;
+
+    /// <summary>減点アイテム取得をメインスレッドから購読者へ通知する（保留はしない）。</summary>
+    public void HandleMinusItemReceived()
+    {
+        MinusItemReceived?.Invoke();
+    }
+
     // ── GAME_PROGRESS ─────────────────────────────────────────────────────────
     /// <summary>ゲーム進行率のイベント（購読者不在時は最新値だけ保留する）。</summary>
     public event Action<float> GameProgressReceived;
