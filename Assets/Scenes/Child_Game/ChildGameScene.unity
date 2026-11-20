@@ -5622,10 +5622,10 @@ MonoBehaviour:
       column: 0
     - kind: 1
       lane: 0
-      column: 1.5
+      column: 2
     - kind: 2
       lane: 0
-      column: 3
+      column: 4
   - name: "\u9AD8\u5F97\u70B9"
     enabled: 1
     weight: 1
@@ -5641,10 +5641,10 @@ MonoBehaviour:
       column: 0
     - kind: 1
       lane: 2
-      column: 1.5
+      column: 2
     - kind: 2
       lane: 2
-      column: 3
+      column: 4
 --- !u!4 &1639938499
 Transform:
   m_ObjectHideFlags: 0
@@ -5856,7 +5856,7 @@ MonoBehaviour:
   successMissPenalty: 1000
   successMinScore: 1000
   clearSe: {fileID: 8300000, guid: 5b9459b2e87e4ac997fc63c3c1a0594b, type: 3}
-  clearSeVolume: 1
+  clearSeVolume: 0.3
   rewardText: {fileID: 1010866014}
   rewardTextOffset: {x: 0, y: 90}
   rewardLabel: 'BONUS '
@@ -6892,7 +6892,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FeverBgmPlayer
   feverClip: {fileID: 8300000, guid: 23170b4275284e72b97fa5a8fb041df5, type: 3}
-  feverVolume: 1
+  feverVolume: 0.7
   mainFadeOutSeconds: 0.25
   feverFadeInSeconds: 0.25
   feverFadeOutSeconds: 0.4
@@ -7094,8 +7094,10 @@ MonoBehaviour:
   qteSuccessMessage: nice!
   qteSuccessMessageJa: "\u30CA\u30A4\u30B9\uFF01"
   slideMinDisplaySeconds: 0.25
+  tutorialSlideCanvasSortingOrder: 250
   tutorialSlideDimBackground: {fileID: 777504653}
   tutorialSlideOverlay: {fileID: 66045596}
+  tutorialSlideOkButton: {fileID: 0}
   tutorialSlidePromptText: {fileID: 198162561}
   tutorialPauseOverlayRoot: {fileID: 0}
   tutorialPauseOverlayText: {fileID: 0}
@@ -7103,8 +7105,8 @@ MonoBehaviour:
   slideAnchorMax: {x: 0.98, y: 0.96}
   slideAnchoredPosition: {x: 0, y: 0}
   slideSizeDelta: {x: 0, y: 0}
-  promptAnchorMin: {x: 0.05, y: -0.08}
-  promptAnchorMax: {x: 0.95, y: -0.01}
+  okButtonAnchoredPosition: {x: 0, y: -445}
+  okButtonSize: {x: 280, y: 84}
   promptFontSize: 30
 --- !u!1 &2017352040
 GameObject:
@@ -7882,6 +7884,7 @@ MonoBehaviour:
   bgmStateHeartbeatSeconds: 1
   showDebugLog: 0
   bgmController: {fileID: 0}
+  feverBgmPlayer: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
